@@ -32,11 +32,14 @@ export class TaskStepHandler implements StepHandler {
         on_abort: step.on_abort,
         timeout: step.timeout,
       };
+      // Re-inject job params now that config is available from the file.
+      // injectJobParams runs before dispatch but skips steps without config.
+      taskStep = ctx.variableResolver.injectJobParams(taskStep) as Task;
     }
 
     const parallelism = taskStep.parallelism || 1;
     if (parallelism <= 1) {
-      await ctx.runTask(taskStep, undefined, pathContext);
+      await ctx.runTask(taskStep, undefined, pathContext + "/run");
       return;
     }
 

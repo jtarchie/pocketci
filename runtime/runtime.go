@@ -497,7 +497,7 @@ func (r *Runtime) Agent(call goja.FunctionCall) goja.Value {
 			defer r.promises.Done()
 
 			if err != nil {
-				err = reject(err)
+				err = reject(r.jsVM.NewGoError(err))
 				if err != nil {
 					return fmt.Errorf("could not reject agent: %w", err)
 				}

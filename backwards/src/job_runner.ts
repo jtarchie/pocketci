@@ -10,6 +10,7 @@ import { JobConcurrency } from "./job_concurrency.ts";
 import { JobStoragePaths, zeroPadWithLength } from "./job_storage_paths.ts";
 import { StepVariableResolver } from "./step_variable_resolver.ts";
 import {
+  errorMessage,
   extractJobDependencies,
   failureHook,
   failureStatus,
@@ -101,22 +102,41 @@ export class JobRunner {
 
     storage.set(storageKey, { status: "pending", dependsOn });
 
+    let lastCompletedStep = -1;
+
     try {
       for (let i = 0; i < this.jobConfig.plan.length; i++) {
         await this.processStep(
           this.jobConfig.plan[i],
           zeroPadWithLength(i, this.jobConfig.plan.length),
         );
+        lastCompletedStep = i;
       }
       storage.set(storageKey, { status: "success", dependsOn });
     } catch (error) {
-      console.error(error);
+      console.error(errorMessage(error));
       failure = error;
       storage.set(storageKey, {
         status: failureStatus(failure),
         dependsOn,
-        errorMessage: String(error),
+        errorMessage: errorMessage(error),
       });
+
+      // Mark remaining unprocessed steps as skipped
+      for (
+        let i = lastCompletedStep + 2;
+        i < this.jobConfig.plan.length;
+        i++
+      ) {
+        const step = this.jobConfig.plan[i];
+        const handler = this.getHandler(step);
+        if (handler) {
+          const skippedPath = `${this.paths.getBaseStorageKey()}/${
+            zeroPadWithLength(i, this.jobConfig.plan.length)
+          }/${handler.getIdentifier(step)}`;
+          storage.set(skippedPath, { status: "skipped" });
+        }
+      }
     }
 
     try {

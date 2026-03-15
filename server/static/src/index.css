@@ -112,6 +112,11 @@ body {
   stroke: #6b7280;
 }
 
+.node-rect.skipped {
+  fill: #d1d5db;
+  stroke: #9ca3af;
+}
+
 .node-rect.group {
   fill: #2563eb;
   stroke: #1d4ed8;

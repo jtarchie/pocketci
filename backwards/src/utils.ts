@@ -2,6 +2,15 @@
 
 import { TaskAbort, TaskErrored, TaskFailure } from "./task_runner.ts";
 
+// Extract a clean error message from any thrown value.
+// Goja (the JS VM) wraps Go errors in objects that stringify with
+// an internal variable prefix (e.g. "h: actual message"). This
+// helper peels through to the actual message.
+export function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 export function failureStatus(failure: unknown): string {
   if (failure == undefined) return "success";
   if (failure instanceof TaskFailure) return "failure";

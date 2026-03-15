@@ -326,6 +326,8 @@ func (c *WebRunsController) GraphData(ctx *echo.Context) error {
 		"Path":     lookupPath,
 		"RunID":    runID,
 		"IsActive": isActive,
+		"Run":      run,
+		"OOB":      true,
 	})
 }
 

@@ -78,11 +78,11 @@ type AgentConfig struct {
 	// OnUsage is called whenever cumulative usage changes.
 	OnUsage func(AgentUsage) `json:"-"`
 	// Internal fields populated by Runtime.Agent() — not exposed to JS.
-	Storage     storage.Driver
-	Namespace   string
-	RunID       string
-	PipelineID  string
-	TriggeredBy string
+	Storage     storage.Driver `json:"-"`
+	Namespace   string         `json:"-"`
+	RunID       string         `json:"-"`
+	PipelineID  string         `json:"-"`
+	TriggeredBy string         `json:"-"`
 }
 
 // AgentResult is returned to JavaScript after the agent completes.
@@ -410,14 +410,14 @@ func loadTaskSummaries(ctx context.Context, st storage.Driver, runID string) ([]
 	results = append(results, legacyResults...)
 	results = append(results, jobResults...)
 
-	tasks := make([]taskSummary, 0, len(results))
-	seenKeys := map[string]struct{}{}
+	type taskKey struct {
+		Index int
+		Name  string
+	}
+
+	bestByKey := map[taskKey]taskSummary{}
 
 	for _, r := range results {
-		if _, alreadySeen := seenKeys[r.Path]; alreadySeen {
-			continue
-		}
-
 		idx, name, ok := parseTaskSummaryPath(r.Path)
 		if !ok {
 			continue
@@ -437,8 +437,16 @@ func loadTaskSummaries(ctx context.Context, st storage.Driver, runID string) ([]
 			t.Elapsed = s
 		}
 
+		key := taskKey{idx, name}
+
+		if existing, exists := bestByKey[key]; !exists || (t.StartedAt != "" && existing.StartedAt == "") {
+			bestByKey[key] = t
+		}
+	}
+
+	tasks := make([]taskSummary, 0, len(bestByKey))
+	for _, t := range bestByKey {
 		tasks = append(tasks, t)
-		seenKeys[r.Path] = struct{}{}
 	}
 
 	sort.Slice(tasks, func(i, j int) bool {

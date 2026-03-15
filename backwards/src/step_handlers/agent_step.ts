@@ -1,7 +1,7 @@
 /// <reference path="../../../packages/pocketci/src/global.d.ts" />
 
 import { TaskFailure } from "../task_runner.ts";
-import { formatElapsed } from "../utils.ts";
+import { errorMessage, formatElapsed } from "../utils.ts";
 import { loadFileFromVolume } from "./file_loader.ts";
 import type { StepContext } from "./step_context.ts";
 import type { StepHandler } from "./step_handler.ts";
@@ -49,7 +49,7 @@ export class AgentStepHandler implements StepHandler {
       agentStep = { ...step, prompt: contents };
     }
 
-    const storageKey = `${ctx.paths.getBaseStorageKey()}/${pathContext}`;
+    const storageKey = `${ctx.paths.getBaseStorageKey()}/${pathContext}/run`;
     const auditBaseKey =
       `/agent-audit/${ctx.buildID}/jobs/${ctx.jobName}/${pathContext}/events`;
 
@@ -155,16 +155,17 @@ export class AgentStepHandler implements StepHandler {
         ctx.taskRunner.getKnownMounts()[output.name] = mounts[output.name];
       }
     } catch (error) {
+      const errMsg = errorMessage(error);
       storage.set(storageKey, {
         status: "failure",
         started_at: startedAt,
         elapsed: formatElapsed(startedAt),
         stdout: accumulatedOutput,
-        error_message: String(error),
+        error_message: errMsg,
         usage: latestUsage,
         audit_log: auditLog,
       });
-      throw new TaskFailure(`Agent ${agentStep.agent} failed: ${error}`);
+      throw new TaskFailure(`Agent ${agentStep.agent} failed: ${errMsg}`);
     }
   }
 }

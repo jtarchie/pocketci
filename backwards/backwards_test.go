@@ -572,6 +572,89 @@ func TestBackwardsCompatibility(t *testing.T) {
 		}
 		assert.Expect(jobPaths).NotTo(BeEmpty(), "expected task paths nested under /jobs/hello-world/")
 	})
+
+	t.Run("remaining plan steps are marked skipped after mid-plan failure", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		dbFile, err := os.CreateTemp(t.TempDir(), "*.db")
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(dbFile.Close()).NotTo(HaveOccurred())
+		storageURL := fmt.Sprintf("sqlite://%s", dbFile.Name())
+
+		const pipelineFile = "steps/skipped_steps.yml"
+		const runID = "skipped-steps-test"
+
+		runner := testhelpers.Runner{
+			Pipeline: pipelineFile,
+			Driver:   "native",
+			Storage:  storageURL,
+			RunID:    runID,
+		}
+		err = runner.Run(nil)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		pipelinePath, err := filepath.Abs(pipelineFile)
+		assert.Expect(err).NotTo(HaveOccurred())
+		runtimeID := youtubeIDStyle(pipelinePath)
+
+		initStorage, found := storage.GetFromDSN(storageURL)
+		assert.Expect(found).To(BeTrue())
+
+		store, err := initStorage(storageURL, runtimeID, nil)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		results, err := store.GetAll(context.Background(), "/pipeline/"+runID+"/", []string{"status", "errorMessage"})
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(results).NotTo(BeEmpty())
+
+		// Verify the failing task has "failure" status
+		var failingTaskFound bool
+		for _, result := range results {
+			if strings.Contains(result.Path, "tasks/failing-task") {
+				status, ok := result.Payload["status"].(string)
+				assert.Expect(ok).To(BeTrue())
+				assert.Expect(status).To(Equal("failure"))
+				failingTaskFound = true
+			}
+		}
+		assert.Expect(failingTaskFound).To(BeTrue(), "expected failing-task in storage")
+
+		// Verify the job-level error message is clean (no "h:" prefix)
+		for _, result := range results {
+			if strings.HasSuffix(result.Path, "/jobs/failing-job") {
+				errMsg, ok := result.Payload["errorMessage"].(string)
+				assert.Expect(ok).To(BeTrue(), "expected errorMessage on job entry")
+				assert.Expect(errMsg).To(ContainSubstring("failing-task failed"))
+				assert.Expect(errMsg).NotTo(HavePrefix("h:"), "error message should not have h: prefix")
+			}
+		}
+
+		// Verify both remaining steps got "skipped" status
+		skippedTasks := map[string]bool{}
+		for _, result := range results {
+			status, ok := result.Payload["status"].(string)
+			if ok && status == "skipped" {
+				skippedTasks[result.Path] = true
+			}
+		}
+		assert.Expect(skippedTasks).To(HaveLen(2), "expected 2 skipped tasks, got paths: %v", skippedTasks)
+
+		// Verify the skipped paths contain the expected task names
+		var foundSkippedA, foundSkippedB bool
+		for path := range skippedTasks {
+			if strings.Contains(path, "tasks/skipped-task-a") {
+				foundSkippedA = true
+			}
+			if strings.Contains(path, "tasks/skipped-task-b") {
+				foundSkippedB = true
+			}
+		}
+		assert.Expect(foundSkippedA).To(BeTrue(), "expected skipped-task-a in skipped entries")
+		assert.Expect(foundSkippedB).To(BeTrue(), "expected skipped-task-b in skipped entries")
+	})
 }
 
 func TestVersionEveryWithMock(t *testing.T) {

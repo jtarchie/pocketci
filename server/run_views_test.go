@@ -675,6 +675,115 @@ func TestRunViews(t *testing.T) {
 				assert.Expect(hasSelectorWithText(doc, "div[id^='terminal-']", "lint failed: missing semicolon")).To(BeTrue())
 			})
 
+			t.Run("GET /runs/:id/tasks renders skipped status for skipped tasks", func(t *testing.T) {
+				t.Parallel()
+				assert := NewGomegaWithT(t)
+
+				buildFile, err := os.CreateTemp(t.TempDir(), "")
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = buildFile.Close() }()
+
+				client, err := init(buildFile.Name(), "namespace", slog.Default())
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = client.Close() }()
+
+				pipeline, err := client.SavePipeline(context.Background(), "skipped-pipeline", "export const pipeline = async () => {};", "docker://", "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				run, err := client.SaveRun(context.Background(), pipeline.ID)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				err = client.Set(context.Background(), "/pipeline/"+run.ID+"/jobs/build/0/tasks/step-a", map[string]any{"status": "failure"})
+				assert.Expect(err).NotTo(HaveOccurred())
+				err = client.Set(context.Background(), "/pipeline/"+run.ID+"/jobs/build/1/tasks/step-b", map[string]any{"status": "skipped"})
+				assert.Expect(err).NotTo(HaveOccurred())
+				err = client.Set(context.Background(), "/pipeline/"+run.ID+"/jobs/build/2/tasks/step-c", map[string]any{"status": "skipped"})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				req := httptest.NewRequest(http.MethodGet, "/runs/"+run.ID+"/tasks", nil)
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+
+				assert.Expect(rec.Code).To(Equal(http.StatusOK))
+				doc := mustHTMLDocument(t, rec)
+				assert.Expect(hasSelectorWithText(doc, "span.sr-only", "Skipped")).To(BeTrue())
+				assert.Expect(hasSelectorWithText(doc, "span.sr-only", "Failed")).To(BeTrue())
+			})
+
+			t.Run("GET /runs/:id/tasks-partial/ emits OOB error alert when run has error message", func(t *testing.T) {
+				t.Parallel()
+				assert := NewGomegaWithT(t)
+
+				buildFile, err := os.CreateTemp(t.TempDir(), "")
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = buildFile.Close() }()
+
+				client, err := init(buildFile.Name(), "namespace", slog.Default())
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = client.Close() }()
+
+				pipeline, err := client.SavePipeline(context.Background(), "oob-error-pipeline", "export const pipeline = async () => {};", "docker://", "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				run, err := client.SaveRun(context.Background(), pipeline.ID)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-build", map[string]any{"status": "failure"})
+				assert.Expect(err).NotTo(HaveOccurred())
+				err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusFailed, "agent config unmarshal error")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				req := httptest.NewRequest(http.MethodGet, "/runs/"+run.ID+"/tasks-partial/", nil)
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+
+				assert.Expect(rec.Code).To(Equal(286))
+				doc := mustHTMLDocument(t, rec)
+				assert.Expect(doc.Find(`#run-error-alert[hx-swap-oob="true"]`).Length()).To(BeNumerically(">", 0))
+				assert.Expect(hasSelectorWithText(doc, "[role='alert']", "Run failed")).To(BeTrue())
+				assert.Expect(hasSelectorWithText(doc, "[role='alert']", "agent config unmarshal error")).To(BeTrue())
+			})
+
+			t.Run("GET /runs/:id/tasks-partial/ emits empty OOB error alert when no error", func(t *testing.T) {
+				t.Parallel()
+				assert := NewGomegaWithT(t)
+
+				buildFile, err := os.CreateTemp(t.TempDir(), "")
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = buildFile.Close() }()
+
+				client, err := init(buildFile.Name(), "namespace", slog.Default())
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = client.Close() }()
+
+				pipeline, err := client.SavePipeline(context.Background(), "oob-no-error-pipeline", "export const pipeline = async () => {};", "docker://", "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				run, err := client.SaveRun(context.Background(), pipeline.ID)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-build", map[string]any{"status": "running"})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				req := httptest.NewRequest(http.MethodGet, "/runs/"+run.ID+"/tasks-partial/", nil)
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+
+				assert.Expect(rec.Code).To(Equal(http.StatusOK))
+				doc := mustHTMLDocument(t, rec)
+				assert.Expect(doc.Find(`#run-error-alert[hx-swap-oob="true"]`).Length()).To(BeNumerically(">", 0))
+				assert.Expect(doc.Find("[role='alert']").Length()).To(Equal(0))
+			})
+
 		})
 	})
 }

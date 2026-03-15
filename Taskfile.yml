@@ -28,14 +28,17 @@ tasks:
           if [ "${CI}" != "true" ]; then
             golangci-lint run ./... --fix
           fi
-  default:
+  test:
     cmds:
-      - task: build
-      - task: fmt
       - task: cleanup
       - defer: { task: cleanup }
       - go test -race ./... -count=1 -parallel=1
       - task: test:e2e
+  default:
+    cmds:
+      - task: build
+      - task: fmt
+      - task: test
   test:e2e:
     dir: e2e
     cmds:

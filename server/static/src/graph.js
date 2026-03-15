@@ -1025,6 +1025,7 @@ export function initGraph(graphData, _currentPath) {
     "pending",
     "running",
     "abort",
+    "skipped",
     "group",
   ];
 

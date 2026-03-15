@@ -1,5 +1,8 @@
 {{ define "graph-partial" }}
 <!-- Graph data partial - used for htmx polling -->
+{{ if .OOB }}
+{{ template "_run_error_alert" dict "Run" .Run "SwapOOB" true }}
+{{ end }}
 <script type="application/json" id="graph-data"
   data-path="{{ .Path }}"
   data-run-active="{{ if .IsActive }}true{{ else }}false{{ end }}"

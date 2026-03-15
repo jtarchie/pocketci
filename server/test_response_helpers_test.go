@@ -80,7 +80,8 @@ func mustJSONErrorText(t *testing.T, rec *httptest.ResponseRecorder) string {
 
 func hasSelectorWithText(doc *goquery.Document, selector string, text string) bool {
 	return doc.Find(selector).FilterFunction(func(_ int, selection *goquery.Selection) bool {
-		return strings.Contains(selection.Text(), text)
+		normalized := strings.Join(strings.Fields(selection.Text()), " ")
+		return strings.Contains(normalized, text)
 	}).Length() > 0
 }
 

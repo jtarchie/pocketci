@@ -48,7 +48,6 @@ func (p *Tree[T]) Flatten() {
 		child.Flatten()
 	}
 
-	// Then check if this node has a single child
 	if p.HasSingleChild() {
 		child := p.Children[0]
 		p.Name = filepath.Join(p.Name, child.Name)

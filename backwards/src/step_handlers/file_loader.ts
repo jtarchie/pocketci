@@ -39,7 +39,8 @@ export async function loadFileFromVolume(
         status: "failure",
         file,
         volume: mountName,
-        errorMessage: `file "${relativePath}" not found in volume "${mountName}"`,
+        errorMessage:
+          `file "${relativePath}" not found in volume "${mountName}"`,
       });
       throw new Error(
         `file "${relativePath}" not found in volume "${mountName}"`,
@@ -56,7 +57,7 @@ export async function loadFileFromVolume(
       status: "failure",
       file,
       volume: mountName,
-      errorMessage: String(error),
+      errorMessage: error instanceof Error ? error.message : String(error),
     });
     throw error;
   }

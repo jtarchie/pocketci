@@ -48,7 +48,7 @@
 
 <main id="main-content" role="main">
   <div class="container mx-auto p-4">
-    {{ template "_run_error_alert" . }}
+    {{ template "_run_error_alert" dict "Run" .Run }}
 
     <div
       class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
@@ -334,5 +334,5 @@
 {{ template "footer" }}
 <!-- Graph data from server -->
 {{ template "graph-partial" dict "Path" .Path "RunID" .RunID "TreeJSON"
-.TreeJSON "IsActive" .IsActive }}
+.TreeJSON "IsActive" .IsActive "OOB" false }}
 {{ template "end" }}
