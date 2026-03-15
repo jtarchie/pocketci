@@ -1,6 +1,7 @@
 /// <reference path="../../../packages/pocketci/src/global.d.ts" />
 
 import { TaskFailure } from "../task_runner.ts";
+import { loadFileFromVolume } from "./file_loader.ts";
 import type { StepContext } from "./step_context.ts";
 import type { StepHandler } from "./step_handler.ts";
 
@@ -17,7 +18,7 @@ export class TaskStepHandler implements StepHandler {
     let taskStep = step;
 
     if ("file" in step) {
-      const contents = await this.getFile(ctx, step.file!, pathContext);
+      const contents = await loadFileFromVolume(ctx, step.file!, pathContext);
       const taskConfig = YAML.parse(contents) as TaskConfig;
       taskStep = {
         task: step.task,
@@ -71,34 +72,9 @@ export class TaskStepHandler implements StepHandler {
     if (result.failed) {
       storage.set(storageKey, { status: "failure", total: parallelism });
       throw result.firstError ??
-        new TaskFailure("One or more parallel task instances failed");
+      new TaskFailure("One or more parallel task instances failed");
     }
 
     storage.set(storageKey, { status: "success", total: parallelism });
-  }
-
-  private async getFile(
-    ctx: StepContext,
-    file: string,
-    pathContext: string,
-  ): Promise<string> {
-    const mountName = file.split("/")[0];
-    const result = await ctx.runTask(
-      {
-        task: `get-file-${file}`,
-        config: {
-          image_resource: {
-            type: "registry-image",
-            source: { repository: "busybox" },
-          },
-          inputs: [{ name: mountName }],
-          run: { path: "sh", args: ["-c", `cat ${file}`] },
-        },
-        assert: { code: 0 },
-      },
-      undefined,
-      pathContext,
-    );
-    return result.stdout;
   }
 }

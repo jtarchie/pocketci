@@ -149,6 +149,10 @@ func validateSteps(jobs Jobs) error {
 					return fmt.Errorf("task step %q in job %q (index %d) requires config.run.path", step.Task, job.Name, i)
 				}
 			}
+
+			if step.Agent != "" && step.File == "" && step.Prompt == "" && step.PromptFile == "" {
+				return fmt.Errorf("agent step %q in job %q (index %d) requires prompt, prompt_file, or file", step.Agent, job.Name, i)
+			}
 		}
 	}
 

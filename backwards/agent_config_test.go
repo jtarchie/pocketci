@@ -108,4 +108,241 @@ jobs:
 		assert.Expect(step.AgentSafety).To(BeEmpty())
 		assert.Expect(step.AgentContextGuard).To(BeNil())
 	})
+
+	t.Run("parses agent step with file field", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		fileYAML := `
+jobs:
+  - name: review
+    plan:
+      - agent: my-agent
+        file: repo/agents/review.yml
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: alpine }
+          inputs:
+            - name: repo
+`
+		var config backwards.Config
+
+		err := yaml.Unmarshal([]byte(fileYAML), &config)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		step := config.Jobs[0].Plan[0]
+		assert.Expect(step.Agent).To(Equal("my-agent"))
+		assert.Expect(step.File).To(Equal("repo/agents/review.yml"))
+	})
+
+	t.Run("parses agent step with prompt_file field", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		promptFileYAML := `
+jobs:
+  - name: review
+    plan:
+      - agent: my-agent
+        prompt_file: repo/prompts/review.md
+        model: openrouter/google/gemini-3.1-flash-lite-preview
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: alpine }
+          inputs:
+            - name: repo
+`
+		var config backwards.Config
+
+		err := yaml.Unmarshal([]byte(promptFileYAML), &config)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		step := config.Jobs[0].Plan[0]
+		assert.Expect(step.Agent).To(Equal("my-agent"))
+		assert.Expect(step.PromptFile).To(Equal("repo/prompts/review.md"))
+		assert.Expect(step.Prompt).To(BeEmpty())
+	})
+
+	t.Run("transpiles agent step with file field to JS", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		js, err := backwards.NewPipelineFromContent(`
+jobs:
+  - name: review
+    plan:
+      - agent: my-agent
+        file: repo/agents/review.yml
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: alpine }
+          inputs:
+            - name: repo
+`)
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(js).To(ContainSubstring("my-agent"))
+		assert.Expect(js).To(ContainSubstring("repo/agents/review.yml"))
+	})
+
+	t.Run("transpiles agent step with prompt_file field to JS", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		js, err := backwards.NewPipelineFromContent(`
+jobs:
+  - name: review
+    plan:
+      - agent: my-agent
+        prompt_file: repo/prompts/review.md
+        model: openrouter/google/gemini-3.1-flash-lite-preview
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: alpine }
+          inputs:
+            - name: repo
+`)
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(js).To(ContainSubstring("my-agent"))
+		assert.Expect(js).To(ContainSubstring("repo/prompts/review.md"))
+	})
+
+	t.Run("validation rejects agent step without prompt, file, or prompt_file", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		_, err := backwards.NewPipelineFromContent(`
+jobs:
+  - name: review
+    plan:
+      - agent: my-agent
+        model: openrouter/google/gemini-3.1-flash-lite-preview
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: alpine }
+`)
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("agent step"))
+		assert.Expect(err.Error()).To(ContainSubstring("requires prompt, prompt_file, or file"))
+	})
+
+	t.Run("validation accepts agent step with only file", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		_, err := backwards.NewPipelineFromContent(`
+jobs:
+  - name: review
+    plan:
+      - agent: my-agent
+        file: repo/agents/review.yml
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: alpine }
+          inputs:
+            - name: repo
+`)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("validation accepts agent step with only prompt_file", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		_, err := backwards.NewPipelineFromContent(`
+jobs:
+  - name: review
+    plan:
+      - agent: my-agent
+        prompt_file: repo/prompts/review.md
+        model: openrouter/google/gemini-3.1-flash-lite-preview
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: alpine }
+          inputs:
+            - name: repo
+`)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("pr-review.yml example validates successfully", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		contents, err := os.ReadFile("../examples/agent/pr-review.yml")
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		err = backwards.ValidatePipeline(contents)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("extracted agent config files are valid YAML", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		agentFiles := []string{
+			"../examples/agent/agents/code-quality.yml",
+			"../examples/agent/agents/security.yml",
+			"../examples/agent/agents/maintainability.yml",
+			"../examples/agent/agents/final-reviewer.yml",
+		}
+
+		for _, f := range agentFiles {
+			contents, err := os.ReadFile(f)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			var config map[string]any
+			err = yaml.Unmarshal(contents, &config)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			// Each agent config must have a prompt and model
+			assert.Expect(config).To(HaveKey("prompt"), "file %s missing prompt", f)
+			assert.Expect(config).To(HaveKey("model"), "file %s missing model", f)
+		}
+	})
+
+	t.Run("extracted task config file is valid YAML", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		taskFiles := []string{
+			"../examples/agent/tasks/post-comment.yml",
+			"../examples/agent/tasks/generate-diff.yml",
+		}
+
+		for _, f := range taskFiles {
+			contents, err := os.ReadFile(f)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			var config backwards.TaskConfig
+			err = yaml.Unmarshal(contents, &config)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			assert.Expect(config.Run).NotTo(BeNil(), "file %s missing run", f)
+			assert.Expect(config.Run.Path).NotTo(BeEmpty(), "file %s missing run.path", f)
+		}
+	})
 }

@@ -498,12 +498,12 @@ declare global {
     jobName: string;
     buildID: string;
     status:
-      | "pending"
-      | "running"
-      | "success"
-      | "failure"
-      | "error"
-      | "limit_exceeded";
+    | "pending"
+    | "running"
+    | "success"
+    | "failure"
+    | "error"
+    | "limit_exceeded";
     startTime: string;
     endTime: string;
     duration: string;
@@ -750,6 +750,8 @@ declare global {
     prompt: string; // Instruction sent to the model
     model: string; // "provider/model-name", e.g. "openrouter/google/gemini-3"
     config?: TaskConfig; // image_resource, inputs, outputs
+    file?: string; // Load full agent config from a YAML file on a volume
+    prompt_file?: string; // Load prompt text from a file on a volume
     llm?: AgentLLMConfig;
     thinking?: AgentThinkingConfig;
     safety?: { [key: string]: string };
@@ -860,4 +862,4 @@ declare global {
   }
 }
 
-export {};
+export { };

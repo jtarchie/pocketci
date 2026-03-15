@@ -2,6 +2,7 @@
 
 import { TaskFailure } from "../task_runner.ts";
 import { formatElapsed } from "../utils.ts";
+import { loadFileFromVolume } from "./file_loader.ts";
 import type { StepContext } from "./step_context.ts";
 import type { StepHandler } from "./step_handler.ts";
 
@@ -15,22 +16,51 @@ export class AgentStepHandler implements StepHandler {
     step: AgentStep,
     pathContext: string,
   ): Promise<void> {
+    let agentStep = step;
+
+    // Load full agent config from a YAML file on a volume.
+    // Inline fields on the step override file-loaded values (no deep merge).
+    if ("file" in step && step.file) {
+      const contents = await loadFileFromVolume(ctx, step.file, pathContext);
+      const fileConfig = YAML.parse(contents) as Partial<AgentStep>;
+      agentStep = {
+        ...fileConfig,
+        ...step,
+        agent: step.agent,
+      } as AgentStep;
+      // Use file-loaded values as defaults; inline values take precedence.
+      if (!step.prompt && fileConfig.prompt) agentStep.prompt = fileConfig.prompt;
+      if (!step.model && fileConfig.model) agentStep.model = fileConfig.model;
+      if (!step.config && fileConfig.config) agentStep.config = fileConfig.config;
+      if (!step.context && fileConfig.context) {
+        agentStep.context = fileConfig.context;
+      }
+    } else if ("prompt_file" in step && step.prompt_file) {
+      // Load just the prompt text from a plain text file on a volume.
+      const contents = await loadFileFromVolume(
+        ctx,
+        step.prompt_file,
+        pathContext,
+      );
+      agentStep = { ...step, prompt: contents };
+    }
+
     const storageKey = `${ctx.paths.getBaseStorageKey()}/${pathContext}`;
     const auditBaseKey =
       `/agent-audit/${ctx.buildID}/jobs/${ctx.jobName}/${pathContext}/events`;
 
-    const image = step.config?.image_resource?.source?.repository ?? "busybox";
+    const image = agentStep.config?.image_resource?.source?.repository ?? "busybox";
 
     // Collect input and output mounts from earlier get/put steps and volumes.
     const mounts: KnownMounts = {};
-    for (const input of (step.config?.inputs ?? [])) {
+    for (const input of (agentStep.config?.inputs ?? [])) {
       const knownMount = ctx.taskRunner.getKnownMounts()[input.name];
       if (knownMount) {
         mounts[input.name] = knownMount;
       }
     }
 
-    const outputs = step.config?.outputs ?? [];
+    const outputs = agentStep.config?.outputs ?? [];
     for (const output of outputs) {
       ctx.taskRunner.getKnownMounts()[output.name] ||= await runtime
         .createVolume({ name: output.name });
@@ -73,18 +103,18 @@ export class AgentStepHandler implements StepHandler {
 
     try {
       const result = await runtime.agent({
-        name: step.agent,
-        prompt: step.prompt,
-        model: step.model,
+        name: agentStep.agent,
+        prompt: agentStep.prompt,
+        model: agentStep.model,
         image,
         mounts,
         outputVolumePath,
-        llm: step.llm,
-        thinking: step.thinking,
-        safety: step.safety,
-        context_guard: step.context_guard,
-        limits: step.limits,
-        context: step.context,
+        llm: agentStep.llm,
+        thinking: agentStep.thinking,
+        safety: agentStep.safety,
+        context_guard: agentStep.context_guard,
+        limits: agentStep.limits,
+        context: agentStep.context,
         onUsage: (usage: AgentUsage) => {
           latestUsage = usage;
           persistRunningState();
@@ -129,7 +159,7 @@ export class AgentStepHandler implements StepHandler {
         usage: latestUsage,
         audit_log: auditLog,
       });
-      throw new TaskFailure(`Agent ${step.agent} failed: ${error}`);
+      throw new TaskFailure(`Agent ${agentStep.agent} failed: ${error}`);
     }
   }
 }

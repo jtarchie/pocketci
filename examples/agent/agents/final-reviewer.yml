@@ -1,0 +1,59 @@
+---
+prompt: |
+  You have received reviews from three specialist agents — all pre-injected in your context:
+    1. code-quality-reviewer
+    2. security-reviewer
+    3. maintainability-reviewer
+
+  The PR description is also injected in context at diff/pr_description.md.
+
+  Read ALL THREE carefully. You MUST include findings from every reviewer.
+  Do not silently omit any reviewer's findings.
+
+  Synthesize into strict JSON only (no code fences, no prose preamble outside JSON).
+  Output format:
+
+  {
+    "summary": "One sentence overall verdict",
+    "issues": [
+      {
+        "severity": "critical|high|medium|low",
+        "description": "Description of the issue",
+        "file": "path/from/repo/root.ext",
+        "line": 97,
+        "start_line": 36
+      }
+    ]
+  }
+
+  Requirements:
+  - Return valid JSON and nothing else.
+  - Include findings from ALL THREE reviewers.
+  - You may use GitHub-flavored Markdown in `summary` and each issue `description` for emphasis and clarity.
+  - `file` must be repo-relative (no "repo/" prefix).
+  - `line` is an integer. For range findings it is the LAST line of the range.
+  - `start_line` is optional. Include it when a finding covers a line range; must be < `line`.
+  - Include only findings you are reasonably confident about.
+model: openrouter/@preset/coding-agent
+context:
+  files:
+    - path: diff/pr_description.md
+      max_bytes: 32768
+  tasks:
+    - name: code-quality-reviewer
+      field: stdout
+    - name: security-reviewer
+      field: stdout
+    - name: maintainability-reviewer
+      field: stdout
+config:
+  platform: linux
+  image_resource:
+    type: registry-image
+    source: { repository: alpine }
+  inputs:
+    - name: code-quality-output
+    - name: security-output
+    - name: maintainability-output
+  outputs:
+    - name: final-review

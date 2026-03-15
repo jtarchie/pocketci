@@ -184,6 +184,8 @@ type Step struct {
 	Prompt string `yaml:"prompt,omitempty"`
 	Model  string `yaml:"model,omitempty"`
 
+	PromptFile string `yaml:"prompt_file,omitempty"`
+
 	AgentLLM          *AgentLLMConfig          `yaml:"llm,omitempty"`
 	AgentThinking     *AgentThinkingConfig     `yaml:"thinking,omitempty"`
 	AgentSafety       AgentSafetyConfig        `yaml:"safety,omitempty"`

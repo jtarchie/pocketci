@@ -1,0 +1,34 @@
+---
+platform: linux
+image_resource:
+  type: registry-image
+  source: { repository: alpine/git }
+inputs:
+  - name: repo
+outputs:
+  - name: diff
+run:
+  path: sh
+  args:
+    - -c
+    - |
+        cd repo
+
+        # Fetch base branch from the upstream repository, not the PR head fork.
+        BASE_REPO="https://github.com/$GH_REPO.git"
+        git remote add upstream "$BASE_REPO" || git remote set-url upstream "$BASE_REPO"
+        git fetch upstream "$PR_BASE_REF"
+
+        git diff "upstream/$PR_BASE_REF"...HEAD > ../diff/pr.diff
+
+        if [ -n "$PR_DESCRIPTION" ]; then
+          printf '%s\n' "$PR_DESCRIPTION" > ../diff/pr_description.md
+        else
+          printf '%s\n' "No PR description provided." > ../diff/pr_description.md
+        fi
+
+        DIFF_BYTES="$(wc -c < ../diff/pr.diff)"
+        if [ "$DIFF_BYTES" -eq 0 ]; then
+          echo "error: generated diff is empty for PR #$PR_NUMBER ($GH_REPO $PR_HEAD_REF -> $PR_BASE_REF)" >&2
+          exit 1
+        fi

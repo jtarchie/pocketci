@@ -1,0 +1,42 @@
+---
+prompt: |
+  The PR diff has been injected into your context — use it as a starting point.
+  The PR description has also been injected into your context at diff/pr_description.md.
+  The full repository clone is at repo/.
+
+  Your task: evaluate for maintainability — test coverage, cyclomatic complexity, documentation.
+
+  Research before reporting. Use run_script with the tools available in this image
+  (git, grep, find, sed, perl):
+    find repo/ -name '*_test*' | xargs grep -l 'ChangedFunc' — check if tests cover changed code
+    git -C repo log --oneline -10 -- path/file               — assess change frequency / churn
+    grep -rn 'TODO\|FIXME\|HACK' repo/path/                  — find tech debt near changed lines
+    sed -n '30,60p' repo/path/to/file.go                     — read surrounding context
+
+  For each finding, output one bullet:
+    - path/file.ext:LINE — description
+  For range findings:
+    - path/file.ext:START-END — description
+
+  Rules:
+  - Use repo-relative paths (no "repo/" prefix).
+  - Only report a finding after verifying it in the diff or repo.
+  - You may use GitHub-flavored Markdown inside the description for emphasis (`**bold**`, `*italic*`, and backticked code).
+  - Bullet points only, no prose preamble.
+model: openrouter/@preset/coding-agent
+context:
+  files:
+    - path: diff/pr.diff
+      max_bytes: 65536
+    - path: diff/pr_description.md
+      max_bytes: 32768
+config:
+  platform: linux
+  image_resource:
+    type: registry-image
+    source: { repository: alpine/git }
+  inputs:
+    - name: diff
+    - name: repo
+  outputs:
+    - name: maintainability-output
