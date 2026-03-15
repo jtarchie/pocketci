@@ -112,7 +112,11 @@ export class JobRunner {
     } catch (error) {
       console.error(error);
       failure = error;
-      storage.set(storageKey, { status: failureStatus(failure), dependsOn });
+      storage.set(storageKey, {
+        status: failureStatus(failure),
+        dependsOn,
+        errorMessage: String(error),
+      });
     }
 
     try {

@@ -129,5 +129,15 @@ func (d *CachingDriver) CopyFromVolume(ctx context.Context, volumeName string) (
 	return accessor.CopyFromVolume(ctx, volumeName)
 }
 
+// ReadFilesFromVolume implements VolumeDataAccessor by delegating to the inner driver.
+func (d *CachingDriver) ReadFilesFromVolume(ctx context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error) {
+	accessor, ok := d.inner.(VolumeDataAccessor)
+	if !ok {
+		return nil, fmt.Errorf("inner driver %q does not support volume data access", d.inner.Name())
+	}
+
+	return accessor.ReadFilesFromVolume(ctx, volumeName, filePaths...)
+}
+
 var _ orchestra.Driver = (*CachingDriver)(nil)
 var _ VolumeDataAccessor = (*CachingDriver)(nil)

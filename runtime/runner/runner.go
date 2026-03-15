@@ -17,6 +17,9 @@ type Runner interface {
 	// RunAgent executes an LLM agent step. The config is passed as raw JSON
 	// to avoid importing the agent package. Returns the result as raw JSON.
 	RunAgent(configJSON json.RawMessage) (json.RawMessage, error)
+	// ReadFilesFromVolume reads specific files from a volume and returns
+	// their contents as a map of relative path to file content.
+	ReadFilesFromVolume(volumeName string, filePaths ...string) (map[string]string, error)
 }
 
 // Ensure both runners implement the interface.

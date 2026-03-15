@@ -371,9 +371,9 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 	}
 
 	// Check if any jobs failed by querying job statuses
-	finalStatus := s.determineRunStatus(dbCtx, run.ID, logger)
+	finalStatus, errMsg := s.determineRunStatus(dbCtx, run.ID, logger)
 
-	err = s.store.UpdateRunStatus(dbCtx, run.ID, finalStatus, "")
+	err = s.store.UpdateRunStatus(dbCtx, run.ID, finalStatus, errMsg)
 	if err != nil {
 		logger.Error("run.update.failed.to_final", "error", err)
 		return
@@ -538,9 +538,11 @@ func (s *ExecutionService) RunByNameSync(
 		// TODO: we never display this error message anywhere in the UI - consider surfacing it in the run details page or similar
 		errMsg = execErr.Error()
 	} else {
-		finalStatus = s.determineRunStatus(ctx, run.ID, s.logger)
+		var jobErrMsg string
+		finalStatus, jobErrMsg = s.determineRunStatus(ctx, run.ID, s.logger)
 		if finalStatus == storage.RunStatusFailed {
 			exitCode = 1
+			errMsg = jobErrMsg
 		}
 	}
 
@@ -564,17 +566,18 @@ func (s *ExecutionService) RunByNameSync(
 }
 
 // determineRunStatus checks job statuses to determine the final run status.
-func (s *ExecutionService) determineRunStatus(ctx context.Context, runID string, logger *slog.Logger) storage.RunStatus {
+// It also returns an error message from the first failed job, if any.
+func (s *ExecutionService) determineRunStatus(ctx context.Context, runID string, logger *slog.Logger) (storage.RunStatus, string) {
 	// Query all job statuses for this run (backwards-compat Concourse YAML pipelines).
 	// Note: TypeScript pipeline task statuses under /pipeline/{runID}/tasks/ are NOT
 	// checked here because individual task failures don't necessarily mean the pipeline
 	// failed — the pipeline may handle errors (e.g., try/catch). Pipeline-level failure
 	// is already handled by the executePipeline error return path.
 	prefix := "/pipeline/" + runID + "/jobs"
-	results, err := s.store.GetAll(ctx, prefix, []string{"status"})
+	results, err := s.store.GetAll(ctx, prefix, []string{"status", "errorMessage"})
 	if err != nil {
 		logger.Warn("failed to query job statuses, assuming success", "error", err)
-		return storage.RunStatusSuccess
+		return storage.RunStatusSuccess, ""
 	}
 
 	hasStatuses := false
@@ -587,7 +590,8 @@ func (s *ExecutionService) determineRunStatus(ctx context.Context, runID string,
 
 			switch status {
 			case "failure", "error", "abort":
-				return storage.RunStatusFailed
+				errMsg, _ := result.Payload["errorMessage"].(string)
+				return storage.RunStatusFailed, errMsg
 			}
 
 			if status != string(storage.RunStatusSkipped) {
@@ -597,10 +601,10 @@ func (s *ExecutionService) determineRunStatus(ctx context.Context, runID string,
 	}
 
 	if hasStatuses && allSkipped {
-		return storage.RunStatusSkipped
+		return storage.RunStatusSkipped, ""
 	}
 
-	return storage.RunStatusSuccess
+	return storage.RunStatusSuccess, ""
 }
 
 // resolveExecutableContent returns JS/TS content ready for the runtime.

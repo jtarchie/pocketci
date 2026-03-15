@@ -1,7 +1,9 @@
 package orchestra_test
 
 import (
+	"archive/tar"
 	"context"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/orchestra/cache"
 	_ "github.com/jtarchie/pocketci/orchestra/docker"
 	_ "github.com/jtarchie/pocketci/orchestra/fly"
 	"github.com/jtarchie/pocketci/orchestra/k8s"
@@ -269,6 +272,68 @@ func TestDrivers(t *testing.T) {
 				}, logsTimeout, logsInterval).Should(BeTrue())
 				err = client.Close()
 				assert.Expect(err).NotTo(HaveOccurred())
+			})
+
+			t.Run("read files from volume", func(t *testing.T) {
+				t.Parallel()
+
+				assert := NewGomegaWithT(t)
+
+				client, err := init("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				defer func() { _ = client.Close() }()
+
+				accessor, ok := client.(cache.VolumeDataAccessor)
+				if !ok {
+					t.Skip("driver does not implement VolumeDataAccessor")
+				}
+
+				taskID := gonanoid.Must()
+
+				// Write two files into a volume via a container
+				container, err := client.RunContainer(
+					context.Background(),
+					orchestra.Task{
+						ID:      taskID,
+						Image:   "busybox",
+						Command: []string{"sh", "-c", "echo file-a-content > ./data/a.txt && mkdir -p ./data/sub && echo file-b-content > ./data/sub/b.txt"},
+						Mounts: orchestra.Mounts{
+							{Name: "data", Path: "/data"},
+						},
+					},
+				)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				assert.Eventually(func() bool {
+					status, err := container.Status(context.Background())
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					return status.IsDone() && status.ExitCode() == 0
+				}, statusTimeout, statusInterval).Should(BeTrue())
+
+				// Read a single file
+				reader, err := accessor.ReadFilesFromVolume(context.Background(), "data", "a.txt")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				files := extractTarFiles(t, reader)
+				assert.Expect(files).To(HaveKey("a.txt"))
+				assert.Expect(files["a.txt"]).To(ContainSubstring("file-a-content"))
+
+				// Read a subdirectory
+				reader, err = accessor.ReadFilesFromVolume(context.Background(), "data", "sub")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				files = extractTarFiles(t, reader)
+				// The tar should contain the file inside sub/
+				found := false
+				for path, content := range files {
+					if strings.HasSuffix(path, "b.txt") {
+						assert.Expect(content).To(ContainSubstring("file-b-content"))
+						found = true
+					}
+				}
+				assert.Expect(found).To(BeTrue(), "expected sub/b.txt in tar")
 			})
 
 			t.Run("environment variables", func(t *testing.T) {
@@ -627,4 +692,39 @@ func TestGetFromDSN(t *testing.T) {
 		assert.Expect(config.Params).To(HaveKey("namespace"))
 		assert.Expect(init).NotTo(BeNil())
 	})
+}
+
+// extractTarFiles reads a tar stream and returns a map of file path to contents.
+func extractTarFiles(t *testing.T, rc io.ReadCloser) map[string]string {
+	t.Helper()
+
+	defer func() { _ = rc.Close() }()
+
+	files := make(map[string]string)
+	tr := tar.NewReader(rc)
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			t.Fatalf("failed to read tar entry: %v", err)
+		}
+
+		if header.Typeflag != tar.TypeReg {
+			continue
+		}
+
+		var buf strings.Builder
+
+		if _, err := io.Copy(&buf, tr); err != nil {
+			t.Fatalf("failed to read file %q from tar: %v", header.Name, err)
+		}
+
+		files[header.Name] = buf.String()
+	}
+
+	return files
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/pkg/sftp"
@@ -422,6 +423,81 @@ func (r *cacheReader) Close() error {
 	r.driver.logger.Info("fly.cache.copyfromv.done")
 
 	return nil
+}
+
+// ReadFilesFromVolume implements cache.VolumeDataAccessor.
+// Uses the same SSH tunnel approach as CopyFromVolume but tars only specific paths.
+func (f *Fly) ReadFilesFromVolume(ctx context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error) {
+	vol := f.findVolumeByName(volumeName)
+	if vol == nil {
+		return nil, fmt.Errorf("volume %q not found", volumeName)
+	}
+
+	machine, err := f.launchHelperMachine(ctx, vol)
+	if err != nil {
+		return nil, fmt.Errorf("failed to launch helper for ReadFilesFromVolume: %w", err)
+	}
+
+	tunnel, err := f.createTunnel(ctx)
+	if err != nil {
+		f.destroyHelperMachine(ctx, machine.ID)
+		return nil, fmt.Errorf("failed to create WireGuard tunnel: %w", err)
+	}
+
+	sshClient, err := f.dialSSH(ctx, tunnel, machine.PrivateIP)
+	if err != nil {
+		tunnel.close(ctx, f.apiClient)
+		f.destroyHelperMachine(ctx, machine.ID)
+		return nil, fmt.Errorf("failed to SSH to helper machine: %w", err)
+	}
+
+	session, err := sshClient.NewSession()
+	if err != nil {
+		_ = sshClient.Close()
+		tunnel.close(ctx, f.apiClient)
+		f.destroyHelperMachine(ctx, machine.ID)
+		return nil, fmt.Errorf("failed to create SSH session: %w", err)
+	}
+
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		_ = session.Close()
+		_ = sshClient.Close()
+		tunnel.close(ctx, f.apiClient)
+		f.destroyHelperMachine(ctx, machine.ID)
+		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	// Build: tar cf - -C /volume/<subdir> path1 path2 ...
+	// The shared physical volume is mounted at /volume; each logical volume
+	// is a subdirectory named after the volume's userFacingName.
+	// Use shell quoting to handle paths safely.
+	quotedPaths := make([]string, len(filePaths))
+	for i, fp := range filePaths {
+		quotedPaths[i] = "'" + strings.ReplaceAll(fp, "'", "'\\''") + "'"
+	}
+
+	baseDir := path.Join("/volume", vol.userFacingName)
+	cmd := "tar cf - -C " + baseDir + " " + strings.Join(quotedPaths, " ")
+
+	f.logger.Debug("fly.cache.readfiles.start", "volume", volumeName, "paths", filePaths)
+
+	if err := session.Start(cmd); err != nil {
+		_ = session.Close()
+		_ = sshClient.Close()
+		tunnel.close(ctx, f.apiClient)
+		f.destroyHelperMachine(ctx, machine.ID)
+		return nil, fmt.Errorf("failed to start tar: %w", err)
+	}
+
+	return &cacheReader{
+		ReadCloser: io.NopCloser(stdout),
+		session:    session,
+		sshClient:  sshClient,
+		tunnel:     tunnel,
+		machineID:  machine.ID,
+		driver:     f,
+	}, nil
 }
 
 var _ cache.VolumeDataAccessor = (*Fly)(nil)

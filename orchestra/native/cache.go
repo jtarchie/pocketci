@@ -169,4 +169,153 @@ func (n *Native) CopyFromVolume(_ context.Context, volumeName string) (io.ReadCl
 	return pr, nil
 }
 
+// ReadFilesFromVolume implements cache.VolumeDataAccessor.
+// Creates a tar archive containing only the requested paths from the volume.
+func (n *Native) ReadFilesFromVolume(_ context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error) {
+	volumePath := filepath.Join(n.path, volumeName)
+
+	if _, err := os.Stat(volumePath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("volume directory does not exist: %s", volumePath)
+	}
+
+	pr, pw := io.Pipe()
+
+	go func() {
+		tw := tar.NewWriter(pw)
+
+		var walkErr error
+
+		for _, fp := range filePaths {
+			target := filepath.Join(volumePath, fp)
+
+			// Security: prevent path traversal
+			if !strings.HasPrefix(target, volumePath) {
+				walkErr = fmt.Errorf("invalid path: %s", fp)
+
+				break
+			}
+
+			info, err := os.Lstat(target)
+			if err != nil {
+				walkErr = fmt.Errorf("failed to stat %s: %w", fp, err)
+
+				break
+			}
+
+			if info.IsDir() {
+				walkErr = filepath.Walk(target, func(path string, fi os.FileInfo, err error) error {
+					if err != nil {
+						return err
+					}
+
+					relPath, err := filepath.Rel(volumePath, path)
+					if err != nil {
+						return fmt.Errorf("failed to get relative path: %w", err)
+					}
+
+					header, err := tar.FileInfoHeader(fi, "")
+					if err != nil {
+						return fmt.Errorf("failed to create tar header: %w", err)
+					}
+
+					header.Name = relPath
+
+					if fi.Mode()&os.ModeSymlink != 0 {
+						linkTarget, err := os.Readlink(path)
+						if err != nil {
+							return fmt.Errorf("failed to read symlink: %w", err)
+						}
+
+						header.Linkname = linkTarget
+					}
+
+					if err := tw.WriteHeader(header); err != nil {
+						return fmt.Errorf("failed to write tar header: %w", err)
+					}
+
+					if fi.Mode().IsRegular() {
+						file, err := os.Open(path)
+						if err != nil {
+							return fmt.Errorf("failed to open file: %w", err)
+						}
+
+						defer func() { _ = file.Close() }()
+
+						if _, err := io.Copy(tw, file); err != nil {
+							return fmt.Errorf("failed to write file to tar: %w", err)
+						}
+					}
+
+					return nil
+				})
+
+				if walkErr != nil {
+					break
+				}
+			} else {
+				header, err := tar.FileInfoHeader(info, "")
+				if err != nil {
+					walkErr = fmt.Errorf("failed to create tar header for %s: %w", fp, err)
+
+					break
+				}
+
+				header.Name = fp
+
+				if info.Mode()&os.ModeSymlink != 0 {
+					linkTarget, err := os.Readlink(target)
+					if err != nil {
+						walkErr = fmt.Errorf("failed to read symlink: %w", err)
+
+						break
+					}
+
+					header.Linkname = linkTarget
+				}
+
+				if err := tw.WriteHeader(header); err != nil {
+					walkErr = fmt.Errorf("failed to write tar header: %w", err)
+
+					break
+				}
+
+				if info.Mode().IsRegular() {
+					file, err := os.Open(target)
+					if err != nil {
+						walkErr = fmt.Errorf("failed to open file %s: %w", fp, err)
+
+						break
+					}
+
+					if _, err := io.Copy(tw, file); err != nil {
+						_ = file.Close()
+						walkErr = fmt.Errorf("failed to write file to tar: %w", err)
+
+						break
+					}
+
+					_ = file.Close()
+				}
+			}
+		}
+
+		if walkErr != nil {
+			_ = tw.Close()
+			pw.CloseWithError(walkErr)
+
+			return
+		}
+
+		if err := tw.Close(); err != nil {
+			pw.CloseWithError(err)
+
+			return
+		}
+
+		_ = pw.Close()
+	}()
+
+	return pr, nil
+}
+
 var _ cache.VolumeDataAccessor = (*Native)(nil)

@@ -522,6 +522,62 @@ func (r *Runtime) Agent(call goja.FunctionCall) goja.Value {
 	return r.jsVM.ToValue(promise)
 }
 
+// ReadFilesFromVolume reads specific files from a named volume.
+// Returns a Promise that resolves to a map of path → content strings.
+func (r *Runtime) ReadFilesFromVolume(call goja.FunctionCall) goja.Value {
+	promise, resolve, reject := r.jsVM.NewPromise()
+
+	if len(call.Arguments) < 2 {
+		_ = reject(r.jsVM.NewGoError(fmt.Errorf("readFilesFromVolume requires volumeName and at least one filePath")))
+		return r.jsVM.ToValue(promise)
+	}
+
+	volumeName := call.Arguments[0].String()
+
+	filePaths := make([]string, 0, len(call.Arguments)-1)
+	for i := 1; i < len(call.Arguments); i++ {
+		filePaths = append(filePaths, call.Arguments[i].String())
+	}
+
+	r.promises.Add(1)
+
+	go func() {
+		defer func() {
+			if p := recover(); p != nil {
+				slog.Error("runtime.readFilesFromVolume.panic", "panic", p, "stack", string(debug.Stack()))
+				r.tasks <- func() error {
+					defer r.promises.Done()
+					return reject(r.jsVM.NewGoError(fmt.Errorf("panic in readFilesFromVolume: %v", p)))
+				}
+			}
+		}()
+
+		result, err := r.runner.ReadFilesFromVolume(volumeName, filePaths...)
+
+		r.tasks <- func() error {
+			defer r.promises.Done()
+
+			if err != nil {
+				err = reject(r.jsVM.NewGoError(err))
+				if err != nil {
+					return fmt.Errorf("could not reject readFilesFromVolume: %w", err)
+				}
+
+				return nil
+			}
+
+			err = resolve(result)
+			if err != nil {
+				return fmt.Errorf("could not resolve readFilesFromVolume: %w", err)
+			}
+
+			return nil
+		}
+	}()
+
+	return r.jsVM.ToValue(promise)
+}
+
 func (r *Runtime) Wait() error {
 	go func() {
 		r.promises.Wait()

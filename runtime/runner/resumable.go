@@ -444,6 +444,11 @@ func (r *ResumableRunner) CleanupVolumes() error {
 	return r.runner.CleanupVolumes()
 }
 
+// ReadFilesFromVolume delegates to the underlying pipeline runner.
+func (r *ResumableRunner) ReadFilesFromVolume(volumeName string, filePaths ...string) (map[string]string, error) {
+	return r.runner.ReadFilesFromVolume(volumeName, filePaths...)
+}
+
 // SetPreseededVolumes configures the underlying pipeline runner to reuse pre-created volumes.
 func (r *ResumableRunner) SetPreseededVolumes(vols map[string]orchestra.Volume) {
 	r.runner.SetPreseededVolumes(vols)

@@ -9,6 +9,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/jtarchie/pocketci/orchestra/cache"
 )
 
@@ -139,6 +140,81 @@ func (r *dockerCopyReader) Close() error {
 	_ = r.client.ContainerRemove(r.ctx, r.containerID, container.RemoveOptions{Force: true})
 
 	return err
+}
+
+// ReadFilesFromVolume implements cache.VolumeDataAccessor.
+// Creates a temporary container and execs tar to stream specific files from the volume.
+func (d *Docker) ReadFilesFromVolume(ctx context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error) {
+	fullVolumeName := fmt.Sprintf("%s-%s", d.namespace, volumeName)
+
+	if err := d.pullImage(ctx, cacheHelperImage); err != nil {
+		d.logger.Debug("cache.helper.pull.readfiles.failed", "error", err)
+	}
+
+	resp, err := d.client.ContainerCreate(ctx,
+		&container.Config{
+			Image: cacheHelperImage,
+			Cmd:   []string{"sleep", "infinity"},
+		},
+		&container.HostConfig{
+			Mounts: []mount.Mount{
+				{
+					Type:   mount.TypeVolume,
+					Source: fullVolumeName,
+					Target: "/volume",
+				},
+			},
+		},
+		nil, nil, "",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cache helper container: %w", err)
+	}
+
+	if err := d.client.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+		_ = d.client.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+
+		return nil, fmt.Errorf("failed to start cache helper container: %w", err)
+	}
+
+	// Build tar command: tar cf - -C /volume path1 path2 ...
+	tarCmd := append([]string{"tar", "cf", "-", "-C", "/volume"}, filePaths...)
+
+	execCfg, err := d.client.ContainerExecCreate(ctx, resp.ID, container.ExecOptions{
+		Cmd:          tarCmd,
+		AttachStdout: true,
+		AttachStderr: true,
+	})
+	if err != nil {
+		_ = d.client.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+
+		return nil, fmt.Errorf("failed to create exec: %w", err)
+	}
+
+	attach, err := d.client.ContainerExecAttach(ctx, execCfg.ID, container.ExecAttachOptions{})
+	if err != nil {
+		_ = d.client.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+
+		return nil, fmt.Errorf("failed to attach exec: %w", err)
+	}
+
+	// Docker multiplexes stdout/stderr over one connection. Use stdcopy to
+	// demux. Pipe the stdout portion back to the caller.
+	pr, pw := io.Pipe()
+
+	go func() {
+		_, err := stdcopy.StdCopy(pw, io.Discard, attach.Reader)
+		if err != nil {
+			pw.CloseWithError(err)
+		} else {
+			_ = pw.Close()
+		}
+
+		attach.Close()
+		_ = d.client.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
+	}()
+
+	return pr, nil
 }
 
 var _ cache.VolumeDataAccessor = (*Docker)(nil)

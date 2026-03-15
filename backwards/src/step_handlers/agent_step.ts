@@ -29,9 +29,13 @@ export class AgentStepHandler implements StepHandler {
         agent: step.agent,
       } as AgentStep;
       // Use file-loaded values as defaults; inline values take precedence.
-      if (!step.prompt && fileConfig.prompt) agentStep.prompt = fileConfig.prompt;
+      if (!step.prompt && fileConfig.prompt) {
+        agentStep.prompt = fileConfig.prompt;
+      }
       if (!step.model && fileConfig.model) agentStep.model = fileConfig.model;
-      if (!step.config && fileConfig.config) agentStep.config = fileConfig.config;
+      if (!step.config && fileConfig.config) {
+        agentStep.config = fileConfig.config;
+      }
       if (!step.context && fileConfig.context) {
         agentStep.context = fileConfig.context;
       }
@@ -49,7 +53,8 @@ export class AgentStepHandler implements StepHandler {
     const auditBaseKey =
       `/agent-audit/${ctx.buildID}/jobs/${ctx.jobName}/${pathContext}/events`;
 
-    const image = agentStep.config?.image_resource?.source?.repository ?? "busybox";
+    const image = agentStep.config?.image_resource?.source?.repository ??
+      "busybox";
 
     // Collect input and output mounts from earlier get/put steps and volumes.
     const mounts: KnownMounts = {};

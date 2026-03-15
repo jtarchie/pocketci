@@ -44,6 +44,11 @@ type VolumeDataAccessor interface {
 	// CopyFromVolume reads tar data from a volume.
 	// Returns a tar archive of the volume contents.
 	CopyFromVolume(ctx context.Context, volumeName string) (io.ReadCloser, error)
+
+	// ReadFilesFromVolume reads specific files/directories from a volume.
+	// Returns a tar archive containing only the requested paths.
+	// Directories are included recursively. Paths are relative to the volume root.
+	ReadFilesFromVolume(ctx context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error)
 }
 
 // CacheStoreFactory creates a CacheStore from a URL.

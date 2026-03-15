@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"archive/tar"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/orchestra/cache"
 	"github.com/jtarchie/pocketci/runtime/support"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
@@ -181,6 +183,51 @@ func (c *PipelineRunner) CreateVolume(input VolumeInput) (*VolumeResult, error) 
 		Name:   volume.Name(),
 		Path:   volume.Path(),
 	}, nil
+}
+
+// ReadFilesFromVolume reads specific files from a volume via the driver's
+// VolumeDataAccessor interface, untars the result, and returns file contents
+// as a map of relative path to string content.
+func (c *PipelineRunner) ReadFilesFromVolume(volumeName string, filePaths ...string) (map[string]string, error) {
+	accessor, ok := c.client.(cache.VolumeDataAccessor)
+	if !ok {
+		return nil, fmt.Errorf("driver %q does not support reading files from volumes", c.client.Name())
+	}
+
+	reader, err := accessor.ReadFilesFromVolume(c.ctx, volumeName, filePaths...)
+	if err != nil {
+		return nil, fmt.Errorf("could not read files from volume %q: %w", volumeName, err)
+	}
+
+	defer func() { _ = reader.Close() }()
+
+	result := make(map[string]string)
+	tr := tar.NewReader(reader)
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to read tar entry: %w", err)
+		}
+
+		if header.Typeflag != tar.TypeReg {
+			continue
+		}
+
+		var buf strings.Builder
+
+		if _, err := io.Copy(&buf, tr); err != nil {
+			return nil, fmt.Errorf("failed to read file %q from tar: %w", header.Name, err)
+		}
+
+		result[header.Name] = buf.String()
+	}
+
+	return result, nil
 }
 
 type RunResult struct {

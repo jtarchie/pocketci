@@ -412,6 +412,18 @@ declare global {
      * ```
      */
     function agent(config: AgentRunConfig): Promise<AgentResult>;
+
+    /**
+     * Reads specific files from a named volume without spawning a container.
+     * Returns a map of relative path to file content string.
+     *
+     * @param volumeName - The name of the volume to read from.
+     * @param filePaths - One or more paths relative to the volume root.
+     */
+    function readFilesFromVolume(
+      volumeName: string,
+      ...filePaths: string[]
+    ): Promise<Record<string, string>>;
   }
 
   /** Configuration for creating a sandbox. */
@@ -498,12 +510,12 @@ declare global {
     jobName: string;
     buildID: string;
     status:
-    | "pending"
-    | "running"
-    | "success"
-    | "failure"
-    | "error"
-    | "limit_exceeded";
+      | "pending"
+      | "running"
+      | "success"
+      | "failure"
+      | "error"
+      | "limit_exceeded";
     startTime: string;
     endTime: string;
     duration: string;
@@ -862,4 +874,4 @@ declare global {
   }
 }
 
-export { };
+export {};

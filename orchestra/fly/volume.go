@@ -3,6 +3,7 @@ package fly
 import (
 	"context"
 	"fmt"
+	"time"
 
 	fly "github.com/superfly/fly-go"
 
@@ -27,6 +28,31 @@ func (v *Volume) Path() string {
 
 func (v *Volume) Cleanup(ctx context.Context) error {
 	v.driver.logger.Debug("fly.volume.cleanup", "volume", v.id, "name", v.name)
+
+	// Destroy any helper machine attached to this volume before deleting it,
+	// otherwise the Fly API rejects the delete with "volume is currently bound to machine".
+	v.driver.mu.Lock()
+	helperID := v.driver.helperMachines[v.id]
+	v.driver.mu.Unlock()
+
+	if helperID != "" {
+		v.driver.logger.Debug("fly.volume.cleanup.helper", "volume", v.id, "machine", helperID)
+
+		_ = v.driver.client.Kill(ctx, v.driver.appName, helperID)
+
+		machine := &fly.Machine{ID: helperID}
+		_ = v.driver.client.Wait(ctx, v.driver.appName, machine, "stopped", 30*time.Second)
+
+		_ = v.driver.client.Destroy(ctx, v.driver.appName, fly.RemoveMachineInput{
+			ID:   helperID,
+			Kill: true,
+		}, "")
+
+		v.driver.mu.Lock()
+		delete(v.driver.helperMachines, v.id)
+		delete(v.driver.volumeAttachments, v.id)
+		v.driver.mu.Unlock()
+	}
 
 	_, err := v.driver.client.DeleteVolume(ctx, v.driver.appName, v.id)
 	if err != nil {

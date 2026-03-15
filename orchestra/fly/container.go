@@ -245,7 +245,12 @@ func (f *Fly) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 	// Build machine mounts — all logical mounts share a single physical volume
 	// mounted at /workspace, with each mount as a subdirectory.
 	var mounts []fly.MachineMount
-	var mountDirs []string // subdirectory names to create under /workspace
+	type mountMapping struct {
+		volumeName string // subdirectory on the shared volume (volume's userFacingName)
+		mountPath  string // path the task script sees (mount key)
+	}
+
+	var mountMappings []mountMapping
 
 	var sharedVolumeID string
 
@@ -258,7 +263,10 @@ func (f *Fly) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 
 		flyVolume, _ := volume.(*Volume)
 		sharedVolumeID = flyVolume.id
-		mountDirs = append(mountDirs, taskMount.Path)
+		mountMappings = append(mountMappings, mountMapping{
+			volumeName: flyVolume.userFacingName,
+			mountPath:  taskMount.Path,
+		})
 	}
 
 	if sharedVolumeID != "" {
@@ -311,15 +319,19 @@ func (f *Fly) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 	if task.WorkDir != "" {
 		// Fly SDK's MachineInit doesn't support WorkDir, so wrap with shell cd
 		initExec = []string{"/bin/sh", "-c", "cd " + shellescape(task.WorkDir) + " && exec " + shelljoin(task.Command)}
-	} else if len(mountDirs) > 0 {
-		// When using the shared workspace volume, create mount subdirectories
-		// and set the workdir to /workspace so relative paths resolve correctly.
-		var mkdirParts []string
-		for _, dir := range mountDirs {
-			mkdirParts = append(mkdirParts, "/workspace/"+dir)
+	} else if len(mountMappings) > 0 {
+		// When using the shared workspace volume, create subdirectories named
+		// after the volume (so ReadFilesFromVolume can find them) and symlink
+		// the mount path so task scripts see the expected directory names.
+		var initParts []string
+		for _, m := range mountMappings {
+			initParts = append(initParts, "mkdir -p /workspace/"+m.volumeName)
+			if m.mountPath != m.volumeName {
+				initParts = append(initParts, "ln -sfn /workspace/"+m.volumeName+" /workspace/"+m.mountPath)
+			}
 		}
 		initExec = []string{"/bin/sh", "-c",
-			"mkdir -p " + strings.Join(mkdirParts, " ") +
+			strings.Join(initParts, " && ") +
 				" && cd /workspace && exec " + shelljoin(task.Command),
 		}
 	}

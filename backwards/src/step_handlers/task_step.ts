@@ -72,7 +72,7 @@ export class TaskStepHandler implements StepHandler {
     if (result.failed) {
       storage.set(storageKey, { status: "failure", total: parallelism });
       throw result.firstError ??
-      new TaskFailure("One or more parallel task instances failed");
+        new TaskFailure("One or more parallel task instances failed");
     }
 
     storage.set(storageKey, { status: "success", total: parallelism });

@@ -130,7 +130,12 @@ func (f *Fly) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 	maps.Copy(env, task.Env)
 
 	var mounts []fly.MachineMount
-	var mountDirs []string // subdirectory names to create under /workspace
+	type mountMapping struct {
+		volumeName string
+		mountPath  string
+	}
+
+	var mountMappings []mountMapping
 
 	var sharedVolumeID string
 
@@ -142,7 +147,10 @@ func (f *Fly) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 
 		flyVolume, _ := volume.(*Volume)
 		sharedVolumeID = flyVolume.id
-		mountDirs = append(mountDirs, taskMount.Path)
+		mountMappings = append(mountMappings, mountMapping{
+			volumeName: flyVolume.userFacingName,
+			mountPath:  taskMount.Path,
+		})
 	}
 
 	if sharedVolumeID != "" {
@@ -214,7 +222,7 @@ func (f *Fly) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 	}
 
 	defaultWorkDir := ""
-	if len(mountDirs) > 0 {
+	if len(mountMappings) > 0 {
 		defaultWorkDir = "/workspace"
 	}
 
@@ -224,15 +232,18 @@ func (f *Fly) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 		defaultWorkDir: defaultWorkDir,
 	}
 
-	// Create mount subdirectories inside the shared workspace volume.
-	if len(mountDirs) > 0 {
-		var mkdirParts []string
-		for _, dir := range mountDirs {
-			mkdirParts = append(mkdirParts, "/workspace/"+dir)
+	// Create volume subdirectories and symlink mount paths inside the shared workspace volume.
+	if len(mountMappings) > 0 {
+		var cmdParts []string
+		for _, m := range mountMappings {
+			cmdParts = append(cmdParts, "mkdir -p /workspace/"+m.volumeName)
+			if m.mountPath != m.volumeName {
+				cmdParts = append(cmdParts, "ln -sfn /workspace/"+m.volumeName+" /workspace/"+m.mountPath)
+			}
 		}
 
 		_, err := f.client.Exec(ctx, f.appName, machine.ID, &fly.MachineExecRequest{
-			Cmd: "mkdir -p " + strings.Join(mkdirParts, " "),
+			Cmd: strings.Join(cmdParts, " && "),
 		})
 		if err != nil {
 			logger.Warn("sandbox.mkdir.error", "err", err)

@@ -40,6 +40,10 @@ func (m *mockAccessor) CopyFromVolume(ctx context.Context, volumeName string) (i
 	return io.NopCloser(bytes.NewReader([]byte("mock tar data"))), nil
 }
 
+func (m *mockAccessor) ReadFilesFromVolume(ctx context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader([]byte("mock tar data"))), nil
+}
+
 var _ orchestra.Volume = (*mockVolume)(nil)
 var _ cache.VolumeDataAccessor = (*mockAccessor)(nil)
 

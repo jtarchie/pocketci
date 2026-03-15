@@ -311,4 +311,101 @@ func (t *tarPathStripper) run() {
 	}
 }
 
+// ReadFilesFromVolume implements cache.VolumeDataAccessor.
+// Creates a temporary pod and execs tar to stream specific files from the PVC.
+func (k *K8s) ReadFilesFromVolume(ctx context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error) {
+	pvcName := sanitizeName(fmt.Sprintf("%s-%s", k.namespace, volumeName))
+	podName := sanitizeName(fmt.Sprintf("cache-helper-%s-%d", volumeName, time.Now().UnixNano()))
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: podName,
+			Labels: map[string]string{
+				"orchestra.namespace": sanitizeLabel(k.namespace),
+				"orchestra.role":      "cache-helper",
+			},
+		},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			Containers: []corev1.Container{
+				{
+					Name:    "helper",
+					Image:   cacheHelperImage,
+					Command: []string{"sleep", "infinity"},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "cache-volume",
+							MountPath: "/volume",
+						},
+					},
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "cache-volume",
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	createdPod, err := k.clientset.CoreV1().Pods(k.k8sNamespace).Create(ctx, pod, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cache helper pod: %w", err)
+	}
+
+	if err := k.waitForPodRunning(ctx, createdPod.Name); err != nil {
+		_ = k.clientset.CoreV1().Pods(k.k8sNamespace).Delete(ctx, createdPod.Name, metav1.DeleteOptions{})
+
+		return nil, fmt.Errorf("failed to wait for cache helper pod: %w", err)
+	}
+
+	// Build command: tar cf - -C /volume path1 path2 ...
+	tarCmd := append([]string{"tar", "cf", "-", "-C", "/volume"}, filePaths...)
+
+	req := k.clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(createdPod.Name).
+		Namespace(k.k8sNamespace).
+		SubResource("exec").
+		VersionedParams(&corev1.PodExecOptions{
+			Container: "helper",
+			Command:   tarCmd,
+			Stdin:     false,
+			Stdout:    true,
+			Stderr:    true,
+		}, scheme.ParameterCodec)
+
+	executor, err := remotecommand.NewSPDYExecutor(k.config, "POST", req.URL())
+	if err != nil {
+		_ = k.clientset.CoreV1().Pods(k.k8sNamespace).Delete(ctx, createdPod.Name, metav1.DeleteOptions{})
+
+		return nil, fmt.Errorf("failed to create executor: %w", err)
+	}
+
+	pr, pw := io.Pipe()
+
+	go func() {
+		var stderr bytes.Buffer
+
+		err := executor.StreamWithContext(ctx, remotecommand.StreamOptions{
+			Stdout: pw,
+			Stderr: &stderr,
+		})
+		if err != nil {
+			pw.CloseWithError(fmt.Errorf("failed to stream from pod: %w (stderr: %s)", err, stderr.String()))
+		} else {
+			_ = pw.Close()
+		}
+
+		_ = k.clientset.CoreV1().Pods(k.k8sNamespace).Delete(ctx, createdPod.Name, metav1.DeleteOptions{})
+	}()
+
+	return pr, nil
+}
+
 var _ cache.VolumeDataAccessor = (*K8s)(nil)
