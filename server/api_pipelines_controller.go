@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -172,6 +173,94 @@ func (c *APIPipelinesController) Show(ctx *echo.Context) error {
 	return ctx.JSON(http.StatusOK, toPipelineAPIResponse(pipeline))
 }
 
+// validateSecrets checks feature gates, rejects system-managed keys in user
+// secrets, and ensures all existing user secrets are re-submitted on update.
+func (c *APIPipelinesController) validateSecrets(ctx context.Context, name string, req PipelineRequest) error {
+	if len(req.Secrets) == 0 {
+		return nil
+	}
+
+	if !IsFeatureEnabled(FeatureSecrets, c.allowedFeatures) {
+		return fmt.Errorf("secrets feature is not enabled")
+	}
+
+	if c.secretsMgr == nil {
+		return fmt.Errorf("secrets backend is not configured on the server")
+	}
+
+	for key := range req.Secrets {
+		if secrets.IsSystemKey(key) {
+			return fmt.Errorf("secret key %q is reserved for system use", key)
+		}
+	}
+
+	existingPipeline, err := c.store.GetPipelineByName(ctx, name)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return nil
+		}
+
+		return fmt.Errorf("failed to get existing pipeline by name: %w", err)
+	}
+
+	scope := secrets.PipelineScope(existingPipeline.ID)
+
+	existingKeys, err := c.secretsMgr.ListByScope(ctx, scope)
+	if err != nil {
+		return fmt.Errorf("failed to list existing secrets: %w", err)
+	}
+
+	for _, existingKey := range existingKeys {
+		if secrets.IsSystemKey(existingKey) {
+			continue
+		}
+
+		if _, ok := req.Secrets[existingKey]; !ok {
+			return fmt.Errorf("missing existing secret key %q: all existing secrets must be included on update", existingKey)
+		}
+	}
+
+	return nil
+}
+
+// persistSecrets stores the driver DSN, webhook secret, and user-provided
+// secrets for the given pipeline.
+func (c *APIPipelinesController) persistSecrets(ctx context.Context, pipeline *storage.Pipeline, req PipelineRequest) error {
+	scope := secrets.PipelineScope(pipeline.ID)
+
+	if err := c.secretsMgr.Set(ctx, scope, pipelineDriverDSNSecretKey, req.DriverDSN); err != nil {
+		return fmt.Errorf("failed to store driver DSN: %w", err)
+	}
+
+	if req.WebhookSecret != nil {
+		if *req.WebhookSecret == "" {
+			if err := c.secretsMgr.Delete(ctx, scope, "webhook_secret"); err != nil && !errors.Is(err, secrets.ErrNotFound) {
+				return fmt.Errorf("failed to delete webhook secret: %w", err)
+			}
+		} else {
+			if err := c.secretsMgr.Set(ctx, scope, "webhook_secret", *req.WebhookSecret); err != nil {
+				return fmt.Errorf("failed to store webhook secret: %w", err)
+			}
+		}
+	}
+
+	if len(req.Secrets) > 0 {
+		sortedKeys := make([]string, 0, len(req.Secrets))
+		for k := range req.Secrets {
+			sortedKeys = append(sortedKeys, k)
+		}
+		sort.Strings(sortedKeys)
+
+		for _, key := range sortedKeys {
+			if err := c.secretsMgr.Set(ctx, scope, key, req.Secrets[key]); err != nil {
+				return fmt.Errorf("failed to store secret %q: %w", key, err)
+			}
+		}
+	}
+
+	return nil
+}
+
 // Upsert handles PUT /api/pipelines/:name - Create or update a pipeline by name.
 func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
 	name := ctx.Param("name")
@@ -217,53 +306,10 @@ func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
 		})
 	}
 
-	// Validate secrets: require feature gate and secrets manager
-	if len(req.Secrets) > 0 {
-		if !IsFeatureEnabled(FeatureSecrets, c.allowedFeatures) {
-			return ctx.JSON(http.StatusBadRequest, map[string]string{
-				"error": "secrets feature is not enabled",
-			})
-		}
-
-		if c.secretsMgr == nil {
-			return ctx.JSON(http.StatusBadRequest, map[string]string{
-				"error": "secrets backend is not configured on the server",
-			})
-		}
-	}
-
-	if len(req.Secrets) > 0 && c.secretsMgr != nil {
-		existingPipeline, getErr := c.store.GetPipelineByName(ctx.Request().Context(), name)
-		if getErr != nil && !errors.Is(getErr, storage.ErrNotFound) {
-			return ctx.JSON(http.StatusInternalServerError, map[string]string{
-				"error": fmt.Sprintf("failed to get existing pipeline by name: %v", getErr),
-			})
-		}
-
-		if getErr == nil {
-			scope := secrets.PipelineScope(existingPipeline.ID)
-
-			existingKeys, listErr := c.secretsMgr.ListByScope(ctx.Request().Context(), scope)
-			if listErr != nil {
-				return ctx.JSON(http.StatusInternalServerError, map[string]string{
-					"error": fmt.Sprintf("failed to list existing secrets: %v", listErr),
-				})
-			}
-
-			for _, existingKey := range existingKeys {
-				// webhook_secret is managed by req.WebhookSecret and should not be coupled
-				// to generic pipeline secrets in req.Secrets.
-				if existingKey == "webhook_secret" {
-					continue
-				}
-
-				if _, ok := req.Secrets[existingKey]; !ok {
-					return ctx.JSON(http.StatusBadRequest, map[string]string{
-						"error": fmt.Sprintf("missing existing secret key %q: all existing secrets must be included on update", existingKey),
-					})
-				}
-			}
-		}
+	if err := c.validateSecrets(ctx.Request().Context(), name, req); err != nil {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{
+			"error": err.Error(),
+		})
 	}
 
 	if !IsFeatureEnabled(FeatureSecrets, c.allowedFeatures) {
@@ -292,53 +338,10 @@ func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
 		})
 	}
 
-	if err := c.secretsMgr.Set(
-		ctx.Request().Context(),
-		secrets.PipelineScope(pipeline.ID),
-		pipelineDriverDSNSecretKey,
-		req.DriverDSN,
-	); err != nil {
+	if err := c.persistSecrets(ctx.Request().Context(), pipeline, req); err != nil {
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to store driver DSN: %v", err),
+			"error": err.Error(),
 		})
-	}
-
-	if req.WebhookSecret != nil && c.secretsMgr != nil {
-		scope := secrets.PipelineScope(pipeline.ID)
-		if *req.WebhookSecret == "" {
-			if err := c.secretsMgr.Delete(ctx.Request().Context(), scope, "webhook_secret"); err != nil && !errors.Is(err, secrets.ErrNotFound) {
-				return ctx.JSON(http.StatusInternalServerError, map[string]string{
-					"error": fmt.Sprintf("failed to delete webhook secret: %v", err),
-				})
-			}
-		} else {
-			if err := c.secretsMgr.Set(ctx.Request().Context(), scope, "webhook_secret", *req.WebhookSecret); err != nil {
-				return ctx.JSON(http.StatusInternalServerError, map[string]string{
-					"error": fmt.Sprintf("failed to store webhook secret: %v", err),
-				})
-			}
-		}
-	}
-
-	// Store per-pipeline secrets if provided
-	if len(req.Secrets) > 0 && c.secretsMgr != nil {
-		scope := secrets.PipelineScope(pipeline.ID)
-
-		// Write all secrets
-		// Sort keys for deterministic ordering
-		sortedKeys := make([]string, 0, len(req.Secrets))
-		for k := range req.Secrets {
-			sortedKeys = append(sortedKeys, k)
-		}
-		sort.Strings(sortedKeys)
-
-		for _, key := range sortedKeys {
-			if err := c.secretsMgr.Set(ctx.Request().Context(), scope, key, req.Secrets[key]); err != nil {
-				return ctx.JSON(http.StatusInternalServerError, map[string]string{
-					"error": fmt.Sprintf("failed to store secret %q: %v", key, err),
-				})
-			}
-		}
 	}
 
 	if req.ResumeEnabled != nil && *req.ResumeEnabled {

@@ -343,6 +343,78 @@ func TestPipelineAPI(t *testing.T) {
 				assert.Expect(err).NotTo(HaveOccurred())
 				assert.Expect(reloaded.Content).To(Equal("content-v1"))
 			})
+
+			t.Run("PUT /api/pipelines/:name rejects system key driver_dsn in user secrets", func(t *testing.T) {
+				t.Parallel()
+				assert := NewGomegaWithT(t)
+
+				buildFile, err := os.CreateTemp(t.TempDir(), "")
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = buildFile.Close() }()
+
+				client, err := init(buildFile.Name(), "namespace", slog.Default())
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = client.Close() }()
+
+				router := newRouterWithSecrets(t, client, server.RouterOptions{})
+
+				body := map[string]any{
+					"content":    "export { pipeline };",
+					"driver_dsn": "docker://",
+					"secrets": map[string]string{
+						"driver_dsn": "docker://attacker.com",
+					},
+				}
+				jsonBody, _ := json.Marshal(body)
+
+				req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader(jsonBody))
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+
+				assert.Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+				var resp map[string]string
+				err = json.Unmarshal(rec.Body.Bytes(), &resp)
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(resp["error"]).To(ContainSubstring("reserved for system use"))
+			})
+
+			t.Run("PUT /api/pipelines/:name rejects system key webhook_secret in user secrets", func(t *testing.T) {
+				t.Parallel()
+				assert := NewGomegaWithT(t)
+
+				buildFile, err := os.CreateTemp(t.TempDir(), "")
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = buildFile.Close() }()
+
+				client, err := init(buildFile.Name(), "namespace", slog.Default())
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = client.Close() }()
+
+				router := newRouterWithSecrets(t, client, server.RouterOptions{})
+
+				body := map[string]any{
+					"content":    "export { pipeline };",
+					"driver_dsn": "docker://",
+					"secrets": map[string]string{
+						"webhook_secret": "malicious",
+					},
+				}
+				jsonBody, _ := json.Marshal(body)
+
+				req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader(jsonBody))
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+
+				assert.Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+				var resp map[string]string
+				err = json.Unmarshal(rec.Body.Bytes(), &resp)
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(resp["error"]).To(ContainSubstring("reserved for system use"))
+			})
 		})
 	})
 }

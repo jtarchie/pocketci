@@ -89,3 +89,18 @@ func PipelineScope(pipelineID string) string {
 
 // GlobalScope is the scope for secrets shared across all pipelines.
 const GlobalScope = "global"
+
+// systemManagedKeys are secret keys reserved for internal use by the system.
+// These keys are managed through dedicated API fields (e.g., driver_dsn via
+// DriverDSN, webhook_secret via WebhookSecret) and must not be set or read
+// through user-facing secret mechanisms.
+var systemManagedKeys = map[string]struct{}{
+	"driver_dsn":     {},
+	"webhook_secret": {},
+}
+
+// IsSystemKey reports whether the given key is reserved for internal system use.
+func IsSystemKey(key string) bool {
+	_, ok := systemManagedKeys[key]
+	return ok
+}

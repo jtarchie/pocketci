@@ -13,6 +13,7 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/runtime"
+	secretsPkg "github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
 )
 
@@ -242,6 +243,10 @@ func (c *SetPipeline) parseSecrets() (map[string]string, error) {
 				return nil, fmt.Errorf("invalid secret in file %q line %d: expected KEY=VALUE format, got %q", c.SecretFile, lineNum, line)
 			}
 
+			if secretsPkg.IsSystemKey(key) {
+				return nil, fmt.Errorf("secret key %q in file %q line %d is reserved for system use", key, c.SecretFile, lineNum)
+			}
+
 			result[key] = value
 		}
 
@@ -255,6 +260,10 @@ func (c *SetPipeline) parseSecrets() (map[string]string, error) {
 		key, value, found := parseSecretFlag(s)
 		if !found {
 			return nil, fmt.Errorf("invalid --secret flag %q: expected KEY=VALUE format", s)
+		}
+
+		if secretsPkg.IsSystemKey(key) {
+			return nil, fmt.Errorf("secret key %q is reserved for system use and cannot be set via --secret", key)
 		}
 
 		result[key] = value

@@ -10,6 +10,7 @@ import (
 
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/runtime/runner"
+	"github.com/jtarchie/pocketci/runtime/support"
 	"github.com/jtarchie/pocketci/secrets"
 	. "github.com/onsi/gomega"
 )
@@ -244,4 +245,23 @@ func TestResourceRunnerPushSecretMissing(t *testing.T) {
 	})
 	assert.Expect(err).To(HaveOccurred())
 	assert.Expect(err.Error()).To(ContainSubstring("S3_SECRET"))
+}
+
+// TestResolveSecretStringRejectsSystemKeys verifies that system-managed secret
+// keys (driver_dsn, webhook_secret) cannot be read through the secret: prefix.
+func TestResolveSecretStringRejectsSystemKeys(t *testing.T) {
+	t.Parallel()
+
+	assert := NewGomegaWithT(t)
+
+	mgr := newMapSecretsManager(map[string]string{
+		"pipeline/pipe1/driver_dsn":     "docker://internal-host",
+		"pipeline/pipe1/webhook_secret": "super-secret-webhook",
+	})
+
+	for _, key := range []string{"driver_dsn", "webhook_secret"} {
+		_, _, err := support.ResolveSecretString(context.Background(), mgr, "pipe1", "secret:"+key)
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("reserved for system use"))
+	}
 }

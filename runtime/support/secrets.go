@@ -20,6 +20,11 @@ func ResolveSecretString(ctx context.Context, mgr secrets.Manager, pipelineID, v
 	}
 
 	key := strings.TrimPrefix(value, SecretPrefix)
+
+	if secrets.IsSystemKey(key) {
+		return "", false, fmt.Errorf("secret key %q is reserved for system use", key)
+	}
+
 	pipelineScope := secrets.PipelineScope(pipelineID)
 
 	// Try pipeline scope first.
