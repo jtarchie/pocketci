@@ -136,6 +136,7 @@ func TestAuthServerMetadata(t *testing.T) {
 	assert.Expect(body["issuer"]).To(Equal("https://ci.example.com"))
 	assert.Expect(body["authorization_endpoint"]).To(Equal("https://ci.example.com/oauth/authorize"))
 	assert.Expect(body["token_endpoint"]).To(Equal("https://ci.example.com/oauth/token"))
+	assert.Expect(body["registration_endpoint"]).To(Equal("https://ci.example.com/oauth/register"))
 	assert.Expect(body["code_challenge_methods_supported"]).To(ContainElement("S256"))
 }
 
@@ -162,13 +163,40 @@ func TestOAuthServer(t *testing.T) {
 		UserID:   "12345",
 	}
 
+	// registerTestClient registers a dynamic OAuth client via HandleRegister
+	// and returns the assigned client_id.
+	registerTestClient := func(t *testing.T, srv *auth.OAuthServer, redirectURIs ...string) string {
+		t.Helper()
+
+		if len(redirectURIs) == 0 {
+			redirectURIs = []string{"http://localhost/callback"}
+		}
+
+		uris, _ := json.Marshal(redirectURIs)
+		body := `{"redirect_uris":` + string(uris) + `,"client_name":"test"}`
+		req := httptest.NewRequest(http.MethodPost, "/oauth/register", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.HandleRegister(rec, req)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("register failed: %d %s", rec.Code, rec.Body.String())
+		}
+
+		var resp map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+
+		return resp["client_id"].(string)
+	}
+
 	t.Run("authorize without session redirects to login", func(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		srv := auth.NewOAuthServer(cfg, store, slogDiscard())
+		clientID := registerTestClient(t, srv)
 
 		req := httptest.NewRequest(http.MethodGet,
-			"/oauth/authorize?response_type=code&client_id=test&redirect_uri=http://localhost/callback&code_challenge=abc123&code_challenge_method=S256&state=xyz",
+			"/oauth/authorize?response_type=code&client_id="+clientID+"&redirect_uri=http://localhost/callback&code_challenge=abc123&code_challenge_method=S256&state=xyz",
 			nil)
 		rec := httptest.NewRecorder()
 
@@ -182,9 +210,10 @@ func TestOAuthServer(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		srv := auth.NewOAuthServer(cfg, store, slogDiscard())
+		clientID := registerTestClient(t, srv)
 
 		req := httptest.NewRequest(http.MethodGet,
-			"/oauth/authorize?response_type=code&client_id=test&redirect_uri=http://localhost/callback&code_challenge=abc123&code_challenge_method=S256&state=xyz",
+			"/oauth/authorize?response_type=code&client_id="+clientID+"&redirect_uri=http://localhost/callback&code_challenge=abc123&code_challenge_method=S256&state=xyz",
 			nil)
 		rec := httptest.NewRecorder()
 
@@ -213,9 +242,10 @@ func TestOAuthServer(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		srv := auth.NewOAuthServer(cfg, store, slogDiscard())
+		clientID := registerTestClient(t, srv)
 
 		req := httptest.NewRequest(http.MethodGet,
-			"/oauth/authorize?response_type=code&client_id=test&redirect_uri=http://localhost/callback",
+			"/oauth/authorize?response_type=code&client_id="+clientID+"&redirect_uri=http://localhost/callback",
 			nil)
 		rec := httptest.NewRecorder()
 
@@ -233,13 +263,14 @@ func TestOAuthServer(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		srv := auth.NewOAuthServer(cfg, store, slogDiscard())
+		clientID := registerTestClient(t, srv)
 
 		codeVerifier := "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
 		h := sha256.Sum256([]byte(codeVerifier))
 		codeChallenge := base64.RawURLEncoding.EncodeToString(h[:])
 
 		req := httptest.NewRequest(http.MethodGet,
-			"/oauth/authorize?response_type=code&client_id=test&redirect_uri=http://localhost/callback&code_challenge="+codeChallenge+"&code_challenge_method=S256&state=mystate",
+			"/oauth/authorize?response_type=code&client_id="+clientID+"&redirect_uri=http://localhost/callback&code_challenge="+codeChallenge+"&code_challenge_method=S256&state=mystate",
 			nil)
 		rec := httptest.NewRecorder()
 
@@ -270,7 +301,7 @@ func TestOAuthServer(t *testing.T) {
 			"code":          {authCode},
 			"redirect_uri":  {"http://localhost/callback"},
 			"code_verifier": {codeVerifier},
-			"client_id":     {"test"},
+			"client_id":     {clientID},
 		}
 
 		tokenReq := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
@@ -301,13 +332,14 @@ func TestOAuthServer(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		srv := auth.NewOAuthServer(cfg, store, slogDiscard())
+		clientID := registerTestClient(t, srv)
 
 		codeVerifier := "correct-verifier-value-that-is-at-least-43-chars"
 		h := sha256.Sum256([]byte(codeVerifier))
 		codeChallenge := base64.RawURLEncoding.EncodeToString(h[:])
 
 		req := httptest.NewRequest(http.MethodGet,
-			"/oauth/authorize?response_type=code&client_id=test&redirect_uri=http://localhost/callback&code_challenge="+codeChallenge+"&code_challenge_method=S256",
+			"/oauth/authorize?response_type=code&client_id="+clientID+"&redirect_uri=http://localhost/callback&code_challenge="+codeChallenge+"&code_challenge_method=S256",
 			nil)
 		rec := httptest.NewRecorder()
 
@@ -333,7 +365,7 @@ func TestOAuthServer(t *testing.T) {
 			"code":          {authCode},
 			"redirect_uri":  {"http://localhost/callback"},
 			"code_verifier": {"wrong-verifier-value"},
-			"client_id":     {"test"},
+			"client_id":     {clientID},
 		}
 
 		tokenReq := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
@@ -381,13 +413,14 @@ func TestOAuthServer(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		srv := auth.NewOAuthServer(cfg, store, slogDiscard())
+		clientID := registerTestClient(t, srv)
 
 		codeVerifier := "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
 		h := sha256.Sum256([]byte(codeVerifier))
 		codeChallenge := base64.RawURLEncoding.EncodeToString(h[:])
 
 		req := httptest.NewRequest(http.MethodGet,
-			"/oauth/authorize?response_type=code&client_id=test&redirect_uri=http://localhost/callback&code_challenge="+codeChallenge+"&code_challenge_method=S256",
+			"/oauth/authorize?response_type=code&client_id="+clientID+"&redirect_uri=http://localhost/callback&code_challenge="+codeChallenge+"&code_challenge_method=S256",
 			nil)
 		rec := httptest.NewRecorder()
 
@@ -413,7 +446,7 @@ func TestOAuthServer(t *testing.T) {
 			"code":          {authCode},
 			"redirect_uri":  {"http://localhost/callback"},
 			"code_verifier": {codeVerifier},
-			"client_id":     {"test"},
+			"client_id":     {clientID},
 		}
 
 		tokenReq := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
@@ -437,13 +470,14 @@ func TestOAuthServer(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		srv := auth.NewOAuthServer(cfg, store, slogDiscard())
+		clientID := registerTestClient(t, srv)
 
 		codeVerifier := "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
 		h := sha256.Sum256([]byte(codeVerifier))
 		codeChallenge := base64.RawURLEncoding.EncodeToString(h[:])
 
 		req := httptest.NewRequest(http.MethodGet,
-			"/oauth/authorize?response_type=code&client_id=test&redirect_uri=http://localhost/callback&code_challenge="+codeChallenge+"&code_challenge_method=S256",
+			"/oauth/authorize?response_type=code&client_id="+clientID+"&redirect_uri=http://localhost/callback&code_challenge="+codeChallenge+"&code_challenge_method=S256",
 			nil)
 		rec := httptest.NewRecorder()
 
@@ -469,7 +503,7 @@ func TestOAuthServer(t *testing.T) {
 			"code":          {authCode},
 			"redirect_uri":  {"http://evil.com/callback"},
 			"code_verifier": {codeVerifier},
-			"client_id":     {"test"},
+			"client_id":     {clientID},
 		}
 
 		tokenReq := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
@@ -484,6 +518,85 @@ func TestOAuthServer(t *testing.T) {
 		err = json.Unmarshal(tokenRec.Body.Bytes(), &body)
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(body["error"]).To(Equal("invalid_grant"))
+	})
+
+	t.Run("dynamic client registration", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		srv := auth.NewOAuthServer(cfg, store, slogDiscard())
+
+		body := `{"redirect_uris":["http://127.0.0.1:12345","https://vscode.dev/redirect"],"client_name":"VS Code"}`
+		req := httptest.NewRequest(http.MethodPost, "/oauth/register", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		srv.HandleRegister(rec, req)
+
+		assert.Expect(rec.Code).To(Equal(http.StatusCreated))
+
+		var resp map[string]any
+		err := json.Unmarshal(rec.Body.Bytes(), &resp)
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(resp["client_id"]).NotTo(BeEmpty())
+		assert.Expect(resp["client_name"]).To(Equal("VS Code"))
+		assert.Expect(resp["redirect_uris"]).To(ConsistOf("http://127.0.0.1:12345", "https://vscode.dev/redirect"))
+		assert.Expect(resp["token_endpoint_auth_method"]).To(Equal("none"))
+		assert.Expect(resp["client_id_issued_at"]).NotTo(BeZero())
+	})
+
+	t.Run("registration rejects missing redirect_uris", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		srv := auth.NewOAuthServer(cfg, store, slogDiscard())
+
+		req := httptest.NewRequest(http.MethodPost, "/oauth/register", strings.NewReader(`{"client_name":"test"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		srv.HandleRegister(rec, req)
+
+		assert.Expect(rec.Code).To(Equal(http.StatusBadRequest))
+	})
+
+	t.Run("authorize rejects unregistered client_id", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		srv := auth.NewOAuthServer(cfg, store, slogDiscard())
+
+		req := httptest.NewRequest(http.MethodGet,
+			"/oauth/authorize?response_type=code&client_id=unregistered&redirect_uri=http://localhost/callback&code_challenge=abc&code_challenge_method=S256",
+			nil)
+		rec := httptest.NewRecorder()
+
+		srv.HandleAuthorize(rec, req)
+
+		assert.Expect(rec.Code).To(Equal(http.StatusUnauthorized))
+
+		var resp map[string]string
+		err := json.Unmarshal(rec.Body.Bytes(), &resp)
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(resp["error"]).To(Equal("invalid_client"))
+	})
+
+	t.Run("authorize rejects unregistered redirect_uri", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		srv := auth.NewOAuthServer(cfg, store, slogDiscard())
+		clientID := registerTestClient(t, srv, "http://localhost/callback")
+
+		req := httptest.NewRequest(http.MethodGet,
+			"/oauth/authorize?response_type=code&client_id="+clientID+"&redirect_uri=http://evil.com/steal&code_challenge=abc&code_challenge_method=S256",
+			nil)
+		rec := httptest.NewRecorder()
+
+		srv.HandleAuthorize(rec, req)
+
+		assert.Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+		var resp map[string]string
+		err := json.Unmarshal(rec.Body.Bytes(), &resp)
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(resp["error"]).To(Equal("invalid_request"))
 	})
 }
 

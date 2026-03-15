@@ -51,6 +51,7 @@ type authServerMetadata struct {
 	Issuer                            string   `json:"issuer"`
 	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
 	TokenEndpoint                     string   `json:"token_endpoint"`
+	RegistrationEndpoint              string   `json:"registration_endpoint,omitempty"`
 	ScopesSupported                   []string `json:"scopes_supported,omitempty"`
 	ResponseTypesSupported            []string `json:"response_types_supported"`
 	GrantTypesSupported               []string `json:"grant_types_supported,omitempty"`
@@ -65,6 +66,7 @@ func NewAuthServerMetadata(baseURL string) *authServerMetadata {
 		Issuer:                            baseURL,
 		AuthorizationEndpoint:             baseURL + "/oauth/authorize",
 		TokenEndpoint:                     baseURL + "/oauth/token",
+		RegistrationEndpoint:              baseURL + "/oauth/register",
 		ScopesSupported:                   []string{MCPScope},
 		ResponseTypesSupported:            []string{"code"},
 		GrantTypesSupported:               []string{"authorization_code"},

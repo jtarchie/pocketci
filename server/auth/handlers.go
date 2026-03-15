@@ -44,6 +44,7 @@ func RegisterRoutes(router *echo.Echo, cfg *Config, store *sessions.CookieStore,
 	if oauthSrv != nil {
 		router.GET("/oauth/authorize", echo.WrapHandler(http.HandlerFunc(oauthSrv.HandleAuthorize)))
 		router.POST("/oauth/token", echo.WrapHandler(http.HandlerFunc(oauthSrv.HandleToken)))
+		router.POST("/oauth/register", echo.WrapHandler(http.HandlerFunc(oauthSrv.HandleRegister)))
 	}
 }
 

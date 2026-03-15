@@ -22,6 +22,17 @@ type authCode struct {
 	ExpiresAt     time.Time
 }
 
+// registeredClient represents a dynamically registered OAuth client (RFC 7591).
+type registeredClient struct {
+	ClientID                string   `json:"client_id"`
+	ClientName              string   `json:"client_name,omitempty"`
+	RedirectURIs            []string `json:"redirect_uris"`
+	GrantTypes              []string `json:"grant_types,omitempty"`
+	ResponseTypes           []string `json:"response_types,omitempty"`
+	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
+	ClientIDIssuedAt        int64    `json:"client_id_issued_at"`
+}
+
 // OAuthServer implements a minimal OAuth 2.0 Authorization Server for MCP
 // clients, supporting authorization code flow with PKCE (S256).
 type OAuthServer struct {
@@ -29,17 +40,19 @@ type OAuthServer struct {
 	store  *sessions.CookieStore
 	logger *slog.Logger
 
-	mu    sync.Mutex
-	codes map[string]*authCode
+	mu      sync.Mutex
+	codes   map[string]*authCode
+	clients map[string]*registeredClient
 }
 
 // NewOAuthServer creates an OAuthServer with the given config.
 func NewOAuthServer(cfg *Config, store *sessions.CookieStore, logger *slog.Logger) *OAuthServer {
 	return &OAuthServer{
-		cfg:    cfg,
-		store:  store,
-		logger: logger,
-		codes:  make(map[string]*authCode),
+		cfg:     cfg,
+		store:   store,
+		logger:  logger,
+		codes:   make(map[string]*authCode),
+		clients: make(map[string]*registeredClient),
 	}
 }
 
@@ -76,6 +89,23 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 
 	if redirectURI == "" {
 		jsonError(w, "invalid_request", "redirect_uri is required", http.StatusBadRequest)
+
+		return
+	}
+
+	// Validate client_id and redirect_uri against registered clients.
+	s.mu.Lock()
+	client, registered := s.clients[clientID]
+	s.mu.Unlock()
+
+	if !registered {
+		jsonError(w, "invalid_client", "client_id is not registered", http.StatusUnauthorized)
+
+		return
+	}
+
+	if !client.hasRedirectURI(redirectURI) {
+		jsonError(w, "invalid_request", "redirect_uri is not registered for this client", http.StatusBadRequest)
 
 		return
 	}
@@ -294,6 +324,95 @@ func (s *OAuthServer) cleanupExpiredCodes() {
 			delete(s.codes, code)
 		}
 	}
+}
+
+// HandleRegister handles POST /oauth/register for RFC 7591 Dynamic Client Registration.
+// MCP clients use this to register themselves as public OAuth clients.
+func (s *OAuthServer) HandleRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+
+		return
+	}
+
+	var req struct {
+		RedirectURIs            []string `json:"redirect_uris"`
+		ClientName              string   `json:"client_name"`
+		GrantTypes              []string `json:"grant_types"`
+		ResponseTypes           []string `json:"response_types"`
+		TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid_request", "could not parse request body", http.StatusBadRequest)
+
+		return
+	}
+
+	if len(req.RedirectURIs) == 0 {
+		jsonError(w, "invalid_client_metadata", "redirect_uris is required", http.StatusBadRequest)
+
+		return
+	}
+
+	clientID, err := generateRandomCode()
+	if err != nil {
+		s.logger.Error("oauth.register.id.error", "error", err)
+		jsonError(w, "server_error", "could not generate client_id", http.StatusInternalServerError)
+
+		return
+	}
+
+	// Default grant_types and response_types per RFC 7591.
+	grantTypes := req.GrantTypes
+	if len(grantTypes) == 0 {
+		grantTypes = []string{"authorization_code"}
+	}
+
+	responseTypes := req.ResponseTypes
+	if len(responseTypes) == 0 {
+		responseTypes = []string{"code"}
+	}
+
+	authMethod := req.TokenEndpointAuthMethod
+	if authMethod == "" {
+		authMethod = "none"
+	}
+
+	client := &registeredClient{
+		ClientID:                clientID,
+		ClientName:              req.ClientName,
+		RedirectURIs:            req.RedirectURIs,
+		GrantTypes:              grantTypes,
+		ResponseTypes:           responseTypes,
+		TokenEndpointAuthMethod: authMethod,
+		ClientIDIssuedAt:        time.Now().Unix(),
+	}
+
+	s.mu.Lock()
+	s.clients[clientID] = client
+	s.mu.Unlock()
+
+	s.logger.Info("oauth.client.registered",
+		"client_id", clientID,
+		"client_name", req.ClientName,
+		"redirect_uris", req.RedirectURIs,
+	)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+
+	_ = json.NewEncoder(w).Encode(client)
+}
+
+func (c *registeredClient) hasRedirectURI(uri string) bool {
+	for _, u := range c.RedirectURIs {
+		if u == uri {
+			return true
+		}
+	}
+
+	return false
 }
 
 func jsonError(w http.ResponseWriter, errCode, description string, status int) {
