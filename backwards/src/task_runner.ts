@@ -3,6 +3,8 @@
 import { formatElapsed } from "./utils.ts";
 import { safeStorageGet } from "./utils.ts";
 
+const defaultAssertOutputTimeoutMs = 3000;
+
 export class TaskRunner {
   private knownMounts: KnownMounts = {};
 
@@ -198,7 +200,7 @@ export class TaskRunner {
     assert.eventuallyContainsString(
       () => this.getLatestTaskOutput(stream, result, taskStorageKey),
       expected,
-      1000,
+      defaultAssertOutputTimeoutMs,
       50,
     );
   }

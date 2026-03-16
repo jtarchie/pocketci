@@ -83,6 +83,7 @@ func TestCacheIntegration(t *testing.T) {
 				namespace1 := "cache-test-1-" + gonanoid.Must()
 				driver1, err := initFunc(namespace1, logger, map[string]string{})
 				assert.Expect(err).NotTo(gomega.HaveOccurred())
+				defer func() { _ = driver1.Close() }()
 
 				cacheParams := map[string]string{
 					"cache":             minio.CacheURL(),

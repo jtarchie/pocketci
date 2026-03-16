@@ -395,38 +395,56 @@ func (f *Fly) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 	machine, err := f.client.Launch(ctx, f.appName, input)
 	if err != nil {
 		// Check if a machine with this name already exists (idempotency)
-		machines, listErr := f.client.List(ctx, f.appName, "")
-		if listErr == nil {
-			for _, m := range machines {
-				if m.Name == machineName {
-					logger.Info("fly.machine.existing", "machine", m.ID, "name", machineName, "state", m.State)
+		if list, listErr := f.client.List(ctx, f.appName, ""); listErr == nil {
+			for _, m := range list {
+				if m.Name != machineName {
+					continue
+				}
 
-					container := &Container{
-						machineID:  m.ID,
-						instanceID: m.InstanceID,
-						driver:     f,
-					}
+				logger.Info("fly.machine.existing", "machine", m.ID, "name", machineName, "state", m.State)
+				f.trackMachine(m.ID)
 
-					// If already stopped/destroyed, populate cached state
-					if m.State == "stopped" || m.State == "destroyed" {
-						exitCode := 0
+				if sharedVolumeID != "" {
+					f.mu.Lock()
+					f.volumeAttachments[sharedVolumeID] = m.ID
+					f.mu.Unlock()
+				}
 
-						for i := len(m.Events) - 1; i >= 0; i-- {
-							event := m.Events[i]
+				container := &Container{
+					machineID:  m.ID,
+					instanceID: m.InstanceID,
+					driver:     f,
+				}
 
-							if event.Type == "exit" && event.Request != nil && event.Request.ExitEvent != nil {
-								exitCode = event.Request.ExitEvent.ExitCode
-								break
-							}
+				// If already stopped/destroyed, populate cached state
+				if m.State == "stopped" || m.State == "destroyed" {
+					exitCode := 0
+
+					for i := len(m.Events) - 1; i >= 0; i-- {
+						event := m.Events[i]
+
+						if event.Type == "exit" && event.Request != nil && event.Request.ExitEvent != nil {
+							exitCode = event.Request.ExitEvent.ExitCode
+							break
 						}
-
-						container.done = true
-						container.exitCode = exitCode
-					} else {
-						go container.waitForStop()
 					}
 
-					return container, nil
+					container.done = true
+					container.exitCode = exitCode
+				} else {
+					go container.waitForStop()
+				}
+
+				return container, nil
+			}
+		}
+
+		// Clean up the shared volume so it doesn't get stranded when the
+		// caller cannot use it (e.g. insufficient Fly resources).
+		if sharedVolumeID != "" {
+			if vol, ok := f.findVolumeByID(sharedVolumeID); ok {
+				if cleanupErr := vol.Cleanup(ctx); cleanupErr != nil {
+					logger.Warn("fly.machine.launch.volume.cleanup.error", "volume", sharedVolumeID, "err", cleanupErr)
 				}
 			}
 		}

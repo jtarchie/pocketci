@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,6 +91,69 @@ func TestTaskStatusPersistence(t *testing.T) {
 		elapsed, ok := payload["elapsed"].(string)
 		assert.Expect(ok).To(BeTrue())
 		assert.Expect(elapsed).To(ContainSubstring("s"))
+	})
+
+	t.Run("streamed task writes final logs to storage", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		dbFile := newTestStore(t)
+		defer func() { _ = dbFile.Close() }()
+
+		store, err := sqliteStorage.NewSqlite(dbFile.Name(), "ns", nil)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		ctx := context.Background()
+		logger := slog.Default()
+
+		driver, err := docker.NewDocker("task-streamed-ns", logger, nil)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = driver.Close() }()
+
+		runID := "test-run-streamed"
+		r := runner.NewPipelineRunner(ctx, driver, store, logger, "task-streamed-ns", runID)
+		defer func() { _ = r.CleanupVolumes() }()
+
+		result, err := r.Run(runner.RunInput{
+			Name:  "streamed-task",
+			Image: "busybox",
+			Command: struct {
+				Path string   `json:"path"`
+				Args []string `json:"args"`
+				User string   `json:"user"`
+			}{
+				Path: "sh",
+				Args: []string{"-c", "echo line1; echo line2"},
+			},
+			OnOutput: func(stream string, data string) {},
+		})
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(result.Status).To(Equal(runner.RunComplete))
+		assert.Expect(result.Stdout).To(ContainSubstring("line1"))
+		assert.Expect(result.Stdout).To(ContainSubstring("line2"))
+
+		payload, err := store.Get(ctx, "/pipeline/"+runID+"/tasks/0-streamed-task")
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(payload["status"]).To(Equal("success"))
+
+		logs, ok := payload["logs"].([]any)
+		assert.Expect(ok).To(BeTrue())
+		assert.Expect(logs).NotTo(BeEmpty())
+
+		var combinedStdout strings.Builder
+		for _, rawLog := range logs {
+			entry, ok := rawLog.(map[string]any)
+			assert.Expect(ok).To(BeTrue())
+			if entry["type"] == "stdout" {
+				content, ok := entry["content"].(string)
+				assert.Expect(ok).To(BeTrue())
+				combinedStdout.WriteString(content)
+			}
+		}
+
+		assert.Expect(combinedStdout.String()).To(ContainSubstring("line1"))
+		assert.Expect(combinedStdout.String()).To(ContainSubstring("line2"))
 	})
 
 	t.Run("failed task writes failure status to storage", func(t *testing.T) {

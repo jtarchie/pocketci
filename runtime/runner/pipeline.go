@@ -508,6 +508,33 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 	cancelStream()
 	streamWg.Wait()
 
+	finalStdout, finalStderr := &strings.Builder{}, &strings.Builder{}
+	err = container.Logs(ctx, finalStdout, finalStderr, false)
+	if err != nil {
+		logger.Error("container.logs.error", "err", err)
+
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			c.setTaskStatus(storageKey, map[string]any{
+				"status":     "abort",
+				"started_at": taskStartedAt.UTC().Format(time.RFC3339),
+				"elapsed":    formatElapsed(time.Since(taskStartedAt)),
+			})
+
+			return &RunResult{Status: RunAbort}, nil
+		}
+
+		c.setTaskStatus(storageKey, map[string]any{
+			"status":     "error",
+			"started_at": taskStartedAt.UTC().Format(time.RFC3339),
+			"elapsed":    formatElapsed(time.Since(taskStartedAt)),
+		})
+
+		return nil, fmt.Errorf("could not get container logs: %w", err)
+	}
+
+	emitMissingOutput(stdout.String(), finalStdout.String(), "stdout", streamCallback)
+	emitMissingOutput(stderr.String(), finalStderr.String(), "stderr", streamCallback)
+
 	if containerStatus.ExitCode() != 0 {
 		logger.Warn("container.run.failed", "exitCode", containerStatus.ExitCode())
 	} else {
@@ -521,35 +548,8 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 		}
 	}()
 
-	// Get final logs (if we weren't streaming, or to ensure we have complete output)
-	if input.OnOutput == nil {
-		err = container.Logs(ctx, stdout, stderr, false)
-		if err != nil {
-			logger.Error("container.logs.error", "err", err)
-
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				c.setTaskStatus(storageKey, map[string]any{
-					"status":     "abort",
-					"started_at": taskStartedAt.UTC().Format(time.RFC3339),
-					"elapsed":    formatElapsed(time.Since(taskStartedAt)),
-				})
-
-				return &RunResult{Status: RunAbort}, nil
-			}
-
-			c.setTaskStatus(storageKey, map[string]any{
-				"status":     "error",
-				"started_at": taskStartedAt.UTC().Format(time.RFC3339),
-				"elapsed":    formatElapsed(time.Since(taskStartedAt)),
-			})
-
-			return nil, fmt.Errorf("could not get container logs: %w", err)
-		}
-	}
-
-	// Redact secret values from output before storing or returning
-	stdoutStr := stdout.String()
-	stderrStr := stderr.String()
+	stdoutStr := preferCompleteOutput(stdout.String(), finalStdout.String())
+	stderrStr := preferCompleteOutput(stderr.String(), finalStderr.String())
 
 	if len(c.secretValues) > 0 {
 		stdoutStr = support.RedactSecrets(stdoutStr, c.secretValues)
@@ -560,15 +560,7 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 		}
 	}
 
-	if len(logs) == 0 {
-		if stdoutStr != "" {
-			logs = append(logs, TaskLogEntry{Type: "stdout", Content: stdoutStr})
-		}
-
-		if stderrStr != "" {
-			logs = append(logs, TaskLogEntry{Type: "stderr", Content: stderrStr})
-		}
-	}
+	logs = reconcileTaskLogs(logs, stdoutStr, stderrStr)
 
 	status := "success"
 	if containerStatus.ExitCode() != 0 {
@@ -663,6 +655,65 @@ func (c *PipelineRunner) readStreamChunks(
 			break
 		}
 	}
+}
+
+func preferCompleteOutput(streamed, final string) string {
+	if len(final) > len(streamed) {
+		return final
+	}
+
+	return streamed
+}
+
+func emitMissingOutput(streamed, final, stream string, callback OutputCallback) {
+	if callback == nil || len(final) <= len(streamed) {
+		return
+	}
+
+	if strings.HasPrefix(final, streamed) {
+		callback(stream, final[len(streamed):])
+
+		return
+	}
+
+	callback(stream, final)
+}
+
+func reconcileTaskLogs(logs []TaskLogEntry, stdout, stderr string) []TaskLogEntry {
+	if len(logs) == 0 {
+		return buildTaskLogs(stdout, stderr)
+	}
+
+	if len(stdout) > len(joinTaskLogs(logs, "stdout")) || len(stderr) > len(joinTaskLogs(logs, "stderr")) {
+		return buildTaskLogs(stdout, stderr)
+	}
+
+	return logs
+}
+
+func buildTaskLogs(stdout, stderr string) []TaskLogEntry {
+	logs := make([]TaskLogEntry, 0, 2)
+	if stdout != "" {
+		logs = append(logs, TaskLogEntry{Type: "stdout", Content: stdout})
+	}
+
+	if stderr != "" {
+		logs = append(logs, TaskLogEntry{Type: "stderr", Content: stderr})
+	}
+
+	return logs
+}
+
+func joinTaskLogs(logs []TaskLogEntry, stream string) string {
+	var builder strings.Builder
+
+	for _, entry := range logs {
+		if entry.Type == stream {
+			builder.WriteString(entry.Content)
+		}
+	}
+
+	return builder.String()
 }
 
 // CleanupVolumes cleans up all tracked volumes.

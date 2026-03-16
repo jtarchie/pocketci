@@ -166,6 +166,43 @@ func (f *Fly) Close() error {
 		}
 	}
 
+	// Best-effort sweep for untracked machines from partial/failed launches.
+	machines, err := f.client.List(ctx, f.appName, "")
+	if err != nil {
+		f.logger.Warn("fly.machine.list.error", "app", f.appName, "err", err)
+	} else {
+		namespacePrefix := sanitizeAppName(f.namespace) + "-"
+
+		for _, machine := range machines {
+			if machine == nil {
+				continue
+			}
+
+			if machine.State == "destroyed" {
+				continue
+			}
+
+			machineNamespace := ""
+			if machine.Config != nil && machine.Config.Metadata != nil {
+				machineNamespace = machine.Config.Metadata["orchestra.namespace"]
+			}
+
+			if machineNamespace != f.namespace && !strings.HasPrefix(machine.Name, namespacePrefix) {
+				continue
+			}
+
+			f.logger.Debug("fly.machine.destroy.sweep", "machine", machine.ID, "name", machine.Name, "state", machine.State)
+
+			err = f.client.Destroy(ctx, f.appName, fly.RemoveMachineInput{
+				ID:   machine.ID,
+				Kill: true,
+			}, "")
+			if err != nil {
+				f.logger.Warn("fly.machine.destroy.sweep.error", "machine", machine.ID, "err", err)
+			}
+		}
+	}
+
 	// Delete all tracked volumes
 	for _, volumeID := range volumeIDs {
 		f.logger.Debug("fly.volume.delete", "volume", volumeID)

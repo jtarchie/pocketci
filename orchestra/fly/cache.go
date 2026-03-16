@@ -33,6 +33,20 @@ func (f *Fly) findVolumeByName(volumeName string) *Volume {
 	return nil
 }
 
+// findVolumeByID looks up a tracked Fly volume by its physical volume ID.
+func (f *Fly) findVolumeByID(volumeID string) (*Volume, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for _, v := range f.volumes {
+		if v.id == volumeID {
+			return v, true
+		}
+	}
+
+	return nil, false
+}
+
 // launchHelperMachine returns a running busybox machine with the given volume
 // attached. On the first call for a volume it creates a new machine; on
 // subsequent calls it resumes the suspended machine from its memory snapshot,
