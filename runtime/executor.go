@@ -24,6 +24,8 @@ type ExecutorOptions struct {
 	// PipelineID is the unique identifier for this pipeline.
 	// Used to scope resource versions to a specific pipeline.
 	PipelineID string
+	// RequestID is the inbound HTTP request ID that triggered this run.
+	RequestID string
 	// Namespace is the namespace for this execution (internal use).
 	Namespace string
 	// WebhookData contains the incoming HTTP request when triggered via webhook.
@@ -81,6 +83,9 @@ func ExecutePipeline(
 		"namespace", namespace,
 		"driver", sanitizeDriverName(driverDSN),
 	)
+	if opts.RequestID != "" {
+		logger = logger.With("request_id", opts.RequestID)
+	}
 
 	logger.Info("driver.initialize")
 

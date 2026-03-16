@@ -69,6 +69,10 @@ func newSlogMiddleware(logger *slog.Logger) echo.MiddlewareFunc {
 		return func(c *echo.Context) error {
 			start := time.Now()
 			req := c.Request()
+			requestID, _ := RequestIDFromContext(req.Context())
+			if requestID == "" {
+				requestID = req.Header.Get(echo.HeaderXRequestID)
+			}
 
 			err := next(c)
 
@@ -81,8 +85,14 @@ func newSlogMiddleware(logger *slog.Logger) echo.MiddlewareFunc {
 				slog.String("remote_ip", c.RealIP()),
 			}
 
-			if rid, ok := c.Get("request_id").(string); ok && rid != "" {
-				attrs = append(attrs, slog.String("request_id", rid))
+			if requestID == "" {
+				requestID, _ = RequestIDFromContext(c.Request().Context())
+			}
+			if requestID == "" {
+				requestID = c.Response().Header().Get(echo.HeaderXRequestID)
+			}
+			if requestID != "" {
+				attrs = append(attrs, slog.String("request_id", requestID))
 			}
 
 			if err != nil {
@@ -141,7 +151,13 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	// Recover orphaned runs from previous server instance
 	execService.RecoverOrphanedRuns(context.Background())
 
-	router.Use(middleware.RequestID())
+	router.Use(middleware.RequestIDWithConfig(middleware.RequestIDConfig{
+		RequestIDHandler: func(c *echo.Context, id string) {
+			req := c.Request()
+			req = req.WithContext(requestContextWithRequestID(req.Context(), id))
+			c.SetRequest(req)
+		},
+	}))
 	router.Use(newSlogMiddleware(logger))
 	router.Use(middleware.Recover())
 

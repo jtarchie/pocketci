@@ -108,6 +108,8 @@ func (s *ExecutionService) TriggerPipeline(ctx context.Context, pipeline *storag
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	requestID, _ := RequestIDFromContext(ctx)
+
 	// Create run record with queued status
 	run, err := s.store.SaveRun(ctx, pipeline.ID)
 	if err != nil {
@@ -119,7 +121,7 @@ func (s *ExecutionService) TriggerPipeline(ctx context.Context, pipeline *storag
 	s.wg.Add(1)
 
 	// Launch execution goroutine
-	go s.executePipeline(pipeline, run, execOptions{})
+	go s.executePipeline(pipeline, run, execOptions{requestID: requestID})
 
 	return run, nil
 }
@@ -134,6 +136,8 @@ func (s *ExecutionService) TriggerWebhookPipeline(
 ) (*storage.PipelineRun, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	requestID, _ := RequestIDFromContext(ctx)
 
 	// Create run record with queued status
 	run, err := s.store.SaveRun(ctx, pipeline.ID)
@@ -151,6 +155,7 @@ func (s *ExecutionService) TriggerWebhookPipeline(
 			webhookData:  webhookData,
 			responseChan: responseChan,
 		},
+		requestID: requestID,
 	})
 
 	return run, nil
@@ -163,6 +168,8 @@ func (s *ExecutionService) ResumePipeline(ctx context.Context, pipeline *storage
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	requestID, _ := RequestIDFromContext(ctx)
+
 	// Reset run status to queued for the resumed execution
 	if err := s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusQueued, ""); err != nil {
 		return fmt.Errorf("failed to reset run status: %w", err)
@@ -171,7 +178,7 @@ func (s *ExecutionService) ResumePipeline(ctx context.Context, pipeline *storage
 	s.inFlight.Add(1)
 	s.wg.Add(1)
 
-	go s.executePipeline(pipeline, run, execOptions{resume: true})
+	go s.executePipeline(pipeline, run, execOptions{resume: true, requestID: requestID})
 
 	return nil
 }
@@ -224,8 +231,9 @@ type webhookExecData struct {
 
 // execOptions holds options for executePipeline.
 type execOptions struct {
-	webhook *webhookExecData
-	resume  bool
+	webhook   *webhookExecData
+	resume    bool
+	requestID string
 }
 
 func (s *ExecutionService) resolveDriverDSN(ctx context.Context, pipeline *storage.Pipeline) (string, error) {
@@ -275,6 +283,9 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 		"pipeline_id", pipeline.ID,
 		"pipeline_name", pipeline.Name,
 	)
+	if opts.requestID != "" {
+		logger = logger.With("request_id", opts.requestID)
+	}
 
 	// Update status to running
 	err := s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusRunning, "")
@@ -302,6 +313,7 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 		RunID:      run.ID,
 		PipelineID: pipeline.ID,
 		Resume:     IsFeatureEnabled(FeatureResume, s.AllowedFeatures) && (opts.resume || pipeline.ResumeEnabled),
+		RequestID:  opts.requestID,
 	}
 
 	// Only pass secrets manager if the secrets feature is enabled
