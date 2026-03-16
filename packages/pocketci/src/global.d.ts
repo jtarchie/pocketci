@@ -520,12 +520,12 @@ declare global {
     jobName: string;
     buildID: string;
     status:
-    | "pending"
-    | "running"
-    | "success"
-    | "failure"
-    | "error"
-    | "limit_exceeded";
+      | "pending"
+      | "running"
+      | "success"
+      | "failure"
+      | "error"
+      | "limit_exceeded";
     startTime: string;
     endTime: string;
     duration: string;
@@ -885,4 +885,4 @@ declare global {
   }
 }
 
-export { };
+export {};

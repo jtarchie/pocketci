@@ -7,10 +7,17 @@ interface Issue {
   start_line?: unknown;
 }
 type Severity = "critical" | "high" | "medium" | "low";
-interface Review { summary?: unknown; issues?: unknown[] }
+interface Review {
+  summary?: unknown;
+  issues?: unknown[];
+}
 interface InlineComment {
-  path: string; line: number; side: "RIGHT"; body: string;
-  start_line?: number; start_side?: "RIGHT";
+  path: string;
+  line: number;
+  side: "RIGHT";
+  body: string;
+  start_line?: number;
+  start_side?: "RIGHT";
 }
 interface FallbackFinding {
   severity: Severity;
@@ -90,7 +97,8 @@ async function github(
   });
   if (!res.ok) {
     throw new Error(
-      `GitHub API ${path} → ${res.status} ${res.statusText}\n${await res.text()}`,
+      `GitHub API ${path} → ${res.status} ${res.statusText}\n${await res
+        .text()}`,
     );
   }
   return res.json();
@@ -141,11 +149,11 @@ for (const raw of (review.issues as Issue[])) {
   const severity = normalizeSeverity(raw.severity);
   const description = String(raw.description ?? "").trim();
   const file = String(raw.file ?? "").trim();
-  const line = typeof raw.line === "number"
-    ? raw.line
-    : Number(raw.line ?? 0);
+  const line = typeof raw.line === "number" ? raw.line : Number(raw.line ?? 0);
   const startLine = raw.start_line != null
-    ? (typeof raw.start_line === "number" ? raw.start_line : Number(raw.start_line))
+    ? (typeof raw.start_line === "number"
+      ? raw.start_line
+      : Number(raw.start_line))
     : 0;
 
   if (!description) continue;
@@ -158,7 +166,9 @@ for (const raw of (review.issues as Issue[])) {
       body: `[${severity.toUpperCase()}] ${description}`,
     };
     // Attach range fields when start_line is valid and also anchorable in the diff.
-    if (startLine > 0 && startLine < line && changed.has(`${file}:${startLine}`)) {
+    if (
+      startLine > 0 && startLine < line && changed.has(`${file}:${startLine}`)
+    ) {
       comment.start_line = startLine;
       comment.start_side = "RIGHT";
     }
@@ -193,10 +203,11 @@ if (inline.length > 0) {
 
 // 6. Post one extra comment for issues that couldn't be anchored
 if (fallback.length > 0) {
-  const linkablePath = (path: string): string => path
-    .split("/")
-    .map((part) => encodeURIComponent(part))
-    .join("/");
+  const linkablePath = (path: string): string =>
+    path
+      .split("/")
+      .map((part) => encodeURIComponent(part))
+      .join("/");
 
   const body = [
     "## Automated Review: Unanchored Findings",
@@ -209,7 +220,9 @@ if (fallback.length > 0) {
       (f) => {
         const hasLocation = Boolean(f.file) && Boolean(f.line && f.line > 0);
         const location = hasLocation
-          ? `[${f.file}:${f.line}](https://github.com/${GH_REPO}/blob/${pr.head.sha}/${linkablePath(f.file as string)}#L${f.line})`
+          ? `[${f.file}:${f.line}](https://github.com/${GH_REPO}/blob/${pr.head.sha}/${
+            linkablePath(f.file as string)
+          }#L${f.line})`
           : "location unavailable";
         return `- [${f.severity.toUpperCase()}] ${location} - ${f.description}`;
       },

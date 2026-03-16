@@ -243,57 +243,60 @@ func TestAuditUsageJSONTags(t *testing.T) {
 	assert.Expect(m).NotTo(HaveKey("completion_tokens"))
 }
 
-func TestAgentResultAuditLogField(t *testing.T) {
+func TestAgentResultAuditLog(t *testing.T) {
 	t.Parallel()
 
-	assert := NewGomegaWithT(t)
+	t.Run("populated", func(t *testing.T) {
+		t.Parallel()
 
-	result := AgentResult{
-		Text:   "done",
-		Status: "success",
-		AuditLog: []AuditEvent{
-			{Type: "user_message", Author: "user", Text: "go"},
-			{Type: "model_final", Author: "agent", Text: "done"},
-		},
-	}
+		assert := NewGomegaWithT(t)
 
-	b, err := json.Marshal(result)
-	assert.Expect(err).NotTo(HaveOccurred())
+		result := AgentResult{
+			Text:   "done",
+			Status: "success",
+			AuditLog: []AuditEvent{
+				{Type: "user_message", Author: "user", Text: "go"},
+				{Type: "model_final", Author: "agent", Text: "done"},
+			},
+		}
 
-	var m map[string]any
-	err = json.Unmarshal(b, &m)
-	assert.Expect(err).NotTo(HaveOccurred())
+		b, err := json.Marshal(result)
+		assert.Expect(err).NotTo(HaveOccurred())
 
-	log, ok := m["auditLog"].([]any)
-	assert.Expect(ok).To(BeTrue())
-	assert.Expect(log).To(HaveLen(2))
+		var m map[string]any
+		err = json.Unmarshal(b, &m)
+		assert.Expect(err).NotTo(HaveOccurred())
 
-	first := log[0].(map[string]any)
-	assert.Expect(first["type"]).To(Equal("user_message"))
+		log, ok := m["auditLog"].([]any)
+		assert.Expect(ok).To(BeTrue())
+		assert.Expect(log).To(HaveLen(2))
 
-	second := log[1].(map[string]any)
-	assert.Expect(second["type"]).To(Equal("model_final"))
-}
+		first := log[0].(map[string]any)
+		assert.Expect(first["type"]).To(Equal("user_message"))
 
-func TestAgentResultAuditLogEmptyWhenNil(t *testing.T) {
-	t.Parallel()
+		second := log[1].(map[string]any)
+		assert.Expect(second["type"]).To(Equal("model_final"))
+	})
 
-	assert := NewGomegaWithT(t)
+	t.Run("nil_is_present", func(t *testing.T) {
+		t.Parallel()
 
-	result := AgentResult{
-		Text:   "done",
-		Status: "success",
-	}
+		assert := NewGomegaWithT(t)
 
-	b, err := json.Marshal(result)
-	assert.Expect(err).NotTo(HaveOccurred())
+		result := AgentResult{
+			Text:   "done",
+			Status: "success",
+		}
 
-	var m map[string]any
-	err = json.Unmarshal(b, &m)
-	assert.Expect(err).NotTo(HaveOccurred())
+		b, err := json.Marshal(result)
+		assert.Expect(err).NotTo(HaveOccurred())
 
-	// auditLog must be present (non-omitempty slice marshals as null/[]).
-	assert.Expect(m).To(HaveKey("auditLog"))
+		var m map[string]any
+		err = json.Unmarshal(b, &m)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		assert.Expect(m).To(HaveKey("auditLog"))
+	})
 }
 
 func TestAuditEventTypes(t *testing.T) {

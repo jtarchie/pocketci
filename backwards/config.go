@@ -1,6 +1,10 @@
 package backwards
 
-import "time"
+import (
+	"time"
+
+	agent "github.com/jtarchie/pocketci/runtime/agent"
+)
 
 // https://github.com/concourse/concourse/blob/master/atc/config.go
 type ImageResource struct {
@@ -109,67 +113,8 @@ type AcrossVar struct {
 	MaxInFlight int      `yaml:"max_in_flight,omitempty"`
 }
 
-// AgentLLMConfig configures language model generation parameters for an agent step.
-type AgentLLMConfig struct {
-	Temperature *float32 `yaml:"temperature,omitempty"`
-	MaxTokens   int32    `yaml:"max_tokens,omitempty"`
-}
-
-// AgentThinkingConfig enables extended thinking for supported models.
-// Budget sets the maximum thinking tokens (>= 1024).
-// Level is Gemini-specific: low | medium | high | minimal.
-type AgentThinkingConfig struct {
-	Budget int32  `yaml:"budget"`
-	Level  string `yaml:"level,omitempty"`
-}
-
 // AgentSafetyConfig maps harm category names to block thresholds.
-// Keys: harassment, hate_speech, sexually_explicit, dangerous_content.
-// Values: block_none, block_low_and_above, block_medium_and_above, block_only_high, off.
-type AgentSafetyConfig map[string]string
-
-// AgentContextGuardConfig enables context window management to prevent
-// conversations from exceeding the model's context limit.
-type AgentContextGuardConfig struct {
-	Strategy  string `yaml:"strategy"`             // threshold | sliding_window
-	MaxTurns  int    `yaml:"max_turns,omitempty"`  // sliding_window: compact after N turns
-	MaxTokens int    `yaml:"max_tokens,omitempty"` // threshold: manual context window override
-}
-
-// AgentLimitsConfig configures hard limits that stop agent execution.
-type AgentLimitsConfig struct {
-	MaxTurns       int   `yaml:"max_turns,omitempty"`        // stop after N LLM responses (default: 50)
-	MaxTotalTokens int32 `yaml:"max_total_tokens,omitempty"` // stop when cumulative tokens reach this
-}
-
-// AgentValidationConfig configures output validation via an Expr expression.
-type AgentValidationConfig struct {
-	Expr   string `yaml:"expr"              json:"expr"`
-	Prompt string `yaml:"prompt,omitempty"  json:"prompt,omitempty"`
-}
-
-// AgentContextTask specifies a prior pipeline task whose output is pre-fetched
-// into the agent's session as a synthetic tool result before the first turn.
-type AgentContextTask struct {
-	Name  string `yaml:"name"           json:"name"`
-	Field string `yaml:"field,omitempty" json:"field,omitempty"` // stdout | stderr | both (default)
-}
-
-// AgentContextFile specifies a volume file whose contents are pre-read into the
-// agent's session history before the first turn, saving a read_file tool call.
-// Path is "mountname/relative/path" (e.g. "diff/pr.diff").
-type AgentContextFile struct {
-	Path     string `yaml:"path"                json:"path"`
-	MaxBytes int    `yaml:"max_bytes,omitempty" json:"max_bytes,omitempty"`
-}
-
-// AgentContext configures which prior task outputs and file contents to inject
-// into the agent's session history before the first turn.
-type AgentContext struct {
-	Tasks    []AgentContextTask `yaml:"tasks,omitempty"    json:"tasks,omitempty"`
-	Files    []AgentContextFile `yaml:"files,omitempty"    json:"files,omitempty"`
-	MaxBytes int                `yaml:"max_bytes,omitempty" json:"max_bytes,omitempty"`
-}
+type AgentSafetyConfig = map[string]string
 
 type Step struct {
 	Assert *struct {
@@ -192,13 +137,13 @@ type Step struct {
 
 	PromptFile string `yaml:"prompt_file,omitempty"`
 
-	AgentLLM          *AgentLLMConfig          `yaml:"llm,omitempty"`
-	AgentThinking     *AgentThinkingConfig     `yaml:"thinking,omitempty"`
-	AgentSafety       AgentSafetyConfig        `yaml:"safety,omitempty"`
-	AgentContextGuard *AgentContextGuardConfig `yaml:"context_guard,omitempty"`
-	AgentLimits       *AgentLimitsConfig       `yaml:"limits,omitempty"`
-	AgentContext      *AgentContext            `yaml:"context,omitempty"`
-	AgentValidation   *AgentValidationConfig   `yaml:"validation,omitempty"`
+	AgentLLM          *agent.AgentLLMConfig          `yaml:"llm,omitempty"`
+	AgentThinking     *agent.AgentThinkingConfig     `yaml:"thinking,omitempty"`
+	AgentSafety       AgentSafetyConfig              `yaml:"safety,omitempty"`
+	AgentContextGuard *agent.AgentContextGuardConfig `yaml:"context_guard,omitempty"`
+	AgentLimits       *agent.AgentLimitsConfig       `yaml:"limits,omitempty"`
+	AgentContext      *agent.AgentContext            `yaml:"context,omitempty"`
+	AgentValidation   *agent.AgentValidationConfig   `yaml:"validation,omitempty"`
 
 	Get       string    `yaml:"get,omitempty"`
 	GetConfig GetConfig `yaml:",inline,omitempty"`

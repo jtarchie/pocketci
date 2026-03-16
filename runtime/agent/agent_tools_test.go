@@ -62,55 +62,49 @@ func TestParseTaskStepID(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	idx, name := parseTaskStepID("0-git-clone")
-	assert.Expect(idx).To(Equal(0))
-	assert.Expect(name).To(Equal("git-clone"))
-
-	idx, name = parseTaskStepID("12-run-tests")
-	assert.Expect(idx).To(Equal(12))
-	assert.Expect(name).To(Equal("run-tests"))
-
-	// stepID with no dash falls back gracefully.
-	idx, name = parseTaskStepID("badid")
-	assert.Expect(idx).To(Equal(-1))
-	assert.Expect(name).To(Equal("badid"))
-
-	// Non-numeric prefix falls back gracefully.
-	idx, name = parseTaskStepID("x-name")
-	assert.Expect(idx).To(Equal(-1))
-	assert.Expect(name).To(Equal("x-name"))
+	for _, tc := range []struct {
+		input    string
+		wantIdx  int
+		wantName string
+	}{
+		{"0-git-clone", 0, "git-clone"},
+		{"12-run-tests", 12, "run-tests"},
+		{"badid", -1, "badid"},
+		{"x-name", -1, "x-name"},
+	} {
+		idx, name := parseTaskStepID(tc.input)
+		assert.Expect(idx).To(Equal(tc.wantIdx), "idx for %q", tc.input)
+		assert.Expect(name).To(Equal(tc.wantName), "name for %q", tc.input)
+	}
 }
 
-// TestRunScriptInput_MultiStep verifies that runScriptInput wraps its script
-// in /bin/sh -c and that sequential commands in one call all execute.
-func TestRunScriptInput_MultiStep(t *testing.T) {
+func TestRunScript_ShellBehavior(t *testing.T) {
 	t.Parallel()
 
-	assert := NewGomegaWithT(t)
+	t.Run("multi_step", func(t *testing.T) {
+		t.Parallel()
 
-	// Simulate what sandbox.Exec receives from run_script by running locally.
-	script := "set -e\necho hello\necho world"
-	cmd := exec.Command("/bin/sh", "-c", script) //nolint:gosec
-	out, err := cmd.Output()
-	assert.Expect(err).NotTo(HaveOccurred())
-	assert.Expect(string(out)).To(ContainSubstring("hello"))
-	assert.Expect(string(out)).To(ContainSubstring("world"))
-}
+		assert := NewGomegaWithT(t)
 
-// TestRunScriptInput_FailFast verifies that set -e causes the script to abort
-// at the first failing command and that the exit code is non-zero.
-func TestRunScriptInput_FailFast(t *testing.T) {
-	t.Parallel()
+		script := "set -e\necho hello\necho world"
+		cmd := exec.Command("/bin/sh", "-c", script) //nolint:gosec
+		out, err := cmd.Output()
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(string(out)).To(ContainSubstring("hello"))
+		assert.Expect(string(out)).To(ContainSubstring("world"))
+	})
 
-	assert := NewGomegaWithT(t)
+	t.Run("fail_fast", func(t *testing.T) {
+		t.Parallel()
 
-	// 'false' exits 1 so set -e should abort before the second echo.
-	script := "set -e\nfalse\necho should_not_appear"
-	cmd := exec.Command("/bin/sh", "-c", script) //nolint:gosec
-	out, err := cmd.CombinedOutput()
-	// err is non-nil when exit code != 0.
-	assert.Expect(err).To(HaveOccurred())
-	assert.Expect(string(out)).NotTo(ContainSubstring("should_not_appear"))
+		assert := NewGomegaWithT(t)
+
+		script := "set -e\nfalse\necho should_not_appear"
+		cmd := exec.Command("/bin/sh", "-c", script) //nolint:gosec
+		out, err := cmd.CombinedOutput()
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(string(out)).NotTo(ContainSubstring("should_not_appear"))
+	})
 }
 
 func TestLevenshtein(t *testing.T) {
@@ -118,12 +112,18 @@ func TestLevenshtein(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	assert.Expect(levenshtein("kitten", "sitting")).To(Equal(3))
-	assert.Expect(levenshtein("", "abc")).To(Equal(3))
-	assert.Expect(levenshtein("abc", "")).To(Equal(3))
-	assert.Expect(levenshtein("abc", "abc")).To(Equal(0))
-	// Case-insensitive.
-	assert.Expect(levenshtein("BUILD", "build")).To(Equal(0))
+	for _, tc := range []struct {
+		a, b string
+		want int
+	}{
+		{"kitten", "sitting", 3},
+		{"", "abc", 3},
+		{"abc", "", 3},
+		{"abc", "abc", 0},
+		{"BUILD", "build", 0}, // case-insensitive
+	} {
+		assert.Expect(levenshtein(tc.a, tc.b)).To(Equal(tc.want), "%q vs %q", tc.a, tc.b)
+	}
 }
 
 func TestFuzzyFindTask(t *testing.T) {

@@ -171,6 +171,36 @@ func (c *Container) Logs(ctx context.Context, stdout, stderr io.Writer, follow b
 
 		select {
 		case <-ctx.Done():
+			// Context was cancelled — attempt one final drain in case the
+			// machine finished and there are unseen log entries.  Use a
+			// short-lived background context so the API call still succeeds.
+			drainCtx, drainCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer drainCancel()
+
+			for {
+				finalEntries, finalToken, err := c.fetchLogs(drainCtx, nextToken)
+				if err != nil || len(finalEntries) == 0 {
+					break
+				}
+
+				for _, entry := range finalEntries {
+					writer := stdout
+					if entry.Level == "error" || entry.Level == "warning" {
+						writer = stderr
+					}
+
+					if entry.Provider == "app" {
+						_, _ = fmt.Fprintln(writer, entry.Message)
+					}
+				}
+
+				if finalToken != "" {
+					nextToken = finalToken
+				} else {
+					break
+				}
+			}
+
 			return nil
 		case <-time.After(500 * time.Millisecond):
 			continue
