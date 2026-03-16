@@ -26,6 +26,10 @@ type ExecutorOptions struct {
 	PipelineID string
 	// RequestID is the inbound HTTP request ID that triggered this run.
 	RequestID string
+	// AuthProvider identifies the auth mechanism/provider of the caller.
+	AuthProvider string
+	// User identifies the authenticated caller.
+	User string
 	// Namespace is the namespace for this execution (internal use).
 	Namespace string
 	// WebhookData contains the incoming HTTP request when triggered via webhook.
@@ -85,6 +89,9 @@ func ExecutePipeline(
 	)
 	if opts.RequestID != "" {
 		logger = logger.With("request_id", opts.RequestID)
+	}
+	if opts.AuthProvider != "" && opts.User != "" {
+		logger = logger.With("auth_provider", opts.AuthProvider, "user", opts.User)
 	}
 
 	logger.Info("driver.initialize")

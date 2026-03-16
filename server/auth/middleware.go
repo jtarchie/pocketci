@@ -96,6 +96,9 @@ func RequireAuth(cfg *Config, store *sessions.CookieStore, tokenValidator func(s
 				}
 
 				c.Set(string(userContextKey), user)
+				req := c.Request()
+				req = req.WithContext(WithRequestActor(req.Context(), actorFromOAuthUser(user)))
+				c.SetRequest(req)
 
 				return next(c)
 			}
@@ -104,6 +107,9 @@ func RequireAuth(cfg *Config, store *sessions.CookieStore, tokenValidator func(s
 			user := GetUserFromSession(c.Request(), store)
 			if user != nil {
 				c.Set(string(userContextKey), user)
+				req := c.Request()
+				req = req.WithContext(WithRequestActor(req.Context(), actorFromOAuthUser(user)))
+				c.SetRequest(req)
 				return next(c)
 			}
 

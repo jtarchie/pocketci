@@ -70,6 +70,7 @@ func newSlogMiddleware(logger *slog.Logger) echo.MiddlewareFunc {
 			start := time.Now()
 			req := c.Request()
 			requestID, _ := RequestIDFromContext(req.Context())
+			actor, _ := RequestActorFromContext(req.Context())
 			if requestID == "" {
 				requestID = req.Header.Get(echo.HeaderXRequestID)
 			}
@@ -88,11 +89,20 @@ func newSlogMiddleware(logger *slog.Logger) echo.MiddlewareFunc {
 			if requestID == "" {
 				requestID, _ = RequestIDFromContext(c.Request().Context())
 			}
+			if actor.User == "" || actor.Provider == "" {
+				actor, _ = RequestActorFromContext(c.Request().Context())
+			}
 			if requestID == "" {
 				requestID = c.Response().Header().Get(echo.HeaderXRequestID)
 			}
 			if requestID != "" {
 				attrs = append(attrs, slog.String("request_id", requestID))
+			}
+			if actor.Provider != "" && actor.User != "" {
+				attrs = append(attrs,
+					slog.String("auth_provider", actor.Provider),
+					slog.String("user", actor.User),
+				)
 			}
 
 			if err != nil {
@@ -125,7 +135,14 @@ func newBasicAuthMiddleware(username, password string) echo.MiddlewareFunc {
 	}
 
 	return middleware.BasicAuth(func(c *echo.Context, u, p string) (bool, error) {
-		return u == username && p == password, nil
+		authed := u == username && p == password
+		if authed {
+			req := c.Request()
+			req = req.WithContext(auth.WithRequestActor(req.Context(), auth.RequestActor{Provider: "basic", User: u}))
+			c.SetRequest(req)
+		}
+
+		return authed, nil
 	})
 }
 

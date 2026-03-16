@@ -1,11 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +22,10 @@ import (
 const testSessionSecret = "test-secret-key-at-least-32-bytes-long"
 
 func setupRouterWithOAuth(t *testing.T, rbacExpression string) *Router {
+	return setupRouterWithOAuthLogger(t, rbacExpression, slog.Default())
+}
+
+func setupRouterWithOAuthLogger(t *testing.T, rbacExpression string, logger *slog.Logger) *Router {
 	t.Helper()
 
 	tempDir := t.TempDir()
@@ -55,7 +61,7 @@ func setupRouterWithOAuth(t *testing.T, rbacExpression string) *Router {
 		ServerRBAC:         rbacExpression,
 	}
 
-	router, err := NewRouter(slog.Default(), client, RouterOptions{
+	router, err := NewRouter(logger, client, RouterOptions{
 		SecretsManager: secretsManager,
 		AuthConfig:     authCfg,
 	})
@@ -128,6 +134,33 @@ func TestOAuthRequireAuthValidBearerToken(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	// Should pass auth and reach the handler (200, not 401)
 	assert.Expect(rec.Code).NotTo(gomega.Equal(http.StatusUnauthorized))
+}
+
+func TestOAuthRequestLogsIncludeAuthenticatedUser(t *testing.T) {
+	assert := gomega.NewWithT(t)
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
+	router := setupRouterWithOAuthLogger(t, "", logger)
+
+	user := &auth.User{
+		Email:    "alice@example.com",
+		NickName: "alice",
+		Provider: "github",
+		UserID:   "12345",
+	}
+	token := generateTestToken(t, user)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/pipelines", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	assert.Expect(rec.Code).NotTo(gomega.Equal(http.StatusUnauthorized))
+	logs := logBuf.String()
+	assert.Expect(strings.Contains(logs, `"auth_provider":"github"`)).To(gomega.BeTrue())
+	assert.Expect(strings.Contains(logs, `"user":"alice@example.com"`)).To(gomega.BeTrue())
 }
 
 func TestOAuthRequireAuthInvalidBearerToken(t *testing.T) {

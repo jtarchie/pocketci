@@ -33,7 +33,7 @@ func (c *APIWebhooksController) Trigger(ctx *echo.Context) error {
 	}
 
 	id := ctx.Param("id")
-	logger := LoggerWithRequestID(c.logger, ctx.Request().Context()).With("pipeline_id", id, "method", ctx.Request().Method, "remote_ip", ctx.RealIP())
+	logger := LoggerWithRequestActor(LoggerWithRequestID(c.logger, ctx.Request().Context()), ctx.Request().Context()).With("pipeline_id", id, "method", ctx.Request().Method, "remote_ip", ctx.RealIP())
 	logger.Info("webhook.received")
 
 	pipeline, err := c.store.GetPipeline(ctx.Request().Context(), id)

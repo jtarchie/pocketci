@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jtarchie/pocketci/server/auth"
 	"github.com/jtarchie/pocketci/storage"
 	_ "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/labstack/echo/v5"
@@ -109,4 +110,73 @@ func TestExecutePipelineLoggerIncludesRequestID(t *testing.T) {
 	svc.executePipeline(pipeline, run, execOptions{requestID: "req-exec-1"})
 
 	assert.Expect(buf.String()).To(ContainSubstring("\"request_id\":\"req-exec-1\""))
+}
+
+func TestRequestActorFromContext(t *testing.T) {
+	t.Parallel()
+	assert := NewGomegaWithT(t)
+
+	ctx := auth.WithRequestActor(context.Background(), auth.RequestActor{Provider: "basic", User: "alice"})
+	actor, ok := RequestActorFromContext(ctx)
+	assert.Expect(ok).To(BeTrue())
+	assert.Expect(actor.Provider).To(Equal("basic"))
+	assert.Expect(actor.User).To(Equal("alice"))
+}
+
+func TestBasicAuthMiddlewarePropagatesActorToContext(t *testing.T) {
+	t.Parallel()
+	assert := NewGomegaWithT(t)
+
+	e := echo.New()
+	e.Use(newBasicAuthMiddleware("admin", "secret"))
+
+	e.GET("/whoami", func(ctx *echo.Context) error {
+		actor, ok := RequestActorFromContext(ctx.Request().Context())
+		if !ok {
+			return ctx.String(http.StatusInternalServerError, "missing actor")
+		}
+
+		return ctx.JSON(http.StatusOK, actor)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
+	req.SetBasicAuth("admin", "secret")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Expect(rec.Code).To(Equal(http.StatusOK))
+	assert.Expect(rec.Body.String()).To(ContainSubstring("\"Provider\":\"basic\""))
+	assert.Expect(rec.Body.String()).To(ContainSubstring("\"User\":\"admin\""))
+}
+
+func TestExecutePipelineLoggerIncludesActor(t *testing.T) {
+	t.Parallel()
+	assert := NewGomegaWithT(t)
+
+	buildFile, err := os.CreateTemp(t.TempDir(), "")
+	assert.Expect(err).NotTo(HaveOccurred())
+	defer func() { _ = buildFile.Close() }()
+
+	initStorage, found := storage.GetFromDSN("sqlite://" + buildFile.Name())
+	assert.Expect(found).To(BeTrue())
+
+	store, err := initStorage("sqlite://"+buildFile.Name(), "namespace", slog.Default())
+	assert.Expect(err).NotTo(HaveOccurred())
+	defer func() { _ = store.Close() }()
+
+	pipeline, err := store.SavePipeline(context.Background(), "request-actor-pipeline", "export const pipeline = async () => {};", "native://", "")
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	run, err := store.SaveRun(context.Background(), pipeline.ID)
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	var buf bytes.Buffer
+	svc := NewExecutionService(store, slog.New(slog.NewJSONHandler(&buf, nil)), 1, nil)
+	svc.wg.Add(1)
+	svc.inFlight.Add(1)
+
+	svc.executePipeline(pipeline, run, execOptions{requestID: "req-exec-2", authProvider: "basic", user: "admin"})
+
+	assert.Expect(buf.String()).To(ContainSubstring("\"auth_provider\":\"basic\""))
+	assert.Expect(buf.String()).To(ContainSubstring("\"user\":\"admin\""))
 }
