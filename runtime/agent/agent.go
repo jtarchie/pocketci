@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/expr-lang/expr"
 	"github.com/google/uuid"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
@@ -71,6 +72,7 @@ type AgentConfig struct {
 	ContextGuard     *AgentContextGuardConfig               `json:"context_guard,omitempty"`
 	Limits           *AgentLimitsConfig                     `json:"limits,omitempty"`
 	Context          *AgentContext                          `json:"context,omitempty"`
+	Validation       *AgentValidationConfig                 `json:"validation,omitempty"`
 	// OnOutput is called with streaming chunks. Not serialised from JS.
 	OnOutput pipelinerunner.OutputCallback `json:"-"`
 	// OnAuditEvent is called every time an audit event is appended.
@@ -159,6 +161,14 @@ type readFileOutput struct {
 	Path      string `json:"path"`
 	Content   string `json:"content"`
 	Truncated bool   `json:"truncated,omitempty"`
+}
+
+// AgentValidationConfig configures output validation via an Expr expression.
+// The expression is evaluated with {text: string, status: string} as the environment.
+// If it returns false, a follow-up prompt is sent asking the model to correct its output.
+type AgentValidationConfig struct {
+	Expr   string `json:"expr"`             // Expr boolean expression, e.g. `text != "" && text contains "{"`
+	Prompt string `json:"prompt,omitempty"` // custom follow-up prompt; defaults to a generic message
 }
 
 // AgentContextTask specifies a prior task whose output is pre-fetched into the
@@ -584,6 +594,22 @@ func truncateStr(s string, maxBytes int) (string, bool) {
 	}
 
 	return s[:maxBytes], true
+}
+
+// evalValidation compiles and runs a boolean Expr expression against the given
+// environment. Returns (true, nil) when the expression passes.
+func evalValidation(expression string, env map[string]any) (bool, error) {
+	program, err := expr.Compile(expression, expr.Env(env), expr.AsBool())
+	if err != nil {
+		return false, fmt.Errorf("validation compile: %w", err)
+	}
+
+	result, err := expr.Run(program, env)
+	if err != nil {
+		return false, fmt.Errorf("validation eval: %w", err)
+	}
+
+	return result.(bool), nil //nolint:forcetypeassert
 }
 
 // injectSyntheticToolCall appends a matched FunctionCall + FunctionResponse
@@ -1502,6 +1528,99 @@ func RunAgent(
 
 	if runErr != nil {
 		return nil, fmt.Errorf("agent: run failed: %w", runErr)
+	}
+
+	// Validate the agent's output. When a validation expression is configured,
+	// evaluate it; otherwise fall back to checking that some text was produced.
+	// If validation fails, send a follow-up turn asking the model to correct.
+	if !limitExceeded {
+		needsFollowUp := false
+		followUpText := "You have not provided a final text response yet. " +
+			"Please produce your complete response now based on the information you have gathered."
+
+		if config.Validation != nil && config.Validation.Expr != "" {
+			env := map[string]any{
+				"text":   textBuilder.String(),
+				"status": "success",
+			}
+
+			passed, evalErr := evalValidation(config.Validation.Expr, env)
+			if evalErr != nil {
+				appendAuditEvent(&auditEvents, AuditEvent{
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+					Author:    "system",
+					Type:      "validation_error",
+					Text:      fmt.Sprintf("Validation expression error: %v", evalErr),
+				}, config.OnAuditEvent)
+
+				needsFollowUp = true
+			} else if !passed {
+				needsFollowUp = true
+			}
+
+			if needsFollowUp && config.Validation.Prompt != "" {
+				followUpText = config.Validation.Prompt
+			}
+		} else {
+			// Default: follow up when the model produced no text at all.
+			needsFollowUp = textBuilder.Len() == 0
+		}
+
+		if needsFollowUp {
+			appendAuditEvent(&auditEvents, AuditEvent{
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+				Author:    "system",
+				Type:      "validation_followup",
+				Text:      followUpText,
+			}, config.OnAuditEvent)
+
+			followUpMsg := genai.NewContentFromText(followUpText, genai.RoleUser)
+
+			for event, err := range runnr.Run(runCtx, "pipeline", sessResp.Session.ID(), followUpMsg, agent.RunConfig{}) {
+				if err != nil {
+					if !errors.Is(err, context.Canceled) {
+						runErr = err
+					}
+
+					break
+				}
+
+				if event.UsageMetadata != nil {
+					usage.PromptTokens += event.UsageMetadata.PromptTokenCount
+					usage.CompletionTokens += event.UsageMetadata.CandidatesTokenCount
+					usage.TotalTokens += event.UsageMetadata.TotalTokenCount
+					usage.LLMRequests++
+					emitUsageSnapshot(config.OnUsage, usage)
+				}
+
+				if event.Content == nil {
+					continue
+				}
+
+				for _, part := range event.Content.Parts {
+					if part.Text == "" {
+						continue
+					}
+
+					textBuilder.WriteString(part.Text)
+
+					if config.OnOutput != nil {
+						config.OnOutput("stdout", part.Text)
+					}
+
+					appendAuditEvent(&auditEvents, AuditEvent{
+						Timestamp: time.Now().UTC().Format(time.RFC3339),
+						Author:    event.Author,
+						Type:      "model_final",
+						Text:      part.Text,
+					}, config.OnAuditEvent)
+				}
+			}
+
+			if runErr != nil {
+				return nil, fmt.Errorf("agent: follow-up run failed: %w", runErr)
+			}
+		}
 	}
 
 	finalText := textBuilder.String()

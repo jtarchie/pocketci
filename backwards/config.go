@@ -142,6 +142,12 @@ type AgentLimitsConfig struct {
 	MaxTotalTokens int32 `yaml:"max_total_tokens,omitempty"` // stop when cumulative tokens reach this
 }
 
+// AgentValidationConfig configures output validation via an Expr expression.
+type AgentValidationConfig struct {
+	Expr   string `yaml:"expr"              json:"expr"`
+	Prompt string `yaml:"prompt,omitempty"  json:"prompt,omitempty"`
+}
+
 // AgentContextTask specifies a prior pipeline task whose output is pre-fetched
 // into the agent's session as a synthetic tool result before the first turn.
 type AgentContextTask struct {
@@ -192,6 +198,7 @@ type Step struct {
 	AgentContextGuard *AgentContextGuardConfig `yaml:"context_guard,omitempty"`
 	AgentLimits       *AgentLimitsConfig       `yaml:"limits,omitempty"`
 	AgentContext      *AgentContext            `yaml:"context,omitempty"`
+	AgentValidation   *AgentValidationConfig   `yaml:"validation,omitempty"`
 
 	Get       string    `yaml:"get,omitempty"`
 	GetConfig GetConfig `yaml:",inline,omitempty"`

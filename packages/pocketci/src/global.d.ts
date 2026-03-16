@@ -283,6 +283,15 @@ declare global {
     max_tokens?: number; // threshold: manual context window override
   }
 
+  // Output validation via an Expr boolean expression.
+  // Evaluated after the agent completes; if false, a follow-up prompt is sent.
+  interface AgentValidationConfig {
+    /** Expr boolean expression evaluated with {text, status} environment. */
+    expr: string;
+    /** Custom follow-up prompt when validation fails. */
+    prompt?: string;
+  }
+
   // Hard limits that stop agent execution.
   interface AgentLimitsConfig {
     /** Stop after N LLM responses. Default: 50. */
@@ -336,6 +345,7 @@ declare global {
     context_guard?: AgentContextGuardConfig;
     limits?: AgentLimitsConfig;
     context?: AgentContext;
+    validation?: AgentValidationConfig;
   }
 
   /**
@@ -510,12 +520,12 @@ declare global {
     jobName: string;
     buildID: string;
     status:
-      | "pending"
-      | "running"
-      | "success"
-      | "failure"
-      | "error"
-      | "limit_exceeded";
+    | "pending"
+    | "running"
+    | "success"
+    | "failure"
+    | "error"
+    | "limit_exceeded";
     startTime: string;
     endTime: string;
     duration: string;
@@ -770,6 +780,7 @@ declare global {
     context_guard?: AgentContextGuardConfig;
     limits?: AgentLimitsConfig;
     context?: AgentContext;
+    validation?: AgentValidationConfig;
     attempts?: number;
     across?: AcrossVar[];
     fail_fast?: boolean;
@@ -874,4 +885,4 @@ declare global {
   }
 }
 
-export {};
+export { };

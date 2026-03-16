@@ -63,14 +63,29 @@ jobs:
       # ── 2a. Code-quality review ───────────────────────────────────────────
       - agent: code-quality-reviewer
         file: repo/examples/agent/agents/code-quality.yml
+        validation:
+          expr: 'text != ""'
+          prompt: >-
+            You did not produce any output. List your findings as bullet points:
+            - path/file.ext:LINE — description
 
       # ── 2b. Security review ───────────────────────────────────────────────
       - agent: security-reviewer
         file: repo/examples/agent/agents/security.yml
+        validation:
+          expr: 'text != ""'
+          prompt: >-
+            You did not produce any output. List your findings as bullet points:
+            - path/file.ext:LINE — description
 
       # ── 2c. Maintainability review ────────────────────────────────────────
       - agent: maintainability-reviewer
         file: repo/examples/agent/agents/maintainability.yml
+        validation:
+          expr: 'text != ""'
+          prompt: >-
+            You did not produce any output. List your findings as bullet points:
+            - path/file.ext:LINE — description
 
       # ── 3. Aggregate and synthesize ───────────────────────────────────────
       #
@@ -84,6 +99,11 @@ jobs:
       #      run_command if the agent needs to re-read raw content.
       - agent: final-reviewer
         file: repo/examples/agent/agents/final-reviewer.yml
+        validation:
+          expr: 'text != "" && text contains "summary"'
+          prompt: >-
+            You must output valid JSON containing a "summary" field and an
+            "issues" array. Do not include prose outside the JSON object.
 
       # ── 4. Post batched inline review comments ────────────────────────────
       #

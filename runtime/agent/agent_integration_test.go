@@ -821,6 +821,386 @@ func TestRunAgent_ContextTasksPreInjection_RealDocker(t *testing.T) {
 	assert.Expect(strings.TrimSpace(artifact["text"])).NotTo(BeEmpty())
 }
 
+// TestRunAgent_ValidationPasses_NoFollowUp_RealDocker verifies that when the
+// agent's output satisfies the validation expression, no follow-up turn is sent.
+func TestRunAgent_ValidationPasses_NoFollowUp_RealDocker(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	responses := []string{
+		`{
+			"id":"chatcmpl-vp-1",
+			"object":"chat.completion",
+			"created":1730000400,
+			"model":"fake-model",
+			"choices":[{
+				"index":0,
+				"message":{
+					"role":"assistant",
+					"content":"{\"summary\":\"All good\",\"issues\":[]}"
+				},
+				"finish_reason":"stop"
+			}],
+			"usage":{"prompt_tokens":20,"completion_tokens":10,"total_tokens":30}
+		}`,
+	}
+
+	llm, reqCount := newSequencedLLMServer(t, responses)
+	configureFakeOpenAI(t, llm.URL)
+
+	runner := newDockerRunner(t, "agent-val-pass")
+	outVol := mustCreateVolume(t, runner, "final-review")
+
+	result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+		Name:   "val-pass-agent",
+		Prompt: "Output JSON.",
+		Model:  "openai/fake-model",
+		Image:  "busybox",
+		Mounts: map[string]pipelinerunner.VolumeResult{
+			"final-review": outVol,
+		},
+		OutputVolumePath: outVol.Path,
+		Validation: &AgentValidationConfig{
+			Expr: `text != "" && text contains "{"`,
+		},
+	})
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result).NotTo(BeNil())
+
+	assert.Expect(result.Text).To(ContainSubstring(`"summary"`))
+
+	// No validation_followup event in audit log — validation passed.
+	for _, event := range result.AuditLog {
+		assert.Expect(event.Type).NotTo(Equal("validation_followup"),
+			"expected no validation_followup when validation passes")
+	}
+
+	// The follow-up would add an extra LLM request beyond the base count.
+	baseCount := atomic.LoadInt32(reqCount)
+	assert.Expect(baseCount).To(BeNumerically(">=", 1))
+}
+
+// TestRunAgent_ValidationFails_TriggersFollowUp_RealDocker verifies that when
+// the agent's output fails validation, a follow-up turn is sent and the
+// corrected output is captured.
+func TestRunAgent_ValidationFails_TriggersFollowUp_RealDocker(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	responses := []string{
+		// Turn 1: agent outputs plain text that fails the JSON check.
+		`{
+			"id":"chatcmpl-vf-1",
+			"object":"chat.completion",
+			"created":1730000500,
+			"model":"fake-model",
+			"choices":[{
+				"index":0,
+				"message":{
+					"role":"assistant",
+					"content":"I found several issues in the code."
+				},
+				"finish_reason":"stop"
+			}],
+			"usage":{"prompt_tokens":20,"completion_tokens":8,"total_tokens":28}
+		}`,
+		// Turn 2 (follow-up): agent corrects and outputs JSON.
+		`{
+			"id":"chatcmpl-vf-2",
+			"object":"chat.completion",
+			"created":1730000501,
+			"model":"fake-model",
+			"choices":[{
+				"index":0,
+				"message":{
+					"role":"assistant",
+					"content":"{\"summary\":\"Issues found\",\"issues\":[{\"severity\":\"high\"}]}"
+				},
+				"finish_reason":"stop"
+			}],
+			"usage":{"prompt_tokens":30,"completion_tokens":15,"total_tokens":45}
+		}`,
+	}
+
+	llm, reqCount := newSequencedLLMServer(t, responses)
+	configureFakeOpenAI(t, llm.URL)
+
+	runner := newDockerRunner(t, "agent-val-fail")
+	outVol := mustCreateVolume(t, runner, "final-review")
+
+	result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+		Name:   "val-fail-agent",
+		Prompt: "Output JSON review.",
+		Model:  "openai/fake-model",
+		Image:  "busybox",
+		Mounts: map[string]pipelinerunner.VolumeResult{
+			"final-review": outVol,
+		},
+		OutputVolumePath: outVol.Path,
+		Validation: &AgentValidationConfig{
+			Expr: `text contains "{"`,
+		},
+	})
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result).NotTo(BeNil())
+
+	// Final text includes both the original and follow-up output.
+	assert.Expect(result.Text).To(ContainSubstring(`"summary"`))
+
+	// 2 LLM requests: original + follow-up.
+	assert.Expect(atomic.LoadInt32(reqCount)).To(BeNumerically("==", 2))
+
+	// Audit log must contain a validation_followup event with the default prompt.
+	var followUpEvent *AuditEvent
+	for i := range result.AuditLog {
+		if result.AuditLog[i].Type == "validation_followup" {
+			followUpEvent = &result.AuditLog[i]
+
+			break
+		}
+	}
+
+	assert.Expect(followUpEvent).NotTo(BeNil(), "expected a validation_followup audit event")
+	assert.Expect(followUpEvent.Text).To(ContainSubstring("final text response"))
+
+	artifact := readResultArtifact(t, runner, outVol, "read-val-fail-result")
+	assert.Expect(artifact["status"]).To(Equal("success"))
+}
+
+// TestRunAgent_ValidationFails_CustomPrompt_RealDocker verifies that a custom
+// prompt is used in the follow-up turn when validation fails.
+func TestRunAgent_ValidationFails_CustomPrompt_RealDocker(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	customPrompt := "You MUST output strict JSON with summary and issues fields."
+
+	responses := []string{
+		`{
+			"id":"chatcmpl-vfc-1",
+			"object":"chat.completion",
+			"created":1730000600,
+			"model":"fake-model",
+			"choices":[{
+				"index":0,
+				"message":{
+					"role":"assistant",
+					"content":"Plain text review."
+				},
+				"finish_reason":"stop"
+			}],
+			"usage":{"prompt_tokens":20,"completion_tokens":5,"total_tokens":25}
+		}`,
+		`{
+			"id":"chatcmpl-vfc-2",
+			"object":"chat.completion",
+			"created":1730000601,
+			"model":"fake-model",
+			"choices":[{
+				"index":0,
+				"message":{
+					"role":"assistant",
+					"content":"{\"summary\":\"Fixed\",\"issues\":[]}"
+				},
+				"finish_reason":"stop"
+			}],
+			"usage":{"prompt_tokens":30,"completion_tokens":10,"total_tokens":40}
+		}`,
+	}
+
+	llm, _ := newSequencedLLMServer(t, responses)
+	configureFakeOpenAI(t, llm.URL)
+
+	runner := newDockerRunner(t, "agent-val-custom")
+	outVol := mustCreateVolume(t, runner, "final-review")
+
+	result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+		Name:   "val-custom-agent",
+		Prompt: "Output JSON review.",
+		Model:  "openai/fake-model",
+		Image:  "busybox",
+		Mounts: map[string]pipelinerunner.VolumeResult{
+			"final-review": outVol,
+		},
+		OutputVolumePath: outVol.Path,
+		Validation: &AgentValidationConfig{
+			Expr:   `text contains "{"`,
+			Prompt: customPrompt,
+		},
+	})
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result).NotTo(BeNil())
+
+	// Follow-up event must carry the custom prompt, not the default.
+	var followUpEvent *AuditEvent
+	for i := range result.AuditLog {
+		if result.AuditLog[i].Type == "validation_followup" {
+			followUpEvent = &result.AuditLog[i]
+
+			break
+		}
+	}
+
+	assert.Expect(followUpEvent).NotTo(BeNil())
+	assert.Expect(followUpEvent.Text).To(Equal(customPrompt))
+}
+
+// TestRunAgent_ValidationExprError_TriggersFollowUp_RealDocker verifies that
+// an invalid validation expression logs a validation_error and still triggers
+// a follow-up turn.
+func TestRunAgent_ValidationExprError_TriggersFollowUp_RealDocker(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	responses := []string{
+		`{
+			"id":"chatcmpl-ve-1",
+			"object":"chat.completion",
+			"created":1730000700,
+			"model":"fake-model",
+			"choices":[{
+				"index":0,
+				"message":{
+					"role":"assistant",
+					"content":"Some output."
+				},
+				"finish_reason":"stop"
+			}],
+			"usage":{"prompt_tokens":20,"completion_tokens":5,"total_tokens":25}
+		}`,
+		`{
+			"id":"chatcmpl-ve-2",
+			"object":"chat.completion",
+			"created":1730000701,
+			"model":"fake-model",
+			"choices":[{
+				"index":0,
+				"message":{
+					"role":"assistant",
+					"content":"Corrected output after error."
+				},
+				"finish_reason":"stop"
+			}],
+			"usage":{"prompt_tokens":25,"completion_tokens":6,"total_tokens":31}
+		}`,
+	}
+
+	llm, reqCount := newSequencedLLMServer(t, responses)
+	configureFakeOpenAI(t, llm.URL)
+
+	runner := newDockerRunner(t, "agent-val-err")
+	outVol := mustCreateVolume(t, runner, "final-review")
+
+	result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+		Name:   "val-err-agent",
+		Prompt: "Output something.",
+		Model:  "openai/fake-model",
+		Image:  "busybox",
+		Mounts: map[string]pipelinerunner.VolumeResult{
+			"final-review": outVol,
+		},
+		OutputVolumePath: outVol.Path,
+		Validation: &AgentValidationConfig{
+			Expr: `undefinedFunction(text)`,
+		},
+	})
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result).NotTo(BeNil())
+
+	// 2 requests: original + follow-up after expr error.
+	assert.Expect(atomic.LoadInt32(reqCount)).To(BeNumerically("==", 2))
+
+	var sawError, sawFollowUp bool
+	for _, event := range result.AuditLog {
+		if event.Type == "validation_error" {
+			sawError = true
+			assert.Expect(event.Text).To(ContainSubstring("Validation expression error"))
+		}
+
+		if event.Type == "validation_followup" {
+			sawFollowUp = true
+		}
+	}
+
+	assert.Expect(sawError).To(BeTrue(), "expected validation_error audit event")
+	assert.Expect(sawFollowUp).To(BeTrue(), "expected validation_followup audit event")
+}
+
+// TestRunAgent_DefaultFollowUp_EmptyText_RealDocker verifies backward
+// compatibility: when no validation is configured and the model produces
+// no text, a follow-up turn is sent automatically.
+func TestRunAgent_DefaultFollowUp_EmptyText_RealDocker(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	responses := []string{
+		// Turn 1: model returns stop with empty content.
+		`{
+			"id":"chatcmpl-df-1",
+			"object":"chat.completion",
+			"created":1730000800,
+			"model":"fake-model",
+			"choices":[{
+				"index":0,
+				"message":{
+					"role":"assistant",
+					"content":""
+				},
+				"finish_reason":"stop"
+			}],
+			"usage":{"prompt_tokens":20,"completion_tokens":1,"total_tokens":21}
+		}`,
+		// Turn 2 (follow-up): model outputs real text.
+		`{
+			"id":"chatcmpl-df-2",
+			"object":"chat.completion",
+			"created":1730000801,
+			"model":"fake-model",
+			"choices":[{
+				"index":0,
+				"message":{
+					"role":"assistant",
+					"content":"Here is my complete response after follow-up."
+				},
+				"finish_reason":"stop"
+			}],
+			"usage":{"prompt_tokens":30,"completion_tokens":8,"total_tokens":38}
+		}`,
+	}
+
+	llm, reqCount := newSequencedLLMServer(t, responses)
+	configureFakeOpenAI(t, llm.URL)
+
+	runner := newDockerRunner(t, "agent-def-followup")
+	outVol := mustCreateVolume(t, runner, "final-review")
+
+	result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+		Name:   "def-followup-agent",
+		Prompt: "Produce a review.",
+		Model:  "openai/fake-model",
+		Image:  "busybox",
+		Mounts: map[string]pipelinerunner.VolumeResult{
+			"final-review": outVol,
+		},
+		OutputVolumePath: outVol.Path,
+		// No Validation configured — default behavior.
+	})
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result).NotTo(BeNil())
+	assert.Expect(result.Text).To(ContainSubstring("complete response after follow-up"))
+
+	// 2 LLM requests: original empty + follow-up.
+	assert.Expect(atomic.LoadInt32(reqCount)).To(BeNumerically("==", 2))
+
+	var sawFollowUp bool
+	for _, event := range result.AuditLog {
+		if event.Type == "validation_followup" {
+			sawFollowUp = true
+		}
+	}
+
+	assert.Expect(sawFollowUp).To(BeTrue(), "expected validation_followup for empty text default")
+
+	artifact := readResultArtifact(t, runner, outVol, "read-def-followup-result")
+	assert.Expect(artifact["status"]).To(Equal("success"))
+	assert.Expect(artifact["text"]).To(ContainSubstring("complete response after follow-up"))
+}
+
 func TestRunAgent_WritesResultArtifactForDownstreamTask_RealDocker(t *testing.T) {
 	assert := NewGomegaWithT(t)
 

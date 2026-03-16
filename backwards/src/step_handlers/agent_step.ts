@@ -120,6 +120,7 @@ export class AgentStepHandler implements StepHandler {
         context_guard: agentStep.context_guard,
         limits: agentStep.limits,
         context: agentStep.context,
+        validation: agentStep.validation,
         onUsage: (usage: AgentUsage) => {
           latestUsage = usage;
           persistRunningState();
