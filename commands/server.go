@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jtarchie/pocketci/observability"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/server"
 	"github.com/jtarchie/pocketci/server/auth"
@@ -30,6 +31,7 @@ type Server struct {
 	FetchMaxResponseMB int           `default:"10"               env:"CI_FETCH_MAX_RESPONSE_MB" help:"Maximum response body size in MB for fetch() calls"`
 	Secrets            string        `default:"sqlite://test.db?key=testing"                 env:"CI_SECRETS"              help:"Secrets backend DSN (e.g., 'sqlite://secrets.db?key=my-passphrase')"`
 	Secret             []string      `help:"Set a global secret as KEY=VALUE (can be repeated)" short:"e"`
+	Observability      string        `env:"CI_OBSERVABILITY"                                   help:"Observability provider DSN (e.g., 'posthog://API_KEY', 'honeybadger://API_KEY?env=production')"`
 
 	// OAuth provider configuration
 	OAuthGithubClientID        string `env:"CI_OAUTH_GITHUB_CLIENT_ID"        help:"GitHub OAuth application client ID"`
@@ -48,6 +50,23 @@ type Server struct {
 }
 
 func (c *Server) Run(logger *slog.Logger) error {
+	// Initialize observability provider if configured
+	var obsProvider observability.Provider
+
+	if c.Observability != "" {
+		var err error
+
+		obsProvider, err = observability.GetFromDSN(c.Observability, logger)
+		if err != nil {
+			return fmt.Errorf("could not create observability provider: %w", err)
+		}
+		defer func() { _ = obsProvider.Close() }()
+
+		// Wrap the logger so log records are also forwarded to the provider
+		logger = slog.New(obsProvider.SlogHandler(logger.Handler()))
+		slog.SetDefault(logger)
+	}
+
 	initStorage, found := storage.GetFromDSN(c.Storage)
 	if !found {
 		return fmt.Errorf("could not get storage driver: %w", errors.ErrUnsupported)
@@ -144,6 +163,7 @@ func (c *Server) Run(logger *slog.Logger) error {
 		FetchTimeout:          c.FetchTimeout,
 		FetchMaxResponseBytes: int64(c.FetchMaxResponseMB) * 1024 * 1024,
 		AuthConfig:            authConfig,
+		ObservabilityProvider: obsProvider,
 	})
 	if err != nil {
 		return fmt.Errorf("could not create router: %w", err)

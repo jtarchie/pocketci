@@ -6,6 +6,8 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/jtarchie/pocketci/commands"
+	_ "github.com/jtarchie/pocketci/observability/honeybadger"
+	_ "github.com/jtarchie/pocketci/observability/posthog"
 	_ "github.com/jtarchie/pocketci/orchestra/cache/s3"
 	_ "github.com/jtarchie/pocketci/orchestra/digitalocean"
 	_ "github.com/jtarchie/pocketci/orchestra/docker"

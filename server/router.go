@@ -16,18 +16,26 @@ import (
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
 )
 
+// ObservabilityProvider is the interface used by the router for optional
+// observability backends (e.g., PostHog, Honeybadger). Kept as a local
+// interface to avoid importing the observability package directly.
+type ObservabilityProvider interface {
+	Event(eventType string, data map[string]any) error
+}
+
 // RouterOptions configures the router.
 type RouterOptions struct {
-	MaxInFlight           int
-	WebhookTimeout        time.Duration
-	BasicAuthUsername     string
-	BasicAuthPassword     string
-	AllowedDrivers        string
-	AllowedFeatures       string
-	SecretsManager        secrets.Manager
-	FetchTimeout          time.Duration
-	FetchMaxResponseBytes int64
-	AuthConfig            *auth.Config
+	MaxInFlight            int
+	WebhookTimeout         time.Duration
+	BasicAuthUsername      string
+	BasicAuthPassword      string
+	AllowedDrivers         string
+	AllowedFeatures        string
+	SecretsManager         secrets.Manager
+	FetchTimeout           time.Duration
+	FetchMaxResponseBytes  int64
+	AuthConfig             *auth.Config
+	ObservabilityProvider  ObservabilityProvider
 }
 
 // Router wraps echo.Echo and provides access to the execution service.
