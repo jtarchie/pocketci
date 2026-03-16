@@ -784,6 +784,280 @@ func TestRunViews(t *testing.T) {
 				assert.Expect(doc.Find("[role='alert']").Length()).To(Equal(0))
 			})
 
+			t.Run("GET /runs/:id/tasks shows success status badge when run succeeds", func(t *testing.T) {
+				t.Parallel()
+				assert := NewGomegaWithT(t)
+
+				buildFile, err := os.CreateTemp(t.TempDir(), "")
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = buildFile.Close() }()
+
+				client, err := init(buildFile.Name(), "namespace", slog.Default())
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = client.Close() }()
+
+				pipeline, err := client.SavePipeline(context.Background(), "status-badge-success-pipeline", "export const pipeline = async () => {};", "docker://", "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				run, err := client.SaveRun(context.Background(), pipeline.ID)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusSuccess, "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				req := httptest.NewRequest(http.MethodGet, "/runs/"+run.ID+"/tasks", nil)
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+
+				assert.Expect(rec.Code).To(Equal(http.StatusOK))
+				doc := mustHTMLDocument(t, rec)
+				assert.Expect(hasSelectorWithText(doc, "#run-status-badge", "Success")).To(BeTrue())
+				assert.Expect(hasSelectorWithText(doc, "#run-live-badge", "Live")).To(BeFalse())
+			})
+
+			t.Run("GET /runs/:id/tasks shows failed status badge when run fails", func(t *testing.T) {
+				t.Parallel()
+				assert := NewGomegaWithT(t)
+
+				buildFile, err := os.CreateTemp(t.TempDir(), "")
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = buildFile.Close() }()
+
+				client, err := init(buildFile.Name(), "namespace", slog.Default())
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = client.Close() }()
+
+				pipeline, err := client.SavePipeline(context.Background(), "status-badge-failed-pipeline", "export const pipeline = async () => {};", "docker://", "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				run, err := client.SaveRun(context.Background(), pipeline.ID)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusFailed, "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				req := httptest.NewRequest(http.MethodGet, "/runs/"+run.ID+"/tasks", nil)
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+
+				assert.Expect(rec.Code).To(Equal(http.StatusOK))
+				doc := mustHTMLDocument(t, rec)
+				assert.Expect(hasSelectorWithText(doc, "#run-status-badge", "Failed")).To(BeTrue())
+				assert.Expect(hasSelectorWithText(doc, "#run-live-badge", "Live")).To(BeFalse())
+			})
+
+			t.Run("GET /runs/:id/tasks shows no status badge while run is active", func(t *testing.T) {
+				t.Parallel()
+				assert := NewGomegaWithT(t)
+
+				buildFile, err := os.CreateTemp(t.TempDir(), "")
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = buildFile.Close() }()
+
+				client, err := init(buildFile.Name(), "namespace", slog.Default())
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = client.Close() }()
+
+				pipeline, err := client.SavePipeline(context.Background(), "status-badge-active-pipeline", "export const pipeline = async () => {};", "docker://", "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				run, err := client.SaveRun(context.Background(), pipeline.ID)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				// Run starts as queued (active) — no explicit status update needed
+				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				req := httptest.NewRequest(http.MethodGet, "/runs/"+run.ID+"/tasks", nil)
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+
+				assert.Expect(rec.Code).To(Equal(http.StatusOK))
+				doc := mustHTMLDocument(t, rec)
+				assert.Expect(hasSelectorWithText(doc, "#run-status-badge", "Success")).To(BeFalse())
+				assert.Expect(hasSelectorWithText(doc, "#run-status-badge", "Failed")).To(BeFalse())
+				assert.Expect(hasSelectorWithText(doc, "#run-live-badge", "Live")).To(BeTrue())
+			})
+
+			t.Run("GET /runs/:id/graph shows success status badge when run succeeds", func(t *testing.T) {
+				t.Parallel()
+				assert := NewGomegaWithT(t)
+
+				buildFile, err := os.CreateTemp(t.TempDir(), "")
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = buildFile.Close() }()
+
+				client, err := init(buildFile.Name(), "namespace", slog.Default())
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = client.Close() }()
+
+				pipeline, err := client.SavePipeline(context.Background(), "graph-badge-success-pipeline", "export const pipeline = async () => {};", "docker://", "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				run, err := client.SaveRun(context.Background(), pipeline.ID)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusSuccess, "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				req := httptest.NewRequest(http.MethodGet, "/runs/"+run.ID+"/graph", nil)
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+
+				assert.Expect(rec.Code).To(Equal(http.StatusOK))
+				doc := mustHTMLDocument(t, rec)
+				assert.Expect(hasSelectorWithText(doc, "#run-status-badge", "Success")).To(BeTrue())
+			})
+
+			t.Run("GET /runs/:id/graph shows failed status badge when run fails", func(t *testing.T) {
+				t.Parallel()
+				assert := NewGomegaWithT(t)
+
+				buildFile, err := os.CreateTemp(t.TempDir(), "")
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = buildFile.Close() }()
+
+				client, err := init(buildFile.Name(), "namespace", slog.Default())
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = client.Close() }()
+
+				pipeline, err := client.SavePipeline(context.Background(), "graph-badge-failed-pipeline", "export const pipeline = async () => {};", "docker://", "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				run, err := client.SaveRun(context.Background(), pipeline.ID)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusFailed, "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				req := httptest.NewRequest(http.MethodGet, "/runs/"+run.ID+"/graph", nil)
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+
+				assert.Expect(rec.Code).To(Equal(http.StatusOK))
+				doc := mustHTMLDocument(t, rec)
+				assert.Expect(hasSelectorWithText(doc, "#run-status-badge", "Failed")).To(BeTrue())
+			})
+
+			t.Run("GET /runs/:id/tasks-partial/ emits OOB status badge with Success when run completes", func(t *testing.T) {
+				t.Parallel()
+				assert := NewGomegaWithT(t)
+
+				buildFile, err := os.CreateTemp(t.TempDir(), "")
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = buildFile.Close() }()
+
+				client, err := init(buildFile.Name(), "namespace", slog.Default())
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = client.Close() }()
+
+				pipeline, err := client.SavePipeline(context.Background(), "oob-badge-success-pipeline", "export const pipeline = async () => {};", "docker://", "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				run, err := client.SaveRun(context.Background(), pipeline.ID)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-build", map[string]any{"status": "success"})
+				assert.Expect(err).NotTo(HaveOccurred())
+				err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusSuccess, "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				req := httptest.NewRequest(http.MethodGet, "/runs/"+run.ID+"/tasks-partial/", nil)
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+
+				assert.Expect(rec.Code).To(Equal(286))
+				doc := mustHTMLDocument(t, rec)
+				assert.Expect(doc.Find(`#run-status-badge[hx-swap-oob="true"]`).Length()).To(BeNumerically(">", 0))
+				assert.Expect(hasSelectorWithText(doc, "#run-status-badge", "Success")).To(BeTrue())
+			})
+
+			t.Run("GET /runs/:id/tasks-partial/ emits empty OOB status badge while run is active", func(t *testing.T) {
+				t.Parallel()
+				assert := NewGomegaWithT(t)
+
+				buildFile, err := os.CreateTemp(t.TempDir(), "")
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = buildFile.Close() }()
+
+				client, err := init(buildFile.Name(), "namespace", slog.Default())
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = client.Close() }()
+
+				pipeline, err := client.SavePipeline(context.Background(), "oob-badge-active-pipeline", "export const pipeline = async () => {};", "docker://", "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				run, err := client.SaveRun(context.Background(), pipeline.ID)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-build", map[string]any{"status": "running"})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				req := httptest.NewRequest(http.MethodGet, "/runs/"+run.ID+"/tasks-partial/", nil)
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+
+				assert.Expect(rec.Code).To(Equal(http.StatusOK))
+				doc := mustHTMLDocument(t, rec)
+				assert.Expect(doc.Find(`#run-status-badge[hx-swap-oob="true"]`).Length()).To(BeNumerically(">", 0))
+				assert.Expect(hasSelectorWithText(doc, "#run-status-badge", "Success")).To(BeFalse())
+				assert.Expect(hasSelectorWithText(doc, "#run-status-badge", "Failed")).To(BeFalse())
+			})
+
+			t.Run("GET /runs/:id/graph-data/ emits OOB status badge with Failed when run fails", func(t *testing.T) {
+				t.Parallel()
+				assert := NewGomegaWithT(t)
+
+				buildFile, err := os.CreateTemp(t.TempDir(), "")
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = buildFile.Close() }()
+
+				client, err := init(buildFile.Name(), "namespace", slog.Default())
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = client.Close() }()
+
+				pipeline, err := client.SavePipeline(context.Background(), "graph-data-badge-failed-pipeline", "export const pipeline = async () => {};", "docker://", "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				run, err := client.SaveRun(context.Background(), pipeline.ID)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				err = client.Set(context.Background(), "/pipeline/"+run.ID+"/jobs/test-job", map[string]any{"status": "failure", "dependsOn": []string{}})
+				assert.Expect(err).NotTo(HaveOccurred())
+				err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusFailed, "")
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				req := httptest.NewRequest(http.MethodGet, "/runs/"+run.ID+"/graph-data/", nil)
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+
+				assert.Expect(rec.Code).To(Equal(286))
+				doc := mustHTMLDocument(t, rec)
+				assert.Expect(doc.Find(`#run-status-badge[hx-swap-oob="true"]`).Length()).To(BeNumerically(">", 0))
+				assert.Expect(hasSelectorWithText(doc, "#run-status-badge", "Failed")).To(BeTrue())
+			})
+
 		})
 	})
 }

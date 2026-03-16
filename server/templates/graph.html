@@ -66,6 +66,7 @@
           Live
         </span>
         {{ end }}
+        {{ template "run-status-badge" dict "Run" .Run "IsActive" .IsActive }}
       </div>
       <div class="flex w-full flex-wrap gap-2 sm:w-auto">
         {{ if .RunID }}

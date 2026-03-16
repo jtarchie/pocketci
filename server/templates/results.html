@@ -68,6 +68,7 @@
         </time>
         {{ end }}
         {{ template "run-live-badge" dict "IsActive" .IsActive }}
+        {{ template "run-status-badge" dict "Run" .Run "IsActive" .IsActive }}
       </div>
       <div
         class="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
@@ -318,6 +319,8 @@
 </time>
 {{ end }}
 {{ template "run-live-badge" dict "IsActive" .IsActive "SwapOOB" true }}
+{{ template "run-status-badge" dict "Run" .Run "IsActive" .IsActive "SwapOOB"
+true }}
 {{ template "run-stop-button" dict "RunID" .RunID "IsActive" .IsActive "SwapOOB"
 true }}
 <span id="stat-success" hx-swap-oob="true" aria-label="Successful tasks">{{
