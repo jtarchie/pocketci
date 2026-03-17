@@ -25,27 +25,29 @@ import (
 	"github.com/jtarchie/pocketci/orchestra/native"
 	"github.com/jtarchie/pocketci/runtime"
 	"github.com/jtarchie/pocketci/secrets"
+	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/storage"
 )
 
 type Runner struct {
-	Storage            string        `default:"sqlite://test.db"                                    env:"CI_STORAGE"              help:"Path to storage file"                                                                                                                                      required:""`
-	Pipeline           string        `arg:""                                                        help:"Path to pipeline javascript file"                                                                                                                          type:"existingfile"`
-	Driver             string        `default:"native"                                              env:"CI_DRIVER"               help:"Orchestrator driver name (docker, native, k8s)"`
-	DockerHost         string        `env:"CI_DOCKER_HOST"         help:"Docker daemon host URL"`
-	K8sKubeconfig      string        `env:"CI_K8S_KUBECONFIG"      help:"Path to kubeconfig file"`
-	K8sNamespace       string        `env:"CI_K8S_NAMESPACE"       help:"Kubernetes namespace for jobs"`
-	CacheURL           string        `env:"CI_CACHE_URL"           help:"Cache store URL"`
-	CacheCompression   string        `env:"CI_CACHE_COMPRESSION"   help:"Cache compression: zstd, gzip, or none"`
-	CachePrefix        string        `env:"CI_CACHE_PREFIX"        help:"Cache key prefix"`
-	Timeout            time.Duration `env:"CI_TIMEOUT"                                              help:"timeout for the pipeline, will cause abort if exceeded"`
-	Resume             bool          `help:"Resume from last checkpoint if pipeline was interrupted"`
-	RunID              string        `help:"Unique run ID for resume support (auto-generated if not provided)"`
-	Secrets            string        `default:"" env:"CI_SECRETS" help:"Secrets backend DSN (e.g., 'sqlite://secrets.db?key=my-passphrase)')" `
-	Secret             []string      `help:"Set a pipeline-scoped secret as KEY=VALUE (can be repeated)" short:"e"`
-	GlobalSecret       []string      `help:"Set a global secret as KEY=VALUE (can be repeated)"`
-	FetchTimeout       time.Duration `default:"30s"                                              env:"CI_FETCH_TIMEOUT"            help:"Timeout for fetch() requests in pipelines"`
-	FetchMaxResponseMB int           `default:"10"                                               env:"CI_FETCH_MAX_RESPONSE_MB"    help:"Maximum response size in MB for fetch() requests"`
+	Storage                 string        `default:"sqlite://test.db"                                    env:"CI_STORAGE"              help:"Path to storage file"                                                                                                                                      required:""`
+	Pipeline                string        `arg:""                                                        help:"Path to pipeline javascript file"                                                                                                                          type:"existingfile"`
+	Driver                  string        `default:"native"                                              env:"CI_DRIVER"               help:"Orchestrator driver name (docker, native, k8s)"`
+	DockerHost              string        `env:"CI_DOCKER_HOST"         help:"Docker daemon host URL"`
+	K8sKubeconfig           string        `env:"CI_K8S_KUBECONFIG"      help:"Path to kubeconfig file"`
+	K8sNamespace            string        `env:"CI_K8S_NAMESPACE"       help:"Kubernetes namespace for jobs"`
+	CacheURL                string        `env:"CI_CACHE_URL"           help:"Cache store URL"`
+	CacheCompression        string        `env:"CI_CACHE_COMPRESSION"   help:"Cache compression: zstd, gzip, or none"`
+	CachePrefix             string        `env:"CI_CACHE_PREFIX"        help:"Cache key prefix"`
+	Timeout                 time.Duration `env:"CI_TIMEOUT"                                              help:"timeout for the pipeline, will cause abort if exceeded"`
+	Resume                  bool          `help:"Resume from last checkpoint if pipeline was interrupted"`
+	RunID                   string        `help:"Unique run ID for resume support (auto-generated if not provided)"`
+	SecretsSQLitePath       string        `default:""  env:"CI_SECRETS_SQLITE_PATH"       help:"SQLite secrets database file path (use ':memory:' for in-memory)"`
+	SecretsSQLitePassphrase string        `default:""  env:"CI_SECRETS_SQLITE_PASSPHRASE" help:"Encryption passphrase for SQLite secrets backend"`
+	Secret                  []string      `help:"Set a pipeline-scoped secret as KEY=VALUE (can be repeated)" short:"e"`
+	GlobalSecret            []string      `help:"Set a global secret as KEY=VALUE (can be repeated)"`
+	FetchTimeout            time.Duration `default:"30s"                                              env:"CI_FETCH_TIMEOUT"            help:"Timeout for fetch() requests in pipelines"`
+	FetchMaxResponseMB      int           `default:"10"                                               env:"CI_FETCH_MAX_RESPONSE_MB"    help:"Maximum response size in MB for fetch() requests"`
 }
 
 func youtubeIDStyle(input string) string {
@@ -179,8 +181,16 @@ func (c *Runner) Run(logger *slog.Logger) error {
 	// Initialize secrets manager if configured
 	var secretsManager secrets.Manager
 
-	if c.Secrets != "" {
-		secretsManager, err = secrets.GetFromDSN(c.Secrets, logger)
+	if c.SecretsSQLitePassphrase != "" {
+		path := c.SecretsSQLitePath
+		if path == "" {
+			path = ":memory:"
+		}
+
+		secretsManager, err = secretssqlite.New(secretssqlite.Config{
+			Path:       path,
+			Passphrase: c.SecretsSQLitePassphrase,
+		}, logger)
 		if err != nil {
 			return fmt.Errorf("could not create secrets manager: %w", err)
 		}

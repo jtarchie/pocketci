@@ -3,20 +3,9 @@
 // # Security model
 //
 // Secrets are protected by application-layer AES-256-GCM encryption (key
-// derived from the passphrase in the "key=" query param), applied before any
-// bytes leave the process. An optional S3 Server-Side Encryption layer may
-// be added via the "encrypt=" query parameter (sse-s3, sse-kms, or sse-c).
-//
-// # DSN format
-//
-//	s3://[http://|https://][ACCESS_KEY_ID:SECRET_ACCESS_KEY@]host[:port]/bucket[/prefix]?region=...&key=passphrase[&encrypt=sse-s3]
-//
-// Parameters:
-//   - key      (required) Encryption passphrase for application-layer AES-256-GCM
-//   - encrypt  (optional) "sse-s3", "sse-kms", or "sse-c" — provider-level SSE
-//   - region   AWS region (default: SDK credential-chain default)
-//   - sse_kms_key_id  KMS key ID (only with encrypt=sse-kms; provider default when omitted)
-//   - force_path_style "true"/"false" — defaults to true when endpoint is set
+// derived from Config.Key), applied before any bytes leave the process.
+// An optional S3 Server-Side Encryption layer may be configured via
+// Config.EncryptMode (sse-s3, sse-kms, or sse-c).
 package s3
 
 import (
@@ -34,8 +23,11 @@ import (
 	"github.com/jtarchie/pocketci/secrets"
 )
 
-func init() {
-	secrets.Register("s3", New)
+// Config holds the configuration for the S3 secrets backend.
+// It embeds s3config.Config for all S3 connection fields, plus Passphrase
+// for application-layer AES-256-GCM encryption.
+type Config struct {
+	s3config.Config
 }
 
 // S3 implements secrets.Manager using an S3-compatible object store as the
@@ -56,30 +48,21 @@ type secretRecord struct {
 
 // New creates a new S3-backed secrets manager.
 //
-// The key= query parameter is mandatory: it is the passphrase for
-// application-layer AES-256-GCM encryption. The encrypt= parameter is
-// optional; when set to sse-s3, sse-kms, or sse-c a construction-time probe
-// verifies that the S3 provider accepts the encryption headers.
-func New(dsn string, logger *slog.Logger) (secrets.Manager, error) {
+// cfg.Key is mandatory: it is the passphrase for application-layer AES-256-GCM
+// encryption. cfg.EncryptMode is optional; when set to sse-s3, sse-kms, or sse-c
+// a construction-time probe verifies that the S3 provider accepts the encryption headers.
+func New(cfg Config, logger *slog.Logger) (secrets.Manager, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	logger = logger.WithGroup("secrets.s3")
 
-	s3cfg, err := s3config.ParseDSN(dsn)
-	if err != nil {
-		return nil, fmt.Errorf("invalid secrets S3 DSN: %w", err)
+	if cfg.Key == "" {
+		return nil, fmt.Errorf("s3 secrets driver requires Key for application-layer encryption")
 	}
 
-	// key= is required for application-layer AES-256-GCM encryption.
-	passphrase := s3cfg.Key
-
-	if passphrase == "" {
-		return nil, fmt.Errorf("s3 secrets driver requires key= param for application-layer encryption")
-	}
-
-	key := secrets.DeriveKey(passphrase)
+	key := secrets.DeriveKey(cfg.Key)
 
 	encryptor, err := secrets.NewEncryptor(key)
 	if err != nil {
@@ -88,7 +71,7 @@ func New(dsn string, logger *slog.Logger) (secrets.Manager, error) {
 
 	ctx := context.Background()
 
-	client, err := s3config.NewClient(ctx, s3cfg)
+	client, err := s3config.NewClient(ctx, &cfg.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -101,13 +84,13 @@ func New(dsn string, logger *slog.Logger) (secrets.Manager, error) {
 
 	// Probe SSE: when encrypt= is configured, upload a tiny sentinel object and
 	// verify that the S3 provider accepts the encryption headers.
-	if s3cfg.EncryptMode != "" {
+	if cfg.EncryptMode != "" {
 		if err := mgr.probeSSE(ctx); err != nil {
-			return nil, fmt.Errorf("s3 secrets SSE probe failed — provider does not support encrypt=%q: %w", s3cfg.EncryptMode, err)
+			return nil, fmt.Errorf("s3 secrets SSE probe failed — provider does not support encrypt=%q: %w", cfg.EncryptMode, err)
 		}
 	}
 
-	logger.Info("secrets.s3.initialized", "bucket", s3cfg.Bucket, "prefix", s3cfg.Prefix, "encrypt", s3cfg.EncryptMode)
+	logger.Info("secrets.s3.initialized", "bucket", cfg.Bucket, "prefix", cfg.Prefix, "encrypt", cfg.EncryptMode)
 
 	return mgr, nil
 }

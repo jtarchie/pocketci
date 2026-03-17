@@ -11,8 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jtarchie/pocketci/secrets"
-	_ "github.com/jtarchie/pocketci/secrets/sqlite"
+	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/server/auth"
 	"github.com/jtarchie/pocketci/storage"
 	_ "github.com/jtarchie/pocketci/storage/sqlite"
@@ -47,7 +46,7 @@ func setupRouterWithOAuthLogger(t *testing.T, rbacExpression string, logger *slo
 	}
 	t.Cleanup(func() { _ = client.Close() })
 
-	secretsManager, err := secrets.GetFromDSN("sqlite://:memory:?key=test-key", slog.Default())
+	secretsManager, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
 	if err != nil {
 		t.Fatalf("could not create secrets manager: %v", err)
 	}
@@ -203,7 +202,7 @@ func TestOAuthRequireAuthNoProvidersBypass(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = client.Close() })
 
-	secretsManager, err := secrets.GetFromDSN("sqlite://:memory:?key=test-key", slog.Default())
+	secretsManager, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
 	if err != nil {
 		t.Fatalf("could not create secrets manager: %v", err)
 	}

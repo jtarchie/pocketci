@@ -1,33 +1,48 @@
 package sqlite_test
 
 import (
+	"io"
+	"log/slog"
 	"testing"
 
-	"github.com/jtarchie/pocketci/secrets"
-	_ "github.com/jtarchie/pocketci/secrets/sqlite"
+	"github.com/jtarchie/pocketci/secrets/sqlite"
 	. "github.com/onsi/gomega"
 )
 
 func TestSQLiteBackend(t *testing.T) {
 	t.Parallel()
 
-	t.Run("invalid backend name errors", func(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	t.Run("invalid DSN errors when passphrase is empty", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
 
-		_, err := secrets.New("nonexistent-backend", "anything", nil)
+		_, err := sqlite.New(sqlite.Config{Path: ":memory:", Passphrase: ""}, logger)
 		assert.Expect(err).To(HaveOccurred())
-		assert.Expect(err.Error()).To(ContainSubstring("unknown secrets backend"))
+		assert.Expect(err.Error()).To(ContainSubstring("Passphrase"))
 	})
 
-	t.Run("invalid DSN errors", func(t *testing.T) {
+	t.Run("valid config creates manager", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
 
-		_, err := secrets.New("sqlite", "no-key-param", nil)
-		assert.Expect(err).To(HaveOccurred())
-		assert.Expect(err.Error()).To(ContainSubstring("key="))
+		mgr, err := sqlite.New(sqlite.Config{Path: ":memory:", Passphrase: "test-key"}, logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(mgr).NotTo(BeNil())
+		_ = mgr.Close()
+	})
+
+	t.Run("empty path defaults to in-memory", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		mgr, err := sqlite.New(sqlite.Config{Passphrase: "test-key"}, logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(mgr).NotTo(BeNil())
+		_ = mgr.Close()
 	})
 }

@@ -1,50 +1,47 @@
 package s3_test
 
 import (
+	"io"
+	"log/slog"
 	"testing"
 
-	"github.com/jtarchie/pocketci/secrets"
-	_ "github.com/jtarchie/pocketci/secrets/s3"
+	"github.com/jtarchie/pocketci/s3config"
+	"github.com/jtarchie/pocketci/secrets/s3"
 	. "github.com/onsi/gomega"
 )
 
 func TestS3Secrets_RequiresKey(t *testing.T) {
 	t.Parallel()
 
-	t.Run("missing key param returns error", func(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	t.Run("missing key returns error", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
 
-		_, err := secrets.New("s3", "s3://s3.amazonaws.com/test-bucket?region=us-east-1", nil)
+		cfg := s3config.Config{
+			Bucket:   "test-bucket",
+			Region:   "us-east-1",
+			Endpoint: "https://s3.amazonaws.com",
+		}
+		_, err := s3.New(s3.Config{Config: cfg}, logger)
 		assert.Expect(err).To(HaveOccurred())
-		assert.Expect(err.Error()).To(ContainSubstring("key="))
+		assert.Expect(err.Error()).To(ContainSubstring("Key"))
 	})
 
-	t.Run("invalid encrypt value returns error", func(t *testing.T) {
+	t.Run("no encrypt mode is allowed (app-layer AES only)", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
 
-		_, err := secrets.New("s3", "s3://s3.amazonaws.com/test-bucket?region=us-east-1&encrypt=INVALID&key=passphrase", nil)
-		assert.Expect(err).To(HaveOccurred())
-	})
-
-	t.Run("invalid DSN scheme returns error", func(t *testing.T) {
-		t.Parallel()
-
-		assert := NewGomegaWithT(t)
-
-		_, err := secrets.New("s3", "docker://example.com/bucket", nil)
-		assert.Expect(err).To(HaveOccurred())
-	})
-
-	t.Run("no encrypt param is allowed (app-layer AES only)", func(t *testing.T) {
-		t.Parallel()
-
-		assert := NewGomegaWithT(t)
-
-		_, err := secrets.New("s3", "s3://s3.amazonaws.com/test-bucket?region=us-east-1&key=passphrase", nil)
+		cfg := s3config.Config{
+			Bucket:   "test-bucket",
+			Region:   "us-east-1",
+			Endpoint: "https://s3.amazonaws.com",
+			Key:      "passphrase",
+		}
+		_, err := s3.New(s3.Config{Config: cfg}, logger)
 		if err != nil {
 			assert.Expect(err.Error()).NotTo(ContainSubstring("sse="))
 			assert.Expect(err.Error()).NotTo(ContainSubstring("requires sse"))

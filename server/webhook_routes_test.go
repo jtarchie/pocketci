@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/jtarchie/pocketci/secrets"
-	_ "github.com/jtarchie/pocketci/secrets/sqlite"
+	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/server"
 	"github.com/jtarchie/pocketci/storage"
 	_ "github.com/jtarchie/pocketci/storage/sqlite"
@@ -119,7 +119,7 @@ func TestWebhookAPI(t *testing.T) {
 				)
 				assert.Expect(err).NotTo(HaveOccurred())
 
-				secretsMgr, err := secrets.GetFromDSN("sqlite://:memory:?key=test-key", slog.Default())
+				secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
 				assert.Expect(err).NotTo(HaveOccurred())
 				defer func() { _ = secretsMgr.Close() }()
 				err = secretsMgr.Set(context.Background(), secrets.PipelineScope(pipeline.ID), "webhook_secret", "my-secret-key")
@@ -166,7 +166,7 @@ func TestWebhookAPI(t *testing.T) {
 				)
 				assert.Expect(err).NotTo(HaveOccurred())
 
-				secretsMgr, err := secrets.GetFromDSN("sqlite://:memory:?key=test-key", slog.Default())
+				secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
 				assert.Expect(err).NotTo(HaveOccurred())
 				defer func() { _ = secretsMgr.Close() }()
 				err = secretsMgr.Set(context.Background(), secrets.PipelineScope(pipeline.ID), "webhook_secret", "query-secret")
@@ -212,7 +212,7 @@ func TestWebhookAPI(t *testing.T) {
 				)
 				assert.Expect(err).NotTo(HaveOccurred())
 
-				secretsMgr, err := secrets.GetFromDSN("sqlite://:memory:?key=test-key", slog.Default())
+				secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
 				assert.Expect(err).NotTo(HaveOccurred())
 				defer func() { _ = secretsMgr.Close() }()
 				err = secretsMgr.Set(context.Background(), secrets.PipelineScope(pipeline.ID), "webhook_secret", "my-secret")
@@ -252,7 +252,7 @@ func TestWebhookAPI(t *testing.T) {
 				)
 				assert.Expect(err).NotTo(HaveOccurred())
 
-				secretsMgr, err := secrets.GetFromDSN("sqlite://:memory:?key=test-key", slog.Default())
+				secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
 				assert.Expect(err).NotTo(HaveOccurred())
 				defer func() { _ = secretsMgr.Close() }()
 				err = secretsMgr.Set(context.Background(), secrets.PipelineScope(pipeline.ID), "webhook_secret", "correct-secret")

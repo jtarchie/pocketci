@@ -12,8 +12,7 @@ import (
 	"testing"
 
 	"github.com/jtarchie/pocketci/commands"
-	"github.com/jtarchie/pocketci/secrets"
-	_ "github.com/jtarchie/pocketci/secrets/sqlite"
+	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/server"
 	"github.com/jtarchie/pocketci/storage"
 	_ "github.com/jtarchie/pocketci/storage/sqlite"
@@ -47,7 +46,7 @@ func newTestServer(t *testing.T, opts server.RouterOptions) (storage.Driver, *ht
 	t.Cleanup(func() { _ = client.Close() })
 
 	if opts.SecretsManager == nil {
-		secretsManager, secretsErr := secrets.GetFromDSN("sqlite://:memory:?key=test-key", slog.Default())
+		secretsManager, secretsErr := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
 		assert.Expect(secretsErr).NotTo(HaveOccurred())
 		t.Cleanup(func() { _ = secretsManager.Close() })
 		opts.SecretsManager = secretsManager

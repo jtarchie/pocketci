@@ -21,7 +21,10 @@ import (
 	"github.com/jtarchie/pocketci/orchestra/hetzner"
 	"github.com/jtarchie/pocketci/orchestra/k8s"
 	"github.com/jtarchie/pocketci/orchestra/qemu"
+	"github.com/jtarchie/pocketci/s3config"
 	"github.com/jtarchie/pocketci/secrets"
+	secretss3 "github.com/jtarchie/pocketci/secrets/s3"
+	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/server"
 	"github.com/jtarchie/pocketci/server/auth"
 	"github.com/jtarchie/pocketci/storage"
@@ -39,12 +42,23 @@ type Server struct {
 	AllowedFeatures    string        `default:"*"                env:"CI_ALLOWED_FEATURES"      help:"Comma-separated list of allowed features (webhooks,secrets,notifications,fetch,resume), or '*' for all"`
 	FetchTimeout       time.Duration `default:"30s"              env:"CI_FETCH_TIMEOUT"         help:"Default timeout for fetch() calls in pipelines"`
 	FetchMaxResponseMB int           `default:"10"               env:"CI_FETCH_MAX_RESPONSE_MB" help:"Maximum response body size in MB for fetch() calls"`
-	Secrets            string        `default:"sqlite://test.db?key=testing"                 env:"CI_SECRETS"              help:"Secrets backend DSN (e.g., 'sqlite://secrets.db?key=my-passphrase')"`
-	Secret             []string      `help:"Set a global secret as KEY=VALUE (can be repeated)" short:"e"`
-	PosthogAPIKey      string        `env:"CI_POSTHOG_API_KEY"     help:"PostHog API key (e.g., 'phc_abc123')"`
-	PosthogEndpoint    string        `env:"CI_POSTHOG_ENDPOINT"    help:"PostHog ingestion endpoint URL (defaults to PostHog cloud)"`
-	HoneybadgerAPIKey  string        `env:"CI_HONEYBADGER_API_KEY" help:"Honeybadger API key"`
-	HoneybadgerEnv     string        `env:"CI_HONEYBADGER_ENV"     help:"Honeybadger environment name (e.g., 'production')"`
+	// SQLite secrets backend
+	SecretsSQLitePath       string `default:"test.db" env:"CI_SECRETS_SQLITE_PATH"       help:"SQLite secrets database file path (use ':memory:' for in-memory)"`
+	SecretsSQLitePassphrase string `default:"testing"  env:"CI_SECRETS_SQLITE_PASSPHRASE" help:"Encryption passphrase for SQLite secrets backend"`
+	// S3 secrets backend (takes precedence over SQLite when Bucket is set)
+	SecretsS3Bucket          string   `env:"CI_SECRETS_S3_BUCKET"            help:"S3 bucket name for secrets backend"`
+	SecretsS3Endpoint        string   `env:"CI_SECRETS_S3_ENDPOINT"          help:"S3-compatible endpoint URL (e.g., 'https://s3.amazonaws.com')"`
+	SecretsS3Region          string   `env:"CI_SECRETS_S3_REGION"            help:"AWS region for S3 secrets backend"`
+	SecretsS3AccessKeyID     string   `env:"CI_SECRETS_S3_ACCESS_KEY_ID"     help:"S3 access key ID"`
+	SecretsS3SecretAccessKey string   `env:"CI_SECRETS_S3_SECRET_ACCESS_KEY" help:"S3 secret access key"`
+	SecretsS3Passphrase      string   `env:"CI_SECRETS_S3_PASSPHRASE"        help:"Encryption passphrase for S3 secrets backend (application-layer AES-256-GCM)"`
+	SecretsS3Encrypt         string   `env:"CI_SECRETS_S3_ENCRYPT"           help:"S3 server-side encryption mode: sse-s3, sse-kms, or sse-c"`
+	SecretsS3Prefix          string   `env:"CI_SECRETS_S3_PREFIX"            help:"S3 key prefix for secrets"`
+	Secret                   []string `help:"Set a global secret as KEY=VALUE (can be repeated)" short:"e"`
+	PosthogAPIKey            string   `env:"CI_POSTHOG_API_KEY"     help:"PostHog API key (e.g., 'phc_abc123')"`
+	PosthogEndpoint          string   `env:"CI_POSTHOG_ENDPOINT"    help:"PostHog ingestion endpoint URL (defaults to PostHog cloud)"`
+	HoneybadgerAPIKey        string   `env:"CI_HONEYBADGER_API_KEY" help:"Honeybadger API key"`
+	HoneybadgerEnv           string   `env:"CI_HONEYBADGER_ENV"     help:"Honeybadger environment name (e.g., 'production')"`
 
 	// OAuth provider configuration
 	OAuthGithubClientID        string `env:"CI_OAUTH_GITHUB_CLIENT_ID"        help:"GitHub OAuth application client ID"`
@@ -154,27 +168,49 @@ func (c *Server) Run(logger *slog.Logger) error {
 	}
 	defer func() { _ = client.Close() }()
 
-	// Initialize secrets manager if configured
+	// Initialize secrets manager
 	var secretsManager secrets.Manager
 
-	if c.Secrets != "" {
-		secretsManager, err = secrets.GetFromDSN(c.Secrets, logger)
+	switch {
+	case c.SecretsS3Bucket != "":
+		secretsManager, err = secretss3.New(secretss3.Config{
+			Config: s3config.Config{
+				Bucket:          c.SecretsS3Bucket,
+				Prefix:          c.SecretsS3Prefix,
+				Endpoint:        c.SecretsS3Endpoint,
+				Region:          c.SecretsS3Region,
+				AccessKeyID:     c.SecretsS3AccessKeyID,
+				SecretAccessKey: c.SecretsS3SecretAccessKey,
+				Key:             c.SecretsS3Passphrase,
+				EncryptMode:     c.SecretsS3Encrypt,
+				ForcePathStyle:  c.SecretsS3Endpoint != "",
+			},
+		}, logger)
 		if err != nil {
-			return fmt.Errorf("could not create secrets manager: %w", err)
+			return fmt.Errorf("could not create S3 secrets manager: %w", err)
 		}
 		defer func() { _ = secretsManager.Close() }()
+	default:
+		secretsManager, err = secretssqlite.New(secretssqlite.Config{
+			Path:       c.SecretsSQLitePath,
+			Passphrase: c.SecretsSQLitePassphrase,
+		}, logger)
+		if err != nil {
+			return fmt.Errorf("could not create SQLite secrets manager: %w", err)
+		}
+		defer func() { _ = secretsManager.Close() }()
+	}
 
-		// Store any secrets provided via --secret flags (global scope)
-		for _, s := range c.Secret {
-			key, value, found := strings.Cut(s, "=")
-			if !found || key == "" {
-				return fmt.Errorf("invalid --secret flag %q: expected KEY=VALUE format", s)
-			}
+	// Store any secrets provided via --secret flags (global scope)
+	for _, s := range c.Secret {
+		key, value, found := strings.Cut(s, "=")
+		if !found || key == "" {
+			return fmt.Errorf("invalid --secret flag %q: expected KEY=VALUE format", s)
+		}
 
-			err = secretsManager.Set(context.Background(), secrets.GlobalScope, key, value)
-			if err != nil {
-				return fmt.Errorf("could not set global secret %q: %w", key, err)
-			}
+		err = secretsManager.Set(context.Background(), secrets.GlobalScope, key, value)
+		if err != nil {
+			return fmt.Errorf("could not set global secret %q: %w", key, err)
 		}
 	}
 

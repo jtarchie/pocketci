@@ -6,7 +6,6 @@ import (
 
 	_ "github.com/jtarchie/pocketci/orchestra/docker"
 	_ "github.com/jtarchie/pocketci/orchestra/native"
-	_ "github.com/jtarchie/pocketci/secrets/sqlite"
 	_ "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/jtarchie/pocketci/testhelpers"
 	. "github.com/onsi/gomega"
@@ -27,11 +26,11 @@ func TestSecretsBasic(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			runner := testhelpers.Runner{
-				Pipeline: examplePath,
-				Driver:   driver,
-				Storage:  "sqlite://:memory:",
-				Secrets:  "sqlite://:memory:?key=test-passphrase",
-				Secret:   []string{"API_KEY=super-secret-value-12345"},
+				Pipeline:                examplePath,
+				Driver:                  driver,
+				Storage:                 "sqlite://:memory:",
+				SecretsSQLitePassphrase: "test-passphrase",
+				Secret:                  []string{"API_KEY=super-secret-value-12345"},
 			}
 			err = runner.Run(nil)
 			assert.Expect(err).NotTo(HaveOccurred())
@@ -48,10 +47,10 @@ func TestSecretsMissingFails(t *testing.T) {
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	runner := testhelpers.Runner{
-		Pipeline: examplePath,
-		Driver:   "native",
-		Storage:  "sqlite://:memory:",
-		Secrets:  "sqlite://:memory:?key=test-passphrase",
+		Pipeline:                examplePath,
+		Driver:                  "native",
+		Storage:                 "sqlite://:memory:",
+		SecretsSQLitePassphrase: "test-passphrase",
 	}
 	err = runner.Run(nil)
 	assert.Expect(err).To(HaveOccurred())
@@ -67,11 +66,11 @@ func TestSecretsInvalidFlag(t *testing.T) {
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	runner := testhelpers.Runner{
-		Pipeline: examplePath,
-		Driver:   "native",
-		Storage:  "sqlite://:memory:",
-		Secrets:  "sqlite://:memory:?key=test-passphrase",
-		Secret:   []string{"INVALID_NO_EQUALS"},
+		Pipeline:                examplePath,
+		Driver:                  "native",
+		Storage:                 "sqlite://:memory:",
+		SecretsSQLitePassphrase: "test-passphrase",
+		Secret:                  []string{"INVALID_NO_EQUALS"},
 	}
 	err = runner.Run(nil)
 	assert.Expect(err).To(HaveOccurred())
@@ -97,11 +96,11 @@ func TestSecretsGlobal(t *testing.T) {
 			// The pipeline should still find it via global fallback
 			// and the value should be redacted from output
 			runner := testhelpers.Runner{
-				Pipeline:     examplePath,
-				Driver:       driver,
-				Storage:      "sqlite://:memory:",
-				Secrets:      "sqlite://:memory:?key=test-passphrase",
-				GlobalSecret: []string{"API_KEY=global-secret-value-99999"},
+				Pipeline:                examplePath,
+				Driver:                  driver,
+				Storage:                 "sqlite://:memory:",
+				SecretsSQLitePassphrase: "test-passphrase",
+				GlobalSecret:            []string{"API_KEY=global-secret-value-99999"},
 			}
 			err = runner.Run(nil)
 			assert.Expect(err).NotTo(HaveOccurred())
@@ -120,12 +119,12 @@ func TestSecretsGlobalOverriddenByPipeline(t *testing.T) {
 	// Set API_KEY at both global and pipeline scope
 	// Pipeline scope should win
 	runner := testhelpers.Runner{
-		Pipeline:     examplePath,
-		Driver:       "native",
-		Storage:      "sqlite://:memory:",
-		Secrets:      "sqlite://:memory:?key=test-passphrase",
-		Secret:       []string{"API_KEY=pipeline-secret"},
-		GlobalSecret: []string{"API_KEY=global-secret"},
+		Pipeline:                examplePath,
+		Driver:                  "native",
+		Storage:                 "sqlite://:memory:",
+		SecretsSQLitePassphrase: "test-passphrase",
+		Secret:                  []string{"API_KEY=pipeline-secret"},
+		GlobalSecret:            []string{"API_KEY=global-secret"},
 	}
 	err = runner.Run(nil)
 	assert.Expect(err).NotTo(HaveOccurred())

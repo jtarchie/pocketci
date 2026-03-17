@@ -2,56 +2,93 @@ package secrets_test
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"os/exec"
 	"testing"
 
+	"github.com/jtarchie/pocketci/s3config"
 	"github.com/jtarchie/pocketci/secrets"
-	_ "github.com/jtarchie/pocketci/secrets/s3"
-	_ "github.com/jtarchie/pocketci/secrets/sqlite"
+	secretss3 "github.com/jtarchie/pocketci/secrets/s3"
+	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/testhelpers"
 	. "github.com/onsi/gomega"
 )
 
-func newSecretsManager(t *testing.T, name string, init secrets.InitFunc) secrets.Manager {
+type driverFactory struct {
+	name string
+	new  func(t *testing.T) secrets.Manager
+}
+
+func buildDriverFactories(t *testing.T) []driverFactory {
 	t.Helper()
 
-	var dsn string
-	switch name {
-	case "s3":
-		if _, err := exec.LookPath("minio"); err != nil {
-			t.Skip("minio not installed, skipping S3 secrets test")
-		}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
+	factories := []driverFactory{
+		{
+			name: "sqlite",
+			new: func(t *testing.T) secrets.Manager {
+				t.Helper()
+
+				mgr, err := secretssqlite.New(secretssqlite.Config{
+					Path:       ":memory:",
+					Passphrase: "test-encryption-key-for-testing",
+				}, logger)
+				if err != nil {
+					t.Fatalf("failed to initialize sqlite secrets backend: %v", err)
+				}
+
+				t.Cleanup(func() { _ = mgr.Close() })
+
+				return mgr
+			},
+		},
+	}
+
+	if _, err := exec.LookPath("minio"); err == nil {
 		server := testhelpers.StartMinIO(t)
 		t.Cleanup(server.Stop)
 
-		dsn = server.CacheURL() + "&encrypt=sse-s3&key=test-encryption-passphrase"
-	case "sqlite":
-		dsn = "sqlite://:memory:?key=test-encryption-key-for-testing"
-	default:
-		t.Skipf("unknown secrets driver: %s", name)
-	}
+		s3cfg, parseErr := s3config.ParseDSN(server.CacheURL() + "&key=test-encryption-passphrase")
+		if parseErr == nil {
+			// Probe once to see if SSE is supported
+			_, probeErr := secretss3.New(secretss3.Config{Config: *s3cfg}, logger)
+			if probeErr == nil {
+				factories = append(factories, driverFactory{
+					name: "s3",
+					new: func(t *testing.T) secrets.Manager {
+						t.Helper()
 
-	mgr, err := init(dsn, slog.Default())
-	if err != nil {
-		if name == "s3" {
-			t.Skipf("S3 secrets SSE probe failed (MinIO may not support SSE without KMS): %v", err)
+						mgr, err := secretss3.New(secretss3.Config{Config: *s3cfg}, logger)
+						if err != nil {
+							t.Skipf("S3 secrets SSE probe failed: %v", err)
+						}
+
+						t.Cleanup(func() { _ = mgr.Close() })
+
+						return mgr
+					},
+				})
+			}
 		}
-		t.Fatalf("failed to initialize secrets backend: %v", err)
 	}
 
-	t.Cleanup(func() { _ = mgr.Close() })
-
-	return mgr
+	return factories
 }
 
 func TestSecretDrivers(t *testing.T) {
-	secrets.Each(func(name string, init secrets.InitFunc) {
-		t.Run(name, func(t *testing.T) {
+	for _, factory := range buildDriverFactories(t) {
+		factory := factory
+
+		t.Run(factory.name, func(t *testing.T) {
+			t.Parallel()
+
 			t.Run("set and get", func(t *testing.T) {
+				t.Parallel()
+
 				assert := NewGomegaWithT(t)
-				mgr := newSecretsManager(t, name, init)
+				mgr := factory.new(t)
 				ctx := context.Background()
 
 				err := mgr.Set(ctx, secrets.GlobalScope, "API_KEY", "my-secret-value")
@@ -63,8 +100,10 @@ func TestSecretDrivers(t *testing.T) {
 			})
 
 			t.Run("get nonexistent returns ErrNotFound", func(t *testing.T) {
+				t.Parallel()
+
 				assert := NewGomegaWithT(t)
-				mgr := newSecretsManager(t, name, init)
+				mgr := factory.new(t)
 				ctx := context.Background()
 
 				_, err := mgr.Get(ctx, secrets.GlobalScope, "DOES_NOT_EXIST")
@@ -72,8 +111,10 @@ func TestSecretDrivers(t *testing.T) {
 			})
 
 			t.Run("delete existing secret", func(t *testing.T) {
+				t.Parallel()
+
 				assert := NewGomegaWithT(t)
-				mgr := newSecretsManager(t, name, init)
+				mgr := factory.new(t)
 				ctx := context.Background()
 
 				err := mgr.Set(ctx, secrets.GlobalScope, "TO_DELETE", "value")
@@ -87,8 +128,10 @@ func TestSecretDrivers(t *testing.T) {
 			})
 
 			t.Run("delete nonexistent returns ErrNotFound", func(t *testing.T) {
+				t.Parallel()
+
 				assert := NewGomegaWithT(t)
-				mgr := newSecretsManager(t, name, init)
+				mgr := factory.new(t)
 				ctx := context.Background()
 
 				err := mgr.Delete(ctx, secrets.GlobalScope, "NOPE")
@@ -96,8 +139,10 @@ func TestSecretDrivers(t *testing.T) {
 			})
 
 			t.Run("scope isolation", func(t *testing.T) {
+				t.Parallel()
+
 				assert := NewGomegaWithT(t)
-				mgr := newSecretsManager(t, name, init)
+				mgr := factory.new(t)
 				ctx := context.Background()
 
 				err := mgr.Set(ctx, secrets.GlobalScope, "SHARED_KEY", "global-value")
@@ -123,8 +168,10 @@ func TestSecretDrivers(t *testing.T) {
 			})
 
 			t.Run("overwrite updates value", func(t *testing.T) {
+				t.Parallel()
+
 				assert := NewGomegaWithT(t)
-				mgr := newSecretsManager(t, name, init)
+				mgr := factory.new(t)
 				ctx := context.Background()
 
 				err := mgr.Set(ctx, secrets.GlobalScope, "ROTATE_ME", "value-v1")
@@ -139,8 +186,10 @@ func TestSecretDrivers(t *testing.T) {
 			})
 
 			t.Run("special characters in values", func(t *testing.T) {
+				t.Parallel()
+
 				assert := NewGomegaWithT(t)
-				mgr := newSecretsManager(t, name, init)
+				mgr := factory.new(t)
 				ctx := context.Background()
 
 				specialValues := map[string]string{
@@ -163,8 +212,10 @@ func TestSecretDrivers(t *testing.T) {
 			})
 
 			t.Run("ListByScope returns all keys in a scope", func(t *testing.T) {
+				t.Parallel()
+
 				assert := NewGomegaWithT(t)
-				mgr := newSecretsManager(t, name, init)
+				mgr := factory.new(t)
 				ctx := context.Background()
 
 				scope := secrets.PipelineScope("list-test")
@@ -183,19 +234,23 @@ func TestSecretDrivers(t *testing.T) {
 				assert.Expect(keys).To(Equal([]string{"A_KEY", "B_KEY"}))
 			})
 
-			t.Run("ListByScope returns nil for empty scope", func(t *testing.T) {
+			t.Run("ListByScope returns empty for empty scope", func(t *testing.T) {
+				t.Parallel()
+
 				assert := NewGomegaWithT(t)
-				mgr := newSecretsManager(t, name, init)
+				mgr := factory.new(t)
 				ctx := context.Background()
 
 				keys, err := mgr.ListByScope(ctx, secrets.PipelineScope("nonexistent"))
 				assert.Expect(err).NotTo(HaveOccurred())
-				assert.Expect(keys).To(BeNil())
+				assert.Expect(keys).To(BeEmpty())
 			})
 
 			t.Run("DeleteByScope removes all secrets in scope", func(t *testing.T) {
+				t.Parallel()
+
 				assert := NewGomegaWithT(t)
-				mgr := newSecretsManager(t, name, init)
+				mgr := factory.new(t)
 				ctx := context.Background()
 
 				scope := secrets.PipelineScope("del-scope-test")
@@ -214,12 +269,12 @@ func TestSecretDrivers(t *testing.T) {
 
 				keys, err := mgr.ListByScope(ctx, scope)
 				assert.Expect(err).NotTo(HaveOccurred())
-				assert.Expect(keys).To(BeNil())
+				assert.Expect(keys).To(BeEmpty())
 
 				val, err := mgr.Get(ctx, secrets.GlobalScope, "GLOBAL")
 				assert.Expect(err).NotTo(HaveOccurred())
 				assert.Expect(val).To(Equal("val-g"))
 			})
 		})
-	})
+	}
 }

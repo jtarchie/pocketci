@@ -6,7 +6,6 @@ import (
 	_ "embed"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/georgysavva/scany/v2/sqlscan"
@@ -17,6 +16,12 @@ import (
 //go:embed schema.sql
 var schema string
 
+// Config holds the configuration for the SQLite secrets backend.
+type Config struct {
+	Path       string // database file path, or ":memory:" for in-memory
+	Passphrase string // encryption passphrase for application-layer AES-256-GCM
+}
+
 // SQLite is a secrets backend that stores encrypted secrets in SQLite.
 type SQLite struct {
 	db        *sql.DB
@@ -24,25 +29,22 @@ type SQLite struct {
 	logger    *slog.Logger
 }
 
-func init() {
-	secrets.Register("sqlite", New)
-}
-
 // New creates a new SQLite secrets manager.
-// The DSN format is: "sqlite://<sqlite-path>?key=<encryption-passphrase>"
-// For in-memory: "sqlite://:memory:?key=<encryption-passphrase>"
-func New(dsn string, logger *slog.Logger) (secrets.Manager, error) {
+func New(cfg Config, logger *slog.Logger) (secrets.Manager, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	logger = logger.WithGroup("secrets.sqlite")
 
-	// Parse DSN: expected format "sqlite://<path>?key=<passphrase>"
-	// or just the passphrase with a separate DB path
-	dbPath, passphrase, err := parseDSN(dsn)
-	if err != nil {
-		return nil, fmt.Errorf("invalid secrets DSN: %w", err)
+	dbPath := cfg.Path
+	if dbPath == "" {
+		dbPath = ":memory:"
+	}
+
+	passphrase := cfg.Passphrase
+	if passphrase == "" {
+		return nil, fmt.Errorf("sqlite secrets backend requires a non-empty Passphrase")
 	}
 
 	key := secrets.DeriveKey(passphrase)
@@ -185,27 +187,6 @@ func (s *SQLite) DeleteByScope(ctx context.Context, scope string) error {
 
 func (s *SQLite) Close() error {
 	return s.db.Close()
-}
-
-// parseDSN parses a secrets DSN string.
-// Format: "sqlite://<db-path>?key=<passphrase>"
-// Simplified: "<db-path>?key=<passphrase>"
-func parseDSN(dsn string) (dbPath string, passphrase string, err error) {
-	// Strip "sqlite://" prefix if present
-	dsn = strings.TrimPrefix(dsn, "sqlite://")
-
-	// Split on "?key="
-	parts := strings.SplitN(dsn, "?key=", 2)
-	if len(parts) != 2 || parts[1] == "" {
-		return "", "", fmt.Errorf("DSN must contain '?key=<passphrase>': got %q", dsn)
-	}
-
-	dbPath = parts[0]
-	if dbPath == "" {
-		dbPath = ":memory:"
-	}
-
-	return dbPath, parts[1], nil
 }
 
 // incrementVersion increments a version string like "v1" -> "v2".

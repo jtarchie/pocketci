@@ -8,8 +8,6 @@ import (
 	"github.com/jtarchie/pocketci/commands"
 	_ "github.com/jtarchie/pocketci/orchestra/cache/s3"
 	_ "github.com/jtarchie/pocketci/resources/mock"
-	_ "github.com/jtarchie/pocketci/secrets/s3"
-	_ "github.com/jtarchie/pocketci/secrets/sqlite"
 	_ "github.com/jtarchie/pocketci/storage/s3"
 	_ "github.com/jtarchie/pocketci/storage/sqlite"
 	_ "github.com/jtarchie/pocketci/webhooks/generic"
