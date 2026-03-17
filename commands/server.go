@@ -9,11 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jtarchie/pocketci/cache"
+	cacheplugins3 "github.com/jtarchie/pocketci/cache/s3"
 	"github.com/jtarchie/pocketci/observability"
 	"github.com/jtarchie/pocketci/observability/honeybadger"
 	"github.com/jtarchie/pocketci/observability/posthog"
 	"github.com/jtarchie/pocketci/orchestra"
-	"github.com/jtarchie/pocketci/orchestra/cache"
 	"github.com/jtarchie/pocketci/orchestra/digitalocean"
 	"github.com/jtarchie/pocketci/orchestra/docker"
 	"github.com/jtarchie/pocketci/orchestra/fly"
@@ -29,6 +30,11 @@ import (
 	"github.com/jtarchie/pocketci/storage"
 	storages3 "github.com/jtarchie/pocketci/storage/s3"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
+	"github.com/jtarchie/pocketci/webhooks"
+	webhookgeneric "github.com/jtarchie/pocketci/webhooks/generic"
+	webhookgithub "github.com/jtarchie/pocketci/webhooks/github"
+	webhookhoneybadger "github.com/jtarchie/pocketci/webhooks/honeybadger"
+	webhookslack "github.com/jtarchie/pocketci/webhooks/slack"
 	"github.com/labstack/echo/v5"
 )
 
@@ -121,9 +127,15 @@ type Server struct {
 	QEMUCacheDir string `env:"CI_QEMU_CACHE_DIR" help:"Directory for QEMU image cache"`
 
 	// Cache (optional, wraps the driver)
-	CacheURL         string `env:"CI_CACHE_URL"         help:"Cache store URL (e.g., 's3://bucket/prefix?region=us-east-1')"`
-	CacheCompression string `env:"CI_CACHE_COMPRESSION" help:"Cache compression: zstd, gzip, or none (default: zstd)"`
-	CachePrefix      string `env:"CI_CACHE_PREFIX"      help:"Cache key prefix"`
+	CacheS3Bucket          string        `env:"CI_CACHE_S3_BUCKET"            help:"S3 bucket for cache backend"`
+	CacheS3Prefix          string        `env:"CI_CACHE_S3_PREFIX"            help:"S3 key prefix for cache"`
+	CacheS3Endpoint        string        `env:"CI_CACHE_S3_ENDPOINT"          help:"S3-compatible endpoint URL for cache"`
+	CacheS3Region          string        `env:"CI_CACHE_S3_REGION"            help:"AWS region for cache S3 backend"`
+	CacheS3AccessKeyID     string        `env:"CI_CACHE_S3_ACCESS_KEY_ID"     help:"S3 access key ID for cache"`
+	CacheS3SecretAccessKey string        `env:"CI_CACHE_S3_SECRET_ACCESS_KEY" help:"S3 secret access key for cache"`
+	CacheS3TTL             time.Duration `env:"CI_CACHE_S3_TTL"               help:"Cache object TTL (0 = no expiry)"`
+	CacheCompression       string        `env:"CI_CACHE_COMPRESSION"          help:"Cache compression: zstd, gzip, or none (default: zstd)"`
+	CacheKeyPrefix         string        `env:"CI_CACHE_KEY_PREFIX"           help:"Cache key prefix"`
 }
 
 func (c *Server) Run(logger *slog.Logger) error {
@@ -367,20 +379,26 @@ func (c *Server) Run(logger *slog.Logger) error {
 
 	// Optionally wrap with native fallback or cache
 	driverFactory := baseFactory
-	if c.CacheURL != "" {
-		params := map[string]string{"cache": c.CacheURL}
-		if c.CacheCompression != "" {
-			params["cache_compression"] = c.CacheCompression
-		}
-		if c.CachePrefix != "" {
-			params["cache_prefix"] = c.CachePrefix
+	if c.CacheS3Bucket != "" {
+		store, err := cacheplugins3.New(cacheplugins3.Config{Config: s3config.Config{
+			Bucket:          c.CacheS3Bucket,
+			Prefix:          c.CacheS3Prefix,
+			Endpoint:        c.CacheS3Endpoint,
+			Region:          c.CacheS3Region,
+			AccessKeyID:     c.CacheS3AccessKeyID,
+			SecretAccessKey: c.CacheS3SecretAccessKey,
+			ForcePathStyle:  c.CacheS3Endpoint != "",
+			TTL:             c.CacheS3TTL,
+		}})
+		if err != nil {
+			return fmt.Errorf("could not create cache store: %w", err)
 		}
 		driverFactory = func(ns string) (orchestra.Driver, error) {
 			d, err := baseFactory(ns)
 			if err != nil {
 				return nil, err
 			}
-			return cache.WrapWithCaching(d, params, logger)
+			return cache.WrapWithCaching(d, store, c.CacheCompression, c.CacheKeyPrefix, logger), nil
 		}
 	}
 
@@ -398,6 +416,12 @@ func (c *Server) Run(logger *slog.Logger) error {
 		ObservabilityProvider: obsProvider,
 		DriverFactory:         driverFactory,
 		DriverName:            driverName,
+		WebhookProviders: []webhooks.Provider{
+			webhookgithub.New(),
+			webhookhoneybadger.New(),
+			webhookslack.New(),
+			webhookgeneric.New(),
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("could not create router: %w", err)

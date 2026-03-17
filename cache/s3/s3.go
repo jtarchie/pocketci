@@ -7,12 +7,13 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
-	"github.com/jtarchie/pocketci/orchestra/cache"
+	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/s3config"
 )
 
-func init() {
-	cache.RegisterCacheStore("s3", NewS3Store)
+// Config configures an S3-backed cache store.
+type Config struct {
+	s3config.Config
 }
 
 // S3Store implements CacheStore using AWS S3.
@@ -21,34 +22,20 @@ type S3Store struct {
 	ttl time.Duration
 }
 
-// Option configures an S3Store.
-type Option func(*S3Store)
-
-// WithTTL sets the TTL for cached objects.
-func WithTTL(ttl time.Duration) Option {
-	return func(s *S3Store) {
-		s.ttl = ttl
-	}
-}
-
-// NewS3Store creates a new S3-backed cache store.
-// URL format: s3://http://localhost:9000/bucket/prefix?region=us-east-1
-func NewS3Store(urlStr string) (cache.CacheStore, error) {
-	s3cfg, err := s3config.ParseDSN(urlStr)
+// New creates a new S3-backed cache store from the given Config.
+func New(cfg Config) (*S3Store, error) {
+	client, err := s3config.NewClient(context.Background(), &cfg.Config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse S3 URL: %w", err)
-	}
-
-	client, err := s3config.NewClient(context.Background(), s3cfg)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create S3 client: %w", err)
 	}
 
 	return &S3Store{
 		Client: client,
-		ttl:    s3cfg.TTL,
+		ttl:    cfg.TTL,
 	}, nil
 }
+
+var _ cache.CacheStore = (*S3Store)(nil)
 
 // Restore downloads cached content from S3.
 func (s *S3Store) Restore(ctx context.Context, key string) (io.ReadCloser, error) {

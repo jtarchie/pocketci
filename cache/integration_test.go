@@ -9,14 +9,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jtarchie/pocketci/cache"
+	s3cache "github.com/jtarchie/pocketci/cache/s3"
 	"github.com/jtarchie/pocketci/orchestra"
-	"github.com/jtarchie/pocketci/orchestra/cache"
-	_ "github.com/jtarchie/pocketci/orchestra/cache/s3"
 	"github.com/jtarchie/pocketci/orchestra/digitalocean"
 	"github.com/jtarchie/pocketci/orchestra/docker"
 	"github.com/jtarchie/pocketci/orchestra/fly"
 	"github.com/jtarchie/pocketci/orchestra/hetzner"
 	"github.com/jtarchie/pocketci/orchestra/native"
+	"github.com/jtarchie/pocketci/s3config"
 	"github.com/jtarchie/pocketci/testhelpers"
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/onsi/gomega"
@@ -110,18 +111,23 @@ func TestCacheIntegration(t *testing.T) {
 				mountPath := "/cachevol"
 				testData := "cached-data-" + gonanoid.Must()
 
+				store, err := s3cache.New(s3cache.Config{Config: s3config.Config{
+					Bucket:          minio.Bucket(),
+					Endpoint:        minio.Endpoint(),
+					Region:          "us-east-1",
+					AccessKeyID:     minio.AccessKeyID(),
+					SecretAccessKey: minio.SecretAccessKey(),
+					ForcePathStyle:  true,
+					Prefix:          "integration-test",
+				}})
+				assert.Expect(err).NotTo(gomega.HaveOccurred())
+
 				namespace1 := "cache-test-1-" + gonanoid.Must()
 				driver1, err := entry.factory(namespace1, logger)
 				assert.Expect(err).NotTo(gomega.HaveOccurred())
 				defer func() { _ = driver1.Close() }()
 
-				cacheParams := map[string]string{
-					"cache":             minio.CacheURL(),
-					"cache_compression": "zstd",
-					"cache_prefix":      "integration-test",
-				}
-				driver1, err = cache.WrapWithCaching(driver1, cacheParams, logger)
-				assert.Expect(err).NotTo(gomega.HaveOccurred())
+				driver1 = cache.WrapWithCaching(driver1, store, "zstd", "integration-test", logger)
 
 				vol1, err := driver1.CreateVolume(ctx, volumeName, 0)
 				assert.Expect(err).NotTo(gomega.HaveOccurred())
@@ -160,8 +166,7 @@ func TestCacheIntegration(t *testing.T) {
 				assert.Expect(err).NotTo(gomega.HaveOccurred())
 				defer func() { _ = driver2.Close() }()
 
-				driver2, err = cache.WrapWithCaching(driver2, cacheParams, logger)
-				assert.Expect(err).NotTo(gomega.HaveOccurred())
+				driver2 = cache.WrapWithCaching(driver2, store, "zstd", "integration-test", logger)
 
 				vol2, err := driver2.CreateVolume(ctx, volumeName, 0)
 				assert.Expect(err).NotTo(gomega.HaveOccurred())
@@ -203,12 +208,16 @@ func TestCacheIntegration(t *testing.T) {
 				assert.Expect(err).NotTo(gomega.HaveOccurred())
 				defer func() { _ = driver.Close() }()
 
-				cacheParams := map[string]string{
-					"cache":             minio.CacheURL(),
-					"cache_compression": "zstd",
-				}
-				driver, err = cache.WrapWithCaching(driver, cacheParams, logger)
+				missStore, err := s3cache.New(s3cache.Config{Config: s3config.Config{
+					Bucket:          minio.Bucket(),
+					Endpoint:        minio.Endpoint(),
+					Region:          "us-east-1",
+					AccessKeyID:     minio.AccessKeyID(),
+					SecretAccessKey: minio.SecretAccessKey(),
+					ForcePathStyle:  true,
+				}})
 				assert.Expect(err).NotTo(gomega.HaveOccurred())
+				driver = cache.WrapWithCaching(driver, missStore, "zstd", "", logger)
 
 				vol, err := driver.CreateVolume(ctx, volumeName, 0)
 				assert.Expect(err).NotTo(gomega.HaveOccurred())
@@ -258,9 +267,7 @@ func TestCacheWithoutCachingEnabled(t *testing.T) {
 	assert.Expect(err).NotTo(gomega.HaveOccurred())
 	defer func() { _ = driver.Close() }()
 
-	emptyParams := map[string]string{}
-	wrappedDriver, err := cache.WrapWithCaching(driver, emptyParams, logger)
-	assert.Expect(err).NotTo(gomega.HaveOccurred())
+	wrappedDriver := cache.WrapWithCaching(driver, nil, "", "", logger)
 
 	assert.Expect(wrappedDriver.Name()).To(gomega.Equal(driver.Name()))
 

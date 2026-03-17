@@ -113,3 +113,13 @@ func (m *MinioServer) Endpoint() string {
 func (m *MinioServer) Bucket() string {
 	return m.bucket
 }
+
+// AccessKeyID returns the MinIO root access key ID.
+func (m *MinioServer) AccessKeyID() string {
+	return "minioadmin"
+}
+
+// SecretAccessKey returns the MinIO root secret access key.
+func (m *MinioServer) SecretAccessKey() string {
+	return "minioadmin"
+}

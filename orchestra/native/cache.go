@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jtarchie/pocketci/orchestra/cache"
+	"github.com/jtarchie/pocketci/cache"
 )
 
 // CopyToVolume implements cache.VolumeDataAccessor.

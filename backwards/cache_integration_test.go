@@ -17,7 +17,6 @@ import (
 	"github.com/klauspost/compress/zstd"
 	gonanoid "github.com/matoous/go-nanoid/v2"
 
-	_ "github.com/jtarchie/pocketci/orchestra/cache/s3"
 	"github.com/jtarchie/pocketci/testhelpers"
 	. "github.com/onsi/gomega"
 )
@@ -34,21 +33,18 @@ func TestCacheS3Persistence(t *testing.T) {
 	minio := testhelpers.StartMinIO(t)
 	defer minio.Stop()
 
-	cacheURL := minio.CacheURL()
-
-	// Create a unique cache value so we know it came from S3
 	cacheValue := gonanoid.Must()
 
 	t.Run("docker", func(t *testing.T) {
-		testCachePersistence(t, minio, "docker", cacheURL, cacheValue)
+		testCachePersistence(t, minio, "docker", cacheValue)
 	})
 
 	t.Run("native", func(t *testing.T) {
-		testCachePersistence(t, minio, "native", cacheURL, cacheValue+"-native")
+		testCachePersistence(t, minio, "native", cacheValue+"-native")
 	})
 }
 
-func testCachePersistence(t *testing.T, minio *testhelpers.MinioServer, driverDSN, cacheURL, cacheValue string) {
+func testCachePersistence(t *testing.T, minio *testhelpers.MinioServer, driverDSN, cacheValue string) {
 	assert := NewGomegaWithT(t)
 
 	// Create temp directory for pipeline files
@@ -118,12 +114,16 @@ jobs:
 	// Run pipeline 1: Write to cache
 	t.Log("Running write pipeline...")
 	runner1 := testhelpers.Runner{
-		Pipeline:          writePipelinePath,
-		Driver:            driverDSN,
-		StorageSQLitePath: ":memory:",
-		CacheURL:          cacheURL,
-		CacheCompression:  "zstd",
-		CachePrefix:       "test",
+		Pipeline:               writePipelinePath,
+		Driver:                 driverDSN,
+		StorageSQLitePath:      ":memory:",
+		CacheS3Bucket:          minio.Bucket(),
+		CacheS3Endpoint:        minio.Endpoint(),
+		CacheS3Region:          "us-east-1",
+		CacheS3AccessKeyID:     minio.AccessKeyID(),
+		CacheS3SecretAccessKey: minio.SecretAccessKey(),
+		CacheCompression:       "zstd",
+		CacheKeyPrefix:         "test",
 	}
 	err = runner1.Run(logger)
 	assert.Expect(err).NotTo(HaveOccurred(), "Write pipeline should succeed")
@@ -138,12 +138,16 @@ jobs:
 	// This tests that the cache was persisted to S3 and restored
 	t.Log("Running read pipeline (should restore from S3)...")
 	runner2 := testhelpers.Runner{
-		Pipeline:          readPipelinePath,
-		Driver:            driverDSN,
-		StorageSQLitePath: ":memory:",
-		CacheURL:          cacheURL,
-		CacheCompression:  "zstd",
-		CachePrefix:       "test",
+		Pipeline:               readPipelinePath,
+		Driver:                 driverDSN,
+		StorageSQLitePath:      ":memory:",
+		CacheS3Bucket:          minio.Bucket(),
+		CacheS3Endpoint:        minio.Endpoint(),
+		CacheS3Region:          "us-east-1",
+		CacheS3AccessKeyID:     minio.AccessKeyID(),
+		CacheS3SecretAccessKey: minio.SecretAccessKey(),
+		CacheCompression:       "zstd",
+		CacheKeyPrefix:         "test",
 	}
 	err = runner2.Run(logger)
 	assert.Expect(err).NotTo(HaveOccurred(), "Read pipeline should succeed - cache should be restored from S3")
@@ -161,21 +165,19 @@ func TestCacheS3Contents(t *testing.T) {
 	minio := testhelpers.StartMinIO(t)
 	defer minio.Stop()
 
-	cacheURL := minio.CacheURL()
-
 	// Create a unique cache value
 	cacheValue := gonanoid.Must()
 
 	t.Run("docker", func(t *testing.T) {
-		testCacheContents(t, minio, "docker", cacheURL, cacheValue)
+		testCacheContents(t, minio, "docker", cacheValue)
 	})
 
 	t.Run("native", func(t *testing.T) {
-		testCacheContents(t, minio, "native", cacheURL, cacheValue+"-native")
+		testCacheContents(t, minio, "native", cacheValue+"-native")
 	})
 }
 
-func testCacheContents(t *testing.T, minio *testhelpers.MinioServer, driverDSN, cacheURL, cacheValue string) {
+func testCacheContents(t *testing.T, minio *testhelpers.MinioServer, driverDSN, cacheValue string) {
 	assert := NewGomegaWithT(t)
 
 	// Create temp directory for pipeline file
@@ -216,12 +218,16 @@ jobs:
 	// Run pipeline: Write to cache
 	t.Log("Running write pipeline...")
 	runner := testhelpers.Runner{
-		Pipeline:          writePipelinePath,
-		Driver:            driverDSN,
-		StorageSQLitePath: ":memory:",
-		CacheURL:          cacheURL,
-		CacheCompression:  "zstd",
-		CachePrefix:       "test",
+		Pipeline:               writePipelinePath,
+		Driver:                 driverDSN,
+		StorageSQLitePath:      ":memory:",
+		CacheS3Bucket:          minio.Bucket(),
+		CacheS3Endpoint:        minio.Endpoint(),
+		CacheS3Region:          "us-east-1",
+		CacheS3AccessKeyID:     minio.AccessKeyID(),
+		CacheS3SecretAccessKey: minio.SecretAccessKey(),
+		CacheCompression:       "zstd",
+		CacheKeyPrefix:         "test",
 	}
 	err = runner.Run(logger)
 	assert.Expect(err).NotTo(HaveOccurred(), "Write pipeline should succeed")

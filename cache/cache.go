@@ -50,19 +50,3 @@ type VolumeDataAccessor interface {
 	// Directories are included recursively. Paths are relative to the volume root.
 	ReadFilesFromVolume(ctx context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error)
 }
-
-// CacheStoreFactory creates a CacheStore from a URL.
-type CacheStoreFactory func(url string) (CacheStore, error)
-
-var cacheStoreFactories = make(map[string]CacheStoreFactory)
-
-// RegisterCacheStore registers a cache store factory for a URL scheme.
-func RegisterCacheStore(scheme string, factory CacheStoreFactory) {
-	cacheStoreFactories[scheme] = factory
-}
-
-// GetCacheStore returns a cache store factory for the given scheme.
-func GetCacheStore(scheme string) (CacheStoreFactory, bool) {
-	factory, ok := cacheStoreFactories[scheme]
-	return factory, ok
-}

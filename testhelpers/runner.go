@@ -18,12 +18,14 @@ import (
 
 	"github.com/evanw/esbuild/pkg/api"
 	"github.com/jtarchie/pocketci/backwards"
+	"github.com/jtarchie/pocketci/cache"
+	cacheplugins3 "github.com/jtarchie/pocketci/cache/s3"
 	"github.com/jtarchie/pocketci/orchestra"
-	"github.com/jtarchie/pocketci/orchestra/cache"
 	"github.com/jtarchie/pocketci/orchestra/docker"
 	"github.com/jtarchie/pocketci/orchestra/k8s"
 	"github.com/jtarchie/pocketci/orchestra/native"
 	"github.com/jtarchie/pocketci/runtime"
+	"github.com/jtarchie/pocketci/s3config"
 	"github.com/jtarchie/pocketci/secrets"
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
@@ -36,9 +38,15 @@ type Runner struct {
 	DockerHost              string        `env:"CI_DOCKER_HOST"         help:"Docker daemon host URL"`
 	K8sKubeconfig           string        `env:"CI_K8S_KUBECONFIG"      help:"Path to kubeconfig file"`
 	K8sNamespace            string        `env:"CI_K8S_NAMESPACE"       help:"Kubernetes namespace for jobs"`
-	CacheURL                string        `env:"CI_CACHE_URL"           help:"Cache store URL"`
-	CacheCompression        string        `env:"CI_CACHE_COMPRESSION"   help:"Cache compression: zstd, gzip, or none"`
-	CachePrefix             string        `env:"CI_CACHE_PREFIX"        help:"Cache key prefix"`
+	CacheS3Bucket           string        `env:"CI_CACHE_S3_BUCKET"            help:"S3 bucket for cache backend"`
+	CacheS3Prefix           string        `env:"CI_CACHE_S3_PREFIX"            help:"S3 key prefix for cache"`
+	CacheS3Endpoint         string        `env:"CI_CACHE_S3_ENDPOINT"          help:"S3-compatible endpoint URL for cache"`
+	CacheS3Region           string        `env:"CI_CACHE_S3_REGION"            help:"AWS region for cache S3 backend"`
+	CacheS3AccessKeyID      string        `env:"CI_CACHE_S3_ACCESS_KEY_ID"     help:"S3 access key ID for cache"`
+	CacheS3SecretAccessKey  string        `env:"CI_CACHE_S3_SECRET_ACCESS_KEY" help:"S3 secret access key for cache"`
+	CacheS3TTL              time.Duration `env:"CI_CACHE_S3_TTL"               help:"Cache object TTL (0 = no expiry)"`
+	CacheCompression        string        `env:"CI_CACHE_COMPRESSION"          help:"Cache compression: zstd, gzip, or none"`
+	CacheKeyPrefix          string        `env:"CI_CACHE_KEY_PREFIX"           help:"Cache key prefix"`
 	Timeout                 time.Duration `env:"CI_TIMEOUT"                                              help:"timeout for the pipeline, will cause abort if exceeded"`
 	Resume                  bool          `help:"Resume from last checkpoint if pipeline was interrupted"`
 	RunID                   string        `help:"Unique run ID for resume support (auto-generated if not provided)"`
@@ -153,19 +161,21 @@ func (c *Runner) Run(logger *slog.Logger) error {
 
 	defer func() { _ = driver.Close() }()
 
-	if c.CacheURL != "" {
-		params := map[string]string{"cache": c.CacheURL}
-		if c.CacheCompression != "" {
-			params["cache_compression"] = c.CacheCompression
-		}
-		if c.CachePrefix != "" {
-			params["cache_prefix"] = c.CachePrefix
-		}
-
-		driver, err = cache.WrapWithCaching(driver, params, logger)
+	if c.CacheS3Bucket != "" {
+		store, err := cacheplugins3.New(cacheplugins3.Config{Config: s3config.Config{
+			Bucket:          c.CacheS3Bucket,
+			Prefix:          c.CacheS3Prefix,
+			Endpoint:        c.CacheS3Endpoint,
+			Region:          c.CacheS3Region,
+			AccessKeyID:     c.CacheS3AccessKeyID,
+			SecretAccessKey: c.CacheS3SecretAccessKey,
+			ForcePathStyle:  c.CacheS3Endpoint != "",
+			TTL:             c.CacheS3TTL,
+		}})
 		if err != nil {
 			return fmt.Errorf("could not initialize cache layer: %w", err)
 		}
+		driver = cache.WrapWithCaching(driver, store, c.CacheCompression, c.CacheKeyPrefix, logger)
 	}
 
 	storage, err := storagesqlite.NewSqlite(storagesqlite.Config{

@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/jtarchie/pocketci/webhooks"
-	_ "github.com/jtarchie/pocketci/webhooks/slack"
+	"github.com/jtarchie/pocketci/webhooks/slack"
 )
 
 func sign(body []byte, secret, timestamp string) string {
@@ -28,7 +28,7 @@ func TestSlack_Match(t *testing.T) {
 	req.Header.Set("X-Slack-Signature", "v0=whatever")
 	req.Header.Set("X-Slack-Request-Timestamp", "1609459200")
 
-	event, err := webhooks.Detect(req, body, "")
+	event, err := webhooks.Detect([]webhooks.Provider{slack.New()}, req, body, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestSlack_ValidSignature(t *testing.T) {
 	req.Header.Set("X-Slack-Signature", sign(body, secret, timestamp))
 	req.Header.Set("X-Slack-Request-Timestamp", timestamp)
 
-	event, err := webhooks.Detect(req, body, secret)
+	event, err := webhooks.Detect([]webhooks.Provider{slack.New()}, req, body, secret)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestSlack_InvalidSignature(t *testing.T) {
 	req.Header.Set("X-Slack-Signature", "v0=badsig")
 	req.Header.Set("X-Slack-Request-Timestamp", "1609459200")
 
-	_, err := webhooks.Detect(req, body, "signing_secret")
+	_, err := webhooks.Detect([]webhooks.Provider{slack.New()}, req, body, "signing_secret")
 	if err != webhooks.ErrUnauthorized {
 		t.Errorf("expected ErrUnauthorized, got %v", err)
 	}
@@ -81,7 +81,7 @@ func TestSlack_MissingHeaders(t *testing.T) {
 	req.Header.Set("X-Slack-Signature", "v0=something")
 	// Missing X-Slack-Request-Timestamp
 
-	_, err := webhooks.Detect(req, body, "signing_secret")
+	_, err := webhooks.Detect([]webhooks.Provider{slack.New()}, req, body, "signing_secret")
 	if err != webhooks.ErrUnauthorized {
 		t.Errorf("expected ErrUnauthorized, got %v", err)
 	}

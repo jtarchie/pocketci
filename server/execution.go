@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/jtarchie/pocketci/backwards"
+	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
-	"github.com/jtarchie/pocketci/orchestra/cache"
 	"github.com/jtarchie/pocketci/runtime"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/secrets"

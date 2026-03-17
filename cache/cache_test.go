@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
-	"github.com/jtarchie/pocketci/orchestra/cache"
 	"github.com/onsi/gomega"
 )
 

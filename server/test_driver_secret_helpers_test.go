@@ -11,6 +11,11 @@ import (
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/server"
 	"github.com/jtarchie/pocketci/storage"
+	"github.com/jtarchie/pocketci/webhooks"
+	webhookgeneric "github.com/jtarchie/pocketci/webhooks/generic"
+	webhookgithub "github.com/jtarchie/pocketci/webhooks/github"
+	webhookhoneybadger "github.com/jtarchie/pocketci/webhooks/honeybadger"
+	webhookslack "github.com/jtarchie/pocketci/webhooks/slack"
 )
 
 func newStrictSecretRouter(t *testing.T, client storage.Driver, opts server.RouterOptions) *server.Router {
@@ -19,6 +24,15 @@ func newStrictSecretRouter(t *testing.T, client storage.Driver, opts server.Rout
 	if opts.DriverFactory == nil {
 		opts.DriverFactory = func(ns string) (orchestra.Driver, error) {
 			return native.New(native.Config{Namespace: ns}, slog.Default())
+		}
+	}
+
+	if opts.WebhookProviders == nil {
+		opts.WebhookProviders = []webhooks.Provider{
+			webhookgithub.New(),
+			webhookhoneybadger.New(),
+			webhookslack.New(),
+			webhookgeneric.New(),
 		}
 	}
 

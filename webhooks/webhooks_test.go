@@ -32,14 +32,12 @@ func (p *unauthorizedProvider) Parse(_ *http.Request, _ []byte, _ string) (*webh
 }
 
 func TestDetect_FirstMatchWins(t *testing.T) {
-	webhooks.Add(&noopProvider{"first"})
-	webhooks.Add(&noopProvider{"second"})
-	t.Cleanup(func() { webhooks.Reset() })
+	providers := []webhooks.Provider{&noopProvider{"first"}, &noopProvider{"second"}}
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 	req.Header.Set("X-Noop", "first")
 
-	event, err := webhooks.Detect(req, nil, "")
+	event, err := webhooks.Detect(providers, req, nil, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -50,24 +48,21 @@ func TestDetect_FirstMatchWins(t *testing.T) {
 }
 
 func TestDetect_NoMatch(t *testing.T) {
-	t.Cleanup(func() { webhooks.Reset() })
-
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 
-	_, err := webhooks.Detect(req, nil, "")
+	_, err := webhooks.Detect(nil, req, nil, "")
 	if err != webhooks.ErrNoMatch {
 		t.Errorf("expected ErrNoMatch, got %v", err)
 	}
 }
 
 func TestDetect_UnauthorizedPropagated(t *testing.T) {
-	webhooks.Add(&unauthorizedProvider{})
-	t.Cleanup(func() { webhooks.Reset() })
+	providers := []webhooks.Provider{&unauthorizedProvider{}}
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 	req.Header.Set("X-Unauth", "yes")
 
-	_, err := webhooks.Detect(req, nil, "secret")
+	_, err := webhooks.Detect(providers, req, nil, "secret")
 	if err != webhooks.ErrUnauthorized {
 		t.Errorf("expected ErrUnauthorized, got %v", err)
 	}

@@ -18,7 +18,6 @@ import (
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/server"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
-	_ "github.com/jtarchie/pocketci/webhooks/generic"
 	. "github.com/onsi/gomega"
 )
 

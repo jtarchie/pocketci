@@ -6,12 +6,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/jtarchie/pocketci/commands"
-	_ "github.com/jtarchie/pocketci/orchestra/cache/s3"
 	_ "github.com/jtarchie/pocketci/resources/mock"
-	_ "github.com/jtarchie/pocketci/webhooks/generic"
-	_ "github.com/jtarchie/pocketci/webhooks/github"
-	_ "github.com/jtarchie/pocketci/webhooks/honeybadger"
-	_ "github.com/jtarchie/pocketci/webhooks/slack"
 	"github.com/lmittmann/tint"
 )
 

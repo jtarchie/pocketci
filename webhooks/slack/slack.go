@@ -17,11 +17,10 @@ import (
 	"github.com/jtarchie/pocketci/webhooks"
 )
 
-func init() {
-	webhooks.Add(&provider{})
-}
-
 type provider struct{}
+
+// New returns the Slack webhook provider.
+func New() webhooks.Provider { return &provider{} }
 
 func (p *provider) Name() string { return "slack" }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/server/auth"
 	"github.com/jtarchie/pocketci/storage"
+	"github.com/jtarchie/pocketci/webhooks"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
@@ -41,6 +42,9 @@ type RouterOptions struct {
 	DriverFactory func(namespace string) (orchestra.Driver, error)
 	// DriverName is the name of the configured driver (used in API responses).
 	DriverName string
+	// WebhookProviders is the ordered list of webhook providers to use for detection.
+	// Providers are checked in order; the first match wins.
+	WebhookProviders []webhooks.Provider
 }
 
 // Router wraps echo.Echo and provides access to the execution service.
@@ -298,7 +302,7 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 		api.Use(newBasicAuthMiddleware(opts.BasicAuthUsername, opts.BasicAuthPassword))
 	}
 
-	registerRoutes(router, api, web, store, execService, allowedDrivers, opts.DriverName, allowedFeatures, opts.SecretsManager, webhookTimeout, logger)
+	registerRoutes(router, api, web, store, execService, allowedDrivers, opts.DriverName, allowedFeatures, opts.SecretsManager, opts.WebhookProviders, webhookTimeout, logger)
 
 	return &Router{Echo: router, execService: execService, webGroup: web, allowedDrivers: allowedDrivers, allowedFeatures: allowedFeatures}, nil
 }
@@ -314,6 +318,7 @@ func registerRoutes(
 	driverName string,
 	allowedFeatures []Feature,
 	secretsMgr secrets.Manager,
+	webhookProviders []webhooks.Provider,
 	webhookTimeout time.Duration,
 	logger *slog.Logger,
 ) {
@@ -326,7 +331,7 @@ func registerRoutes(
 	(&APIFeaturesController{allowedFeatures: allowedFeatures}).RegisterRoutes(api)
 
 	// Webhooks registered on the main router (no auth group, before API group)
-	(&APIWebhooksController{BaseController: base, allowedFeatures: allowedFeatures, webhookTimeout: webhookTimeout, logger: logger.WithGroup("webhook"), secretsMgr: secretsMgr}).RegisterRoutes(router)
+	(&APIWebhooksController{BaseController: base, allowedFeatures: allowedFeatures, webhookTimeout: webhookTimeout, logger: logger.WithGroup("webhook"), secretsMgr: secretsMgr, providers: webhookProviders}).RegisterRoutes(router)
 
 	// Web controllers (HTML responses)
 	(&WebPipelinesController{BaseController: base}).RegisterRoutes(web)

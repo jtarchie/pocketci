@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/jtarchie/pocketci/webhooks"
-	_ "github.com/jtarchie/pocketci/webhooks/github"
+	"github.com/jtarchie/pocketci/webhooks/github"
 )
 
 func sign(body []byte, secret string) string {
@@ -25,8 +25,7 @@ func TestGitHub_Match(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 	req.Header.Set("X-GitHub-Event", "push")
 
-	// No providers other than GitHub registered.
-	event, err := webhooks.Detect(req, []byte("{}"), "")
+	event, err := webhooks.Detect([]webhooks.Provider{github.New()}, req, []byte("{}"), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -48,7 +47,7 @@ func TestGitHub_ValidSignature(t *testing.T) {
 	req.Header.Set("X-GitHub-Event", "pull_request")
 	req.Header.Set("X-Hub-Signature-256", sign(body, secret))
 
-	event, err := webhooks.Detect(req, body, secret)
+	event, err := webhooks.Detect([]webhooks.Provider{github.New()}, req, body, secret)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -69,7 +68,7 @@ func TestGitHub_InvalidSignature(t *testing.T) {
 	req.Header.Set("X-GitHub-Event", "push")
 	req.Header.Set("X-Hub-Signature-256", "sha256=badhex")
 
-	_, err := webhooks.Detect(req, body, "mysecret")
+	_, err := webhooks.Detect([]webhooks.Provider{github.New()}, req, body, "mysecret")
 	if err != webhooks.ErrUnauthorized {
 		t.Errorf("expected ErrUnauthorized, got %v", err)
 	}
@@ -82,7 +81,7 @@ func TestGitHub_MissingSignatureWithSecret(t *testing.T) {
 	req.Header.Set("X-GitHub-Event", "push")
 	// No X-Hub-Signature-256
 
-	_, err := webhooks.Detect(req, body, "mysecret")
+	_, err := webhooks.Detect([]webhooks.Provider{github.New()}, req, body, "mysecret")
 	if err != webhooks.ErrUnauthorized {
 		t.Errorf("expected ErrUnauthorized, got %v", err)
 	}
@@ -133,7 +132,7 @@ func TestGitHub_RealDelivery(t *testing.T) {
 	req.Header.Set("X-GitHub-Event", "pull_request")
 	req.Header.Set("X-Hub-Signature-256", gotSig)
 
-	event, err := webhooks.Detect(req, body, secret)
+	event, err := webhooks.Detect([]webhooks.Provider{github.New()}, req, body, secret)
 	if err != nil {
 		t.Fatalf("Detect rejected a correctly-signed request: %v", err)
 	}

@@ -1,6 +1,6 @@
 // Package generic provides a fall-through webhook provider that replicates
 // the original HMAC-SHA256 signature behaviour (X-Webhook-Signature header
-// or ?signature= query parameter). It should be registered last so that
+// or ?signature= query parameter). It should be used last so that
 // more-specific providers take priority.
 package generic
 
@@ -13,11 +13,10 @@ import (
 	"github.com/jtarchie/pocketci/webhooks"
 )
 
-func init() {
-	webhooks.Add(&provider{})
-}
-
 type provider struct{}
+
+// New returns the generic catch-all webhook provider.
+func New() webhooks.Provider { return &provider{} }
 
 func (p *provider) Name() string { return "generic" }
 

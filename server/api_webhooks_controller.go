@@ -22,6 +22,7 @@ type APIWebhooksController struct {
 	webhookTimeout  time.Duration
 	logger          *slog.Logger
 	secretsMgr      secrets.Manager
+	providers       []webhooks.Provider
 }
 
 // Trigger handles ANY /api/webhooks/:id - Trigger pipeline execution via webhook.
@@ -83,7 +84,7 @@ func (c *APIWebhooksController) Trigger(ctx *echo.Context) error {
 		}
 	}
 
-	event, err := webhooks.Detect(ctx.Request(), body, webhookSecret)
+	event, err := webhooks.Detect(c.providers, ctx.Request(), body, webhookSecret)
 	if err != nil {
 		if errors.Is(err, webhooks.ErrUnauthorized) {
 			logger.Error("webhook.unauthorized",

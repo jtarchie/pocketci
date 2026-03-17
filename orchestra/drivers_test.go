@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
-	"github.com/jtarchie/pocketci/orchestra/cache"
 	"github.com/jtarchie/pocketci/orchestra/docker"
 	"github.com/jtarchie/pocketci/orchestra/fly"
 	"github.com/jtarchie/pocketci/orchestra/k8s"

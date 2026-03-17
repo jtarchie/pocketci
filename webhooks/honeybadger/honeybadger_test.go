@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/jtarchie/pocketci/webhooks"
-	_ "github.com/jtarchie/pocketci/webhooks/honeybadger"
+	"github.com/jtarchie/pocketci/webhooks/honeybadger"
 )
 
 func TestHoneybadger_MatchAndValidToken(t *testing.T) {
@@ -17,7 +17,7 @@ func TestHoneybadger_MatchAndValidToken(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 	req.Header.Set("Honeybadger-Token", secret)
 
-	event, err := webhooks.Detect(req, body, secret)
+	event, err := webhooks.Detect([]webhooks.Provider{honeybadger.New()}, req, body, secret)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestHoneybadger_MissingTokenNoDetection(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 
-	_, err := webhooks.Detect(req, body, "my-secret")
+	_, err := webhooks.Detect([]webhooks.Provider{honeybadger.New()}, req, body, "my-secret")
 	if err != webhooks.ErrNoMatch {
 		t.Errorf("expected ErrNoMatch, got %v", err)
 	}
@@ -48,7 +48,7 @@ func TestHoneybadger_InvalidToken(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 	req.Header.Set("Honeybadger-Token", "wrong-token")
 
-	_, err := webhooks.Detect(req, body, "my-secret")
+	_, err := webhooks.Detect([]webhooks.Provider{honeybadger.New()}, req, body, "my-secret")
 	if err != webhooks.ErrUnauthorized {
 		t.Errorf("expected ErrUnauthorized, got %v", err)
 	}
@@ -60,7 +60,7 @@ func TestHoneybadger_EmptySecretIsUnauthorized(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 	req.Header.Set("Honeybadger-Token", "some-token")
 
-	_, err := webhooks.Detect(req, body, "")
+	_, err := webhooks.Detect([]webhooks.Provider{honeybadger.New()}, req, body, "")
 	if err != webhooks.ErrUnauthorized {
 		t.Errorf("expected ErrUnauthorized, got %v", err)
 	}
@@ -73,7 +73,7 @@ func TestHoneybadger_EventTypeFallbackToEvent(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/?source=honeybadger", strings.NewReader(""))
 	req.Header.Set("Honeybadger-Token", secret)
 
-	event, err := webhooks.Detect(req, body, secret)
+	event, err := webhooks.Detect([]webhooks.Provider{honeybadger.New()}, req, body, secret)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
