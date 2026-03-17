@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/orchestra/native"
 	"github.com/jtarchie/pocketci/secrets"
 	_ "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/server"
@@ -13,6 +15,12 @@ import (
 
 func newStrictSecretRouter(t *testing.T, client storage.Driver, opts server.RouterOptions) *server.Router {
 	t.Helper()
+
+	if opts.DriverFactory == nil {
+		opts.DriverFactory = func(ns string) (orchestra.Driver, error) {
+			return native.New(native.Config{Namespace: ns}, slog.Default())
+		}
+	}
 
 	if opts.SecretsManager == nil {
 		secretsMgr, err := secrets.GetFromDSN("sqlite://:memory:?key=test-key", slog.Default())

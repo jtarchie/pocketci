@@ -2,8 +2,10 @@ package testhelpers
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,6 +20,9 @@ import (
 	"github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/orchestra/cache"
+	"github.com/jtarchie/pocketci/orchestra/docker"
+	"github.com/jtarchie/pocketci/orchestra/k8s"
+	"github.com/jtarchie/pocketci/orchestra/native"
 	"github.com/jtarchie/pocketci/runtime"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
@@ -26,7 +31,13 @@ import (
 type Runner struct {
 	Storage            string        `default:"sqlite://test.db"                                    env:"CI_STORAGE"              help:"Path to storage file"                                                                                                                                      required:""`
 	Pipeline           string        `arg:""                                                        help:"Path to pipeline javascript file"                                                                                                                          type:"existingfile"`
-	Driver             string        `default:"native"                                              env:"CI_DRIVER"               help:"Orchestrator driver DSN (e.g., 'k8s:namespace=my-ns', 'k8s://my-ns', 'docker', 'native')"`
+	Driver             string        `default:"native"                                              env:"CI_DRIVER"               help:"Orchestrator driver name (docker, native, k8s)"`
+	DockerHost         string        `env:"CI_DOCKER_HOST"         help:"Docker daemon host URL"`
+	K8sKubeconfig      string        `env:"CI_K8S_KUBECONFIG"      help:"Path to kubeconfig file"`
+	K8sNamespace       string        `env:"CI_K8S_NAMESPACE"       help:"Kubernetes namespace for jobs"`
+	CacheURL           string        `env:"CI_CACHE_URL"           help:"Cache store URL"`
+	CacheCompression   string        `env:"CI_CACHE_COMPRESSION"   help:"Cache compression: zstd, gzip, or none"`
+	CachePrefix        string        `env:"CI_CACHE_PREFIX"        help:"Cache key prefix"`
 	Timeout            time.Duration `env:"CI_TIMEOUT"                                              help:"timeout for the pipeline, will cause abort if exceeded"`
 	Resume             bool          `help:"Resume from last checkpoint if pipeline was interrupted"`
 	RunID              string        `help:"Unique run ID for resume support (auto-generated if not provided)"`
@@ -121,27 +132,42 @@ func (c *Runner) Run(logger *slog.Logger) error {
 		pipeline = string(result.OutputFiles[0].Contents)
 	}
 
-	driverConfig, orchestrator, err := orchestra.GetFromDSN(c.Driver)
-	if err != nil {
-		return fmt.Errorf("could not parse driver DSN (%q): %w", c.Driver, err)
+	// Use a unique namespace per invocation to avoid container name collisions
+	// when multiple tests run the same pipeline+driver in parallel.
+	var nonce [4]byte
+	_, _ = rand.Read(nonce[:])
+	namespace := "ci-" + runtimeID + "-" + hex.EncodeToString(nonce[:])
+
+	var driver orchestra.Driver
+
+	switch c.Driver {
+	case "docker":
+		driver, err = docker.New(docker.Config{Namespace: namespace, Host: c.DockerHost}, logger)
+	case "k8s":
+		driver, err = k8s.New(k8s.Config{Namespace: namespace, Kubeconfig: c.K8sKubeconfig, K8sNamespace: c.K8sNamespace}, logger)
+	default: // native
+		driver, err = native.New(native.Config{Namespace: namespace}, logger)
 	}
 
-	// Use namespace from DSN if provided, otherwise use generated ID
-	namespace := driverConfig.Namespace
-	if namespace == "" {
-		namespace = "ci-" + runtimeID
+	if err != nil {
+		return fmt.Errorf("could not create orchestrator client (%q): %w", c.Driver, err)
 	}
 
-	driver, err := orchestrator(namespace, logger, driverConfig.Params)
-	if err != nil {
-		return fmt.Errorf("could not create orchestrator client: %w", err)
-	}
 	defer func() { _ = driver.Close() }()
 
-	// Wrap driver with caching if cache parameters are present
-	driver, err = cache.WrapWithCaching(driver, driverConfig.Params, logger)
-	if err != nil {
-		return fmt.Errorf("could not initialize cache layer: %w", err)
+	if c.CacheURL != "" {
+		params := map[string]string{"cache": c.CacheURL}
+		if c.CacheCompression != "" {
+			params["cache_compression"] = c.CacheCompression
+		}
+		if c.CachePrefix != "" {
+			params["cache_prefix"] = c.CachePrefix
+		}
+
+		driver, err = cache.WrapWithCaching(driver, params, logger)
+		if err != nil {
+			return fmt.Errorf("could not initialize cache layer: %w", err)
+		}
 	}
 
 	storage, err := initStorage(c.Storage, runtimeID, logger)

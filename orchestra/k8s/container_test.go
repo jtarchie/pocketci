@@ -26,7 +26,7 @@ func TestK8s(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		client, err := k8s.NewK8s("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+		client, err := k8s.New(k8s.Config{Namespace: "test-" + gonanoid.Must()}, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		defer func() { _ = client.Close() }()
@@ -72,7 +72,7 @@ func TestK8s(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		client, err := k8s.NewK8s("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+		client, err := k8s.New(k8s.Config{Namespace: "test-" + gonanoid.Must()}, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		defer func() { _ = client.Close() }()
@@ -106,7 +106,7 @@ func TestK8s(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		client, err := k8s.NewK8s("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+		client, err := k8s.New(k8s.Config{Namespace: "test-" + gonanoid.Must()}, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		defer func() { _ = client.Close() }()

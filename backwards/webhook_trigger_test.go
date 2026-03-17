@@ -7,7 +7,7 @@ import (
 
 	"github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
-	_ "github.com/jtarchie/pocketci/orchestra/native"
+	"github.com/jtarchie/pocketci/orchestra/native"
 	"github.com/jtarchie/pocketci/runtime"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/storage"
@@ -18,9 +18,7 @@ import (
 func setupNativeDriver(t *testing.T) orchestra.Driver {
 	t.Helper()
 	assert := NewGomegaWithT(t)
-	driverConfig, initDriver, err := orchestra.GetFromDSN("native")
-	assert.Expect(err).NotTo(HaveOccurred())
-	driver, err := initDriver("ci-test", slog.Default(), driverConfig.Params)
+	driver, err := native.New(native.Config{Namespace: "ci-test"}, slog.Default())
 	assert.Expect(err).NotTo(HaveOccurred())
 	t.Cleanup(func() { _ = driver.Close() })
 	return driver

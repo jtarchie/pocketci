@@ -29,7 +29,7 @@ func TestStreamLogsWithCallback(t *testing.T) {
 		logger := slog.Default()
 
 		// Create docker driver
-		driver, err := docker.NewDocker("stream-test-ns", logger, nil)
+		driver, err := docker.New(docker.Config{Namespace: "stream-test-ns"}, logger)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = driver.Close() }()
 
@@ -102,7 +102,7 @@ func TestStreamLogsWithCallback(t *testing.T) {
 		logger := slog.Default()
 
 		// Create docker driver
-		driver, err := docker.NewDocker("stream-test-ns-optional", logger, nil)
+		driver, err := docker.New(docker.Config{Namespace: "stream-test-ns-optional"}, logger)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = driver.Close() }()
 
@@ -144,7 +144,7 @@ func TestStreamLogsWithCallback(t *testing.T) {
 		logger := slog.Default()
 
 		// Create docker driver
-		driver, err := docker.NewDocker("stream-error-ns", logger, nil)
+		driver, err := docker.New(docker.Config{Namespace: "stream-error-ns"}, logger)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = driver.Close() }()
 
@@ -202,7 +202,7 @@ func TestStreamLogsWithCallback(t *testing.T) {
 
 		// Create docker driver with unique namespace
 		uniqueNS := "stream-cancel-ns-" + time.Now().Format("150405")
-		driver, err := docker.NewDocker(uniqueNS, logger, nil)
+		driver, err := docker.New(docker.Config{Namespace: uniqueNS}, logger)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = driver.Close() }()
 

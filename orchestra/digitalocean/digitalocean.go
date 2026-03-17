@@ -33,6 +33,23 @@ const (
 	DefaultWaitTimeout   = 10 * time.Minute
 )
 
+// Config holds configuration for the DigitalOcean driver.
+type Config struct {
+	Namespace     string        // Per-execution namespace identifier
+	Token         string        // DigitalOcean API token (required)
+	Image         string        // Droplet image slug (default: docker-20-04)
+	Size          string        // Droplet size slug or "auto" (default: s-1vcpu-1gb)
+	Region        string        // Droplet region (default: nyc3)
+	DiskSize      int           // Volume disk size in GB (default: 25)
+	MaxWorkers    int           // Max concurrent droplets (default: 1)
+	ReuseWorker   bool          // Reuse idle droplets across runs
+	Tags          string        // Comma-separated custom tags
+	SSHTimeout    time.Duration // Timeout for SSH to become available (default: 5m)
+	DockerTimeout time.Duration // Timeout for Docker to become available (default: 5m)
+	PollInterval  time.Duration // Poll interval for worker slot (default: 10s)
+	WaitTimeout   time.Duration // Timeout waiting for worker slot (default: 10m)
+}
+
 // sanitizeHostname converts a string to a valid hostname.
 // DigitalOcean hostnames only allow: a-z, A-Z, 0-9, . and -
 func sanitizeHostname(name string) string {
@@ -61,7 +78,7 @@ type DigitalOcean struct {
 	client     *godo.Client
 	logger     *slog.Logger
 	namespace  string
-	params     map[string]string
+	cfg        Config
 	droplet    *godo.Droplet
 	sshKeyID   int
 	sshKeyPath string
@@ -79,56 +96,39 @@ type DigitalOcean struct {
 	waitTimeout  time.Duration
 }
 
-// NewDigitalOcean creates a new Digital Ocean driver instance.
-// DSN parameters:
-// - token: Digital Ocean API token (required, or DIGITALOCEAN_TOKEN env var)
-// - image: Droplet image slug (default: docker-20-04)
-// - size: Droplet size slug or "auto" (default: s-1vcpu-1gb)
-// - region: Droplet region (default: nyc3)
-// - disk_size: Volume disk size in GB (default: 25)
-// - tags: Comma-separated list of custom tags to apply to resources
-func NewDigitalOcean(namespace string, logger *slog.Logger, params map[string]string) (orchestra.Driver, error) {
-	token := orchestra.GetParam(params, "token", "DIGITALOCEAN_TOKEN", "")
-	if token == "" {
-		return nil, fmt.Errorf("digitalocean: API token is required (set via DSN 'token' param or DIGITALOCEAN_TOKEN env var)")
+// New creates a new DigitalOcean driver instance.
+func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
+	if cfg.Token == "" {
+		return nil, fmt.Errorf("digitalocean: API token is required (set via CI_DIGITALOCEAN_TOKEN)")
 	}
 
-	client := godo.NewFromToken(token)
+	client := godo.NewFromToken(cfg.Token)
 
 	// Sanitize namespace to ensure it contains only valid hostname characters
-	// This is required because the namespace is used in droplet names, container names,
-	// volume names, and other resources that have hostname restrictions
-	sanitizedNamespace := sanitizeHostname(namespace)
+	sanitizedNamespace := sanitizeHostname(cfg.Namespace)
 
-	// Parse worker pool settings
-	maxWorkersStr := orchestra.GetParam(params, "max_workers", "DIGITALOCEAN_MAX_WORKERS", strconv.Itoa(DefaultMaxWorkers))
-	maxWorkers, err := strconv.Atoi(maxWorkersStr)
-	if err != nil || maxWorkers < 1 {
-		return nil, fmt.Errorf("digitalocean: max_workers must be a positive integer, got %q", maxWorkersStr)
+	maxWorkers := cfg.MaxWorkers
+	if maxWorkers < 1 {
+		maxWorkers = DefaultMaxWorkers
 	}
 
-	reuseWorkerStr := orchestra.GetParam(params, "reuse_worker", "DIGITALOCEAN_REUSE_WORKER", "false")
-	reuseWorker := reuseWorkerStr == "true" || reuseWorkerStr == "1"
-
-	pollIntervalStr := orchestra.GetParam(params, "poll_interval", "DIGITALOCEAN_POLL_INTERVAL", DefaultPollInterval.String())
-	pollInterval, err := time.ParseDuration(pollIntervalStr)
-	if err != nil {
-		return nil, fmt.Errorf("digitalocean: invalid poll_interval %q: %w", pollIntervalStr, err)
+	pollInterval := cfg.PollInterval
+	if pollInterval <= 0 {
+		pollInterval = DefaultPollInterval
 	}
 
-	waitTimeoutStr := orchestra.GetParam(params, "wait_timeout", "DIGITALOCEAN_WAIT_TIMEOUT", DefaultWaitTimeout.String())
-	waitTimeout, err := time.ParseDuration(waitTimeoutStr)
-	if err != nil {
-		return nil, fmt.Errorf("digitalocean: invalid wait_timeout %q: %w", waitTimeoutStr, err)
+	waitTimeout := cfg.WaitTimeout
+	if waitTimeout <= 0 {
+		waitTimeout = DefaultWaitTimeout
 	}
 
 	return &DigitalOcean{
 		client:       client,
 		logger:       logger,
 		namespace:    sanitizedNamespace,
-		params:       params,
+		cfg:          cfg,
 		maxWorkers:   maxWorkers,
-		reuseWorker:  reuseWorker,
+		reuseWorker:  cfg.ReuseWorker,
 		pollInterval: pollInterval,
 		waitTimeout:  waitTimeout,
 	}, nil
@@ -342,8 +342,16 @@ func (d *DigitalOcean) ensureDroplet(ctx context.Context, containerLimits orches
 
 	d.logger.Info("digitalocean.droplet.create")
 
-	image := orchestra.GetParam(d.params, "image", "DIGITALOCEAN_IMAGE", DefaultImage)
-	region := orchestra.GetParam(d.params, "region", "DIGITALOCEAN_REGION", DefaultRegion)
+	image := d.cfg.Image
+	if image == "" {
+		image = DefaultImage
+	}
+
+	region := d.cfg.Region
+	if region == "" {
+		region = DefaultRegion
+	}
+
 	size := d.determineDropletSize(containerLimits)
 
 	dropletName := fmt.Sprintf("pocketci-%s", d.namespace)
@@ -356,10 +364,9 @@ func (d *DigitalOcean) ensureDroplet(ctx context.Context, containerLimits orches
 		d.busyTag(),
 	}
 
-	// Add custom tags from DSN parameter
-	customTags := orchestra.GetParam(d.params, "tags", "DIGITALOCEAN_TAGS", "")
-	if customTags != "" {
-		for tag := range strings.SplitSeq(customTags, ",") {
+	// Add custom tags from config
+	if d.cfg.Tags != "" {
+		for tag := range strings.SplitSeq(d.cfg.Tags, ",") {
 			tag = strings.TrimSpace(tag)
 			if tag != "" {
 				tags = append(tags, sanitizeHostname(tag))
@@ -439,10 +446,13 @@ func (d *DigitalOcean) ensureDroplet(ctx context.Context, containerLimits orches
 
 // determineDropletSize selects an appropriate droplet size based on container limits.
 func (d *DigitalOcean) determineDropletSize(limits orchestra.ContainerLimits) string {
-	sizeParam := orchestra.GetParam(d.params, "size", "DIGITALOCEAN_SIZE", DefaultSize)
+	size := d.cfg.Size
+	if size == "" {
+		size = DefaultSize
+	}
 
-	if sizeParam != "auto" {
-		return sizeParam
+	if size != "auto" {
+		return size
 	}
 
 	// Auto-determine size based on container limits
@@ -587,13 +597,9 @@ func (d *DigitalOcean) waitForDroplet(ctx context.Context, dropletID int) (*godo
 func (d *DigitalOcean) waitForSSH(ctx context.Context, ip string) error {
 	d.logger.Info("digitalocean.ssh.waiting", "ip", ip)
 
-	// Get configurable timeout
-	sshTimeoutStr := orchestra.GetParam(d.params, "ssh_timeout", "DIGITALOCEAN_SSH_TIMEOUT", "")
-	sshTimeout := DefaultSSHTimeout
-	if sshTimeoutStr != "" {
-		if parsed, err := time.ParseDuration(sshTimeoutStr); err == nil {
-			sshTimeout = parsed
-		}
+	sshTimeout := d.cfg.SSHTimeout
+	if sshTimeout <= 0 {
+		sshTimeout = DefaultSSHTimeout
 	}
 
 	// Load private key
@@ -651,13 +657,9 @@ func (d *DigitalOcean) waitForSSH(ctx context.Context, ip string) error {
 func (d *DigitalOcean) waitForDocker(ctx context.Context) error {
 	d.logger.Info("digitalocean.docker.wait")
 
-	// Get configurable timeout
-	dockerTimeoutStr := orchestra.GetParam(d.params, "docker_timeout", "DIGITALOCEAN_DOCKER_TIMEOUT", "")
-	dockerTimeout := DefaultDockerTimeout
-	if dockerTimeoutStr != "" {
-		if parsed, err := time.ParseDuration(dockerTimeoutStr); err == nil {
-			dockerTimeout = parsed
-		}
+	dockerTimeout := d.cfg.DockerTimeout
+	if dockerTimeout <= 0 {
+		dockerTimeout = DefaultDockerTimeout
 	}
 
 	if d.sshClient == nil {
@@ -727,17 +729,12 @@ func (d *DigitalOcean) CreateVolume(ctx context.Context, name string, size int) 
 		return nil, fmt.Errorf("failed to ensure droplet: %w", err)
 	}
 
-	// Get disk size from params if not specified
+	// Get disk size from config if not specified
 	if size <= 0 {
-		diskSizeStr := orchestra.GetParam(d.params, "disk_size", "DIGITALOCEAN_DISK_SIZE", strconv.Itoa(DefaultDiskSizeGB))
-
-		parsedSize, err := strconv.Atoi(diskSizeStr)
-		if err != nil {
-			d.logger.Warn("digitalocean.volume.parse.error", "value", diskSizeStr, "err", err)
-			parsedSize = DefaultDiskSizeGB
+		size = d.cfg.DiskSize
+		if size <= 0 {
+			size = DefaultDiskSizeGB
 		}
-
-		size = parsedSize
 	}
 
 	// For now, delegate to docker driver's volume creation
@@ -854,10 +851,6 @@ func CleanupOrphanedResources(ctx context.Context, token string, logger *slog.Lo
 	}
 
 	return nil
-}
-
-func init() {
-	orchestra.Add("digitalocean", NewDigitalOcean)
 }
 
 var _ orchestra.Driver = &DigitalOcean{}

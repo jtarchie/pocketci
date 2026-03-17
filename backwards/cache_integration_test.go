@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -19,8 +18,6 @@ import (
 	gonanoid "github.com/matoous/go-nanoid/v2"
 
 	_ "github.com/jtarchie/pocketci/orchestra/cache/s3"
-	_ "github.com/jtarchie/pocketci/orchestra/docker"
-	_ "github.com/jtarchie/pocketci/orchestra/native"
 	_ "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/jtarchie/pocketci/testhelpers"
 	. "github.com/onsi/gomega"
@@ -44,11 +41,11 @@ func TestCacheS3Persistence(t *testing.T) {
 	cacheValue := gonanoid.Must()
 
 	t.Run("docker", func(t *testing.T) {
-		testCachePersistence(t, minio, "docker://", cacheURL, cacheValue)
+		testCachePersistence(t, minio, "docker", cacheURL, cacheValue)
 	})
 
 	t.Run("native", func(t *testing.T) {
-		testCachePersistence(t, minio, "native://", cacheURL, cacheValue+"-native")
+		testCachePersistence(t, minio, "native", cacheURL, cacheValue+"-native")
 	})
 }
 
@@ -119,15 +116,15 @@ jobs:
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	// URL-encode the cache URL since it contains & and ? which would conflict with DSN parsing
-	encodedCacheURL := url.QueryEscape(cacheURL)
-
 	// Run pipeline 1: Write to cache
 	t.Log("Running write pipeline...")
 	runner1 := testhelpers.Runner{
-		Pipeline: writePipelinePath,
-		Driver:   driverDSN + "?cache=" + encodedCacheURL + "&cache_compression=zstd&cache_prefix=test",
-		Storage:  "sqlite://:memory:",
+		Pipeline:         writePipelinePath,
+		Driver:           driverDSN,
+		Storage:          "sqlite://:memory:",
+		CacheURL:         cacheURL,
+		CacheCompression: "zstd",
+		CachePrefix:      "test",
 	}
 	err = runner1.Run(logger)
 	assert.Expect(err).NotTo(HaveOccurred(), "Write pipeline should succeed")
@@ -142,9 +139,12 @@ jobs:
 	// This tests that the cache was persisted to S3 and restored
 	t.Log("Running read pipeline (should restore from S3)...")
 	runner2 := testhelpers.Runner{
-		Pipeline: readPipelinePath,
-		Driver:   driverDSN + "?cache=" + encodedCacheURL + "&cache_compression=zstd&cache_prefix=test",
-		Storage:  "sqlite://:memory:",
+		Pipeline:         readPipelinePath,
+		Driver:           driverDSN,
+		Storage:          "sqlite://:memory:",
+		CacheURL:         cacheURL,
+		CacheCompression: "zstd",
+		CachePrefix:      "test",
 	}
 	err = runner2.Run(logger)
 	assert.Expect(err).NotTo(HaveOccurred(), "Read pipeline should succeed - cache should be restored from S3")
@@ -168,11 +168,11 @@ func TestCacheS3Contents(t *testing.T) {
 	cacheValue := gonanoid.Must()
 
 	t.Run("docker", func(t *testing.T) {
-		testCacheContents(t, minio, "docker://", cacheURL, cacheValue)
+		testCacheContents(t, minio, "docker", cacheURL, cacheValue)
 	})
 
 	t.Run("native", func(t *testing.T) {
-		testCacheContents(t, minio, "native://", cacheURL, cacheValue+"-native")
+		testCacheContents(t, minio, "native", cacheURL, cacheValue+"-native")
 	})
 }
 
@@ -214,15 +214,15 @@ jobs:
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	// URL-encode the cache URL since it contains & and ? which would conflict with DSN parsing
-	encodedCacheURL := url.QueryEscape(cacheURL)
-
 	// Run pipeline: Write to cache
 	t.Log("Running write pipeline...")
 	runner := testhelpers.Runner{
-		Pipeline: writePipelinePath,
-		Driver:   driverDSN + "?cache=" + encodedCacheURL + "&cache_compression=zstd&cache_prefix=test",
-		Storage:  "sqlite://:memory:",
+		Pipeline:         writePipelinePath,
+		Driver:           driverDSN,
+		Storage:          "sqlite://:memory:",
+		CacheURL:         cacheURL,
+		CacheCompression: "zstd",
+		CachePrefix:      "test",
 	}
 	err = runner.Run(logger)
 	assert.Expect(err).NotTo(HaveOccurred(), "Write pipeline should succeed")

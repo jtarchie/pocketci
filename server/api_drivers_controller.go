@@ -3,13 +3,13 @@ package server
 import (
 	"net/http"
 
-	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/labstack/echo/v5"
 )
 
 // APIDriversController handles JSON API endpoints for listing available drivers.
 type APIDriversController struct {
 	allowedDrivers []string
+	driverName     string
 }
 
 // Index handles GET /api/drivers - List allowed drivers.
@@ -17,7 +17,9 @@ func (c *APIDriversController) Index(ctx *echo.Context) error {
 	var drivers []string
 
 	if len(c.allowedDrivers) == 1 && c.allowedDrivers[0] == "*" {
-		drivers = orchestra.ListDrivers()
+		if c.driverName != "" {
+			drivers = []string{c.driverName}
+		}
 	} else {
 		drivers = c.allowedDrivers
 	}

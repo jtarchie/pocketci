@@ -35,10 +35,11 @@ func TestHetzner(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		namespace := "test-" + gonanoid.Must()
-		client, err := hetzner.NewHetzner(namespace, slog.Default(), map[string]string{
-			"token":  token,
-			"labels": testLabel,
-		})
+		client, err := hetzner.New(hetzner.Config{
+			Namespace: namespace,
+			Token:     token,
+			Labels:    testLabel,
+		}, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		// Always clean up the server, even if the test fails
@@ -84,11 +85,12 @@ func TestHetzner(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		namespace := "test-" + gonanoid.Must()
-		client, err := hetzner.NewHetzner(namespace, slog.Default(), map[string]string{
-			"token":       token,
-			"server_type": "auto",
-			"labels":      testLabel,
-		})
+		client, err := hetzner.New(hetzner.Config{
+			Namespace:  namespace,
+			Token:      token,
+			ServerType: "auto",
+			Labels:     testLabel,
+		}, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		// Always clean up the server, even if the test fails
@@ -139,15 +141,16 @@ func TestHetzner(t *testing.T) {
 
 		// Use a shared namespace so both drivers target the same worker pool
 		namespace := "test-" + gonanoid.Must()
-		params := map[string]string{
-			"token":        token,
-			"labels":       testLabel,
-			"reuse_worker": "true",
-			"max_workers":  "1",
+		cfg := hetzner.Config{
+			Namespace:   namespace,
+			Token:       token,
+			Labels:      testLabel,
+			ReuseWorker: true,
+			MaxWorkers:  1,
 		}
 
 		// First run: creates a new machine and parks it on close
-		client1, err := hetzner.NewHetzner(namespace, slog.Default(), params)
+		client1, err := hetzner.New(cfg, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		container1, err := client1.RunContainer(
@@ -169,7 +172,7 @@ func TestHetzner(t *testing.T) {
 		assert.Expect(client1.Close()).NotTo(HaveOccurred())
 
 		// Second run: should claim the parked machine
-		client2, err := hetzner.NewHetzner(namespace, slog.Default(), params)
+		client2, err := hetzner.New(cfg, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		defer func() {
@@ -199,12 +202,13 @@ func TestHetzner(t *testing.T) {
 
 		// Use a shared namespace so both drivers share the same worker pool
 		namespace := "test-" + gonanoid.Must()
-		params := map[string]string{
-			"token":         token,
-			"labels":        testLabel,
-			"max_workers":   "1",
-			"poll_interval": "5s",
-			"wait_timeout":  "15m",
+		cfg := hetzner.Config{
+			Namespace:    namespace,
+			Token:        token,
+			Labels:       testLabel,
+			MaxWorkers:   1,
+			PollInterval: 5 * time.Second,
+			WaitTimeout:  15 * time.Minute,
 		}
 
 		var (
@@ -214,7 +218,7 @@ func TestHetzner(t *testing.T) {
 		)
 
 		run := func(label string) error {
-			client, err := hetzner.NewHetzner(namespace, slog.Default(), params)
+			client, err := hetzner.New(cfg, slog.Default())
 			if err != nil {
 				return err
 			}

@@ -9,6 +9,11 @@ import (
 	"github.com/jtarchie/pocketci/orchestra"
 )
 
+// Config holds configuration for the native driver.
+type Config struct {
+	Namespace string // Per-execution namespace identifier
+}
+
 type Native struct {
 	logger    *slog.Logger
 	namespace string
@@ -25,15 +30,15 @@ func (n *Native) Close() error {
 	return nil
 }
 
-func NewNative(namespace string, logger *slog.Logger, params map[string]string) (orchestra.Driver, error) {
-	path, err := os.MkdirTemp("", namespace)
+func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
+	path, err := os.MkdirTemp("", cfg.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp dir: %w", err)
 	}
 
 	return &Native{
 		logger:    logger,
-		namespace: namespace,
+		namespace: cfg.Namespace,
 		path:      path,
 	}, nil
 }
@@ -47,10 +52,6 @@ func (n *Native) Name() string {
 // Always returns ErrContainerNotFound.
 func (n *Native) GetContainer(_ context.Context, _ string) (orchestra.Container, error) {
 	return nil, orchestra.ErrContainerNotFound
-}
-
-func init() {
-	orchestra.Add("native", NewNative)
 }
 
 var (

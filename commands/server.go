@@ -13,6 +13,14 @@ import (
 	"github.com/jtarchie/pocketci/observability"
 	"github.com/jtarchie/pocketci/observability/honeybadger"
 	"github.com/jtarchie/pocketci/observability/posthog"
+	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/orchestra/cache"
+	"github.com/jtarchie/pocketci/orchestra/digitalocean"
+	"github.com/jtarchie/pocketci/orchestra/docker"
+	"github.com/jtarchie/pocketci/orchestra/fly"
+	"github.com/jtarchie/pocketci/orchestra/hetzner"
+	"github.com/jtarchie/pocketci/orchestra/k8s"
+	"github.com/jtarchie/pocketci/orchestra/qemu"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/server"
 	"github.com/jtarchie/pocketci/server/auth"
@@ -52,6 +60,49 @@ type Server struct {
 
 	// RBAC configuration
 	ServerRBAC string `env:"CI_SERVER_RBAC" help:"Expr expression for server-level access control (e.g., 'Email endsWith \"@company.com\"')"`
+
+	// Docker driver
+	DockerHost string `env:"CI_DOCKER_HOST" help:"Docker daemon host URL (e.g., 'tcp://host:2376', 'ssh://user@host')"`
+
+	// Hetzner driver
+	HetznerToken       string `env:"CI_HETZNER_TOKEN"        help:"Hetzner Cloud API token"`
+	HetznerImage       string `env:"CI_HETZNER_IMAGE"        help:"Hetzner server image (default: docker-ce)"`
+	HetznerServerType  string `env:"CI_HETZNER_SERVER_TYPE"  help:"Hetzner server type (default: cx23)"`
+	HetznerLocation    string `env:"CI_HETZNER_LOCATION"     help:"Hetzner datacenter location (default: nbg1)"`
+	HetznerMaxWorkers  int    `env:"CI_HETZNER_MAX_WORKERS"  help:"Max concurrent Hetzner servers (default: 1)"`
+	HetznerReuseWorker bool   `env:"CI_HETZNER_REUSE_WORKER" help:"Reuse idle Hetzner servers across runs"`
+
+	// DigitalOcean driver
+	DigitalOceanToken       string `env:"CI_DIGITALOCEAN_TOKEN"        help:"DigitalOcean API token"`
+	DigitalOceanImage       string `env:"CI_DIGITALOCEAN_IMAGE"        help:"Droplet image slug"`
+	DigitalOceanSize        string `env:"CI_DIGITALOCEAN_SIZE"         help:"Droplet size slug"`
+	DigitalOceanRegion      string `env:"CI_DIGITALOCEAN_REGION"       help:"Droplet region"`
+	DigitalOceanMaxWorkers  int    `env:"CI_DIGITALOCEAN_MAX_WORKERS"  help:"Max concurrent droplets"`
+	DigitalOceanReuseWorker bool   `env:"CI_DIGITALOCEAN_REUSE_WORKER" help:"Reuse idle droplets across runs"`
+
+	// Fly.io driver
+	FlyToken  string `env:"CI_FLY_TOKEN"  help:"Fly.io API token"`
+	FlyApp    string `env:"CI_FLY_APP"    help:"Fly.io app name"`
+	FlyRegion string `env:"CI_FLY_REGION" help:"Fly.io machine region"`
+	FlyOrg    string `env:"CI_FLY_ORG"    help:"Fly.io org slug"`
+	FlySize   string `env:"CI_FLY_SIZE"   help:"Fly.io machine size"`
+
+	// Kubernetes driver
+	K8sKubeconfig string `env:"CI_K8S_KUBECONFIG" help:"Path to kubeconfig file (uses in-cluster config if empty)"`
+	K8sNamespace  string `env:"CI_K8S_NAMESPACE"  help:"Kubernetes namespace for jobs (default: default)"`
+
+	// QEMU driver
+	QEMUMemory   string `env:"CI_QEMU_MEMORY"    help:"QEMU VM memory (e.g., '2048')"`
+	QEMUCPUs     string `env:"CI_QEMU_CPUS"      help:"QEMU VM CPU count"`
+	QEMUAccel    string `env:"CI_QEMU_ACCEL"     help:"QEMU acceleration: hvf, kvm, tcg, or auto"`
+	QEMUImage    string `env:"CI_QEMU_IMAGE"     help:"QEMU boot image path or URL"`
+	QEMUBinary   string `env:"CI_QEMU_BINARY"    help:"Path to qemu-system binary"`
+	QEMUCacheDir string `env:"CI_QEMU_CACHE_DIR" help:"Directory for QEMU image cache"`
+
+	// Cache (optional, wraps the driver)
+	CacheURL         string `env:"CI_CACHE_URL"         help:"Cache store URL (e.g., 's3://bucket/prefix?region=us-east-1')"`
+	CacheCompression string `env:"CI_CACHE_COMPRESSION" help:"Cache compression: zstd, gzip, or none (default: zstd)"`
+	CachePrefix      string `env:"CI_CACHE_PREFIX"      help:"Cache key prefix"`
 }
 
 func (c *Server) Run(logger *slog.Logger) error {
@@ -177,6 +228,100 @@ func (c *Server) Run(logger *slog.Logger) error {
 		}
 	}
 
+	// Build driver factory based on configured driver
+	var driverName string
+	var baseFactory func(namespace string) (orchestra.Driver, error)
+
+	switch {
+	case c.HetznerToken != "":
+		driverName = "hetzner"
+		baseFactory = func(ns string) (orchestra.Driver, error) {
+			return hetzner.New(hetzner.Config{
+				Namespace:   ns,
+				Token:       c.HetznerToken,
+				Image:       c.HetznerImage,
+				ServerType:  c.HetznerServerType,
+				Location:    c.HetznerLocation,
+				MaxWorkers:  c.HetznerMaxWorkers,
+				ReuseWorker: c.HetznerReuseWorker,
+			}, logger)
+		}
+	case c.DigitalOceanToken != "":
+		driverName = "digitalocean"
+		baseFactory = func(ns string) (orchestra.Driver, error) {
+			return digitalocean.New(digitalocean.Config{
+				Namespace:   ns,
+				Token:       c.DigitalOceanToken,
+				Image:       c.DigitalOceanImage,
+				Size:        c.DigitalOceanSize,
+				Region:      c.DigitalOceanRegion,
+				MaxWorkers:  c.DigitalOceanMaxWorkers,
+				ReuseWorker: c.DigitalOceanReuseWorker,
+			}, logger)
+		}
+	case c.FlyToken != "":
+		driverName = "fly"
+		baseFactory = func(ns string) (orchestra.Driver, error) {
+			return fly.New(fly.Config{
+				Namespace: ns,
+				Token:     c.FlyToken,
+				App:       c.FlyApp,
+				Region:    c.FlyRegion,
+				Org:       c.FlyOrg,
+				Size:      c.FlySize,
+			}, logger)
+		}
+	case c.K8sKubeconfig != "" || k8s.IsAvailable():
+		driverName = "k8s"
+		baseFactory = func(ns string) (orchestra.Driver, error) {
+			return k8s.New(k8s.Config{
+				Namespace:    ns,
+				Kubeconfig:   c.K8sKubeconfig,
+				K8sNamespace: c.K8sNamespace,
+			}, logger)
+		}
+	case c.QEMUImage != "":
+		driverName = "qemu"
+		baseFactory = func(ns string) (orchestra.Driver, error) {
+			return qemu.New(qemu.Config{
+				Namespace: ns,
+				Memory:    c.QEMUMemory,
+				CPUs:      c.QEMUCPUs,
+				Accel:     c.QEMUAccel,
+				Binary:    c.QEMUBinary,
+				CacheDir:  c.QEMUCacheDir,
+				Image:     c.QEMUImage,
+			}, logger)
+		}
+	default: // docker (including when DockerHost is empty = local socket)
+		driverName = "docker"
+		baseFactory = func(ns string) (orchestra.Driver, error) {
+			return docker.New(docker.Config{
+				Namespace: ns,
+				Host:      c.DockerHost,
+			}, logger)
+		}
+	}
+
+	// Optionally wrap with native fallback or cache
+	driverFactory := baseFactory
+	if c.CacheURL != "" {
+		params := map[string]string{"cache": c.CacheURL}
+		if c.CacheCompression != "" {
+			params["cache_compression"] = c.CacheCompression
+		}
+		if c.CachePrefix != "" {
+			params["cache_prefix"] = c.CachePrefix
+		}
+		driverFactory = func(ns string) (orchestra.Driver, error) {
+			d, err := baseFactory(ns)
+			if err != nil {
+				return nil, err
+			}
+			return cache.WrapWithCaching(d, params, logger)
+		}
+	}
+
 	router, err := server.NewRouter(logger, client, server.RouterOptions{
 		MaxInFlight:           c.MaxInFlight,
 		WebhookTimeout:        c.WebhookTimeout,
@@ -189,6 +334,8 @@ func (c *Server) Run(logger *slog.Logger) error {
 		FetchMaxResponseBytes: int64(c.FetchMaxResponseMB) * 1024 * 1024,
 		AuthConfig:            authConfig,
 		ObservabilityProvider: obsProvider,
+		DriverFactory:         driverFactory,
+		DriverName:            driverName,
 	})
 	if err != nil {
 		return fmt.Errorf("could not create router: %w", err)

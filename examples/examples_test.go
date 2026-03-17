@@ -5,9 +5,7 @@ import (
 	"testing"
 
 	"github.com/bmatcuk/doublestar/v4"
-	_ "github.com/jtarchie/pocketci/orchestra/docker"
 	"github.com/jtarchie/pocketci/orchestra/k8s"
-	_ "github.com/jtarchie/pocketci/orchestra/native"
 	_ "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/jtarchie/pocketci/testhelpers"
 	. "github.com/onsi/gomega"

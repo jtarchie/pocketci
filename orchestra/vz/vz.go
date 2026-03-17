@@ -21,6 +21,15 @@ import (
 	"github.com/jtarchie/pocketci/orchestra/vz/agent"
 )
 
+// Config holds configuration for the VZ (Apple Virtualization) driver.
+type Config struct {
+	Namespace string // Per-execution namespace identifier
+	Memory    string // VM memory in MB (default: "2048")
+	CPUs      string // VM CPU count (default: "2")
+	CacheDir  string // Directory for image cache
+	Image     string // Boot image path (optional; downloaded if empty)
+}
+
 // VZ implements orchestra.Driver using Apple's Virtualization.framework.
 // Commands are executed inside the guest via a vsock-based agent.
 // Volumes are shared between host and guest via virtiofs.
@@ -32,7 +41,7 @@ type VZ struct {
 	logger       *slog.Logger
 	tempDir      string
 	volumesDir   string
-	params       map[string]string
+	image        string
 
 	bootOnce sync.Once
 	bootErr  error
@@ -40,7 +49,6 @@ type VZ struct {
 	mu         sync.Mutex
 	containers map[string]*Container
 
-	// config parsed from DSN
 	memory   uint64
 	cpus     uint
 	cacheDir string
@@ -51,13 +59,37 @@ func (v *VZ) Name() string {
 	return "vz"
 }
 
-// NewVZ creates a new Apple Virtualization framework driver.
-func NewVZ(namespace string, logger *slog.Logger, params map[string]string) (orchestra.Driver, error) {
+// New creates a new Apple Virtualization framework driver.
+func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	homeDir, _ := os.UserHomeDir()
 	defaultCacheDir := filepath.Join(homeDir, ".cache", "pocketci", "vz")
 
-	memoryStr := orchestra.GetParam(params, "memory", "VZ_MEMORY", "2048")
-	cpusStr := orchestra.GetParam(params, "cpus", "VZ_CPUS", "2")
+	memoryStr := cfg.Memory
+	if memoryStr == "" {
+		if v := os.Getenv("VZ_MEMORY"); v != "" {
+			memoryStr = v
+		} else {
+			memoryStr = "2048"
+		}
+	}
+
+	cpusStr := cfg.CPUs
+	if cpusStr == "" {
+		if v := os.Getenv("VZ_CPUS"); v != "" {
+			cpusStr = v
+		} else {
+			cpusStr = "2"
+		}
+	}
+
+	cacheDir := cfg.CacheDir
+	if cacheDir == "" {
+		if v := os.Getenv("VZ_CACHE_DIR"); v != "" {
+			cacheDir = v
+		} else {
+			cacheDir = defaultCacheDir
+		}
+	}
 
 	memory, err := strconv.ParseUint(memoryStr, 10, 64)
 	if err != nil {
@@ -70,13 +102,13 @@ func NewVZ(namespace string, logger *slog.Logger, params map[string]string) (orc
 	}
 
 	d := &VZ{
-		namespace:  namespace,
+		namespace:  cfg.Namespace,
 		logger:     logger,
-		params:     params,
+		image:      cfg.Image,
 		containers: make(map[string]*Container),
 		memory:     memory * 1024 * 1024, // convert MB to bytes
 		cpus:       uint(cpus),
-		cacheDir:   orchestra.GetParam(params, "cache_dir", "VZ_CACHE_DIR", defaultCacheDir),
+		cacheDir:   cacheDir,
 	}
 
 	return d, nil
@@ -110,7 +142,10 @@ func (v *VZ) bootVM(ctx context.Context) error {
 	}
 
 	// Prepare the disk image
-	imagePath := orchestra.GetParam(v.params, "image", "VZ_IMAGE", "")
+	imagePath := v.image
+	if imagePath == "" {
+		imagePath = os.Getenv("VZ_IMAGE")
+	}
 
 	if imagePath == "" {
 		v.logger.Info("vz.image.downloading", "cache_dir", v.cacheDir)
@@ -677,10 +712,6 @@ func (v *VZ) buildAgent() error {
 // execCommand wraps exec.Command for testability.
 func execCommand(name string, args ...string) *exec.Cmd {
 	return exec.Command(name, args...) //nolint:gosec
-}
-
-func init() {
-	orchestra.Add("vz", NewVZ)
 }
 
 var (

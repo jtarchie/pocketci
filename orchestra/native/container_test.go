@@ -18,7 +18,7 @@ func TestNativeLogsAreSafeWhileProcessIsRunning(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	driver, err := native.NewNative("native-race-test", slog.Default(), map[string]string{})
+	driver, err := native.New(native.Config{Namespace: "native-race-test"}, slog.Default())
 	assert.Expect(err).NotTo(HaveOccurred())
 	defer func() { _ = driver.Close() }()
 

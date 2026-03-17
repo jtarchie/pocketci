@@ -18,6 +18,12 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// Config holds configuration for the Docker driver.
+type Config struct {
+	Namespace string // Per-execution namespace identifier
+	Host      string // Docker daemon host URL (e.g., "tcp://host:2376", "ssh://user@host"); defaults to DOCKER_HOST env var
+}
+
 type Docker struct {
 	client    *client.Client
 	logger    *slog.Logger
@@ -67,11 +73,10 @@ func (d *Docker) Close() error {
 	return nil
 }
 
-func NewDocker(namespace string, logger *slog.Logger, params map[string]string) (orchestra.Driver, error) {
+func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	var clientOpts []client.Opt
 
-	// Get Docker host from DSN params or env var
-	dockerHost := orchestra.GetParam(params, "host", "DOCKER_HOST", "")
+	dockerHost := cfg.Host
 
 	if strings.HasPrefix(dockerHost, "ssh://") {
 		// https://gist.github.com/agbaraka/654a218f8ea13b3da8a47d47595f5d05
@@ -104,7 +109,7 @@ func NewDocker(namespace string, logger *slog.Logger, params map[string]string) 
 	return &Docker{
 		client:    cli,
 		logger:    logger,
-		namespace: namespace,
+		namespace: cfg.Namespace,
 	}, nil
 }
 
@@ -161,10 +166,6 @@ func (d *Docker) GetContainer(ctx context.Context, containerID string) (orchestr
 		id:     containerID,
 		client: d.client,
 	}, nil
-}
-
-func init() {
-	orchestra.Add("docker", NewDocker)
 }
 
 var (

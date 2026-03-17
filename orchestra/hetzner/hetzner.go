@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +30,23 @@ const (
 	DefaultPollInterval  = 10 * time.Second
 	DefaultWaitTimeout   = 10 * time.Minute
 )
+
+// Config holds configuration for the Hetzner Cloud driver.
+type Config struct {
+	Namespace     string        // Per-execution namespace identifier
+	Token         string        // Hetzner Cloud API token (required)
+	Image         string        // Server image name (default: docker-ce)
+	ServerType    string        // Server type or "auto" (default: cx23)
+	Location      string        // Server location (default: nbg1)
+	MaxWorkers    int           // Max concurrent servers (default: 1)
+	ReuseWorker   bool          // Reuse idle servers across runs
+	Labels        string        // Comma-separated key=value labels
+	DiskSize      int           // Volume disk size in GB (default: 10)
+	SSHTimeout    time.Duration // Timeout for SSH to become available (default: 5m)
+	DockerTimeout time.Duration // Timeout for Docker to become available (default: 5m)
+	PollInterval  time.Duration // Poll interval for worker slot (default: 10s)
+	WaitTimeout   time.Duration // Timeout waiting for worker slot (default: 10m)
+}
 
 // sanitizeHostname converts a string to a valid hostname.
 // Hetzner server names only allow: a-z, A-Z, 0-9, and -
@@ -62,7 +78,7 @@ type Hetzner struct {
 	client     *hcloud.Client
 	logger     *slog.Logger
 	namespace  string
-	params     map[string]string
+	cfg        Config
 	server     *hcloud.Server
 	sshKey     *hcloud.SSHKey
 	sshKeyPath string
@@ -80,57 +96,39 @@ type Hetzner struct {
 	waitTimeout  time.Duration
 }
 
-// NewHetzner creates a new Hetzner Cloud driver instance.
-// DSN parameters:
-// - token: Hetzner Cloud API token (required, or HETZNER_TOKEN env var)
-// - image: Server image name (default: docker-ce)
-// - server_type: Server type or "auto" (default: cx23)
-// - location: Server location (default: nbg1)
-// - ssh_timeout: Timeout for SSH to become available (default: 5m)
-// - docker_timeout: Timeout for Docker to become available (default: 5m)
-// - labels: Comma-separated list of key=value labels to apply to resources
-func NewHetzner(namespace string, logger *slog.Logger, params map[string]string) (orchestra.Driver, error) {
-	token := orchestra.GetParam(params, "token", "HETZNER_TOKEN", "")
-	if token == "" {
-		return nil, fmt.Errorf("hetzner: API token is required (set via DSN 'token' param or HETZNER_TOKEN env var)")
+// New creates a new Hetzner Cloud driver instance.
+func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
+	if cfg.Token == "" {
+		return nil, fmt.Errorf("hetzner: API token is required (set via CI_HETZNER_TOKEN)")
 	}
 
-	client := hcloud.NewClient(hcloud.WithToken(token))
+	client := hcloud.NewClient(hcloud.WithToken(cfg.Token))
 
 	// Sanitize namespace to ensure it contains only valid hostname characters
-	// This is required because the namespace is used in server names, container names,
-	// volume names, and other resources that have hostname restrictions
-	sanitizedNamespace := sanitizeHostname(namespace)
+	sanitizedNamespace := sanitizeHostname(cfg.Namespace)
 
-	// Parse worker pool settings
-	maxWorkersStr := orchestra.GetParam(params, "max_workers", "HETZNER_MAX_WORKERS", strconv.Itoa(DefaultMaxWorkers))
-	maxWorkers, err := strconv.Atoi(maxWorkersStr)
-	if err != nil || maxWorkers < 1 {
-		return nil, fmt.Errorf("hetzner: max_workers must be a positive integer, got %q", maxWorkersStr)
+	maxWorkers := cfg.MaxWorkers
+	if maxWorkers < 1 {
+		maxWorkers = DefaultMaxWorkers
 	}
 
-	reuseWorkerStr := orchestra.GetParam(params, "reuse_worker", "HETZNER_REUSE_WORKER", "false")
-	reuseWorker := reuseWorkerStr == "true" || reuseWorkerStr == "1"
-
-	pollIntervalStr := orchestra.GetParam(params, "poll_interval", "HETZNER_POLL_INTERVAL", DefaultPollInterval.String())
-	pollInterval, err := time.ParseDuration(pollIntervalStr)
-	if err != nil {
-		return nil, fmt.Errorf("hetzner: invalid poll_interval %q: %w", pollIntervalStr, err)
+	pollInterval := cfg.PollInterval
+	if pollInterval <= 0 {
+		pollInterval = DefaultPollInterval
 	}
 
-	waitTimeoutStr := orchestra.GetParam(params, "wait_timeout", "HETZNER_WAIT_TIMEOUT", DefaultWaitTimeout.String())
-	waitTimeout, err := time.ParseDuration(waitTimeoutStr)
-	if err != nil {
-		return nil, fmt.Errorf("hetzner: invalid wait_timeout %q: %w", waitTimeoutStr, err)
+	waitTimeout := cfg.WaitTimeout
+	if waitTimeout <= 0 {
+		waitTimeout = DefaultWaitTimeout
 	}
 
 	return &Hetzner{
 		client:       client,
 		logger:       logger,
 		namespace:    sanitizedNamespace,
-		params:       params,
+		cfg:          cfg,
 		maxWorkers:   maxWorkers,
-		reuseWorker:  reuseWorker,
+		reuseWorker:  cfg.ReuseWorker,
 		pollInterval: pollInterval,
 		waitTimeout:  waitTimeout,
 	}, nil
@@ -320,8 +318,16 @@ func (h *Hetzner) ensureServer(ctx context.Context, containerLimits orchestra.Co
 
 	h.logger.Info("hetzner.server.creating")
 
-	image := orchestra.GetParam(h.params, "image", "HETZNER_IMAGE", DefaultImage)
-	location := orchestra.GetParam(h.params, "location", "HETZNER_LOCATION", DefaultLocation)
+	image := h.cfg.Image
+	if image == "" {
+		image = DefaultImage
+	}
+
+	location := h.cfg.Location
+	if location == "" {
+		location = DefaultLocation
+	}
+
 	serverType := h.determineServerType(containerLimits)
 
 	serverName := fmt.Sprintf("pocketci-%s", h.namespace)
@@ -364,10 +370,9 @@ func (h *Hetzner) ensureServer(ctx context.Context, containerLimits orchestra.Co
 		"pocketci-worker-status": "busy",
 	}
 
-	// Add custom labels from DSN parameter (format: key1=value1,key2=value2)
-	customLabels := orchestra.GetParam(h.params, "labels", "HETZNER_LABELS", "")
-	if customLabels != "" {
-		for label := range strings.SplitSeq(customLabels, ",") {
+	// Add custom labels from config (format: key1=value1,key2=value2)
+	if h.cfg.Labels != "" {
+		for label := range strings.SplitSeq(h.cfg.Labels, ",") {
 			label = strings.TrimSpace(label)
 			if parts := strings.SplitN(label, "=", 2); len(parts) == 2 {
 				key := sanitizeHostname(strings.TrimSpace(parts[0]))
@@ -444,10 +449,13 @@ func (h *Hetzner) ensureServer(ctx context.Context, containerLimits orchestra.Co
 
 // determineServerType selects an appropriate server type based on container limits.
 func (h *Hetzner) determineServerType(limits orchestra.ContainerLimits) string {
-	sizeParam := orchestra.GetParam(h.params, "server_type", "HETZNER_SERVER_TYPE", DefaultServerType)
+	serverType := h.cfg.ServerType
+	if serverType == "" {
+		serverType = DefaultServerType
+	}
 
-	if sizeParam != "auto" {
-		return sizeParam
+	if serverType != "auto" {
+		return serverType
 	}
 
 	// Auto-determine size based on container limits
@@ -591,14 +599,9 @@ func (h *Hetzner) waitForServer(ctx context.Context, serverID int64) (*hcloud.Se
 func (h *Hetzner) waitForSSH(ctx context.Context, ip string) error {
 	h.logger.Info("hetzner.ssh.waiting", "ip", ip)
 
-	// Get configurable timeout
-	sshTimeoutStr := orchestra.GetParam(h.params, "ssh_timeout", "HETZNER_SSH_TIMEOUT", "")
-	sshTimeout := DefaultSSHTimeout
-
-	if sshTimeoutStr != "" {
-		if parsed, err := time.ParseDuration(sshTimeoutStr); err == nil {
-			sshTimeout = parsed
-		}
+	sshTimeout := h.cfg.SSHTimeout
+	if sshTimeout <= 0 {
+		sshTimeout = DefaultSSHTimeout
 	}
 
 	// Load private key
@@ -656,14 +659,9 @@ func (h *Hetzner) waitForSSH(ctx context.Context, ip string) error {
 func (h *Hetzner) waitForDocker(ctx context.Context) error {
 	h.logger.Info("hetzner.docker.waiting")
 
-	// Get configurable timeout
-	dockerTimeoutStr := orchestra.GetParam(h.params, "docker_timeout", "HETZNER_DOCKER_TIMEOUT", "")
-	dockerTimeout := DefaultDockerTimeout
-
-	if dockerTimeoutStr != "" {
-		if parsed, err := time.ParseDuration(dockerTimeoutStr); err == nil {
-			dockerTimeout = parsed
-		}
+	dockerTimeout := h.cfg.DockerTimeout
+	if dockerTimeout <= 0 {
+		dockerTimeout = DefaultDockerTimeout
 	}
 
 	if h.sshClient == nil {
@@ -732,17 +730,12 @@ func (h *Hetzner) CreateVolume(ctx context.Context, name string, size int) (orch
 		return nil, fmt.Errorf("failed to ensure server: %w", err)
 	}
 
-	// Get disk size from params if not specified
+	// Get disk size from config if not specified
 	if size <= 0 {
-		diskSizeStr := orchestra.GetParam(h.params, "disk_size", "HETZNER_DISK_SIZE", "10")
-
-		parsedSize, err := strconv.Atoi(diskSizeStr)
-		if err != nil {
-			h.logger.Warn("hetzner.volume.invalid_disk_size", "value", diskSizeStr, "err", err)
-			parsedSize = 10
+		size = h.cfg.DiskSize
+		if size <= 0 {
+			size = 10
 		}
-
-		size = parsedSize
 	}
 
 	// For now, delegate to docker driver's volume creation
@@ -873,10 +866,6 @@ func CleanupOrphanedResources(ctx context.Context, token string, logger *slog.Lo
 	}
 
 	return nil
-}
-
-func init() {
-	orchestra.Add("hetzner", NewHetzner)
 }
 
 var _ orchestra.Driver = &Hetzner{}

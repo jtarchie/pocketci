@@ -12,45 +12,77 @@ import (
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/orchestra/cache"
 	_ "github.com/jtarchie/pocketci/orchestra/cache/s3"
-	_ "github.com/jtarchie/pocketci/orchestra/digitalocean"
-	_ "github.com/jtarchie/pocketci/orchestra/docker"
-	_ "github.com/jtarchie/pocketci/orchestra/fly"
-	_ "github.com/jtarchie/pocketci/orchestra/hetzner"
-	_ "github.com/jtarchie/pocketci/orchestra/native"
+	"github.com/jtarchie/pocketci/orchestra/digitalocean"
+	"github.com/jtarchie/pocketci/orchestra/docker"
+	"github.com/jtarchie/pocketci/orchestra/fly"
+	"github.com/jtarchie/pocketci/orchestra/hetzner"
+	"github.com/jtarchie/pocketci/orchestra/native"
 	"github.com/jtarchie/pocketci/testhelpers"
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/onsi/gomega"
 )
 
+type driverFactory func(namespace string, logger *slog.Logger) (orchestra.Driver, error)
+
+type driverEntry struct {
+	name    string
+	factory driverFactory
+}
+
 // getAvailableDrivers returns a list of drivers available based on environment
 // and system requirements. Only includes drivers that support caching.
-func getAvailableDrivers() []string {
-	var drivers []string
+func getAvailableDrivers() []driverEntry {
+	var entries []driverEntry
 
 	// native is always available and supports caching
-	drivers = append(drivers, "native")
+	entries = append(entries, driverEntry{
+		name: "native",
+		factory: func(ns string, logger *slog.Logger) (orchestra.Driver, error) {
+			return native.New(native.Config{Namespace: ns}, logger)
+		},
+	})
 
 	// docker requires docker command and supports caching
 	if _, err := exec.LookPath("docker"); err == nil {
-		drivers = append(drivers, "docker")
+		entries = append(entries, driverEntry{
+			name: "docker",
+			factory: func(ns string, logger *slog.Logger) (orchestra.Driver, error) {
+				return docker.New(docker.Config{Namespace: ns}, logger)
+			},
+		})
 	}
 
 	// digitalocean requires DIGITALOCEAN_TOKEN env var
-	if os.Getenv("DIGITALOCEAN_TOKEN") != "" {
-		drivers = append(drivers, "digitalocean")
+	if token := os.Getenv("DIGITALOCEAN_TOKEN"); token != "" {
+		entries = append(entries, driverEntry{
+			name: "digitalocean",
+			factory: func(ns string, logger *slog.Logger) (orchestra.Driver, error) {
+				return digitalocean.New(digitalocean.Config{Namespace: ns, Token: token}, logger)
+			},
+		})
 	}
 
 	// hetzner requires HETZNER_TOKEN env var
-	if os.Getenv("HETZNER_TOKEN") != "" {
-		drivers = append(drivers, "hetzner")
+	if token := os.Getenv("HETZNER_TOKEN"); token != "" {
+		entries = append(entries, driverEntry{
+			name: "hetzner",
+			factory: func(ns string, logger *slog.Logger) (orchestra.Driver, error) {
+				return hetzner.New(hetzner.Config{Namespace: ns, Token: token}, logger)
+			},
+		})
 	}
 
-	// fly requires FLY_API_TOKEN and FLY_APP env vars
-	if os.Getenv("FLY_API_TOKEN") != "" && os.Getenv("FLY_APP") != "" {
-		drivers = append(drivers, "fly")
+	// fly requires FLY_API_TOKEN env var
+	if token := os.Getenv("FLY_API_TOKEN"); token != "" {
+		entries = append(entries, driverEntry{
+			name: "fly",
+			factory: func(ns string, logger *slog.Logger) (orchestra.Driver, error) {
+				return fly.New(fly.Config{Namespace: ns, Token: token}, logger)
+			},
+		})
 	}
 
-	return drivers
+	return entries
 }
 
 func TestCacheIntegration(t *testing.T) {
@@ -58,13 +90,14 @@ func TestCacheIntegration(t *testing.T) {
 		t.Skip("minio not installed, skipping integration test")
 	}
 
-	drivers := getAvailableDrivers()
-	if len(drivers) == 0 {
+	entries := getAvailableDrivers()
+	if len(entries) == 0 {
 		t.Skip("no drivers available for testing")
 	}
 
-	for _, driverName := range drivers {
-		t.Run(driverName, func(t *testing.T) {
+	for _, entry := range entries {
+		entry := entry
+		t.Run(entry.name, func(t *testing.T) {
 			assert := gomega.NewGomegaWithT(t)
 			ctx := context.Background()
 			logger := slog.Default()
@@ -72,16 +105,13 @@ func TestCacheIntegration(t *testing.T) {
 			minio := testhelpers.StartMinIO(t)
 			defer minio.Stop()
 
-			initFunc, ok := orchestra.Get(driverName)
-			assert.Expect(ok).To(gomega.BeTrue(), "driver should exist")
-
 			t.Run("cache persists volume data across runs", func(t *testing.T) {
 				volumeName := "cache-test-vol"
 				mountPath := "/cachevol"
 				testData := "cached-data-" + gonanoid.Must()
 
 				namespace1 := "cache-test-1-" + gonanoid.Must()
-				driver1, err := initFunc(namespace1, logger, map[string]string{})
+				driver1, err := entry.factory(namespace1, logger)
 				assert.Expect(err).NotTo(gomega.HaveOccurred())
 				defer func() { _ = driver1.Close() }()
 
@@ -126,7 +156,7 @@ func TestCacheIntegration(t *testing.T) {
 				assert.Expect(err).NotTo(gomega.HaveOccurred())
 
 				namespace2 := "cache-test-2-" + gonanoid.Must()
-				driver2, err := initFunc(namespace2, logger, map[string]string{})
+				driver2, err := entry.factory(namespace2, logger)
 				assert.Expect(err).NotTo(gomega.HaveOccurred())
 				defer func() { _ = driver2.Close() }()
 
@@ -169,7 +199,7 @@ func TestCacheIntegration(t *testing.T) {
 				mountPath := "/freshvol"
 
 				namespace := "cache-miss-" + gonanoid.Must()
-				driver, err := initFunc(namespace, logger, map[string]string{})
+				driver, err := entry.factory(namespace, logger)
 				assert.Expect(err).NotTo(gomega.HaveOccurred())
 				defer func() { _ = driver.Close() }()
 
@@ -223,11 +253,8 @@ func TestCacheWithoutCachingEnabled(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.Default()
 
-	initFunc, ok := orchestra.Get("native")
-	assert.Expect(ok).To(gomega.BeTrue())
-
 	namespace := "no-cache-" + gonanoid.Must()
-	driver, err := initFunc(namespace, logger, map[string]string{})
+	driver, err := native.New(native.Config{Namespace: namespace}, logger)
 	assert.Expect(err).NotTo(gomega.HaveOccurred())
 	defer func() { _ = driver.Close() }()
 

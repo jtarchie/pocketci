@@ -12,10 +12,10 @@ import (
 
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/orchestra/cache"
-	_ "github.com/jtarchie/pocketci/orchestra/docker"
-	_ "github.com/jtarchie/pocketci/orchestra/fly"
+	"github.com/jtarchie/pocketci/orchestra/docker"
+	"github.com/jtarchie/pocketci/orchestra/fly"
 	"github.com/jtarchie/pocketci/orchestra/k8s"
-	_ "github.com/jtarchie/pocketci/orchestra/native"
+	"github.com/jtarchie/pocketci/orchestra/native"
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	. "github.com/onsi/gomega"
 )
@@ -23,7 +23,31 @@ import (
 func TestDrivers(t *testing.T) {
 	t.Parallel()
 
-	orchestra.Each(func(name string, init orchestra.InitFunc) {
+	type driverEntry struct {
+		name      string
+		newDriver func(namespace string) (orchestra.Driver, error)
+	}
+
+	entries := []driverEntry{
+		{"docker", func(ns string) (orchestra.Driver, error) {
+			return docker.New(docker.Config{Namespace: ns}, slog.Default())
+		}},
+		{"native", func(ns string) (orchestra.Driver, error) {
+			return native.New(native.Config{Namespace: ns}, slog.Default())
+		}},
+		{"k8s", func(ns string) (orchestra.Driver, error) {
+			return k8s.New(k8s.Config{Namespace: ns}, slog.Default())
+		}},
+		{"fly", func(ns string) (orchestra.Driver, error) {
+			return fly.New(fly.Config{Namespace: ns, Token: os.Getenv("FLY_API_TOKEN")}, slog.Default())
+		}},
+	}
+
+	for _, tc := range entries {
+		tc := tc
+		name := tc.name
+		init := tc.newDriver
+
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
@@ -59,7 +83,7 @@ func TestDrivers(t *testing.T) {
 
 				assert := NewGomegaWithT(t)
 
-				client, err := init("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+				client, err := init("test-" + gonanoid.Must())
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				defer func() { _ = client.Close() }()
@@ -103,7 +127,7 @@ func TestDrivers(t *testing.T) {
 
 				assert := NewGomegaWithT(t)
 
-				client, err := init("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+				client, err := init("test-" + gonanoid.Must())
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				defer func() { _ = client.Close() }()
@@ -142,7 +166,7 @@ func TestDrivers(t *testing.T) {
 
 				assert := NewGomegaWithT(t)
 
-				client, err := init("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+				client, err := init("test-" + gonanoid.Must())
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				defer func() { _ = client.Close() }()
@@ -214,7 +238,7 @@ func TestDrivers(t *testing.T) {
 
 				assert := NewGomegaWithT(t)
 
-				client, err := init("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+				client, err := init("test-" + gonanoid.Must())
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				defer func() { _ = client.Close() }()
@@ -279,7 +303,7 @@ func TestDrivers(t *testing.T) {
 
 				assert := NewGomegaWithT(t)
 
-				client, err := init("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+				client, err := init("test-" + gonanoid.Must())
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				defer func() { _ = client.Close() }()
@@ -343,7 +367,7 @@ func TestDrivers(t *testing.T) {
 
 				assert.Expect(os.Setenv("IGNORE", "ME")).NotTo(HaveOccurred()) //nolint: usetesting
 
-				client, err := init("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+				client, err := init("test-" + gonanoid.Must())
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				defer func() { _ = client.Close() }()
@@ -384,7 +408,7 @@ func TestDrivers(t *testing.T) {
 
 				assert := NewGomegaWithT(t)
 
-				client, err := init("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+				client, err := init("test-" + gonanoid.Must())
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				defer func() { _ = client.Close() }()
@@ -444,13 +468,37 @@ func TestDrivers(t *testing.T) {
 				assert.Expect(err).NotTo(HaveOccurred())
 			})
 		})
-	})
+	}
 }
 
 func TestSandboxDrivers(t *testing.T) {
 	t.Parallel()
 
-	orchestra.Each(func(name string, init orchestra.InitFunc) {
+	type driverEntry struct {
+		name      string
+		newDriver func(namespace string) (orchestra.Driver, error)
+	}
+
+	entries := []driverEntry{
+		{"docker", func(ns string) (orchestra.Driver, error) {
+			return docker.New(docker.Config{Namespace: ns}, slog.Default())
+		}},
+		{"native", func(ns string) (orchestra.Driver, error) {
+			return native.New(native.Config{Namespace: ns}, slog.Default())
+		}},
+		{"k8s", func(ns string) (orchestra.Driver, error) {
+			return k8s.New(k8s.Config{Namespace: ns}, slog.Default())
+		}},
+		{"fly", func(ns string) (orchestra.Driver, error) {
+			return fly.New(fly.Config{Namespace: ns, Token: os.Getenv("FLY_API_TOKEN")}, slog.Default())
+		}},
+	}
+
+	for _, tc := range entries {
+		tc := tc
+		name := tc.name
+		init := tc.newDriver
+
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
@@ -465,7 +513,7 @@ func TestSandboxDrivers(t *testing.T) {
 			}
 
 			// Check driver supports SandboxDriver interface using a probe client.
-			probeClient, err := init("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+			probeClient, err := init("test-" + gonanoid.Must())
 			if err != nil {
 				t.Skipf("driver init failed: %v", err)
 			}
@@ -480,7 +528,7 @@ func TestSandboxDrivers(t *testing.T) {
 			newSandboxDriver := func(t *testing.T) orchestra.SandboxDriver {
 				t.Helper()
 
-				client, err := init("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+				client, err := init("test-" + gonanoid.Must())
 				if err != nil {
 					t.Fatalf("driver init failed: %v", err)
 				}
@@ -588,7 +636,7 @@ func TestSandboxDrivers(t *testing.T) {
 				assert.Expect(err).NotTo(HaveOccurred())
 			})
 		})
-	})
+	}
 }
 
 func TestParseDriverDSN(t *testing.T) {
@@ -665,33 +713,6 @@ func TestParseDriverDSN(t *testing.T) {
 			assert.Expect(config.Params).To(Equal(tt.expectedParams))
 		})
 	}
-}
-
-func TestGetFromDSN(t *testing.T) {
-	t.Parallel()
-
-	assert := NewGomegaWithT(t)
-
-	t.Run("existing driver", func(t *testing.T) {
-		config, init, err := orchestra.GetFromDSN("native")
-		assert.Expect(err).NotTo(HaveOccurred())
-		assert.Expect(config.Name).To(Equal("native"))
-		assert.Expect(init).NotTo(BeNil())
-	})
-
-	t.Run("non-existing driver", func(t *testing.T) {
-		_, _, err := orchestra.GetFromDSN("nonexistent")
-		assert.Expect(err).To(HaveOccurred())
-		assert.Expect(err.Error()).To(ContainSubstring("not found"))
-	})
-
-	t.Run("driver with params", func(t *testing.T) {
-		config, init, err := orchestra.GetFromDSN("k8s:namespace=test")
-		assert.Expect(err).NotTo(HaveOccurred())
-		assert.Expect(config.Name).To(Equal("k8s"))
-		assert.Expect(config.Params).To(HaveKey("namespace"))
-		assert.Expect(init).NotTo(BeNil())
-	})
 }
 
 // extractTarFiles reads a tar stream and returns a map of file path to contents.

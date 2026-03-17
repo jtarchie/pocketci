@@ -22,7 +22,7 @@ func TestDocker(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		client, err := docker.NewDocker("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+		client, err := docker.New(docker.Config{Namespace: "test-" + gonanoid.Must()}, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		defer func() { _ = client.Close() }()
@@ -66,7 +66,7 @@ func TestDocker(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		client, err := docker.NewDocker("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+		client, err := docker.New(docker.Config{Namespace: "test-" + gonanoid.Must()}, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		defer func() { _ = client.Close() }()
@@ -100,7 +100,7 @@ func TestDocker(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		client, err := docker.NewDocker("test-"+gonanoid.Must(), slog.Default(), map[string]string{})
+		client, err := docker.New(docker.Config{Namespace: "test-" + gonanoid.Must()}, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		defer func() { _ = client.Close() }()

@@ -2,45 +2,15 @@ package orchestra
 
 import (
 	"fmt"
-	"log/slog"
 	"net/url"
 	"slices"
 	"strings"
 )
 
-type InitFunc func(string, *slog.Logger, map[string]string) (Driver, error)
-
 type DriverConfig struct {
 	Name      string
 	Namespace string
 	Params    map[string]string
-}
-
-var drivers = map[string]InitFunc{}
-
-func Add(driverName string, init InitFunc) {
-	drivers[driverName] = init
-}
-
-func Each(f func(string, InitFunc)) {
-	for name, init := range drivers {
-		f(name, init)
-	}
-}
-
-func Get(driverName string) (InitFunc, bool) {
-	init, ok := drivers[driverName]
-
-	return init, ok
-}
-
-// ListDrivers returns a sorted list of all registered driver names.
-func ListDrivers() []string {
-	names := make([]string, 0, len(drivers))
-	for name := range drivers {
-		names = append(names, name)
-	}
-	return names
 }
 
 // ParseDriverDSN parses a driver DSN string in the format:
@@ -102,21 +72,6 @@ func ParseDriverDSN(dsn string) (*DriverConfig, error) {
 	}, nil
 }
 
-// GetFromDSN parses a DSN and returns the matching driver init function
-func GetFromDSN(dsn string) (*DriverConfig, InitFunc, error) {
-	config, err := ParseDriverDSN(dsn)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	init, ok := drivers[config.Name]
-	if !ok {
-		return nil, nil, fmt.Errorf("driver %q not found", config.Name)
-	}
-
-	return config, init, nil
-}
-
 // IsDriverAllowed validates that the driver specified in the DSN is in the allowed list.
 // If allowedList contains "*", all drivers with valid DSN format are allowed.
 // Returns an error if the driver is not allowed or if the DSN is invalid.
@@ -129,7 +84,6 @@ func IsDriverAllowed(driverDSN string, allowedList []string) error {
 	// Check if wildcard (all drivers allowed)
 	if slices.Contains(allowedList, "*") {
 		// Wildcard mode: just verify DSN is valid (parsed successfully above)
-		// Driver existence check happens at execution time
 		return nil
 	}
 

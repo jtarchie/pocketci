@@ -34,7 +34,7 @@ func TestFlyCleanup_LaunchErrorRecoveryTracksExistingMachine(t *testing.T) {
 	namespace := "test-" + gonanoid.Must()
 	taskID := gonanoid.Must()
 
-	driver, err := NewFly(namespace, slog.Default(), map[string]string{"token": token})
+	driver, err := New(Config{Namespace: namespace, Token: token}, slog.Default())
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	f := driver.(*Fly)
@@ -105,7 +105,7 @@ func TestFlyCleanup_SweepDestroysUntrackedNamespaceMachines(t *testing.T) {
 
 	namespace := "test-" + gonanoid.Must()
 
-	driver, err := NewFly(namespace, slog.Default(), map[string]string{"token": token})
+	driver, err := New(Config{Namespace: namespace, Token: token}, slog.Default())
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	f := driver.(*Fly)

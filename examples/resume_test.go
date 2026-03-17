@@ -26,7 +26,7 @@ func TestResumeSkipsCompletedSteps(t *testing.T) {
 	logger := slog.Default()
 
 	// Create docker driver
-	driver, err := docker.NewDocker("resume-test-ns", logger, nil)
+	driver, err := docker.New(docker.Config{Namespace: "resume-test-ns"}, logger)
 	assert.Expect(err).NotTo(HaveOccurred())
 	defer func() { _ = driver.Close() }()
 
@@ -163,7 +163,7 @@ func TestGetContainerDockerDriver(t *testing.T) {
 	logger := slog.Default()
 
 	// Create docker driver
-	driver, err := docker.NewDocker("getcontainer-test-ns", logger, nil)
+	driver, err := docker.New(docker.Config{Namespace: "getcontainer-test-ns"}, logger)
 	assert.Expect(err).NotTo(HaveOccurred())
 	defer func() { _ = driver.Close() }()
 

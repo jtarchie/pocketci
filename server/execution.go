@@ -33,6 +33,7 @@ type ExecutionService struct {
 	mu                    sync.Mutex
 	wg                    sync.WaitGroup
 	DefaultDriver         string
+	DriverFactory         func(namespace string) (orchestra.Driver, error)
 	SecretsManager        secrets.Manager
 	AllowedFeatures       []Feature
 	FetchTimeout          time.Duration
@@ -243,27 +244,6 @@ type execOptions struct {
 	user         string
 }
 
-func (s *ExecutionService) resolveDriverDSN(ctx context.Context, pipeline *storage.Pipeline) (string, error) {
-	if !IsFeatureEnabled(FeatureSecrets, s.AllowedFeatures) {
-		return "", fmt.Errorf("secrets feature is not enabled")
-	}
-
-	if s.SecretsManager == nil {
-		return "", fmt.Errorf("secrets backend is not configured")
-	}
-
-	driverDSN, err := s.SecretsManager.Get(ctx, secrets.PipelineScope(pipeline.ID), pipelineDriverDSNSecretKey)
-	if err != nil {
-		if errors.Is(err, secrets.ErrNotFound) {
-			return "", fmt.Errorf("pipeline driver DSN secret not found")
-		}
-
-		return "", fmt.Errorf("could not resolve pipeline driver DSN: %w", err)
-	}
-
-	return driverDSN, nil
-}
-
 func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *storage.PipelineRun, opts execOptions) {
 	defer s.inFlight.Add(-1)
 	defer s.wg.Done()
@@ -306,18 +286,6 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 
 	logger.Info("pipeline.execute.start")
 
-	driverDSN, err := s.resolveDriverDSN(dbCtx, pipeline)
-	if err != nil {
-		logger.Error("pipeline.driver.resolve.failed", "error", err)
-
-		updateErr := s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusFailed, "could not resolve pipeline driver")
-		if updateErr != nil {
-			logger.Error("run.update.failed.to_failed", "error", updateErr)
-		}
-
-		return
-	}
-
 	// Execute the pipeline
 	execOpts := runtime.ExecutorOptions{
 		RunID:        run.ID,
@@ -359,7 +327,8 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 		return
 	}
 
-	err = runtime.ExecutePipeline(ctx, executableContent, driverDSN, s.store, logger, execOpts)
+	execOpts.DriverFactory = s.DriverFactory
+	err = runtime.ExecutePipeline(ctx, executableContent, s.store, logger, execOpts)
 	if err != nil {
 		logger.Error("pipeline.execute.failed", "error", err)
 
@@ -445,11 +414,6 @@ func (s *ExecutionService) RunByNameSync(
 		s.logger.Error("run.update.failed.to_running", "error", err)
 	}
 
-	driverDSN, err := s.resolveDriverDSN(ctx, pipeline)
-	if err != nil {
-		return fmt.Errorf("could not resolve pipeline driver: %w", err)
-	}
-
 	// --- Pre-seed workdir volume (consumes HTTP body before SSE starts) ---
 	var preseededVolumes map[string]orchestra.Volume
 	var driver orchestra.Driver
@@ -457,24 +421,11 @@ func (s *ExecutionService) RunByNameSync(
 	if workdirTar != nil {
 		namespace := "ci-" + run.ID
 
-		driverConfig, orchestrator, dErr := orchestra.GetFromDSN(driverDSN)
-		if dErr != nil {
-			return fmt.Errorf("could not parse driver DSN: %w", dErr)
-		}
+		var dErr error
 
-		if driverConfig.Namespace != "" {
-			namespace = driverConfig.Namespace
-		}
-
-		driver, dErr = orchestrator(namespace, s.logger, driverConfig.Params)
+		driver, dErr = s.DriverFactory(namespace)
 		if dErr != nil {
 			return fmt.Errorf("could not create driver: %w", dErr)
-		}
-
-		driver, dErr = cache.WrapWithCaching(driver, driverConfig.Params, s.logger)
-		if dErr != nil {
-			_ = driver.Close()
-			return fmt.Errorf("could not init cache layer: %w", dErr)
 		}
 
 		vol, vErr := driver.CreateVolume(ctx, "workdir", 0)
@@ -550,7 +501,10 @@ func (s *ExecutionService) RunByNameSync(
 		return fmt.Errorf("could not resolve pipeline content: %w", execContentErr)
 	}
 
-	execErr := runtime.ExecutePipeline(ctx, executableContent, driverDSN, s.store, s.logger, opts)
+	if driver == nil {
+		opts.DriverFactory = s.DriverFactory
+	}
+	execErr := runtime.ExecutePipeline(ctx, executableContent, s.store, s.logger, opts)
 
 	exitCode := 0
 	var finalStatus storage.RunStatus

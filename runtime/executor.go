@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jtarchie/pocketci/orchestra"
-	"github.com/jtarchie/pocketci/orchestra/cache"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/runtime/support"
 	"github.com/jtarchie/pocketci/secrets"
@@ -58,17 +57,19 @@ type ExecutorOptions struct {
 	// OutputCallback, if set, is applied to every container task so that
 	// stdout/stderr chunks are forwarded to the caller in real time.
 	OutputCallback func(stream string, data string)
+	// DriverFactory, if set, is called to create a new driver for this execution.
+	// Required if Driver is not set.
+	DriverFactory func(namespace string) (orchestra.Driver, error)
 	// Driver, if set, is used for pipeline execution instead of creating
-	// one from the driver DSN. The caller owns the driver lifecycle.
+	// one from the DriverFactory. The caller owns the driver lifecycle.
 	Driver orchestra.Driver
 }
 
-// ExecutePipeline executes a pipeline with the given content and driver DSN.
+// ExecutePipeline executes a pipeline with the given content and driver factory.
 // It handles driver initialization, execution, and cleanup.
 func ExecutePipeline(
 	ctx context.Context,
 	content string,
-	driverDSN string,
 	store storage.Driver,
 	logger *slog.Logger,
 	opts ExecutorOptions,
@@ -83,10 +84,7 @@ func ExecutePipeline(
 		namespace = "ci-" + opts.RunID
 	}
 
-	logger = logger.WithGroup("executor").With(
-		"namespace", namespace,
-		"driver", sanitizeDriverName(driverDSN),
-	)
+	logger = logger.WithGroup("executor").With("namespace", namespace)
 	if opts.RequestID != "" {
 		logger = logger.With("request_id", opts.RequestID)
 	}
@@ -101,28 +99,22 @@ func ExecutePipeline(
 	if opts.Driver != nil {
 		// Reuse the caller-provided driver (caller manages lifecycle).
 		driver = opts.Driver
+		logger = logger.With("driver", driver.Name())
 	} else {
-		driverConfig, orchestrator, err := orchestra.GetFromDSN(driverDSN)
-		if err != nil {
-			return fmt.Errorf("could not parse driver DSN: %w", err)
+		if opts.DriverFactory == nil {
+			return fmt.Errorf("no driver factory configured")
 		}
 
-		// Use namespace from DSN if provided
-		if driverConfig.Namespace != "" {
-			namespace = driverConfig.Namespace
+		var err error
+
+		driver, err = opts.DriverFactory(namespace)
+		if err != nil {
+			return fmt.Errorf("could not create orchestrator: %w", err)
 		}
 
-		driver, err = orchestrator(namespace, logger, driverConfig.Params)
-		if err != nil {
-			return fmt.Errorf("could not create orchestrator client: %w", err)
-		}
 		defer func() { _ = driver.Close() }()
 
-		// Wrap driver with caching if cache parameters are present
-		driver, err = cache.WrapWithCaching(driver, driverConfig.Params, logger)
-		if err != nil {
-			return fmt.Errorf("could not initialize cache layer: %w", err)
-		}
+		logger = logger.With("driver", driver.Name())
 	}
 
 	logger.Info("pipeline.executing")
@@ -160,13 +152,4 @@ func ExecutePipeline(
 	logger.Info("pipeline.completed.success")
 
 	return nil
-}
-
-func sanitizeDriverName(driverDSN string) string {
-	config, err := orchestra.ParseDriverDSN(driverDSN)
-	if err != nil || config == nil || config.Name == "" {
-		return "unknown"
-	}
-
-	return config.Name
 }

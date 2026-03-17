@@ -13,6 +13,13 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// Config holds configuration for the Kubernetes driver.
+type Config struct {
+	Namespace    string // Per-execution namespace identifier
+	Kubeconfig   string // Path to kubeconfig file; empty uses in-cluster config
+	K8sNamespace string // Kubernetes namespace for jobs (default: "default")
+}
+
 type K8s struct {
 	clientset    *kubernetes.Clientset
 	config       *rest.Config
@@ -59,16 +66,15 @@ func (k *K8s) Close() error {
 	return nil
 }
 
-func NewK8s(namespace string, logger *slog.Logger, params map[string]string) (orchestra.Driver, error) {
+func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	// Try to get in-cluster config first (for running inside k8s)
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		// Fall back to kubeconfig (for local development)
 		loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 
-		// Use helper to get kubeconfig path from DSN or env var
-		if kubeconfigPath := orchestra.GetParam(params, "kubeconfig", "KUBECONFIG", ""); kubeconfigPath != "" {
-			loadingRules.ExplicitPath = kubeconfigPath
+		if cfg.Kubeconfig != "" {
+			loadingRules.ExplicitPath = cfg.Kubeconfig
 		}
 
 		configOverrides := &clientcmd.ConfigOverrides{}
@@ -84,16 +90,18 @@ func NewK8s(namespace string, logger *slog.Logger, params map[string]string) (or
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
 
-	// Get K8s namespace from DSN params or default
-	k8sNamespace := orchestra.GetParam(params, "namespace", "", "default")
+	k8sNamespace := cfg.K8sNamespace
+	if k8sNamespace == "" {
+		k8sNamespace = "default"
+	}
 
-	logger.Info("k8s.config", "k8sNamespace", k8sNamespace, "orchestraNamespace", namespace)
+	logger.Info("k8s.config", "k8sNamespace", k8sNamespace, "orchestraNamespace", cfg.Namespace)
 
 	return &K8s{
 		clientset:    clientset,
 		config:       config,
 		logger:       logger,
-		namespace:    namespace,
+		namespace:    cfg.Namespace,
 		k8sNamespace: k8sNamespace,
 	}, nil
 }
@@ -130,10 +138,6 @@ func (k *K8s) GetContainer(ctx context.Context, containerID string) (orchestra.C
 		k8sNamespace: k.k8sNamespace,
 		logger:       k.logger,
 	}, nil
-}
-
-func init() {
-	orchestra.Add("k8s", NewK8s)
 }
 
 var (

@@ -35,10 +35,11 @@ func TestDigitalOcean(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		namespace := "test-" + gonanoid.Must()
-		client, err := digitalocean.NewDigitalOcean(namespace, slog.Default(), map[string]string{
-			"token": token,
-			"tags":  testTag,
-		})
+		client, err := digitalocean.New(digitalocean.Config{
+			Namespace: namespace,
+			Token:     token,
+			Tags:      testTag,
+		}, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		// Always clean up the droplet, even if the test fails
@@ -84,11 +85,12 @@ func TestDigitalOcean(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		namespace := "test-" + gonanoid.Must()
-		client, err := digitalocean.NewDigitalOcean(namespace, slog.Default(), map[string]string{
-			"token": token,
-			"size":  "auto",
-			"tags":  testTag,
-		})
+		client, err := digitalocean.New(digitalocean.Config{
+			Namespace: namespace,
+			Token:     token,
+			Size:      "auto",
+			Tags:      testTag,
+		}, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		// Always clean up the droplet, even if the test fails
@@ -128,15 +130,16 @@ func TestDigitalOcean(t *testing.T) {
 
 		// Use a shared namespace so both drivers target the same worker pool
 		namespace := "test-" + gonanoid.Must()
-		params := map[string]string{
-			"token":        token,
-			"tags":         testTag,
-			"reuse_worker": "true",
-			"max_workers":  "1",
+		cfg := digitalocean.Config{
+			Namespace:   namespace,
+			Token:       token,
+			Tags:        testTag,
+			ReuseWorker: true,
+			MaxWorkers:  1,
 		}
 
 		// First run: creates a new machine and parks it on close
-		client1, err := digitalocean.NewDigitalOcean(namespace, slog.Default(), params)
+		client1, err := digitalocean.New(cfg, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		container1, err := client1.RunContainer(
@@ -158,7 +161,7 @@ func TestDigitalOcean(t *testing.T) {
 		assert.Expect(client1.Close()).NotTo(HaveOccurred())
 
 		// Second run: should claim the parked machine
-		client2, err := digitalocean.NewDigitalOcean(namespace, slog.Default(), params)
+		client2, err := digitalocean.New(cfg, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		defer func() {
@@ -188,12 +191,13 @@ func TestDigitalOcean(t *testing.T) {
 
 		// Use a shared namespace so both drivers share the same worker pool
 		namespace := "test-" + gonanoid.Must()
-		params := map[string]string{
-			"token":         token,
-			"tags":          testTag,
-			"max_workers":   "1",
-			"poll_interval": "5s",
-			"wait_timeout":  "15m",
+		cfg := digitalocean.Config{
+			Namespace:    namespace,
+			Token:        token,
+			Tags:         testTag,
+			MaxWorkers:   1,
+			PollInterval: 5 * time.Second,
+			WaitTimeout:  15 * time.Minute,
 		}
 
 		var (
@@ -203,7 +207,7 @@ func TestDigitalOcean(t *testing.T) {
 		)
 
 		run := func(label string) error {
-			client, err := digitalocean.NewDigitalOcean(namespace, slog.Default(), params)
+			client, err := digitalocean.New(cfg, slog.Default())
 			if err != nil {
 				return err
 			}

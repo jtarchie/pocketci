@@ -74,7 +74,7 @@ func newDockerRunner(t *testing.T, prefix string) *pipelinerunner.PipelineRunner
 	namespace := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
 	runID := prefix + "-run"
 
-	driver, err := docker.NewDocker(namespace, logger, nil)
+	driver, err := docker.New(docker.Config{Namespace: namespace}, logger)
 	if err != nil {
 		t.Fatalf("new docker driver: %v", err)
 	}

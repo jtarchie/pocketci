@@ -15,6 +15,16 @@ import (
 	"github.com/jtarchie/pocketci/orchestra"
 )
 
+// Config holds configuration for the Fly.io driver.
+type Config struct {
+	Namespace string // Per-execution namespace identifier
+	Token     string // Fly.io API token (required)
+	App       string // Fly.io app name; if empty, an ephemeral app is created
+	Region    string // Fly.io machine region
+	Org       string // Fly.io org slug (default: "personal")
+	Size      string // Fly.io machine size (default: "shared-cpu-1x")
+}
+
 type Fly struct {
 	client    *flaps.Client
 	apiClient *fly.Client
@@ -46,18 +56,22 @@ type Fly struct {
 	helperMachines map[string]string
 }
 
-func NewFly(namespace string, logger *slog.Logger, params map[string]string) (orchestra.Driver, error) {
-	token := orchestra.GetParam(params, "token", "FLY_API_TOKEN", "")
-	if token == "" {
-		return nil, fmt.Errorf("fly driver requires a token (via DSN param 'token' or FLY_API_TOKEN env var)")
+func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
+	if cfg.Token == "" {
+		return nil, fmt.Errorf("fly driver requires a token (set via CI_FLY_TOKEN)")
 	}
 
-	appName := orchestra.GetParam(params, "app", "FLY_APP", "")
-	region := orchestra.GetParam(params, "region", "FLY_REGION", "")
-	org := orchestra.GetParam(params, "org", "FLY_ORG", "personal")
-	size := orchestra.GetParam(params, "size", "", "shared-cpu-1x")
+	org := cfg.Org
+	if org == "" {
+		org = "personal"
+	}
 
-	toks := tokens.Parse(token)
+	size := cfg.Size
+	if size == "" {
+		size = "shared-cpu-1x"
+	}
+
+	toks := tokens.Parse(cfg.Token)
 
 	// Discharge third-party caveats on macaroon tokens. Macaroon tokens have
 	// short-lived discharge tokens that need refreshing via auth.fly.io.
@@ -83,19 +97,21 @@ func NewFly(namespace string, logger *slog.Logger, params map[string]string) (or
 		client:            client,
 		apiClient:         apiClient,
 		logger:            logger,
-		namespace:         namespace,
-		region:            region,
+		namespace:         cfg.Namespace,
+		region:            cfg.Region,
 		size:              size,
 		org:               org,
-		token:             token,
+		token:             cfg.Token,
 		volumes:           make(map[string]*Volume),
 		volumeAttachments: make(map[string]string),
 		helperMachines:    make(map[string]string),
 	}
 
+	appName := cfg.App
+
 	// If no app name provided, create an ephemeral one
 	if appName == "" {
-		appName = sanitizeAppName(fmt.Sprintf("pocketci-%s", namespace))
+		appName = sanitizeAppName(fmt.Sprintf("pocketci-%s", cfg.Namespace))
 
 		logger.Info("fly.app.create", "app", appName, "org", org)
 
@@ -306,12 +322,8 @@ func sanitizeVolumeName(name string) string {
 	return name
 }
 
-func init() {
-	orchestra.Add("fly", NewFly)
-}
-
 // shellescape wraps a string in single quotes for safe use in shell commands.
-// Any embedded single quotes are escaped as '\” (end quote, escaped quote, start quote).
+// Any embedded single quotes are escaped as '\" (end quote, escaped quote, start quote).
 func shellescape(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }

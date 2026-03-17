@@ -18,6 +18,17 @@ import (
 	"github.com/jtarchie/pocketci/orchestra"
 )
 
+// Config holds configuration for the QEMU driver.
+type Config struct {
+	Namespace string // Per-execution namespace identifier
+	Memory    string // VM memory (e.g., "2048" or "2G"); default: "2048"
+	CPUs      string // VM CPU count; default: "2"
+	Accel     string // Acceleration: hvf, kvm, tcg, or auto-detected
+	Binary    string // Path to qemu-system binary (auto-detected by arch)
+	CacheDir  string // Directory for image cache (default: ~/.cache/pocketci/qemu)
+	Image     string // Boot image path or URL (optional; downloaded if empty)
+}
+
 // QEMU implements orchestra.Driver using a local QEMU virtual machine.
 // Commands are executed inside the guest via the QEMU Guest Agent (QGA).
 // Volumes are shared between host and guest via 9p virtfs.
@@ -29,7 +40,6 @@ type QEMU struct {
 	logger     *slog.Logger
 	tempDir    string
 	volumesDir string
-	params     map[string]string
 
 	bootOnce sync.Once
 	bootErr  error
@@ -37,7 +47,6 @@ type QEMU struct {
 	mu         sync.Mutex
 	containers map[string]*Container
 
-	// config parsed from DSN
 	memory    string
 	cpus      string
 	accel     string
@@ -51,8 +60,8 @@ func (q *QEMU) Name() string {
 	return "qemu"
 }
 
-// NewQEMU creates a new QEMU driver.
-func NewQEMU(namespace string, logger *slog.Logger, params map[string]string) (orchestra.Driver, error) {
+// New creates a new QEMU driver.
+func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	homeDir, _ := os.UserHomeDir()
 	defaultCacheDir := filepath.Join(homeDir, ".cache", "pocketci", "qemu")
 
@@ -71,17 +80,41 @@ func NewQEMU(namespace string, logger *slog.Logger, params map[string]string) (o
 		defaultBinary = "qemu-system-aarch64"
 	}
 
+	memory := cfg.Memory
+	if memory == "" {
+		memory = "2048"
+	}
+
+	cpus := cfg.CPUs
+	if cpus == "" {
+		cpus = "2"
+	}
+
+	accel := cfg.Accel
+	if accel == "" {
+		accel = defaultAccel
+	}
+
+	binary := cfg.Binary
+	if binary == "" {
+		binary = defaultBinary
+	}
+
+	cacheDir := cfg.CacheDir
+	if cacheDir == "" {
+		cacheDir = defaultCacheDir
+	}
+
 	q := &QEMU{
-		namespace:  namespace,
+		namespace:  cfg.Namespace,
 		logger:     logger,
-		params:     params,
 		containers: make(map[string]*Container),
-		memory:     orchestra.GetParam(params, "memory", "QEMU_MEMORY", "2048"),
-		cpus:       orchestra.GetParam(params, "cpus", "QEMU_CPUS", "2"),
-		accel:      orchestra.GetParam(params, "accel", "QEMU_ACCEL", defaultAccel),
-		qemuBin:    orchestra.GetParam(params, "qemu_binary", "QEMU_BINARY", defaultBinary),
-		cacheDir:   orchestra.GetParam(params, "cache_dir", "QEMU_CACHE_DIR", defaultCacheDir),
-		imagePath:  orchestra.GetParam(params, "image", "QEMU_IMAGE", ""),
+		memory:     memory,
+		cpus:       cpus,
+		accel:      accel,
+		qemuBin:    binary,
+		cacheDir:   cacheDir,
+		imagePath:  cfg.Image,
 	}
 
 	return q, nil
@@ -639,10 +672,6 @@ func findFreePort() (int, error) {
 	_ = listener.Close()
 
 	return port, nil
-}
-
-func init() {
-	orchestra.Add("qemu", NewQEMU)
 }
 
 var (

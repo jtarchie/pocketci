@@ -24,10 +24,11 @@ func TestMain(m *testing.M) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	var err error
-	testDriver, err = vzdriver.NewVZ(namespace, logger, map[string]string{
-		"memory": "2048",
-		"cpus":   "2",
-	})
+	testDriver, err = vzdriver.New(vzdriver.Config{
+		Namespace: namespace,
+		Memory:    "2048",
+		CPUs:      "2",
+	}, logger)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create VZ driver: %v\n", err)
 		os.Exit(1)
