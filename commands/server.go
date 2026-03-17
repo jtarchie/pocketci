@@ -43,17 +43,17 @@ type Server struct {
 	FetchTimeout       time.Duration `default:"30s"              env:"CI_FETCH_TIMEOUT"         help:"Default timeout for fetch() calls in pipelines"`
 	FetchMaxResponseMB int           `default:"10"               env:"CI_FETCH_MAX_RESPONSE_MB" help:"Maximum response body size in MB for fetch() calls"`
 	// SQLite secrets backend
-	SecretsSQLitePath       string `default:"test.db" env:"CI_SECRETS_SQLITE_PATH"       help:"SQLite secrets database file path (use ':memory:' for in-memory)"`
-	SecretsSQLitePassphrase string `default:"testing"  env:"CI_SECRETS_SQLITE_PASSPHRASE" help:"Encryption passphrase for SQLite secrets backend"`
+	SecretsSQLitePath       string `name:"secrets-sqlite-path"       default:"test.db" env:"CI_SECRETS_SQLITE_PATH"       help:"SQLite secrets database file path (use ':memory:' for in-memory)"`
+	SecretsSQLitePassphrase string `name:"secrets-sqlite-passphrase" default:"testing"  env:"CI_SECRETS_SQLITE_PASSPHRASE" help:"Encryption passphrase for SQLite secrets backend"`
 	// S3 secrets backend (takes precedence over SQLite when Bucket is set)
-	SecretsS3Bucket          string   `env:"CI_SECRETS_S3_BUCKET"            help:"S3 bucket name for secrets backend"`
-	SecretsS3Endpoint        string   `env:"CI_SECRETS_S3_ENDPOINT"          help:"S3-compatible endpoint URL (e.g., 'https://s3.amazonaws.com')"`
-	SecretsS3Region          string   `env:"CI_SECRETS_S3_REGION"            help:"AWS region for S3 secrets backend"`
-	SecretsS3AccessKeyID     string   `env:"CI_SECRETS_S3_ACCESS_KEY_ID"     help:"S3 access key ID"`
-	SecretsS3SecretAccessKey string   `env:"CI_SECRETS_S3_SECRET_ACCESS_KEY" help:"S3 secret access key"`
-	SecretsS3Passphrase      string   `env:"CI_SECRETS_S3_PASSPHRASE"        help:"Encryption passphrase for S3 secrets backend (application-layer AES-256-GCM)"`
-	SecretsS3Encrypt         string   `env:"CI_SECRETS_S3_ENCRYPT"           help:"S3 server-side encryption mode: sse-s3, sse-kms, or sse-c"`
-	SecretsS3Prefix          string   `env:"CI_SECRETS_S3_PREFIX"            help:"S3 key prefix for secrets"`
+	SecretsS3Bucket          string   `name:"secrets-s3-bucket"            env:"CI_SECRETS_S3_BUCKET"            help:"S3 bucket name for secrets backend"`
+	SecretsS3Endpoint        string   `name:"secrets-s3-endpoint"          env:"CI_SECRETS_S3_ENDPOINT"          help:"S3-compatible endpoint URL (e.g., 'https://s3.amazonaws.com')"`
+	SecretsS3Region          string   `name:"secrets-s3-region"            env:"CI_SECRETS_S3_REGION"            help:"AWS region for S3 secrets backend"`
+	SecretsS3AccessKeyID     string   `name:"secrets-s3-access-key-id"     env:"CI_SECRETS_S3_ACCESS_KEY_ID"     help:"S3 access key ID"`
+	SecretsS3SecretAccessKey string   `name:"secrets-s3-secret-access-key" env:"CI_SECRETS_S3_SECRET_ACCESS_KEY" help:"S3 secret access key"`
+	SecretsS3Passphrase      string   `name:"secrets-s3-passphrase"        env:"CI_SECRETS_S3_PASSPHRASE"        help:"Encryption passphrase for S3 secrets backend (application-layer AES-256-GCM)"`
+	SecretsS3Encrypt         string   `name:"secrets-s3-encrypt"           env:"CI_SECRETS_S3_ENCRYPT"           help:"S3 server-side encryption mode: sse-s3, sse-kms, or sse-c"`
+	SecretsS3Prefix          string   `name:"secrets-s3-prefix"            env:"CI_SECRETS_S3_PREFIX"            help:"S3 key prefix for secrets"`
 	Secret                   []string `help:"Set a global secret as KEY=VALUE (can be repeated)" short:"e"`
 	PosthogAPIKey            string   `env:"CI_POSTHOG_API_KEY"     help:"PostHog API key (e.g., 'phc_abc123')"`
 	PosthogEndpoint          string   `env:"CI_POSTHOG_ENDPOINT"    help:"PostHog ingestion endpoint URL (defaults to PostHog cloud)"`
