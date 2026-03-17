@@ -11,7 +11,7 @@ import (
 	"github.com/jtarchie/pocketci/runtime"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/storage"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
+	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
 )
 
@@ -27,9 +27,7 @@ func setupNativeDriver(t *testing.T) orchestra.Driver {
 func setupStorage(t *testing.T) storage.Driver {
 	t.Helper()
 	assert := NewGomegaWithT(t)
-	initStorage, found := storage.GetFromDSN("sqlite://:memory:")
-	assert.Expect(found).To(BeTrue())
-	store, err := initStorage("sqlite://:memory:", ":memory:", slog.Default())
+	store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, ":memory:", slog.Default())
 	assert.Expect(err).NotTo(HaveOccurred())
 	t.Cleanup(func() { _ = store.Close() })
 	return store

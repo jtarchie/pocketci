@@ -6,7 +6,6 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/jtarchie/pocketci/orchestra/k8s"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/jtarchie/pocketci/testhelpers"
 	. "github.com/onsi/gomega"
 )
@@ -35,9 +34,9 @@ func TestExamplesDocker(t *testing.T) {
 
 				assert := NewGomegaWithT(t)
 				runner := testhelpers.Runner{
-					Pipeline: examplePath,
-					Driver:   driver,
-					Storage:  "sqlite://:memory:",
+					Pipeline:          examplePath,
+					Driver:            driver,
+					StorageSQLitePath: ":memory:",
 				}
 				err := runner.Run(nil)
 				assert.Expect(err).NotTo(HaveOccurred())
@@ -69,9 +68,9 @@ func TestExamplesAll(t *testing.T) {
 
 				assert := NewGomegaWithT(t)
 				runner := testhelpers.Runner{
-					Pipeline: examplePath,
-					Driver:   driver,
-					Storage:  "sqlite://:memory:",
+					Pipeline:          examplePath,
+					Driver:            driver,
+					StorageSQLitePath: ":memory:",
 				}
 				err := runner.Run(nil)
 				assert.Expect(err).NotTo(HaveOccurred())

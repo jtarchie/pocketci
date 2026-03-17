@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/jtarchie/pocketci/storage"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
+	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 )
 
 func setupBenchDB(b *testing.B) storage.Driver {
@@ -22,14 +22,9 @@ func setupBenchDB(b *testing.B) storage.Driver {
 	}
 	_ = tmpFile.Close()
 
-	dsn := "sqlite://" + tmpFile.Name()
-
-	initFunc, ok := storage.GetFromDSN(dsn)
-	if !ok {
-		b.Fatal("could not get sqlite driver")
-	}
-
-	driver, err := initFunc(dsn, "bench", slog.Default())
+	driver, err := storagesqlite.NewSqlite(storagesqlite.Config{
+		Path: tmpFile.Name(),
+	}, "bench", slog.Default())
 	if err != nil {
 		b.Fatal(err)
 	}

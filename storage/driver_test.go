@@ -2,59 +2,94 @@ package storage_test
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"testing"
 
+	"github.com/jtarchie/pocketci/s3config"
 	"github.com/jtarchie/pocketci/storage"
-	_ "github.com/jtarchie/pocketci/storage/s3"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
+	"github.com/jtarchie/pocketci/storage/s3"
+	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/jtarchie/pocketci/testhelpers"
 	. "github.com/onsi/gomega"
 )
 
-func newStorageClient(t *testing.T, name string, init storage.InitFunc, namespace string) storage.Driver {
-	t.Helper()
+type driverFactory struct {
+	name string
+	new  func(t *testing.T, namespace string) storage.Driver
+}
 
-	var dsn string
+func allDrivers() []driverFactory {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	switch name {
-	case "s3":
-		if _, err := exec.LookPath("minio"); err != nil {
-			t.Skip("minio not installed, skipping S3 storage test")
-		}
+	return []driverFactory{
+		{
+			name: "sqlite",
+			new: func(t *testing.T, namespace string) storage.Driver {
+				t.Helper()
 
-		server := testhelpers.StartMinIO(t)
-		t.Cleanup(server.Stop)
-		dsn = server.CacheURL()
-	default:
-		f, err := os.CreateTemp(t.TempDir(), "")
-		if err != nil {
-			t.Fatal(err)
-		}
+				f, err := os.CreateTemp(t.TempDir(), "")
+				if err != nil {
+					t.Fatal(err)
+				}
 
-		t.Cleanup(func() { _ = f.Close() })
-		dsn = f.Name()
+				t.Cleanup(func() { _ = f.Close() })
+
+				client, err := storagesqlite.NewSqlite(storagesqlite.Config{
+					Path: f.Name(),
+				}, namespace, logger)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				t.Cleanup(func() { _ = client.Close() })
+
+				return client
+			},
+		},
+		{
+			name: "s3",
+			new: func(t *testing.T, namespace string) storage.Driver {
+				t.Helper()
+
+				if _, err := exec.LookPath("minio"); err != nil {
+					t.Skip("minio not installed, skipping S3 storage test")
+				}
+
+				server := testhelpers.StartMinIO(t)
+				t.Cleanup(server.Stop)
+
+				client, err := s3.NewS3(s3.Config{
+					Config: s3config.Config{
+						Endpoint:        server.Endpoint(),
+						Bucket:          server.Bucket(),
+						Region:          "us-east-1",
+						AccessKeyID:     "minioadmin",
+						SecretAccessKey: "minioadmin",
+						ForcePathStyle:  true,
+					},
+				}, namespace, logger)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				t.Cleanup(func() { _ = client.Close() })
+
+				return client
+			},
+		},
 	}
-
-	client, err := init(dsn, namespace, slog.Default())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Cleanup(func() { _ = client.Close() })
-
-	return client
 }
 
 func TestDrivers(t *testing.T) {
-	storage.Each(func(name string, init storage.InitFunc) {
-		t.Run(name, func(t *testing.T) {
+	for _, df := range allDrivers() {
+		t.Run(df.name, func(t *testing.T) {
 			t.Run("Add Path", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				err := client.Set(context.Background(), "/foo", map[string]string{
 					"field":   "123",
@@ -84,7 +119,7 @@ func TestDrivers(t *testing.T) {
 			t.Run("Wildcard returns all fields", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				err := client.Set(context.Background(), "/bar", map[string]any{
 					"field":   "123",
@@ -107,7 +142,7 @@ func TestDrivers(t *testing.T) {
 			t.Run("Get not found returns ErrNotFound", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				_, err := client.Get(context.Background(), "/nonexistent")
 				assert.Expect(err).To(Equal(storage.ErrNotFound))
@@ -116,7 +151,7 @@ func TestDrivers(t *testing.T) {
 			t.Run("SetMerge merges fields into existing payload", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				err := client.Set(context.Background(), "/merge-test", map[string]string{
 					"a": "1",
@@ -140,7 +175,7 @@ func TestDrivers(t *testing.T) {
 			t.Run("UpdateStatusForPrefix updates matching entries", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				ctx := context.Background()
 
@@ -163,5 +198,5 @@ func TestDrivers(t *testing.T) {
 				assert.Expect(p2["status"]).To(Equal("pending"))
 			})
 		})
-	})
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/jtarchie/pocketci/s3config"
 	s3storage "github.com/jtarchie/pocketci/storage/s3"
 	. "github.com/onsi/gomega"
 )
@@ -15,7 +16,7 @@ func TestS3Driver_EncryptWithSseS3(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	// Construction succeeds — no real S3 calls needed to verify config parsing.
-	client, err := s3storage.NewS3("s3://s3.amazonaws.com/bucket?region=us-east-1&encrypt=sse-s3", "sse-ns", slog.Default())
+	client, err := s3storage.NewS3(s3storage.Config{Config: s3config.Config{Bucket: "bucket", Region: "us-east-1", EncryptMode: "sse-s3"}}, "sse-ns", slog.Default())
 	assert.Expect(err).NotTo(HaveOccurred())
 	t.Cleanup(func() { _ = client.Close() })
 }
@@ -26,7 +27,7 @@ func TestS3Driver_DSNParams(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	// force_path_style=false is a valid param; construction must not return an error.
-	client, err := s3storage.NewS3("s3://s3.amazonaws.com/bucket?region=us-east-1&force_path_style=false", "params-ns", slog.Default())
+	client, err := s3storage.NewS3(s3storage.Config{Config: s3config.Config{Bucket: "bucket", Region: "us-east-1"}}, "params-ns", slog.Default())
 	assert.Expect(err).NotTo(HaveOccurred())
 	t.Cleanup(func() { _ = client.Close() })
 }
@@ -36,7 +37,7 @@ func TestS3Driver_DSNParams(t *testing.T) {
 func TestS3Driver_InvalidEncrypt(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
-	_, err := s3storage.NewS3("s3://s3.amazonaws.com/bucket?region=us-east-1&encrypt=bogus", "ns", slog.Default())
+	_, err := s3storage.NewS3(s3storage.Config{Config: s3config.Config{Bucket: "bucket", Region: "us-east-1", EncryptMode: "bogus"}}, "ns", slog.Default())
 	assert.Expect(err).To(HaveOccurred())
 	assert.Expect(err.Error()).To(ContainSubstring("unsupported encrypt value"))
 }

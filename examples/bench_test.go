@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	_ "github.com/jtarchie/pocketci/orchestra/docker"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/jtarchie/pocketci/testhelpers"
 )
 
@@ -22,9 +21,9 @@ func BenchmarkPipeline_HelloWorld(b *testing.B) {
 
 	for b.Loop() {
 		runner := testhelpers.Runner{
-			Pipeline: examplePath,
-			Driver:   "docker",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          examplePath,
+			Driver:            "docker",
+			StorageSQLitePath: ":memory:",
 		}
 		if err := runner.Run(nil); err != nil {
 			b.Fatal(err)
@@ -44,9 +43,9 @@ func BenchmarkPipeline_Promises(b *testing.B) {
 
 	for b.Loop() {
 		runner := testhelpers.Runner{
-			Pipeline: examplePath,
-			Driver:   "docker",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          examplePath,
+			Driver:            "docker",
+			StorageSQLitePath: ":memory:",
 		}
 		if err := runner.Run(nil); err != nil {
 			b.Fatal(err)
@@ -66,9 +65,9 @@ func BenchmarkPipeline_Minimal(b *testing.B) {
 
 	for b.Loop() {
 		runner := testhelpers.Runner{
-			Pipeline: examplePath,
-			Driver:   "docker",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          examplePath,
+			Driver:            "docker",
+			StorageSQLitePath: ":memory:",
 		}
 		if err := runner.Run(nil); err != nil {
 			b.Fatal(err)
@@ -88,9 +87,9 @@ func BenchmarkPipeline_Volumes(b *testing.B) {
 
 	for b.Loop() {
 		runner := testhelpers.Runner{
-			Pipeline: examplePath,
-			Driver:   "docker",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          examplePath,
+			Driver:            "docker",
+			StorageSQLitePath: ":memory:",
 		}
 		if err := runner.Run(nil); err != nil {
 			b.Fatal(err)

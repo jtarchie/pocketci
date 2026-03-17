@@ -6,7 +6,6 @@ import (
 
 	_ "github.com/jtarchie/pocketci/orchestra/docker"
 	_ "github.com/jtarchie/pocketci/orchestra/native"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/jtarchie/pocketci/testhelpers"
 	. "github.com/onsi/gomega"
 )
@@ -28,7 +27,7 @@ func TestSecretsBasic(t *testing.T) {
 			runner := testhelpers.Runner{
 				Pipeline:                examplePath,
 				Driver:                  driver,
-				Storage:                 "sqlite://:memory:",
+				StorageSQLitePath:       ":memory:",
 				SecretsSQLitePassphrase: "test-passphrase",
 				Secret:                  []string{"API_KEY=super-secret-value-12345"},
 			}
@@ -49,7 +48,7 @@ func TestSecretsMissingFails(t *testing.T) {
 	runner := testhelpers.Runner{
 		Pipeline:                examplePath,
 		Driver:                  "native",
-		Storage:                 "sqlite://:memory:",
+		StorageSQLitePath:       ":memory:",
 		SecretsSQLitePassphrase: "test-passphrase",
 	}
 	err = runner.Run(nil)
@@ -68,7 +67,7 @@ func TestSecretsInvalidFlag(t *testing.T) {
 	runner := testhelpers.Runner{
 		Pipeline:                examplePath,
 		Driver:                  "native",
-		Storage:                 "sqlite://:memory:",
+		StorageSQLitePath:       ":memory:",
 		SecretsSQLitePassphrase: "test-passphrase",
 		Secret:                  []string{"INVALID_NO_EQUALS"},
 	}
@@ -98,7 +97,7 @@ func TestSecretsGlobal(t *testing.T) {
 			runner := testhelpers.Runner{
 				Pipeline:                examplePath,
 				Driver:                  driver,
-				Storage:                 "sqlite://:memory:",
+				StorageSQLitePath:       ":memory:",
 				SecretsSQLitePassphrase: "test-passphrase",
 				GlobalSecret:            []string{"API_KEY=global-secret-value-99999"},
 			}
@@ -121,7 +120,7 @@ func TestSecretsGlobalOverriddenByPipeline(t *testing.T) {
 	runner := testhelpers.Runner{
 		Pipeline:                examplePath,
 		Driver:                  "native",
-		Storage:                 "sqlite://:memory:",
+		StorageSQLitePath:       ":memory:",
 		SecretsSQLitePassphrase: "test-passphrase",
 		Secret:                  []string{"API_KEY=pipeline-secret"},
 		GlobalSecret:            []string{"API_KEY=global-secret"},

@@ -5,18 +5,16 @@ import (
 	"testing"
 
 	"github.com/jtarchie/pocketci/storage"
-	_ "github.com/jtarchie/pocketci/storage/s3"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
 )
 
 func TestPipelineRunStorage(t *testing.T) {
-	storage.Each(func(name string, init storage.InitFunc) {
-		t.Run(name, func(t *testing.T) {
+	for _, df := range allDrivers() {
+		t.Run(df.name, func(t *testing.T) {
 			t.Run("SaveRun creates a new run with queued status", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				pipeline, err := client.SavePipeline(context.Background(), "test-pipeline", "console.log('hello');", "docker://", "")
 				assert.Expect(err).NotTo(HaveOccurred())
@@ -36,7 +34,7 @@ func TestPipelineRunStorage(t *testing.T) {
 			t.Run("GetRun retrieves existing run", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				pipeline, err := client.SavePipeline(context.Background(), "my-pipeline", "export { pipeline };", "native://", "")
 				assert.Expect(err).NotTo(HaveOccurred())
@@ -54,7 +52,7 @@ func TestPipelineRunStorage(t *testing.T) {
 			t.Run("GetRun returns error for non-existent ID", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				_, err := client.GetRun(context.Background(), "non-existent-id")
 				assert.Expect(err).To(Equal(storage.ErrNotFound))
@@ -63,7 +61,7 @@ func TestPipelineRunStorage(t *testing.T) {
 			t.Run("UpdateRunStatus to running sets started_at", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				pipeline, err := client.SavePipeline(context.Background(), "pipeline", "content", "docker://", "")
 				assert.Expect(err).NotTo(HaveOccurred())
@@ -84,7 +82,7 @@ func TestPipelineRunStorage(t *testing.T) {
 			t.Run("UpdateRunStatus to success sets completed_at", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				pipeline, err := client.SavePipeline(context.Background(), "pipeline", "content", "docker://", "")
 				assert.Expect(err).NotTo(HaveOccurred())
@@ -108,7 +106,7 @@ func TestPipelineRunStorage(t *testing.T) {
 			t.Run("UpdateRunStatus to failed sets error_message", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				pipeline, err := client.SavePipeline(context.Background(), "pipeline", "content", "docker://", "")
 				assert.Expect(err).NotTo(HaveOccurred())
@@ -132,7 +130,7 @@ func TestPipelineRunStorage(t *testing.T) {
 			t.Run("UpdateRunStatus to skipped sets completed_at", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				pipeline, err := client.SavePipeline(context.Background(), "pipeline", "content", "docker://", "")
 				assert.Expect(err).NotTo(HaveOccurred())
@@ -156,7 +154,7 @@ func TestPipelineRunStorage(t *testing.T) {
 			t.Run("UpdateRunStatus returns error for non-existent ID", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				err := client.UpdateRunStatus(context.Background(), "non-existent-id", storage.RunStatusRunning, "")
 				assert.Expect(err).To(Equal(storage.ErrNotFound))
@@ -166,7 +164,7 @@ func TestPipelineRunStorage(t *testing.T) {
 				t.Run("empty query returns all runs for pipeline", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
 
-					client := newStorageClient(t, name, init, "namespace")
+					client := df.new(t, "namespace")
 
 					pipeline, err := client.SavePipeline(context.Background(), "search-test", "content", "native://", "")
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -184,7 +182,7 @@ func TestPipelineRunStorage(t *testing.T) {
 				t.Run("filters by status", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
 
-					client := newStorageClient(t, name, init, "namespace")
+					client := df.new(t, "namespace")
 
 					pipeline, err := client.SavePipeline(context.Background(), "status-pipeline", "content", "native://", "")
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -208,7 +206,7 @@ func TestPipelineRunStorage(t *testing.T) {
 				t.Run("filters by error message", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
 
-					client := newStorageClient(t, name, init, "namespace")
+					client := df.new(t, "namespace")
 
 					pipeline, err := client.SavePipeline(context.Background(), "err-pipeline", "content", "native://", "")
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -232,7 +230,7 @@ func TestPipelineRunStorage(t *testing.T) {
 				t.Run("returns empty when query matches nothing", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
 
-					client := newStorageClient(t, name, init, "namespace")
+					client := df.new(t, "namespace")
 
 					pipeline, err := client.SavePipeline(context.Background(), "nomatch-pipeline", "content", "native://", "")
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -248,7 +246,7 @@ func TestPipelineRunStorage(t *testing.T) {
 				t.Run("is scoped to the requested pipeline", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
 
-					client := newStorageClient(t, name, init, "namespace")
+					client := df.new(t, "namespace")
 
 					pipA, err := client.SavePipeline(context.Background(), "pipeline-a", "content", "native://", "")
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -277,5 +275,5 @@ func TestPipelineRunStorage(t *testing.T) {
 				})
 			})
 		})
-	})
+	}
 }

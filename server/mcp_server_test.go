@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/jtarchie/pocketci/storage"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
+	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/gomega"
 )
@@ -44,10 +44,7 @@ func newTestStore(t *testing.T) storage.Driver {
 	assert.Expect(err).NotTo(HaveOccurred())
 	t.Cleanup(func() { _ = buildFile.Close() })
 
-	initStorage, found := storage.GetFromDSN("sqlite://" + buildFile.Name())
-	assert.Expect(found).To(BeTrue())
-
-	store, err := initStorage("sqlite://"+buildFile.Name(), "namespace", slog.Default())
+	store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
 	assert.Expect(err).NotTo(HaveOccurred())
 	t.Cleanup(func() { _ = store.Close() })
 

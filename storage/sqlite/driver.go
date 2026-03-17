@@ -101,8 +101,13 @@ func (p pipelineRunScan) toStorage() storage.PipelineRun {
 	return run
 }
 
-func NewSqlite(dsn string, namespace string, _ *slog.Logger) (storage.Driver, error) {
-	dsn = strings.TrimPrefix(dsn, "sqlite://")
+// Config holds the configuration for a SQLite storage driver.
+type Config struct {
+	Path string // database file path (use ":memory:" for in-memory)
+}
+
+func NewSqlite(cfg Config, namespace string, _ *slog.Logger) (storage.Driver, error) {
+	dsn := cfg.Path
 
 	// For in-memory databases, use a temp file so that both the reader and
 	// writer connections share the same data. The file is removed when the
@@ -902,8 +907,4 @@ func sanitizeFTSQuery(q string) string {
 	}
 
 	return strings.Join(terms, " ")
-}
-
-func init() {
-	storage.Add("sqlite", NewSqlite)
 }

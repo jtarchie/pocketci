@@ -18,7 +18,7 @@ func TestResumeSkipsCompletedSteps(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	// Create a persistent storage file for this test
-	store, err := storage.NewSqlite("sqlite://:memory:", "resume-test", nil)
+	store, err := storage.NewSqlite(storage.Config{Path: ":memory:"}, "resume-test", nil)
 	assert.Expect(err).NotTo(HaveOccurred())
 	defer func() { _ = store.Close() }()
 

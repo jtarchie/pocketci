@@ -17,7 +17,7 @@ import (
 	"github.com/jtarchie/pocketci/orchestra/docker"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
 	"github.com/jtarchie/pocketci/storage"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
+	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
 )
 
@@ -26,10 +26,7 @@ func newTestStorage(t *testing.T) storage.Driver {
 
 	assert := NewGomegaWithT(t)
 
-	initStorage, found := storage.GetFromDSN("sqlite://:memory:")
-	assert.Expect(found).To(BeTrue(), "sqlite storage driver not registered")
-
-	st, err := initStorage("sqlite://:memory:", "", slog.Default())
+	st, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "", slog.Default())
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	t.Cleanup(func() { _ = st.Close() })

@@ -12,271 +12,268 @@ import (
 	_ "github.com/jtarchie/pocketci/orchestra/native"
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/server"
-	"github.com/jtarchie/pocketci/storage"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
+	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
 )
 
 func TestFeatureRestriction(t *testing.T) {
 	t.Parallel()
 
-	storage.Each(func(name string, init storage.InitFunc) {
-		t.Run(name, func(t *testing.T) {
+	t.Run("sqlite", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("rejects webhook_secret when webhooks feature is disabled", func(t *testing.T) {
 			t.Parallel()
+			assert := NewGomegaWithT(t)
 
-			t.Run("rejects webhook_secret when webhooks feature is disabled", func(t *testing.T) {
-				t.Parallel()
-				assert := NewGomegaWithT(t)
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
 
-				buildFile, err := os.CreateTemp(t.TempDir(), "")
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = buildFile.Close() }()
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = client.Close() }()
 
-				client, err := init(buildFile.Name(), "namespace", slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = client.Close() }()
+			secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = secretsMgr.Close() }()
 
-				secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = secretsMgr.Close() }()
-
-				// Create router with only secrets enabled (no webhooks)
-				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{
-					AllowedDrivers:  "native",
-					AllowedFeatures: "secrets",
-					SecretsManager:  secretsMgr,
-				})
-				assert.Expect(err).NotTo(HaveOccurred())
-
-				body := map[string]string{
-					"content":        "export { pipeline };",
-					"driver_dsn":     "native",
-					"webhook_secret": "my-secret",
-				}
-				jsonBody, _ := json.Marshal(body)
-
-				req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader(jsonBody))
-				req.Header.Set("Content-Type", "application/json")
-				rec := httptest.NewRecorder()
-				router.ServeHTTP(rec, req)
-
-				assert.Expect(rec.Code).To(Equal(http.StatusBadRequest))
-				message := mustJSONErrorText(t, rec)
-				assert.Expect(message).To(ContainSubstring("webhooks feature is not enabled"))
+			// Create router with only secrets enabled (no webhooks)
+			router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{
+				AllowedDrivers:  "native",
+				AllowedFeatures: "secrets",
+				SecretsManager:  secretsMgr,
 			})
+			assert.Expect(err).NotTo(HaveOccurred())
 
-			t.Run("allows webhook_secret when webhooks feature is enabled", func(t *testing.T) {
-				t.Parallel()
-				assert := NewGomegaWithT(t)
+			body := map[string]string{
+				"content":        "export { pipeline };",
+				"driver_dsn":     "native",
+				"webhook_secret": "my-secret",
+			}
+			jsonBody, _ := json.Marshal(body)
 
-				buildFile, err := os.CreateTemp(t.TempDir(), "")
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = buildFile.Close() }()
+			req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader(jsonBody))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
 
-				client, err := init(buildFile.Name(), "namespace", slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = client.Close() }()
+			assert.Expect(rec.Code).To(Equal(http.StatusBadRequest))
+			message := mustJSONErrorText(t, rec)
+			assert.Expect(message).To(ContainSubstring("webhooks feature is not enabled"))
+		})
 
-				secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = secretsMgr.Close() }()
+		t.Run("allows webhook_secret when webhooks feature is enabled", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
 
-				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{
-					AllowedDrivers:  "native",
-					AllowedFeatures: "webhooks,secrets",
-					SecretsManager:  secretsMgr,
-				})
-				assert.Expect(err).NotTo(HaveOccurred())
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
 
-				body := map[string]string{
-					"content":        "export { pipeline };",
-					"driver_dsn":     "native",
-					"webhook_secret": "my-secret",
-				}
-				jsonBody, _ := json.Marshal(body)
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = client.Close() }()
 
-				req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader(jsonBody))
-				req.Header.Set("Content-Type", "application/json")
-				rec := httptest.NewRecorder()
-				router.ServeHTTP(rec, req)
+			secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = secretsMgr.Close() }()
 
-				assert.Expect(rec.Code).To(Equal(http.StatusOK))
+			router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{
+				AllowedDrivers:  "native",
+				AllowedFeatures: "webhooks,secrets",
+				SecretsManager:  secretsMgr,
 			})
+			assert.Expect(err).NotTo(HaveOccurred())
 
-			t.Run("rejects webhook trigger when webhooks feature is disabled", func(t *testing.T) {
-				t.Parallel()
-				assert := NewGomegaWithT(t)
+			body := map[string]string{
+				"content":        "export { pipeline };",
+				"driver_dsn":     "native",
+				"webhook_secret": "my-secret",
+			}
+			jsonBody, _ := json.Marshal(body)
 
-				buildFile, err := os.CreateTemp(t.TempDir(), "")
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = buildFile.Close() }()
+			req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader(jsonBody))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
 
-				client, err := init(buildFile.Name(), "namespace", slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = client.Close() }()
+			assert.Expect(rec.Code).To(Equal(http.StatusOK))
+		})
 
-				secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = secretsMgr.Close() }()
+		t.Run("rejects webhook trigger when webhooks feature is disabled", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
 
-				// Create router with no webhooks
-				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{
-					AllowedDrivers:  "native",
-					AllowedFeatures: "secrets",
-					SecretsManager:  secretsMgr,
-				})
-				assert.Expect(err).NotTo(HaveOccurred())
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
 
-				// Hit the webhook endpoint
-				req := httptest.NewRequest(http.MethodPost, "/api/webhooks/some-id", bytes.NewReader([]byte(`{}`)))
-				req.Header.Set("Content-Type", "application/json")
-				rec := httptest.NewRecorder()
-				router.ServeHTTP(rec, req)
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = client.Close() }()
 
-				assert.Expect(rec.Code).To(Equal(http.StatusForbidden))
-				message := mustJSONErrorText(t, rec)
-				assert.Expect(message).To(ContainSubstring("webhooks feature is not enabled"))
+			secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = secretsMgr.Close() }()
+
+			// Create router with no webhooks
+			router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{
+				AllowedDrivers:  "native",
+				AllowedFeatures: "secrets",
+				SecretsManager:  secretsMgr,
 			})
+			assert.Expect(err).NotTo(HaveOccurred())
 
-			t.Run("wildcard enables all features", func(t *testing.T) {
-				t.Parallel()
-				assert := NewGomegaWithT(t)
+			// Hit the webhook endpoint
+			req := httptest.NewRequest(http.MethodPost, "/api/webhooks/some-id", bytes.NewReader([]byte(`{}`)))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
 
-				buildFile, err := os.CreateTemp(t.TempDir(), "")
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = buildFile.Close() }()
+			assert.Expect(rec.Code).To(Equal(http.StatusForbidden))
+			message := mustJSONErrorText(t, rec)
+			assert.Expect(message).To(ContainSubstring("webhooks feature is not enabled"))
+		})
 
-				client, err := init(buildFile.Name(), "namespace", slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = client.Close() }()
+		t.Run("wildcard enables all features", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
 
-				secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = secretsMgr.Close() }()
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
 
-				// Create router with wildcard (default)
-				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{
-					AllowedDrivers:  "native",
-					AllowedFeatures: "*",
-					SecretsManager:  secretsMgr,
-				})
-				assert.Expect(err).NotTo(HaveOccurred())
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = client.Close() }()
 
-				// Should allow pipeline with webhook_secret
-				body := map[string]string{
-					"content":        "export { pipeline };",
-					"driver_dsn":     "native",
-					"webhook_secret": "my-secret",
-				}
-				jsonBody, _ := json.Marshal(body)
+			secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = secretsMgr.Close() }()
 
-				req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader(jsonBody))
-				req.Header.Set("Content-Type", "application/json")
-				rec := httptest.NewRecorder()
-				router.ServeHTTP(rec, req)
-
-				assert.Expect(rec.Code).To(Equal(http.StatusOK))
+			// Create router with wildcard (default)
+			router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{
+				AllowedDrivers:  "native",
+				AllowedFeatures: "*",
+				SecretsManager:  secretsMgr,
 			})
+			assert.Expect(err).NotTo(HaveOccurred())
 
-			t.Run("rejects unknown feature name", func(t *testing.T) {
-				t.Parallel()
-				assert := NewGomegaWithT(t)
+			// Should allow pipeline with webhook_secret
+			body := map[string]string{
+				"content":        "export { pipeline };",
+				"driver_dsn":     "native",
+				"webhook_secret": "my-secret",
+			}
+			jsonBody, _ := json.Marshal(body)
 
-				buildFile, err := os.CreateTemp(t.TempDir(), "")
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = buildFile.Close() }()
+			req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader(jsonBody))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
 
-				client, err := init(buildFile.Name(), "namespace", slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = client.Close() }()
+			assert.Expect(rec.Code).To(Equal(http.StatusOK))
+		})
 
-				_, err = server.NewRouter(slog.Default(), client, server.RouterOptions{
-					AllowedDrivers:  "native",
-					AllowedFeatures: "webhooks,bogus",
-				})
-				assert.Expect(err).To(HaveOccurred())
-				assert.Expect(err.Error()).To(ContainSubstring("unknown feature"))
-				assert.Expect(err.Error()).To(ContainSubstring("bogus"))
+		t.Run("rejects unknown feature name", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
+
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
+
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = client.Close() }()
+
+			_, err = server.NewRouter(slog.Default(), client, server.RouterOptions{
+				AllowedDrivers:  "native",
+				AllowedFeatures: "webhooks,bogus",
 			})
+			assert.Expect(err).To(HaveOccurred())
+			assert.Expect(err.Error()).To(ContainSubstring("unknown feature"))
+			assert.Expect(err.Error()).To(ContainSubstring("bogus"))
+		})
 
-			t.Run("defaults to all features when empty", func(t *testing.T) {
-				t.Parallel()
-				assert := NewGomegaWithT(t)
+		t.Run("defaults to all features when empty", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
 
-				buildFile, err := os.CreateTemp(t.TempDir(), "")
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = buildFile.Close() }()
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
 
-				client, err := init(buildFile.Name(), "namespace", slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = client.Close() }()
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = client.Close() }()
 
-				secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = secretsMgr.Close() }()
+			secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = secretsMgr.Close() }()
 
-				// Empty string should default to all features
-				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{
-					AllowedDrivers:  "native",
-					AllowedFeatures: "",
-					SecretsManager:  secretsMgr,
-				})
-				assert.Expect(err).NotTo(HaveOccurred())
-
-				// Should allow pipelines with webhook_secret (all features enabled)
-				body := map[string]string{
-					"content":        "export { pipeline };",
-					"driver_dsn":     "native",
-					"webhook_secret": "my-secret",
-				}
-				jsonBody, _ := json.Marshal(body)
-
-				req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader(jsonBody))
-				req.Header.Set("Content-Type", "application/json")
-				rec := httptest.NewRecorder()
-				router.ServeHTTP(rec, req)
-
-				assert.Expect(rec.Code).To(Equal(http.StatusOK))
+			// Empty string should default to all features
+			router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{
+				AllowedDrivers:  "native",
+				AllowedFeatures: "",
+				SecretsManager:  secretsMgr,
 			})
+			assert.Expect(err).NotTo(HaveOccurred())
 
-			t.Run("pipeline without webhook_secret works even when webhooks disabled", func(t *testing.T) {
-				t.Parallel()
-				assert := NewGomegaWithT(t)
+			// Should allow pipelines with webhook_secret (all features enabled)
+			body := map[string]string{
+				"content":        "export { pipeline };",
+				"driver_dsn":     "native",
+				"webhook_secret": "my-secret",
+			}
+			jsonBody, _ := json.Marshal(body)
 
-				buildFile, err := os.CreateTemp(t.TempDir(), "")
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = buildFile.Close() }()
+			req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader(jsonBody))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
 
-				client, err := init(buildFile.Name(), "namespace", slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = client.Close() }()
+			assert.Expect(rec.Code).To(Equal(http.StatusOK))
+		})
 
-				secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-				defer func() { _ = secretsMgr.Close() }()
+		t.Run("pipeline without webhook_secret works even when webhooks disabled", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
 
-				// Create router with only secrets (no webhooks)
-				router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{
-					AllowedDrivers:  "native",
-					AllowedFeatures: "secrets",
-					SecretsManager:  secretsMgr,
-				})
-				assert.Expect(err).NotTo(HaveOccurred())
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
 
-				// Pipeline without webhook_secret should work fine
-				body := map[string]string{
-					"content":    "export { pipeline };",
-					"driver_dsn": "native",
-				}
-				jsonBody, _ := json.Marshal(body)
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = client.Close() }()
 
-				req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader(jsonBody))
-				req.Header.Set("Content-Type", "application/json")
-				rec := httptest.NewRecorder()
-				router.ServeHTTP(rec, req)
+			secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test-key"}, slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = secretsMgr.Close() }()
 
-				assert.Expect(rec.Code).To(Equal(http.StatusOK))
+			// Create router with only secrets (no webhooks)
+			router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{
+				AllowedDrivers:  "native",
+				AllowedFeatures: "secrets",
+				SecretsManager:  secretsMgr,
 			})
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			// Pipeline without webhook_secret should work fine
+			body := map[string]string{
+				"content":    "export { pipeline };",
+				"driver_dsn": "native",
+			}
+			jsonBody, _ := json.Marshal(body)
+
+			req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader(jsonBody))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			assert.Expect(rec.Code).To(Equal(http.StatusOK))
 		})
 	})
 }

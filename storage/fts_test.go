@@ -5,18 +5,17 @@ import (
 	"testing"
 
 	"github.com/jtarchie/pocketci/storage"
-	_ "github.com/jtarchie/pocketci/storage/s3"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
 )
 
 func TestFTS(t *testing.T) {
-	storage.Each(func(name string, init storage.InitFunc) {
-		t.Run(name, func(t *testing.T) {
+	for _, df := range allDrivers() {
+		t.Run(df.name, func(t *testing.T) {
 			t.Run("SearchPipelines", func(t *testing.T) {
 				t.Run("returns all pipelines when query is empty", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
+
 					_, err := client.SavePipeline(context.Background(), "hello-world", "echo hello", "native://", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					result, err := client.SearchPipelines(context.Background(), "", 1, 20)
@@ -27,7 +26,8 @@ func TestFTS(t *testing.T) {
 
 				t.Run("finds pipeline by name token", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
+
 					_, err := client.SavePipeline(context.Background(), "hello-world", "echo hello", "native://", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					_, err = client.SavePipeline(context.Background(), "deploy-prod", "kubectl apply", "native://", "")
@@ -40,7 +40,7 @@ func TestFTS(t *testing.T) {
 
 				t.Run("finds pipeline by content keyword", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
 					_, err := client.SavePipeline(context.Background(), "pipeline-a", "run unit tests with pytest", "native://", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					_, err = client.SavePipeline(context.Background(), "pipeline-b", "deploy to kubernetes", "native://", "")
@@ -53,7 +53,7 @@ func TestFTS(t *testing.T) {
 
 				t.Run("returns empty when no pipeline matches", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
 					_, err := client.SavePipeline(context.Background(), "hello", "echo hi", "native://", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					result, err := client.SearchPipelines(context.Background(), "zzznomatch", 1, 20)
@@ -63,7 +63,7 @@ func TestFTS(t *testing.T) {
 
 				t.Run("prefix matching works for partial tokens", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
 					_, err := client.SavePipeline(context.Background(), "integration-tests", "run integration suite", "native://", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					result, err := client.SearchPipelines(context.Background(), "integr", 1, 20)
@@ -75,7 +75,7 @@ func TestFTS(t *testing.T) {
 			t.Run("Set + Search", func(t *testing.T) {
 				t.Run("finds task by stdout content", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
 					runID := "run-abc"
 					taskKey := "/pipeline/" + runID + "/tasks/step-1"
 					err := client.Set(context.Background(), taskKey, map[string]any{"stdout": "build passed successfully", "stderr": ""})
@@ -87,7 +87,7 @@ func TestFTS(t *testing.T) {
 
 				t.Run("finds task by stderr content", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
 					runID := "run-xyz"
 					taskKey := "/pipeline/" + runID + "/tasks/step-1"
 					err := client.Set(context.Background(), taskKey, map[string]any{"stdout": "", "stderr": "error: connection refused"})
@@ -99,7 +99,7 @@ func TestFTS(t *testing.T) {
 
 				t.Run("search is scoped to the requested run", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
 					run1 := "run-111"
 					run2 := "run-222"
 					err := client.Set(context.Background(), "/pipeline/"+run1+"/tasks/step-1", map[string]any{"stdout": "unique-token-alpha"})
@@ -115,10 +115,10 @@ func TestFTS(t *testing.T) {
 				})
 
 				// ANSI stripping is performed by the SQLite FTS5 trigger — not applicable to S3.
-				if name == "sqlite" {
+				if df.name == "sqlite" {
 					t.Run("ANSI codes are stripped so plain-text search succeeds", func(t *testing.T) {
 						assert := NewGomegaWithT(t)
-						client := newStorageClient(t, name, init, "ns")
+						client := df.new(t, "ns")
 						runID := "run-ansi"
 						taskKey := "/pipeline/" + runID + "/tasks/step-1"
 						ansiOutput := "\x1b[32mBUILD_SUCCESS\x1b[0m: all tests passed"
@@ -135,7 +135,7 @@ func TestFTS(t *testing.T) {
 
 				t.Run("empty query returns nil results", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
 					results, err := client.Search(context.Background(), "pipeline/run-123", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					assert.Expect(results).To(BeEmpty())
@@ -143,7 +143,7 @@ func TestFTS(t *testing.T) {
 
 				t.Run("re-indexing a task via Set replaces old entry", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
 					runID := "run-reindex"
 					taskKey := "/pipeline/" + runID + "/tasks/step-1"
 					err := client.Set(context.Background(), taskKey, map[string]any{"stdout": "first-run-output"})
@@ -160,7 +160,7 @@ func TestFTS(t *testing.T) {
 
 				t.Run("path components are searchable", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
 					runID := "run-pathsearch"
 					err := client.Set(context.Background(), "/pipeline/"+runID+"/tasks/compile-sources", map[string]any{"status": "success"})
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -180,7 +180,7 @@ func TestFTS(t *testing.T) {
 			t.Run("SearchRunsByPipeline", func(t *testing.T) {
 				t.Run("finds run by status", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
 					pipeline, err := client.SavePipeline(context.Background(), "my-pipe", "echo hi", "native://", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					run1, err := client.SaveRun(context.Background(), pipeline.ID)
@@ -197,7 +197,7 @@ func TestFTS(t *testing.T) {
 
 				t.Run("finds run by error message word", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
 					pipeline, err := client.SavePipeline(context.Background(), "my-pipe", "echo hi", "native://", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					run1, err := client.SaveRun(context.Background(), pipeline.ID)
@@ -214,7 +214,7 @@ func TestFTS(t *testing.T) {
 
 				t.Run("returns empty when no run matches", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
 					pipeline, err := client.SavePipeline(context.Background(), "my-pipe", "echo hi", "native://", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					_, err = client.SaveRun(context.Background(), pipeline.ID)
@@ -226,7 +226,7 @@ func TestFTS(t *testing.T) {
 
 				t.Run("prefix matching works for partial status tokens", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
 					pipeline, err := client.SavePipeline(context.Background(), "my-pipe", "echo hi", "native://", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					run1, err := client.SaveRun(context.Background(), pipeline.ID)
@@ -241,7 +241,7 @@ func TestFTS(t *testing.T) {
 
 				t.Run("scoped to pipeline - does not return runs from other pipelines", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
-					client := newStorageClient(t, name, init, "ns")
+					client := df.new(t, "ns")
 					pipe1, err := client.SavePipeline(context.Background(), "pipe-one", "echo one", "native://", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					pipe2, err := client.SavePipeline(context.Background(), "pipe-two", "echo two", "native://", "")
@@ -261,5 +261,5 @@ func TestFTS(t *testing.T) {
 				})
 			})
 		})
-	})
+	}
 }

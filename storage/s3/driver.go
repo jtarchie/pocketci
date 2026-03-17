@@ -27,14 +27,14 @@ type S3 struct {
 	logger    *slog.Logger
 }
 
-// NewS3 creates a new S3-backed storage driver.
-func NewS3(dsn string, namespace string, logger *slog.Logger) (storage.Driver, error) {
-	s3cfg, err := s3config.ParseDSN(dsn)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse S3 DSN: %w", err)
-	}
+// Config holds the configuration for an S3 storage driver.
+type Config struct {
+	s3config.Config
+}
 
-	client, err := s3config.NewClient(context.Background(), s3cfg)
+// NewS3 creates a new S3-backed storage driver.
+func NewS3(cfg Config, namespace string, logger *slog.Logger) (storage.Driver, error) {
+	client, err := s3config.NewClient(context.Background(), &cfg.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -727,8 +727,4 @@ func emptyPipelinePage(page, perPage int) *storage.PaginationResult[storage.Pipe
 		TotalPages: 1,
 		HasNext:    false,
 	}
-}
-
-func init() {
-	storage.Add("s3", NewS3)
 }

@@ -13,8 +13,7 @@ import (
 
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/server/auth"
-	"github.com/jtarchie/pocketci/storage"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
+	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/onsi/gomega"
 )
 
@@ -35,12 +34,7 @@ func setupRouterWithOAuthLogger(t *testing.T, rbacExpression string, logger *slo
 	}
 	defer func() { _ = buildFile.Close() }()
 
-	initStorage, found := storage.GetFromDSN("sqlite://" + buildFile.Name())
-	if !found {
-		t.Fatal("could not get storage driver")
-	}
-
-	client, err := initStorage("sqlite://"+buildFile.Name(), "namespace", slog.Default())
+	client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
 	if err != nil {
 		t.Fatalf("could not create client: %v", err)
 	}
@@ -191,12 +185,7 @@ func TestOAuthRequireAuthNoProvidersBypass(t *testing.T) {
 	}
 	defer func() { _ = buildFile.Close() }()
 
-	initStorage, found := storage.GetFromDSN("sqlite://" + buildFile.Name())
-	if !found {
-		t.Fatal("could not get storage driver")
-	}
-
-	client, err := initStorage("sqlite://"+buildFile.Name(), "namespace", slog.Default())
+	client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
 	if err != nil {
 		t.Fatalf("could not create client: %v", err)
 	}

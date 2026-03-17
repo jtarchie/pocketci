@@ -26,11 +26,11 @@ import (
 	"github.com/jtarchie/pocketci/runtime"
 	"github.com/jtarchie/pocketci/secrets"
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
-	"github.com/jtarchie/pocketci/storage"
+	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 )
 
 type Runner struct {
-	Storage                 string        `default:"sqlite://test.db"                                    env:"CI_STORAGE"              help:"Path to storage file"                                                                                                                                      required:""`
+	StorageSQLitePath       string        `default:"test.db"                                             env:"CI_STORAGE_SQLITE_PATH"  help:"SQLite storage database file path"                                                                                                                             required:""`
 	Pipeline                string        `arg:""                                                        help:"Path to pipeline javascript file"                                                                                                                          type:"existingfile"`
 	Driver                  string        `default:"native"                                              env:"CI_DRIVER"               help:"Orchestrator driver name (docker, native, k8s)"`
 	DockerHost              string        `env:"CI_DOCKER_HOST"         help:"Docker daemon host URL"`
@@ -65,10 +65,6 @@ func youtubeIDStyle(input string) string {
 }
 
 func (c *Runner) Run(logger *slog.Logger) error {
-	initStorage, found := storage.GetFromDSN(c.Storage)
-	if !found {
-		return fmt.Errorf("could not get storage driver: %w", errors.ErrUnsupported)
-	}
 
 	pipelinePath, err := filepath.Abs(c.Pipeline)
 	if err != nil {
@@ -172,7 +168,9 @@ func (c *Runner) Run(logger *slog.Logger) error {
 		}
 	}
 
-	storage, err := initStorage(c.Storage, runtimeID, logger)
+	storage, err := storagesqlite.NewSqlite(storagesqlite.Config{
+		Path: c.StorageSQLitePath,
+	}, runtimeID, logger)
 	if err != nil {
 		return fmt.Errorf("could not create sqlite client: %w", err)
 	}

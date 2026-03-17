@@ -18,7 +18,7 @@ import (
 	_ "github.com/jtarchie/pocketci/orchestra/native"
 	_ "github.com/jtarchie/pocketci/resources/mock"
 	"github.com/jtarchie/pocketci/storage"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
+	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/jtarchie/pocketci/testhelpers"
 	. "github.com/onsi/gomega"
 )
@@ -56,9 +56,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 		runner := testhelpers.Runner{
-			Pipeline: "steps/on_failure.yml",
-			Driver:   "native",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          "steps/on_failure.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
 		}
 		err := runner.Run(logger)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -73,16 +73,16 @@ func TestBackwardsCompatibility(t *testing.T) {
 		dbFile, err := os.CreateTemp(t.TempDir(), "*.db")
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(dbFile.Close()).NotTo(HaveOccurred())
-		storageURL := fmt.Sprintf("sqlite://%s", dbFile.Name())
+		storagePath := dbFile.Name()
 
 		const pipelineFile = "steps/on_failure.yml"
 		const runID = "on-failure-elapsed"
 
 		runner := testhelpers.Runner{
-			Pipeline: pipelineFile,
-			Driver:   "native",
-			Storage:  storageURL,
-			RunID:    runID,
+			Pipeline:          pipelineFile,
+			Driver:            "native",
+			StorageSQLitePath: storagePath,
+			RunID:             runID,
 		}
 		err = runner.Run(nil)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -91,10 +91,7 @@ func TestBackwardsCompatibility(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 		runtimeID := youtubeIDStyle(pipelinePath)
 
-		initStorage, found := storage.GetFromDSN(storageURL)
-		assert.Expect(found).To(BeTrue())
-
-		store, err := initStorage(storageURL, runtimeID, nil)
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: storagePath}, runtimeID, nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = store.Close() }()
 
@@ -128,9 +125,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 		runner := testhelpers.Runner{
-			Pipeline: "steps/on_success.yml",
-			Driver:   "native",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          "steps/on_success.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
 		}
 		err := runner.Run(nil)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -142,9 +139,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 		logs, logger := createLogger()
 		assert := NewGomegaWithT(t)
 		runner := testhelpers.Runner{
-			Pipeline: "steps/ensure.yml",
-			Driver:   "native",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          "steps/ensure.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
 		}
 		err := runner.Run(logger)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -157,9 +154,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 		logs, logger := createLogger()
 		assert := NewGomegaWithT(t)
 		runner := testhelpers.Runner{
-			Pipeline: "steps/do.yml",
-			Driver:   "native",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          "steps/do.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
 		}
 		err := runner.Run(logger)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -171,9 +168,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 		runner := testhelpers.Runner{
-			Pipeline: "steps/try.yml",
-			Driver:   "native",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          "steps/try.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
 		}
 		err := runner.Run(nil)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -185,9 +182,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 		logs, logger := createLogger()
 		assert := NewGomegaWithT(t)
 		runner := testhelpers.Runner{
-			Pipeline: "steps/all.yml",
-			Driver:   "native",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          "steps/all.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
 		}
 		err := runner.Run(logger)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -201,9 +198,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 		_, logger := createLogger()
 		assert := NewGomegaWithT(t)
 		runner := testhelpers.Runner{
-			Pipeline: "steps/caches.yml",
-			Driver:   "native",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          "steps/caches.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
 		}
 		err := runner.Run(logger)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -215,9 +212,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 		logs, logger := createLogger()
 		assert := NewGomegaWithT(t)
 		runner := testhelpers.Runner{
-			Pipeline: "steps/on_error.yml",
-			Driver:   "native",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          "steps/on_error.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
 		}
 		err := runner.Run(logger)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -232,9 +229,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 		logs, logger := createLogger()
 		assert := NewGomegaWithT(t)
 		runner := testhelpers.Runner{
-			Pipeline: "steps/on_abort.yml",
-			Driver:   "native",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          "steps/on_abort.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
 		}
 		err := runner.Run(logger)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -246,9 +243,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 		runner := testhelpers.Runner{
-			Pipeline: "steps/across.yml",
-			Driver:   "native",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          "steps/across.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
 		}
 		err := runner.Run(nil)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -259,9 +256,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 		runner := testhelpers.Runner{
-			Pipeline: "steps/parallelism.yml",
-			Driver:   "native",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          "steps/parallelism.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
 		}
 		err := runner.Run(nil)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -272,9 +269,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 		runner := testhelpers.Runner{
-			Pipeline: "steps/in_parallel.yml",
-			Driver:   "native",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          "steps/in_parallel.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
 		}
 		err := runner.Run(nil)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -285,9 +282,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 		runner := testhelpers.Runner{
-			Pipeline: "steps/task_file.yml",
-			Driver:   "native",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          "steps/task_file.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
 		}
 		err := runner.Run(nil)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -302,16 +299,16 @@ func TestBackwardsCompatibility(t *testing.T) {
 		dbFile, err := os.CreateTemp(t.TempDir(), "*.db")
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(dbFile.Close()).NotTo(HaveOccurred())
-		storageURL := fmt.Sprintf("sqlite://%s", dbFile.Name())
+		storagePath := dbFile.Name()
 
 		const pipelineFile = "steps/attempts.yml"
 		const runID = "attempts-test"
 
 		runner := testhelpers.Runner{
-			Pipeline: pipelineFile,
-			Driver:   "native",
-			Storage:  storageURL,
-			RunID:    runID,
+			Pipeline:          pipelineFile,
+			Driver:            "native",
+			StorageSQLitePath: storagePath,
+			RunID:             runID,
 		}
 		err = runner.Run(logger)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -325,10 +322,7 @@ func TestBackwardsCompatibility(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 		runtimeID := youtubeIDStyle(pipelinePath)
 
-		initStorage, found := storage.GetFromDSN(storageURL)
-		assert.Expect(found).To(BeTrue())
-
-		store, err := initStorage(storageURL, runtimeID, nil)
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: storagePath}, runtimeID, nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = store.Close() }()
 
@@ -383,9 +377,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 				assert.Expect(file.Close()).NotTo(HaveOccurred())
 
 				runner := testhelpers.Runner{
-					Pipeline: file.Name(),
-					Driver:   "native",
-					Storage:  "sqlite://:memory:",
+					Pipeline:          file.Name(),
+					Driver:            "native",
+					StorageSQLitePath: ":memory:",
 				}
 				err = runner.Run(nil)
 
@@ -485,9 +479,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 						assert.Expect(file.Close()).NotTo(HaveOccurred())
 
 						runner := testhelpers.Runner{
-							Pipeline: file.Name(),
-							Driver:   "native",
-							Storage:  "sqlite://:memory:",
+							Pipeline:          file.Name(),
+							Driver:            "native",
+							StorageSQLitePath: ":memory:",
 						}
 						err = runner.Run(nil)
 
@@ -504,9 +498,9 @@ func TestBackwardsCompatibility(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 		runner := testhelpers.Runner{
-			Pipeline: "versions/modes.yml",
-			Driver:   "native",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          "versions/modes.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
 		}
 		err := runner.Run(nil)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -524,16 +518,16 @@ func TestBackwardsCompatibility(t *testing.T) {
 		dbFile, err := os.CreateTemp(t.TempDir(), "*.db")
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(dbFile.Close()).NotTo(HaveOccurred())
-		storageURL := fmt.Sprintf("sqlite://%s", dbFile.Name())
+		storagePath := dbFile.Name()
 
 		const pipelineFile = "../examples/both/hello-world.yml"
 		const runID = "hello-world-regression-test"
 
 		runner := testhelpers.Runner{
-			Pipeline: pipelineFile,
-			Driver:   "native",
-			Storage:  storageURL,
-			RunID:    runID,
+			Pipeline:          pipelineFile,
+			Driver:            "native",
+			StorageSQLitePath: storagePath,
+			RunID:             runID,
 		}
 		err = runner.Run(nil)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -543,10 +537,7 @@ func TestBackwardsCompatibility(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 		runtimeID := youtubeIDStyle(pipelinePath)
 
-		initStorage, found := storage.GetFromDSN(storageURL)
-		assert.Expect(found).To(BeTrue())
-
-		store, err := initStorage(storageURL, runtimeID, nil)
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: storagePath}, runtimeID, nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = store.Close() }()
 
@@ -581,16 +572,16 @@ func TestBackwardsCompatibility(t *testing.T) {
 		dbFile, err := os.CreateTemp(t.TempDir(), "*.db")
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(dbFile.Close()).NotTo(HaveOccurred())
-		storageURL := fmt.Sprintf("sqlite://%s", dbFile.Name())
+		storagePath := dbFile.Name()
 
 		const pipelineFile = "steps/skipped_steps.yml"
 		const runID = "skipped-steps-test"
 
 		runner := testhelpers.Runner{
-			Pipeline: pipelineFile,
-			Driver:   "native",
-			Storage:  storageURL,
-			RunID:    runID,
+			Pipeline:          pipelineFile,
+			Driver:            "native",
+			StorageSQLitePath: storagePath,
+			RunID:             runID,
 		}
 		err = runner.Run(nil)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -599,10 +590,7 @@ func TestBackwardsCompatibility(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 		runtimeID := youtubeIDStyle(pipelinePath)
 
-		initStorage, found := storage.GetFromDSN(storageURL)
-		assert.Expect(found).To(BeTrue())
-
-		store, err := initStorage(storageURL, runtimeID, nil)
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: storagePath}, runtimeID, nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = store.Close() }()
 
@@ -667,7 +655,7 @@ func TestVersionEveryWithMock(t *testing.T) {
 
 		tempDir := t.TempDir()
 		dbPath := filepath.Join(tempDir, "test.db")
-		storageURL := fmt.Sprintf("sqlite://%s", dbPath)
+		storagePath := dbPath
 
 		pipelineFile := "versions/mock-every.yml"
 
@@ -677,10 +665,7 @@ func TestVersionEveryWithMock(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 			runtimeID := youtubeIDStyle(pipelinePath)
 
-			initStorage, found := storage.GetFromDSN(storageURL)
-			assert.Expect(found).To(BeTrue())
-
-			store, err := initStorage(storageURL, runtimeID, nil)
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: storagePath}, runtimeID, nil)
 			assert.Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = store.Close() }()
 
@@ -706,9 +691,9 @@ func TestVersionEveryWithMock(t *testing.T) {
 
 		// Run 1: Should fetch the first version
 		runner1 := testhelpers.Runner{
-			Pipeline: pipelineFile,
-			Driver:   "native",
-			Storage:  storageURL,
+			Pipeline:          pipelineFile,
+			Driver:            "native",
+			StorageSQLitePath: storagePath,
 		}
 		err := runner1.Run(nil)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -720,9 +705,9 @@ func TestVersionEveryWithMock(t *testing.T) {
 
 		// Run 2: Should fetch a NEW version (mock increments counter each Check)
 		runner2 := testhelpers.Runner{
-			Pipeline: pipelineFile,
-			Driver:   "native",
-			Storage:  storageURL,
+			Pipeline:          pipelineFile,
+			Driver:            "native",
+			StorageSQLitePath: storagePath,
 		}
 		err = runner2.Run(nil)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -737,9 +722,9 @@ func TestVersionEveryWithMock(t *testing.T) {
 
 		// Run 3: Get another version
 		runner3 := testhelpers.Runner{
-			Pipeline: pipelineFile,
-			Driver:   "native",
-			Storage:  storageURL,
+			Pipeline:          pipelineFile,
+			Driver:            "native",
+			StorageSQLitePath: storagePath,
 		}
 		err = runner3.Run(nil)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -756,9 +741,9 @@ func TestVersionEveryWithMock(t *testing.T) {
 
 		// Test that pipeline with undefined resource type fails validation
 		runner := testhelpers.Runner{
-			Pipeline: "validation/undefined-resource-type.yml",
-			Driver:   "native",
-			Storage:  "sqlite://:memory:",
+			Pipeline:          "validation/undefined-resource-type.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
 		}
 		err := runner.Run(nil)
 		assert.Expect(err).To(HaveOccurred())

@@ -56,6 +56,15 @@ type Client struct {
 
 // NewClient creates a new Client from a parsed Config.
 func NewClient(ctx context.Context, cfg *Config) (*Client, error) {
+	if cfg.EncryptMode != "" {
+		switch cfg.EncryptMode {
+		case "sse-s3", "sse-kms", "sse-c":
+			// valid
+		default:
+			return nil, fmt.Errorf("unsupported encrypt value %q: must be sse-s3, sse-kms, or sse-c", cfg.EncryptMode)
+		}
+	}
+
 	awsCfg, err := cfg.LoadAWSConfig(ctx)
 	if err != nil {
 		return nil, err

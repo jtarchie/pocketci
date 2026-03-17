@@ -15,7 +15,7 @@ import (
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/server"
 	"github.com/jtarchie/pocketci/storage"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
+	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
 )
 
@@ -30,18 +30,7 @@ func newTestServer(t *testing.T, opts server.RouterOptions) (storage.Driver, *ht
 	assert.Expect(err).NotTo(HaveOccurred())
 	_ = buildFile.Close()
 
-	var (
-		client   storage.Driver
-		initFunc storage.InitFunc
-	)
-
-	storage.Each(func(_ string, f storage.InitFunc) {
-		if initFunc == nil {
-			initFunc = f
-		}
-	})
-
-	client, err = initFunc(buildFile.Name(), "test", slog.Default())
+	client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "test", slog.Default())
 	assert.Expect(err).NotTo(HaveOccurred())
 	t.Cleanup(func() { _ = client.Close() })
 
@@ -79,191 +68,189 @@ func writePipeline(t *testing.T, dir, name, content string) string {
 func TestSetPipeline(t *testing.T) {
 	t.Parallel()
 
-	storage.Each(func(driverName string, _ storage.InitFunc) {
-		t.Run(driverName, func(t *testing.T) {
+	t.Run("sqlite", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("uploads a valid JavaScript pipeline", func(t *testing.T) {
 			t.Parallel()
+			assert := NewGomegaWithT(t)
 
-			t.Run("uploads a valid JavaScript pipeline", func(t *testing.T) {
-				t.Parallel()
-				assert := NewGomegaWithT(t)
+			client, ts := newTestServer(t, server.RouterOptions{})
 
-				client, ts := newTestServer(t, server.RouterOptions{})
-
-				pipelineFile := writePipeline(t, t.TempDir(), "my-pipeline.js", `
+			pipelineFile := writePipeline(t, t.TempDir(), "my-pipeline.js", `
 const pipeline = async () => {
 	console.log("hello");
 };
 export { pipeline };
 `)
-				cmd := commands.SetPipeline{
-					Pipeline:  pipelineFile,
-					ServerURL: ts.URL,
-					Driver:    "docker://",
-				}
+			cmd := commands.SetPipeline{
+				Pipeline:  pipelineFile,
+				ServerURL: ts.URL,
+				Driver:    "docker://",
+			}
 
-				err := cmd.Run(slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
+			err := cmd.Run(slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
 
-				result, err := client.SearchPipelines(context.Background(), "", 1, 100)
-				assert.Expect(err).NotTo(HaveOccurred())
-				assert.Expect(result.Items).To(HaveLen(1))
-				assert.Expect(result.Items[0].Name).To(Equal("my-pipeline"))
-				assert.Expect(result.Items[0].DriverDSN).To(Equal("docker"))
-			})
+			result, err := client.SearchPipelines(context.Background(), "", 1, 100)
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(result.Items).To(HaveLen(1))
+			assert.Expect(result.Items[0].Name).To(Equal("my-pipeline"))
+			assert.Expect(result.Items[0].DriverDSN).To(Equal("docker"))
+		})
 
-			t.Run("uploads a valid TypeScript pipeline", func(t *testing.T) {
-				t.Parallel()
-				assert := NewGomegaWithT(t)
+		t.Run("uploads a valid TypeScript pipeline", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
 
-				client, ts := newTestServer(t, server.RouterOptions{})
+			client, ts := newTestServer(t, server.RouterOptions{})
 
-				pipelineFile := writePipeline(t, t.TempDir(), "typed-pipeline.ts", `
+			pipelineFile := writePipeline(t, t.TempDir(), "typed-pipeline.ts", `
 const pipeline = async (): Promise<void> => {
 	const x: string = "hello";
 	console.log(x);
 };
 export { pipeline };
 `)
-				cmd := commands.SetPipeline{
-					Pipeline:  pipelineFile,
-					ServerURL: ts.URL,
+			cmd := commands.SetPipeline{
+				Pipeline:  pipelineFile,
+				ServerURL: ts.URL,
+			}
+
+			err := cmd.Run(slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			result, err := client.SearchPipelines(context.Background(), "", 1, 100)
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(result.Items).To(HaveLen(1))
+			assert.Expect(result.Items[0].Name).To(Equal("typed-pipeline"))
+		})
+
+		t.Run("uses custom name when provided", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
+
+			client, ts := newTestServer(t, server.RouterOptions{})
+
+			pipelineFile := writePipeline(t, t.TempDir(), "file.js", minimalJS)
+			cmd := commands.SetPipeline{
+				Pipeline:  pipelineFile,
+				Name:      "custom-name",
+				ServerURL: ts.URL,
+			}
+
+			err := cmd.Run(slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			result, err := client.SearchPipelines(context.Background(), "", 1, 100)
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(result.Items).To(HaveLen(1))
+			assert.Expect(result.Items[0].Name).To(Equal("custom-name"))
+		})
+
+		t.Run("handles server error gracefully", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
+
+			_, realTS := newTestServer(t, server.RouterOptions{})
+
+			// Wrap the real router so that PUT /api/pipelines/* always returns 500.
+			wrapped := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPut {
+					w.WriteHeader(http.StatusInternalServerError)
+					_ = json.NewEncoder(w).Encode(map[string]string{"error": "database error"})
+					return
 				}
+				realTS.Config.Handler.ServeHTTP(w, r)
+			}))
+			t.Cleanup(wrapped.Close)
 
-				err := cmd.Run(slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
+			pipelineFile := writePipeline(t, t.TempDir(), "pipeline.js", minimalJS)
+			cmd := commands.SetPipeline{
+				Pipeline:  pipelineFile,
+				ServerURL: wrapped.URL,
+			}
 
-				result, err := client.SearchPipelines(context.Background(), "", 1, 100)
-				assert.Expect(err).NotTo(HaveOccurred())
-				assert.Expect(result.Items).To(HaveLen(1))
-				assert.Expect(result.Items[0].Name).To(Equal("typed-pipeline"))
-			})
+			err := cmd.Run(slog.Default())
+			assert.Expect(err).To(HaveOccurred())
+			assert.Expect(err.Error()).To(ContainSubstring("database error"))
+		})
 
-			t.Run("uses custom name when provided", func(t *testing.T) {
-				t.Parallel()
-				assert := NewGomegaWithT(t)
+		t.Run("idempotent: replaces existing pipeline with same name", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
 
-				client, ts := newTestServer(t, server.RouterOptions{})
+			client, ts := newTestServer(t, server.RouterOptions{})
 
-				pipelineFile := writePipeline(t, t.TempDir(), "file.js", minimalJS)
-				cmd := commands.SetPipeline{
-					Pipeline:  pipelineFile,
-					Name:      "custom-name",
-					ServerURL: ts.URL,
-				}
+			// Seed with an existing pipeline of the same name.
+			existing, err := client.SavePipeline(context.Background(), "my-pipeline", "old content", "native://", "")
+			assert.Expect(err).NotTo(HaveOccurred())
 
-				err := cmd.Run(slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-
-				result, err := client.SearchPipelines(context.Background(), "", 1, 100)
-				assert.Expect(err).NotTo(HaveOccurred())
-				assert.Expect(result.Items).To(HaveLen(1))
-				assert.Expect(result.Items[0].Name).To(Equal("custom-name"))
-			})
-
-			t.Run("handles server error gracefully", func(t *testing.T) {
-				t.Parallel()
-				assert := NewGomegaWithT(t)
-
-				_, realTS := newTestServer(t, server.RouterOptions{})
-
-				// Wrap the real router so that PUT /api/pipelines/* always returns 500.
-				wrapped := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					if r.Method == http.MethodPut {
-						w.WriteHeader(http.StatusInternalServerError)
-						_ = json.NewEncoder(w).Encode(map[string]string{"error": "database error"})
-						return
-					}
-					realTS.Config.Handler.ServeHTTP(w, r)
-				}))
-				t.Cleanup(wrapped.Close)
-
-				pipelineFile := writePipeline(t, t.TempDir(), "pipeline.js", minimalJS)
-				cmd := commands.SetPipeline{
-					Pipeline:  pipelineFile,
-					ServerURL: wrapped.URL,
-				}
-
-				err := cmd.Run(slog.Default())
-				assert.Expect(err).To(HaveOccurred())
-				assert.Expect(err.Error()).To(ContainSubstring("database error"))
-			})
-
-			t.Run("idempotent: replaces existing pipeline with same name", func(t *testing.T) {
-				t.Parallel()
-				assert := NewGomegaWithT(t)
-
-				client, ts := newTestServer(t, server.RouterOptions{})
-
-				// Seed with an existing pipeline of the same name.
-				existing, err := client.SavePipeline(context.Background(), "my-pipeline", "old content", "native://", "")
-				assert.Expect(err).NotTo(HaveOccurred())
-
-				pipelineFile := writePipeline(t, t.TempDir(), "my-pipeline.js", `
+			pipelineFile := writePipeline(t, t.TempDir(), "my-pipeline.js", `
 const pipeline = async () => { console.log("v2"); };
 export { pipeline };
 `)
-				cmd := commands.SetPipeline{
-					Pipeline:  pipelineFile,
-					ServerURL: ts.URL,
-				}
+			cmd := commands.SetPipeline{
+				Pipeline:  pipelineFile,
+				ServerURL: ts.URL,
+			}
 
-				err = cmd.Run(slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
+			err = cmd.Run(slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
 
-				result, err := client.SearchPipelines(context.Background(), "", 1, 100)
-				assert.Expect(err).NotTo(HaveOccurred())
-				assert.Expect(result.Items).To(HaveLen(1))
-				assert.Expect(result.Items[0].Name).To(Equal("my-pipeline"))
-				// In-place update preserves pipeline ID.
-				assert.Expect(result.Items[0].ID).To(Equal(existing.ID))
+			result, err := client.SearchPipelines(context.Background(), "", 1, 100)
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(result.Items).To(HaveLen(1))
+			assert.Expect(result.Items[0].Name).To(Equal("my-pipeline"))
+			// In-place update preserves pipeline ID.
+			assert.Expect(result.Items[0].ID).To(Equal(existing.ID))
+		})
+
+		t.Run("idempotent: no delete when no pipeline with same name exists", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
+
+			client, ts := newTestServer(t, server.RouterOptions{})
+
+			// Seed a pipeline with a different name — it must remain untouched.
+			_, err := client.SavePipeline(context.Background(), "other-pipeline", "content", "docker://", "")
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			pipelineFile := writePipeline(t, t.TempDir(), "new-pipeline.js", minimalJS)
+			cmd := commands.SetPipeline{
+				Pipeline:  pipelineFile,
+				ServerURL: ts.URL,
+			}
+
+			err = cmd.Run(slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			result, err := client.SearchPipelines(context.Background(), "", 1, 100)
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(result.Items).To(HaveLen(2))
+		})
+
+		t.Run("basic auth credentials in server URL are forwarded on all requests", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
+
+			_, ts := newTestServer(t, server.RouterOptions{
+				BasicAuthUsername: "admin",
+				BasicAuthPassword: "secret",
 			})
 
-			t.Run("idempotent: no delete when no pipeline with same name exists", func(t *testing.T) {
-				t.Parallel()
-				assert := NewGomegaWithT(t)
+			serverURLWithAuth := "http://admin:secret@" + ts.Listener.Addr().String()
 
-				client, ts := newTestServer(t, server.RouterOptions{})
+			pipelineFile := writePipeline(t, t.TempDir(), "auth-pipeline.js", minimalJS)
+			cmd := commands.SetPipeline{
+				Pipeline:  pipelineFile,
+				ServerURL: serverURLWithAuth,
+			}
 
-				// Seed a pipeline with a different name — it must remain untouched.
-				_, err := client.SavePipeline(context.Background(), "other-pipeline", "content", "docker://", "")
-				assert.Expect(err).NotTo(HaveOccurred())
-
-				pipelineFile := writePipeline(t, t.TempDir(), "new-pipeline.js", minimalJS)
-				cmd := commands.SetPipeline{
-					Pipeline:  pipelineFile,
-					ServerURL: ts.URL,
-				}
-
-				err = cmd.Run(slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-
-				result, err := client.SearchPipelines(context.Background(), "", 1, 100)
-				assert.Expect(err).NotTo(HaveOccurred())
-				assert.Expect(result.Items).To(HaveLen(2))
-			})
-
-			t.Run("basic auth credentials in server URL are forwarded on all requests", func(t *testing.T) {
-				t.Parallel()
-				assert := NewGomegaWithT(t)
-
-				_, ts := newTestServer(t, server.RouterOptions{
-					BasicAuthUsername: "admin",
-					BasicAuthPassword: "secret",
-				})
-
-				serverURLWithAuth := "http://admin:secret@" + ts.Listener.Addr().String()
-
-				pipelineFile := writePipeline(t, t.TempDir(), "auth-pipeline.js", minimalJS)
-				cmd := commands.SetPipeline{
-					Pipeline:  pipelineFile,
-					ServerURL: serverURLWithAuth,
-				}
-
-				// If auth is not forwarded on any request the server rejects with 401
-				// and the command returns an error.
-				err := cmd.Run(slog.Default())
-				assert.Expect(err).NotTo(HaveOccurred())
-			})
+			// If auth is not forwarded on any request the server rejects with 401
+			// and the command returns an error.
+			err := cmd.Run(slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
 		})
 	})
 

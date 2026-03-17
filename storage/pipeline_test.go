@@ -5,18 +5,16 @@ import (
 	"testing"
 
 	"github.com/jtarchie/pocketci/storage"
-	_ "github.com/jtarchie/pocketci/storage/s3"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
 )
 
 func TestPipelineStorage(t *testing.T) {
-	storage.Each(func(name string, init storage.InitFunc) {
-		t.Run(name, func(t *testing.T) {
+	for _, df := range allDrivers() {
+		t.Run(df.name, func(t *testing.T) {
 			t.Run("SavePipeline creates a new pipeline", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				pipeline, err := client.SavePipeline(context.Background(), "test-pipeline", "console.log('hello');", "docker://", "")
 				assert.Expect(err).NotTo(HaveOccurred())
@@ -32,7 +30,7 @@ func TestPipelineStorage(t *testing.T) {
 			t.Run("GetPipeline retrieves existing pipeline", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				saved, err := client.SavePipeline(context.Background(), "my-pipeline", "export { pipeline };", "native://", "")
 				assert.Expect(err).NotTo(HaveOccurred())
@@ -48,7 +46,7 @@ func TestPipelineStorage(t *testing.T) {
 			t.Run("GetPipeline returns error for non-existent ID", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				_, err := client.GetPipeline(context.Background(), "non-existent-id")
 				assert.Expect(err).To(Equal(storage.ErrNotFound))
@@ -57,7 +55,7 @@ func TestPipelineStorage(t *testing.T) {
 			t.Run("ListPipelines returns all pipelines", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				_, err := client.SavePipeline(context.Background(), "pipeline-1", "content1", "docker://", "")
 				assert.Expect(err).NotTo(HaveOccurred())
@@ -73,7 +71,7 @@ func TestPipelineStorage(t *testing.T) {
 			t.Run("ListPipelines returns empty slice when no pipelines", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				result, err := client.SearchPipelines(context.Background(), "", 1, 100)
 				assert.Expect(err).NotTo(HaveOccurred())
@@ -83,7 +81,7 @@ func TestPipelineStorage(t *testing.T) {
 			t.Run("DeletePipeline removes a pipeline", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				saved, err := client.SavePipeline(context.Background(), "to-delete", "content", "docker://", "")
 				assert.Expect(err).NotTo(HaveOccurred())
@@ -98,7 +96,7 @@ func TestPipelineStorage(t *testing.T) {
 			t.Run("DeletePipeline returns error for non-existent ID", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				err := client.DeletePipeline(context.Background(), "non-existent-id")
 				assert.Expect(err).To(Equal(storage.ErrNotFound))
@@ -107,11 +105,11 @@ func TestPipelineStorage(t *testing.T) {
 			t.Run("DeletePipeline cascades to runs and task data", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				if name == "s3" {
+				if df.name == "s3" {
 					t.Skip("S3 driver does not cascade-delete task key/value records on pipeline deletion")
 				}
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				ctx := context.Background()
 
@@ -147,7 +145,7 @@ func TestPipelineStorage(t *testing.T) {
 			t.Run("GetPipelineByName returns the most recent pipeline with that name", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				ctx := context.Background()
 
@@ -163,7 +161,7 @@ func TestPipelineStorage(t *testing.T) {
 			t.Run("GetPipelineByName returns ErrNotFound for unknown name", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				_, err := client.GetPipelineByName(context.Background(), "nonexistent")
 				assert.Expect(err).To(Equal(storage.ErrNotFound))
@@ -172,7 +170,7 @@ func TestPipelineStorage(t *testing.T) {
 			t.Run("SavePipeline called twice with same name updates content instead of creating a second pipeline", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				client := newStorageClient(t, name, init, "namespace")
+				client := df.new(t, "namespace")
 
 				ctx := context.Background()
 
@@ -196,5 +194,5 @@ func TestPipelineStorage(t *testing.T) {
 				assert.Expect(result.Items[0].Content).To(Equal("content-v2"))
 			})
 		})
-	})
+	}
 }

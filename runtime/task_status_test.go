@@ -35,7 +35,7 @@ func TestTaskStatusPersistence(t *testing.T) {
 		dbFile := newTestStore(t)
 		defer func() { _ = dbFile.Close() }()
 
-		store, err := sqliteStorage.NewSqlite(dbFile.Name(), "ns", nil)
+		store, err := sqliteStorage.NewSqlite(sqliteStorage.Config{Path: dbFile.Name()}, "ns", nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = store.Close() }()
 
@@ -100,7 +100,7 @@ func TestTaskStatusPersistence(t *testing.T) {
 		dbFile := newTestStore(t)
 		defer func() { _ = dbFile.Close() }()
 
-		store, err := sqliteStorage.NewSqlite(dbFile.Name(), "ns", nil)
+		store, err := sqliteStorage.NewSqlite(sqliteStorage.Config{Path: dbFile.Name()}, "ns", nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = store.Close() }()
 
@@ -163,7 +163,7 @@ func TestTaskStatusPersistence(t *testing.T) {
 		dbFile := newTestStore(t)
 		defer func() { _ = dbFile.Close() }()
 
-		store, err := sqliteStorage.NewSqlite(dbFile.Name(), "ns", nil)
+		store, err := sqliteStorage.NewSqlite(sqliteStorage.Config{Path: dbFile.Name()}, "ns", nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = store.Close() }()
 
@@ -223,7 +223,7 @@ func TestTaskStatusPersistence(t *testing.T) {
 		dbFile := newTestStore(t)
 		defer func() { _ = dbFile.Close() }()
 
-		store, err := sqliteStorage.NewSqlite(dbFile.Name(), "ns", nil)
+		store, err := sqliteStorage.NewSqlite(sqliteStorage.Config{Path: dbFile.Name()}, "ns", nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = store.Close() }()
 
@@ -304,7 +304,7 @@ func TestTaskStatusPersistence(t *testing.T) {
 		dbFile := newTestStore(t)
 		defer func() { _ = dbFile.Close() }()
 
-		store, err := sqliteStorage.NewSqlite(dbFile.Name(), "ns", nil)
+		store, err := sqliteStorage.NewSqlite(sqliteStorage.Config{Path: dbFile.Name()}, "ns", nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = store.Close() }()
 
@@ -355,7 +355,7 @@ func TestTaskStatusPersistence(t *testing.T) {
 		dbFile := newTestStore(t)
 		defer func() { _ = dbFile.Close() }()
 
-		store, err := sqliteStorage.NewSqlite(dbFile.Name(), "ns", nil)
+		store, err := sqliteStorage.NewSqlite(sqliteStorage.Config{Path: dbFile.Name()}, "ns", nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = store.Close() }()
 
@@ -430,7 +430,7 @@ func TestTaskStatusPersistence(t *testing.T) {
 		dbFile := newTestStore(t)
 		defer func() { _ = dbFile.Close() }()
 
-		store, err := sqliteStorage.NewSqlite(dbFile.Name(), "ns", nil)
+		store, err := sqliteStorage.NewSqlite(sqliteStorage.Config{Path: dbFile.Name()}, "ns", nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = store.Close() }()
 

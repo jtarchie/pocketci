@@ -9,8 +9,7 @@ import (
 	"testing"
 
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
-	"github.com/jtarchie/pocketci/storage"
-	_ "github.com/jtarchie/pocketci/storage/sqlite"
+	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/onsi/gomega"
 )
 
@@ -22,12 +21,7 @@ func setupRouterWithAuth(t *testing.T, username, password string) *Router {
 	}
 	defer func() { _ = buildFile.Close() }()
 
-	initStorage, found := storage.GetFromDSN("sqlite://" + buildFile.Name())
-	if !found {
-		t.Fatal("could not get storage driver")
-	}
-
-	client, err := initStorage("sqlite://"+buildFile.Name(), "namespace", slog.Default())
+	client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
 	if err != nil {
 		t.Fatalf("could not create client: %v", err)
 	}

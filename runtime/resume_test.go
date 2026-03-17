@@ -173,7 +173,7 @@ func TestResumableRunnerStatePersistence(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	// Create an in-memory storage
-	store, err := storage.NewSqlite("sqlite://:memory:", "test-ns", nil)
+	store, err := storage.NewSqlite(storage.Config{Path: ":memory:"}, "test-ns", nil)
 	assert.Expect(err).NotTo(HaveOccurred())
 	defer func() { _ = store.Close() }()
 
@@ -213,7 +213,7 @@ func TestResumableRunnerCreation(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	// Create an in-memory storage
-	store, err := storage.NewSqlite("sqlite://:memory:", "test-ns", nil)
+	store, err := storage.NewSqlite(storage.Config{Path: ":memory:"}, "test-ns", nil)
 	assert.Expect(err).NotTo(HaveOccurred())
 	defer func() { _ = store.Close() }()
 

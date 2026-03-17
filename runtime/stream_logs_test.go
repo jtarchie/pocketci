@@ -21,7 +21,7 @@ func TestStreamLogsWithCallback(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		// Create storage
-		store, err := storage.NewSqlite("sqlite://:memory:", "stream-test", nil)
+		store, err := storage.NewSqlite(storage.Config{Path: ":memory:"}, "stream-test", nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = store.Close() }()
 
@@ -94,7 +94,7 @@ func TestStreamLogsWithCallback(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		// Create storage
-		store, err := storage.NewSqlite("sqlite://:memory:", "stream-test", nil)
+		store, err := storage.NewSqlite(storage.Config{Path: ":memory:"}, "stream-test", nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = store.Close() }()
 
@@ -136,7 +136,7 @@ func TestStreamLogsWithCallback(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		// Create storage
-		store, err := storage.NewSqlite("sqlite://:memory:", "stream-error-test", nil)
+		store, err := storage.NewSqlite(storage.Config{Path: ":memory:"}, "stream-error-test", nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = store.Close() }()
 
@@ -194,7 +194,7 @@ func TestStreamLogsWithCallback(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		// Create storage
-		store, err := storage.NewSqlite("sqlite://:memory:", "stream-cancel-test", nil)
+		store, err := storage.NewSqlite(storage.Config{Path: ":memory:"}, "stream-cancel-test", nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = store.Close() }()
 
