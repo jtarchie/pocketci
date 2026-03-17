@@ -25,17 +25,17 @@ type ObservabilityProvider interface {
 
 // RouterOptions configures the router.
 type RouterOptions struct {
-	MaxInFlight            int
-	WebhookTimeout         time.Duration
-	BasicAuthUsername      string
-	BasicAuthPassword      string
-	AllowedDrivers         string
-	AllowedFeatures        string
-	SecretsManager         secrets.Manager
-	FetchTimeout           time.Duration
-	FetchMaxResponseBytes  int64
-	AuthConfig             *auth.Config
-	ObservabilityProvider  ObservabilityProvider
+	MaxInFlight           int
+	WebhookTimeout        time.Duration
+	BasicAuthUsername     string
+	BasicAuthPassword     string
+	AllowedDrivers        string
+	AllowedFeatures       string
+	SecretsManager        secrets.Manager
+	FetchTimeout          time.Duration
+	FetchMaxResponseBytes int64
+	AuthConfig            *auth.Config
+	ObservabilityProvider ObservabilityProvider
 }
 
 // Router wraps echo.Echo and provides access to the execution service.

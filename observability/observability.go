@@ -2,10 +2,7 @@ package observability
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
-	"net/url"
 )
 
 // Provider is the interface for observability backends.
@@ -24,51 +21,6 @@ type Provider interface {
 
 	// Close flushes pending data and releases resources.
 	Close() error
-}
-
-// InitFunc is the constructor function for an observability provider.
-type InitFunc func(dsn string, logger *slog.Logger) (Provider, error)
-
-var drivers = map[string]InitFunc{}
-
-// Register adds an observability provider by name.
-// Called from init() in provider packages.
-func Register(name string, init InitFunc) {
-	drivers[name] = init
-}
-
-// New creates a new Provider from the named backend and DSN.
-func New(name string, dsn string, logger *slog.Logger) (Provider, error) {
-	init, ok := drivers[name]
-	if !ok {
-		available := make([]string, 0, len(drivers))
-		for k := range drivers {
-			available = append(available, k)
-		}
-
-		return nil, fmt.Errorf("unknown observability provider %q (available: %v): %w", name, available, errors.ErrUnsupported)
-	}
-
-	return init(dsn, logger)
-}
-
-// GetFromDSN extracts the provider name from the DSN scheme and creates a Provider.
-// The DSN format is "<provider>://<api-key>?<params>",
-// e.g. "posthog://phc_abc123?endpoint=https://us.i.posthog.com".
-func GetFromDSN(dsn string, logger *slog.Logger) (Provider, error) {
-	uri, err := url.Parse(dsn)
-	if err != nil {
-		return nil, fmt.Errorf("could not parse observability DSN: %w", err)
-	}
-
-	return New(uri.Scheme, dsn, logger)
-}
-
-// Each iterates over all registered providers.
-func Each(f func(string, InitFunc)) {
-	for name, init := range drivers {
-		f(name, init)
-	}
 }
 
 // TeeHandler is a slog.Handler that fans out log records to two handlers.

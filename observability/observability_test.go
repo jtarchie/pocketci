@@ -2,46 +2,12 @@ package observability_test
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"testing"
 
 	"github.com/jtarchie/pocketci/observability"
 	. "github.com/onsi/gomega"
 )
-
-func TestRegisterAndGetFromDSN(t *testing.T) {
-	t.Parallel()
-
-	assert := NewGomegaWithT(t)
-
-	observability.Register("testprovider", func(dsn string, logger *slog.Logger) (observability.Provider, error) {
-		return &fakeProvider{name: "testprovider"}, nil
-	})
-
-	p, err := observability.GetFromDSN("testprovider://mykey", slog.New(slog.NewTextHandler(io.Discard, nil)))
-	assert.Expect(err).NotTo(HaveOccurred())
-	assert.Expect(p.Name()).To(Equal("testprovider"))
-}
-
-func TestGetFromDSNUnknownProvider(t *testing.T) {
-	t.Parallel()
-
-	assert := NewGomegaWithT(t)
-
-	_, err := observability.GetFromDSN("unknown://key", slog.New(slog.NewTextHandler(io.Discard, nil)))
-	assert.Expect(err).To(HaveOccurred())
-	assert.Expect(err.Error()).To(ContainSubstring("unknown observability provider"))
-}
-
-func TestGetFromDSNInvalidDSN(t *testing.T) {
-	t.Parallel()
-
-	assert := NewGomegaWithT(t)
-
-	_, err := observability.GetFromDSN("://", slog.New(slog.NewTextHandler(io.Discard, nil)))
-	assert.Expect(err).To(HaveOccurred())
-}
 
 func TestTeeHandler(t *testing.T) {
 	t.Parallel()
@@ -97,16 +63,6 @@ func TestTeeHandlerWithGroup(t *testing.T) {
 	assert.Expect(primary.records).To(HaveLen(1))
 	assert.Expect(secondary.records).To(HaveLen(1))
 }
-
-// fakeProvider is a minimal Provider implementation for registry tests.
-type fakeProvider struct {
-	name string
-}
-
-func (f *fakeProvider) Name() string                                    { return f.name }
-func (f *fakeProvider) Event(_ string, _ map[string]any) error          { return nil }
-func (f *fakeProvider) SlogHandler(next slog.Handler) slog.Handler      { return next }
-func (f *fakeProvider) Close() error                                    { return nil }
 
 // recordingHandler records slog records for test assertions.
 type recordingHandler struct {

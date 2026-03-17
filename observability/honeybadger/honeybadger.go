@@ -3,40 +3,34 @@ package honeybadger
 import (
 	"fmt"
 	"log/slog"
-	"net/url"
 
 	hb "github.com/honeybadger-io/honeybadger-go"
 	hbslog "github.com/honeybadger-io/honeybadger-go/slog"
 	"github.com/jtarchie/pocketci/observability"
 )
 
-func init() {
-	observability.Register("honeybadger", New)
+// Config holds configuration for the Honeybadger observability provider.
+type Config struct {
+	APIKey string
+	Env    string
 }
 
 type provider struct {
 	client *hb.Client
 }
 
-// New creates a Honeybadger observability provider.
-// DSN format: "honeybadger://API_KEY" or "honeybadger://API_KEY?env=production"
-func New(dsn string, logger *slog.Logger) (observability.Provider, error) {
-	uri, err := url.Parse(dsn)
-	if err != nil {
-		return nil, fmt.Errorf("could not parse honeybadger DSN: %w", err)
-	}
-
-	apiKey := uri.Host
-	if apiKey == "" {
-		return nil, fmt.Errorf("honeybadger DSN must contain an API key (e.g., honeybadger://hbp_abc123)")
+// New creates a Honeybadger observability provider from the given Config.
+func New(cfg Config, logger *slog.Logger) (observability.Provider, error) {
+	if cfg.APIKey == "" {
+		return nil, fmt.Errorf("honeybadger Config must contain an API key")
 	}
 
 	config := hb.Configuration{
-		APIKey: apiKey,
+		APIKey: cfg.APIKey,
 	}
 
-	if env := uri.Query().Get("env"); env != "" {
-		config.Env = env
+	if cfg.Env != "" {
+		config.Env = cfg.Env
 	}
 
 	client := hb.New(config)

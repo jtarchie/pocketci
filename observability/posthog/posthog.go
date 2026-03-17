@@ -4,40 +4,34 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/url"
 
 	"github.com/jtarchie/pocketci/observability"
 	ph "github.com/posthog/posthog-go"
 )
 
-func init() {
-	observability.Register("posthog", New)
+// Config holds configuration for the PostHog observability provider.
+type Config struct {
+	APIKey   string
+	Endpoint string
 }
 
 type provider struct {
 	client ph.Client
 }
 
-// New creates a PostHog observability provider.
-// DSN format: "posthog://API_KEY" or "posthog://API_KEY?endpoint=https://us.i.posthog.com"
-func New(dsn string, logger *slog.Logger) (observability.Provider, error) {
-	uri, err := url.Parse(dsn)
-	if err != nil {
-		return nil, fmt.Errorf("could not parse posthog DSN: %w", err)
-	}
-
-	apiKey := uri.Host
-	if apiKey == "" {
-		return nil, fmt.Errorf("posthog DSN must contain an API key (e.g., posthog://phc_abc123)")
+// New creates a PostHog observability provider from the given Config.
+func New(cfg Config, logger *slog.Logger) (observability.Provider, error) {
+	if cfg.APIKey == "" {
+		return nil, fmt.Errorf("posthog Config must contain an API key")
 	}
 
 	config := ph.Config{}
 
-	if endpoint := uri.Query().Get("endpoint"); endpoint != "" {
-		config.Endpoint = endpoint
+	if cfg.Endpoint != "" {
+		config.Endpoint = cfg.Endpoint
 	}
 
-	client, err := ph.NewWithConfig(apiKey, config)
+	client, err := ph.NewWithConfig(cfg.APIKey, config)
 	if err != nil {
 		return nil, fmt.Errorf("could not create posthog client: %w", err)
 	}

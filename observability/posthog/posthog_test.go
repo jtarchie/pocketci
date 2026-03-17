@@ -5,39 +5,22 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/jtarchie/pocketci/observability"
-	_ "github.com/jtarchie/pocketci/observability/posthog"
+	"github.com/jtarchie/pocketci/observability/posthog"
 	. "github.com/onsi/gomega"
 )
 
-func TestPosthogRegistered(t *testing.T) {
-	t.Parallel()
-
-	assert := NewGomegaWithT(t)
-
-	found := false
-
-	observability.Each(func(name string, _ observability.InitFunc) {
-		if name == "posthog" {
-			found = true
-		}
-	})
-
-	assert.Expect(found).To(BeTrue(), "posthog should be registered")
-}
-
-func TestPosthogNewValidDSN(t *testing.T) {
+func TestPosthogNewValidConfig(t *testing.T) {
 	t.Parallel()
 
 	assert := NewGomegaWithT(t)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	p, err := observability.GetFromDSN("posthog://phc_test123", logger)
+	p, err := posthog.New(posthog.Config{APIKey: "phc_test123"}, logger)
 	assert.Expect(err).NotTo(HaveOccurred())
 	assert.Expect(p.Name()).To(Equal("posthog"))
 
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 }
 
 func TestPosthogNewWithEndpoint(t *testing.T) {
@@ -47,11 +30,14 @@ func TestPosthogNewWithEndpoint(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	p, err := observability.GetFromDSN("posthog://phc_test123?endpoint=https://us.i.posthog.com", logger)
+	p, err := posthog.New(posthog.Config{
+		APIKey:   "phc_test123",
+		Endpoint: "https://us.i.posthog.com",
+	}, logger)
 	assert.Expect(err).NotTo(HaveOccurred())
 	assert.Expect(p.Name()).To(Equal("posthog"))
 
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 }
 
 func TestPosthogNewMissingAPIKey(t *testing.T) {
@@ -61,7 +47,7 @@ func TestPosthogNewMissingAPIKey(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	_, err := observability.GetFromDSN("posthog://", logger)
+	_, err := posthog.New(posthog.Config{}, logger)
 	assert.Expect(err).To(HaveOccurred())
 	assert.Expect(err.Error()).To(ContainSubstring("API key"))
 }
@@ -73,10 +59,10 @@ func TestPosthogSlogHandler(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	p, err := observability.GetFromDSN("posthog://phc_test123", logger)
+	p, err := posthog.New(posthog.Config{APIKey: "phc_test123"}, logger)
 	assert.Expect(err).NotTo(HaveOccurred())
 
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 
 	handler := p.SlogHandler(slog.NewTextHandler(io.Discard, nil))
 	assert.Expect(handler).NotTo(BeNil())

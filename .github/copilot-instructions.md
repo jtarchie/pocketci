@@ -18,7 +18,8 @@ for integration tests. Versions come from `go.mod` and `Brewfile`.
 
 ## Build, Test, Lint
 
-Always run from repo root. Task runner: [go-task](https://taskfile.dev) (`Taskfile.yml`).
+Always run from repo root. Task runner: [go-task](https://taskfile.dev)
+(`Taskfile.yml`).
 
 | Command                                    | Purpose                                                                     |
 | ------------------------------------------ | --------------------------------------------------------------------------- |
@@ -28,13 +29,14 @@ Always run from repo root. Task runner: [go-task](https://taskfile.dev) (`Taskfi
 | `task cleanup`                             | Remove leaked Docker containers/volumes. Run after test failures            |
 | `task`                                     | Full CI: build → fmt → cleanup → test → e2e                                 |
 
-Single package: `go test -race ./storage/... -count=1 -parallel=1`.
-No `.golangci.yml` — golangci-lint uses default rules.
+Single package: `go test -race ./storage/... -count=1 -parallel=1`. No
+`.golangci.yml` — golangci-lint uses default rules.
 
 ## Critical Build Rules
 
 1. **After editing `backwards/src/*.ts`**: run `go generate ./...` to regenerate
-   `backwards/bundle.js` (`//go:embed`-ed — stale bundles cause silent failures).
+   `backwards/bundle.js` (`//go:embed`-ed — stale bundles cause silent
+   failures).
 2. **After editing `server/static/src/`**: run `task build:static`.
 3. **After editing `docs/**/\*.md`or`docs/.vitepress/`**: run `task build:docs`.
 4. **After editing `storage/sqlite/schema.sql`**: run tests (directly embedded).
@@ -74,8 +76,10 @@ Every change must include tests — no exceptions.
 - **Black-box packages**: always `package foo_test` (public API only).
 - **Assertions**: gomega — `assert := NewGomegaWithT(t)`,
   `assert.Expect(err).NotTo(HaveOccurred())`.
-- **In-memory DB**: `sqlite://:memory:` (never file-backed unless testing persistence).
-- **Driver imports**: `_ "github.com/jtarchie/pocketci/orchestra/docker"` (and/or `/native`).
+- **In-memory DB**: `sqlite://:memory:` (never file-backed unless testing
+  persistence).
+- **Driver imports**: `_ "github.com/jtarchie/pocketci/orchestra/docker"`
+  (and/or `/native`).
 - **Table-driven**: use `Each()` from `storage`/`orchestra`/`secrets` packages.
 - **Helpers**: `testhelpers.Runner` for pipelines, `testhelpers.StartMinIO` for
   S3 tests. `t.TempDir()` for temp files, `t.Cleanup()` for teardown.
@@ -92,9 +96,11 @@ registration pattern for new implementations. Interface compliance checks:
 Use `slog` everywhere — never `log` or `fmt.Println`. Pass `*slog.Logger` via
 parameters. In tests: `slog.New(slog.NewTextHandler(io.Discard, nil))`.
 
-- **Levels**: `Info` (operations), `Debug` (internals), `Error` (failures), `Warn` (recoverable).
+- **Levels**: `Info` (operations), `Debug` (internals), `Error` (failures),
+  `Warn` (recoverable).
 - **Groups**: `logger.WithGroup("component").With("key", value)`.
-- **Messages**: dot-separated names: `"pipeline.validate.success"`, `"image.pull"`.
+- **Messages**: dot-separated names: `"pipeline.validate.success"`,
+  `"image.pull"`.
 - **Typed attrs**: prefer `slog.String()`, `slog.Int()`, `slog.Duration()`.
 
 ### Errors & JSON Tags

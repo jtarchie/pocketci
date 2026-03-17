@@ -7,38 +7,22 @@ import (
 
 	hb "github.com/honeybadger-io/honeybadger-go"
 	"github.com/jtarchie/pocketci/observability"
-	_ "github.com/jtarchie/pocketci/observability/honeybadger"
+	"github.com/jtarchie/pocketci/observability/honeybadger"
 	. "github.com/onsi/gomega"
 )
 
-func TestHoneybadgerRegistered(t *testing.T) {
-	t.Parallel()
-
-	assert := NewGomegaWithT(t)
-
-	found := false
-
-	observability.Each(func(name string, _ observability.InitFunc) {
-		if name == "honeybadger" {
-			found = true
-		}
-	})
-
-	assert.Expect(found).To(BeTrue(), "honeybadger should be registered")
-}
-
-func TestHoneybadgerNewValidDSN(t *testing.T) {
+func TestHoneybadgerNewValidConfig(t *testing.T) {
 	t.Parallel()
 
 	assert := NewGomegaWithT(t)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	p, err := observability.GetFromDSN("honeybadger://hbp_test123", logger)
+	p, err := honeybadger.New(honeybadger.Config{APIKey: "hbp_test123"}, logger)
 	assert.Expect(err).NotTo(HaveOccurred())
 	assert.Expect(p.Name()).To(Equal("honeybadger"))
 
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 }
 
 func TestHoneybadgerNewWithEnv(t *testing.T) {
@@ -48,11 +32,11 @@ func TestHoneybadgerNewWithEnv(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	p, err := observability.GetFromDSN("honeybadger://hbp_test123?env=staging", logger)
+	p, err := honeybadger.New(honeybadger.Config{APIKey: "hbp_test123", Env: "staging"}, logger)
 	assert.Expect(err).NotTo(HaveOccurred())
 	assert.Expect(p.Name()).To(Equal("honeybadger"))
 
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 }
 
 func TestHoneybadgerNewMissingAPIKey(t *testing.T) {
@@ -62,7 +46,7 @@ func TestHoneybadgerNewMissingAPIKey(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	_, err := observability.GetFromDSN("honeybadger://", logger)
+	_, err := honeybadger.New(honeybadger.Config{}, logger)
 	assert.Expect(err).To(HaveOccurred())
 	assert.Expect(err.Error()).To(ContainSubstring("API key"))
 }
@@ -74,10 +58,10 @@ func TestHoneybadgerSlogHandler(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	p, err := observability.GetFromDSN("honeybadger://hbp_test123", logger)
+	p, err := honeybadger.New(honeybadger.Config{APIKey: "hbp_test123"}, logger)
 	assert.Expect(err).NotTo(HaveOccurred())
 
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 
 	handler := p.SlogHandler(slog.NewTextHandler(io.Discard, nil))
 	assert.Expect(handler).NotTo(BeNil())

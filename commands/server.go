@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jtarchie/pocketci/observability"
+	"github.com/jtarchie/pocketci/observability/honeybadger"
+	"github.com/jtarchie/pocketci/observability/posthog"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/server"
 	"github.com/jtarchie/pocketci/server/auth"
@@ -31,7 +33,10 @@ type Server struct {
 	FetchMaxResponseMB int           `default:"10"               env:"CI_FETCH_MAX_RESPONSE_MB" help:"Maximum response body size in MB for fetch() calls"`
 	Secrets            string        `default:"sqlite://test.db?key=testing"                 env:"CI_SECRETS"              help:"Secrets backend DSN (e.g., 'sqlite://secrets.db?key=my-passphrase')"`
 	Secret             []string      `help:"Set a global secret as KEY=VALUE (can be repeated)" short:"e"`
-	Observability      string        `env:"CI_OBSERVABILITY"                                   help:"Observability provider DSN (e.g., 'posthog://API_KEY', 'honeybadger://API_KEY?env=production')"`
+	PosthogAPIKey      string        `env:"CI_POSTHOG_API_KEY"     help:"PostHog API key (e.g., 'phc_abc123')"`
+	PosthogEndpoint    string        `env:"CI_POSTHOG_ENDPOINT"    help:"PostHog ingestion endpoint URL (defaults to PostHog cloud)"`
+	HoneybadgerAPIKey  string        `env:"CI_HONEYBADGER_API_KEY" help:"Honeybadger API key"`
+	HoneybadgerEnv     string        `env:"CI_HONEYBADGER_ENV"     help:"Honeybadger environment name (e.g., 'production')"`
 
 	// OAuth provider configuration
 	OAuthGithubClientID        string `env:"CI_OAUTH_GITHUB_CLIENT_ID"        help:"GitHub OAuth application client ID"`
@@ -53,15 +58,35 @@ func (c *Server) Run(logger *slog.Logger) error {
 	// Initialize observability provider if configured
 	var obsProvider observability.Provider
 
-	if c.Observability != "" {
+	switch {
+	case c.PosthogAPIKey != "":
 		var err error
 
-		obsProvider, err = observability.GetFromDSN(c.Observability, logger)
+		obsProvider, err = posthog.New(posthog.Config{
+			APIKey:   c.PosthogAPIKey,
+			Endpoint: c.PosthogEndpoint,
+		}, logger)
 		if err != nil {
-			return fmt.Errorf("could not create observability provider: %w", err)
+			return fmt.Errorf("could not create posthog provider: %w", err)
 		}
+
 		defer func() { _ = obsProvider.Close() }()
 
+	case c.HoneybadgerAPIKey != "":
+		var err error
+
+		obsProvider, err = honeybadger.New(honeybadger.Config{
+			APIKey: c.HoneybadgerAPIKey,
+			Env:    c.HoneybadgerEnv,
+		}, logger)
+		if err != nil {
+			return fmt.Errorf("could not create honeybadger provider: %w", err)
+		}
+
+		defer func() { _ = obsProvider.Close() }()
+	}
+
+	if obsProvider != nil {
 		// Wrap the logger so log records are also forwarded to the provider
 		logger = slog.New(obsProvider.SlogHandler(logger.Handler()))
 		slog.SetDefault(logger)
