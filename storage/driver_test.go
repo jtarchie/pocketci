@@ -197,6 +197,62 @@ func TestDrivers(t *testing.T) {
 				assert.Expect(err).NotTo(HaveOccurred())
 				assert.Expect(p2["status"]).To(Equal("pending"))
 			})
+
+			t.Run("Set stores JSON with nested objects and arrays as valid JSONB roundtrip", func(t *testing.T) {
+				assert := NewGomegaWithT(t)
+
+				client := df.new(t, "namespace")
+				ctx := context.Background()
+
+				payload := map[string]any{
+					"status": "success",
+					"code":   float64(0),
+					"logs": []any{
+						map[string]any{"type": "stdout", "content": "hello world\n"},
+						map[string]any{"type": "stderr", "content": "warning\n"},
+					},
+					"nested": map[string]any{
+						"key": "value",
+					},
+				}
+
+				err := client.Set(ctx, "/jsonb-test", payload)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				got, err := client.Get(ctx, "/jsonb-test")
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(got["status"]).To(Equal("success"))
+				assert.Expect(got["code"]).To(Equal(float64(0)))
+
+				logs, ok := got["logs"].([]any)
+				assert.Expect(ok).To(BeTrue())
+				assert.Expect(logs).To(HaveLen(2))
+
+				entry0, ok := logs[0].(map[string]any)
+				assert.Expect(ok).To(BeTrue())
+				assert.Expect(entry0["type"]).To(Equal("stdout"))
+				assert.Expect(entry0["content"]).To(Equal("hello world\n"))
+
+				nested, ok := got["nested"].(map[string]any)
+				assert.Expect(ok).To(BeTrue())
+				assert.Expect(nested["key"]).To(Equal("value"))
+
+				// Verify upsert also preserves JSONB: merge a partial update
+				err = client.Set(ctx, "/jsonb-test", map[string]any{
+					"status": "failure",
+				})
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				got2, err := client.Get(ctx, "/jsonb-test")
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(got2["status"]).To(Equal("failure"))
+				// Original fields preserved by jsonb_patch
+				assert.Expect(got2["code"]).To(Equal(float64(0)))
+
+				logs2, ok := got2["logs"].([]any)
+				assert.Expect(ok).To(BeTrue())
+				assert.Expect(logs2).To(HaveLen(2))
+			})
 		})
 	}
 }

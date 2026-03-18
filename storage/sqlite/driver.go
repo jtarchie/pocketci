@@ -181,10 +181,10 @@ func (s *Sqlite) Set(ctx context.Context, prefix string, payload any) error {
 
 	_, err = s.writer.ExecContext(ctx, `
 		INSERT INTO tasks (path, payload)
-		VALUES (?, ?)
+		VALUES (?, jsonb(?))
 		ON CONFLICT(path) DO UPDATE SET
 		payload = jsonb_patch(tasks.payload, excluded.payload);
-	`, path, contents, s.namespace)
+	`, path, contents)
 	if err != nil {
 		return fmt.Errorf("failed to insert task: %w", err)
 	}

@@ -243,6 +243,22 @@ type TaskLogEntry struct {
 	Content string `json:"content"`
 }
 
+// AppendLogEntry appends a log chunk to the entries slice, condensing
+// consecutive entries of the same stream type into one entry.
+func AppendLogEntry(logs []TaskLogEntry, stream, data string) []TaskLogEntry {
+	if data == "" {
+		return logs
+	}
+
+	if n := len(logs); n > 0 && logs[n-1].Type == stream {
+		logs[n-1].Content += data
+	} else {
+		logs = append(logs, TaskLogEntry{Type: stream, Content: data})
+	}
+
+	return logs
+}
+
 // OutputCallback is called with streaming output chunks.
 // stream is either "stdout" or "stderr", data is the output chunk.
 type OutputCallback func(stream string, data string)
@@ -437,12 +453,8 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 	var logsMu sync.Mutex
 
 	appendLog := func(stream, data string) {
-		if data == "" {
-			return
-		}
-
 		logsMu.Lock()
-		logs = append(logs, TaskLogEntry{Type: stream, Content: data})
+		logs = AppendLogEntry(logs, stream, data)
 		logsMu.Unlock()
 	}
 
