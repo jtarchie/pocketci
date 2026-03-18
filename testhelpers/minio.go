@@ -3,11 +3,11 @@ package testhelpers
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/phayes/freeport"
 
@@ -63,16 +63,20 @@ func StartMinIO(t *testing.T) *MinioServer {
 		bucket:   bucket,
 	}
 
-	// Wait for MinIO to be ready and create the bucket
+	// Wait for MinIO to be ready by polling its health endpoint
 	assert.Eventually(func() bool {
-		bucketPath := dataDir + "/" + bucket
-		if err := os.MkdirAll(bucketPath, 0755); err != nil {
+		resp, err := http.Get(endpoint + "/minio/health/live") //nolint:noctx
+		if err != nil {
 			return false
 		}
-		return true
-	}, "10s", "100ms").Should(gomega.BeTrue(), "MinIO should start")
+		_ = resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}, "10s", "100ms").Should(gomega.BeTrue(), "MinIO should start and be healthy")
 
-	time.Sleep(500 * time.Millisecond)
+	// Create the bucket directory
+	bucketPath := dataDir + "/" + bucket
+	err = os.MkdirAll(bucketPath, 0755)
+	assert.Expect(err).NotTo(gomega.HaveOccurred())
 
 	// Set AWS credentials for S3 client
 	t.Setenv("AWS_ACCESS_KEY_ID", "minioadmin")
@@ -95,13 +99,6 @@ func (m *MinioServer) Stop() {
 	if m.dataDir != "" {
 		_ = os.RemoveAll(m.dataDir)
 	}
-}
-
-// CacheURL returns the S3 URL for use with the cache parameter.
-func (m *MinioServer) CacheURL() string {
-	// m.endpoint is "http://localhost:PORT"; insert credentials after the scheme.
-	endpointWithCreds := strings.Replace(m.endpoint, "://", "://minioadmin:minioadmin@", 1)
-	return fmt.Sprintf("s3://%s/%s?region=us-east-1", endpointWithCreds, m.bucket)
 }
 
 // Endpoint returns the HTTP endpoint of the MinIO server.

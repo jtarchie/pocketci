@@ -50,27 +50,34 @@ func buildDriverFactories(t *testing.T) []driverFactory {
 		server := testhelpers.StartMinIO(t)
 		t.Cleanup(server.Stop)
 
-		s3cfg, parseErr := s3config.ParseDSN(server.CacheURL() + "&key=test-encryption-passphrase")
-		if parseErr == nil {
-			// Probe once to see if SSE is supported
-			_, probeErr := secretss3.New(secretss3.Config{Config: *s3cfg}, logger)
-			if probeErr == nil {
-				factories = append(factories, driverFactory{
-					name: "s3",
-					new: func(t *testing.T) secrets.Manager {
-						t.Helper()
+		s3cfg := &s3config.Config{
+			Bucket:          server.Bucket(),
+			Endpoint:        server.Endpoint(),
+			Region:          "us-east-1",
+			AccessKeyID:     server.AccessKeyID(),
+			SecretAccessKey: server.SecretAccessKey(),
+			ForcePathStyle:  true,
+			Key:             "test-encryption-passphrase",
+		}
 
-						mgr, err := secretss3.New(secretss3.Config{Config: *s3cfg}, logger)
-						if err != nil {
-							t.Skipf("S3 secrets SSE probe failed: %v", err)
-						}
+		// Probe once to see if SSE is supported
+		_, probeErr := secretss3.New(secretss3.Config{Config: *s3cfg}, logger)
+		if probeErr == nil {
+			factories = append(factories, driverFactory{
+				name: "s3",
+				new: func(t *testing.T) secrets.Manager {
+					t.Helper()
 
-						t.Cleanup(func() { _ = mgr.Close() })
+					mgr, err := secretss3.New(secretss3.Config{Config: *s3cfg}, logger)
+					if err != nil {
+						t.Skipf("S3 secrets SSE probe failed: %v", err)
+					}
 
-						return mgr
-					},
-				})
-			}
+					t.Cleanup(func() { _ = mgr.Close() })
+
+					return mgr
+				},
+			})
 		}
 	}
 

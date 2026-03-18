@@ -12,7 +12,7 @@ no manual curl required.
 
 ```bash
 pocketci server \
-  --storage sqlite://pocketci.db \
+  --storage-sqlite-path pocketci.db \
   --basic-auth admin:yourpassword \
   --port 8080
 ```

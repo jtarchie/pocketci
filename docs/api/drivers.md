@@ -30,5 +30,3 @@ Response:
 ```
 
 The response reflects the `--allowed-drivers` configured on the server.
-
-See [Driver DSNs](../drivers/dsn.md) for configuration and more details.

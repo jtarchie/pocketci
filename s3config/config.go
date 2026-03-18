@@ -1,30 +1,15 @@
-// Package s3config provides shared S3 DSN parsing and client option building
-// used by all PocketCI S3 drivers (storage backend, volume cache).
+// Package s3config provides shared S3 client configuration and option building
+// used by all PocketCI S3 drivers (storage backend, volume cache, secrets).
 //
-// DSN format:
-//
-//	s3://[http://|https://][ACCESS_KEY_ID:SECRET_ACCESS_KEY@]host[:port]/bucket[/prefix]?region=...&encrypt=...
-//
-// When no http/https scheme prefix is provided, https is assumed. When a custom
-// host is omitted entirely (bare bucket-only form) the AWS SDK default endpoint
-// is used.
-//
-// Examples:
-//
-//	s3://s3.amazonaws.com/mybucket/prefix?region=us-east-1
-//	s3://http://localhost:9000/mybucket?region=us-east-1&encrypt=sse-s3
-//	s3://http://minioadmin:minioadmin@localhost:9000/mybucket?region=us-east-1
-//	s3://https://AKID:SECRET@account.r2.cloudflarestorage.com/mybucket?region=auto
+// Configuration is constructed directly via the Config struct using individual
+// fields populated from CLI flags or environment variables.
 package s3config
 
 import (
 	"context"
 	"crypto/md5"
-	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"net/url"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -36,13 +21,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
-// Config holds the parsed configuration from an S3 DSN.
+// Config holds the S3 configuration for connecting to an S3-compatible backend.
 type Config struct {
 	Bucket string
 	Prefix string
 
-	// AccessKeyID and SecretAccessKey are static credentials parsed from the
-	// DSN userinfo (s3://http://ID:SECRET@host/bucket/...). When empty the SDK
+	// AccessKeyID and SecretAccessKey are static credentials. When empty the SDK
 	// credential chain (env vars, ~/.aws/credentials, IAM role, etc.) is used.
 	AccessKeyID     string
 	SecretAccessKey string
@@ -80,129 +64,6 @@ type Config struct {
 	// Only populated when the ttl query parameter is present.
 	// Storage drivers ignore this field.
 	TTL time.Duration
-}
-
-// ParseDSN parses an S3 DSN and returns a validated Config.
-//
-// Format:
-//
-//	s3://[http://|https://][ACCESS_KEY_ID:SECRET_ACCESS_KEY@]host[:port]/bucket[/prefix]?params
-//
-// When no http/https scheme prefix is present, https is assumed. Credentials
-// are optional; when absent the AWS SDK credential chain is used (env vars,
-// ~/.aws/credentials, IAM role, etc.).
-//
-// Supported query parameters:
-//   - region            AWS region (default: SDK credential-chain default)
-//   - force_path_style  "true" | "false" — defaults to true when a custom host is set
-//   - encrypt           "sse-s3" | "sse-kms" | "sse-c" — server-side encryption; omit for none
-//   - sse_kms_key_id    KMS key ID (only with encrypt=sse-kms; provider default when omitted)
-//   - key               Passphrase — required when encrypt=sse-c; also used by the secrets
-//     driver for application-layer AES-256-GCM encryption
-//   - ttl               Cache expiry duration, e.g. "24h" (cache driver only)
-func ParseDSN(dsn string) (*Config, error) {
-	const prefix = "s3://"
-
-	if !strings.HasPrefix(dsn, prefix) {
-		return nil, fmt.Errorf("expected s3:// DSN, got %q", dsn)
-	}
-
-	// Strip the "s3://" scheme to get the inner URI, then normalise to an
-	// http/https URL so url.Parse can extract host, credentials, and path.
-	inner := dsn[len(prefix):]
-
-	if inner == "" {
-		return nil, fmt.Errorf("S3 DSN missing host/bucket in %q", dsn)
-	}
-
-	var innerURL string
-
-	if strings.HasPrefix(inner, "http://") || strings.HasPrefix(inner, "https://") {
-		innerURL = inner
-	} else {
-		// No explicit scheme — assume https (covers bare AWS S3 hostnames and
-		// the common s3://host/bucket shorthand).
-		innerURL = "https://" + inner
-	}
-
-	parsed, err := url.Parse(innerURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse S3 DSN %q: %w", dsn, err)
-	}
-
-	// Extract bucket (first path segment) and optional prefix (remainder).
-	pathParts := strings.SplitN(strings.TrimPrefix(parsed.Path, "/"), "/", 2)
-	bucket := pathParts[0]
-
-	if bucket == "" {
-		return nil, fmt.Errorf("S3 DSN missing bucket name in %q", dsn)
-	}
-
-	cfg := &Config{
-		Bucket: bucket,
-	}
-
-	if len(pathParts) == 2 {
-		cfg.Prefix = pathParts[1]
-	}
-
-	// Endpoint: scheme + host (empty when using bare AWS hostname via SDK default).
-	// We always set it when a host is present so callers can point at MinIO etc.
-	cfg.Endpoint = parsed.Scheme + "://" + parsed.Host
-
-	// Extract inline credentials from userinfo (http://ID:SECRET@host/...).
-	if parsed.User != nil {
-		cfg.AccessKeyID = parsed.User.Username()
-		cfg.SecretAccessKey, _ = parsed.User.Password()
-	}
-
-	q := parsed.Query()
-
-	cfg.Region = q.Get("region")
-
-	// Path-style defaults to true when a custom endpoint is set — required for
-	// MinIO, DigitalOcean Spaces, and most non-AWS S3-compatible stores.
-	// Callers can opt out via force_path_style=false for providers that require
-	// virtual-hosted-style URLs (e.g. Cloudflare R2 with custom domain).
-	if q.Get("force_path_style") == "false" {
-		cfg.ForcePathStyle = false
-	} else {
-		cfg.ForcePathStyle = cfg.Endpoint != ""
-	}
-
-	cfg.Key = q.Get("key")
-
-	switch encrypt := q.Get("encrypt"); encrypt {
-	case "":
-		// No provider-level encryption.
-	case "sse-s3":
-		cfg.EncryptMode = "sse-s3"
-	case "sse-kms":
-		cfg.EncryptMode = "sse-kms"
-	case "sse-c":
-		if cfg.Key == "" {
-			return nil, fmt.Errorf("encrypt=sse-c requires key= passphrase in DSN")
-		}
-
-		sum := sha256.Sum256([]byte(cfg.Key))
-		cfg.SSECKey = sum[:]
-		cfg.EncryptMode = "sse-c"
-	default:
-		return nil, fmt.Errorf("unsupported encrypt value %q: must be sse-s3, sse-kms, or sse-c", encrypt)
-	}
-
-	cfg.SSEKMSKeyID = q.Get("sse_kms_key_id")
-
-	if ttlStr := q.Get("ttl"); ttlStr != "" {
-		ttl, err := time.ParseDuration(ttlStr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse ttl %q: %w", ttlStr, err)
-		}
-
-		cfg.TTL = ttl
-	}
-
-	return cfg, nil
 }
 
 // LoadAWSConfig loads an AWS config using the SDK default credential chain,

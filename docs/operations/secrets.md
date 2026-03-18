@@ -22,38 +22,27 @@ storage.
 Secrets can be set at two scopes: **pipeline** (only visible to one pipeline) or
 **global** (visible to all pipelines, used as a fallback).
 
-### Pipeline-Scoped Secrets (`pocketci run --secret`)
+### Pipeline-Scoped Secrets (`pocketci set-pipeline --secret`)
 
-Pass secrets on the `pocketci run` command line using `--secret KEY=VALUE` (or
-`-e KEY=VALUE`). These are scoped to the pipeline being run.
+Pass secrets when uploading a pipeline using `--secret KEY=VALUE` (or
+`-e KEY=VALUE`). These are scoped to that pipeline only.
 
 ```bash
-pocketci run pipeline.ts \
-  --secrets "sqlite://secrets.db?key=my-passphrase" \
+pocketci set-pipeline pipeline.ts \
   --secret API_KEY=sk-1234567890 \
   --secret DB_PASSWORD=hunter2
 ```
 
 ### Global Secrets
 
-Global secrets are shared across all pipelines. There are two ways to set them:
-
-**Via the server command** (`pocketci server --secret`):
+Global secrets are shared across all pipelines. Set them on the server:
 
 ```bash
 pocketci server \
-  --secrets "sqlite://secrets.db?key=my-passphrase" \
+  --secrets-sqlite-path secrets.db \
+  --secrets-sqlite-passphrase change-me-in-production \
   --secret SHARED_TOKEN=tok-global-abc \
   --secret REGISTRY_PASSWORD=ghp-xyz
-```
-
-**Via the runner** (`pocketci run --global-secret`):
-
-```bash
-pocketci run pipeline.ts \
-  --secrets "sqlite://secrets.db?key=my-passphrase" \
-  --global-secret SHARED_TOKEN=tok-global-abc \
-  --secret PIPELINE_KEY=per-pipeline-only
 ```
 
 At runtime, the system checks pipeline scope first, then falls back to global.
@@ -61,56 +50,79 @@ This means a pipeline can override a global secret with its own value.
 
 ### Environment Variables
 
-The secrets DSN can also be configured via an environment variable, which is
-useful for server mode or CI environments where you don't want to pass flags on
-every invocation.
-
-| Environment Variable | CLI Flag    | Description                           |
-| -------------------- | ----------- | ------------------------------------- |
-| `CI_SECRETS`         | `--secrets` | Secrets backend DSN (includes scheme) |
-
-```bash
-export CI_SECRETS="sqlite://secrets.db?key=my-passphrase"
-
-pocketci run pipeline.ts --secret API_KEY=sk-1234567890
-```
-
-```bash
-export CI_SECRETS="sqlite:///var/lib/pocketci/secrets.db?key=my-passphrase"
-
-pocketci server --secret SHARED_TOKEN=tok-global-abc
-```
+| Environment Variable              | CLI Flag                         | Description                                             |
+| --------------------------------- | -------------------------------- | ------------------------------------------------------- |
+| `CI_SECRETS_SQLITE_PATH`          | `--secrets-sqlite-path`          | SQLite database file path                               |
+| `CI_SECRETS_SQLITE_PASSPHRASE`    | `--secrets-sqlite-passphrase`    | Encryption passphrase for SQLite backend                |
+| `CI_SECRETS_S3_BUCKET`            | `--secrets-s3-bucket`            | S3 bucket name (enables S3 backend when set)            |
+| `CI_SECRETS_S3_ENDPOINT`          | `--secrets-s3-endpoint`          | S3-compatible endpoint URL                              |
+| `CI_SECRETS_S3_REGION`            | `--secrets-s3-region`            | AWS region                                              |
+| `CI_SECRETS_S3_ACCESS_KEY_ID`     | `--secrets-s3-access-key-id`     | S3 access key ID                                        |
+| `CI_SECRETS_S3_SECRET_ACCESS_KEY` | `--secrets-s3-secret-access-key` | S3 secret access key                                    |
+| `CI_SECRETS_S3_PASSPHRASE`        | `--secrets-s3-passphrase`        | Application-layer AES-256-GCM encryption key            |
+| `CI_SECRETS_S3_ENCRYPT`           | `--secrets-s3-encrypt`           | Server-side encryption: `sse-s3`, `sse-kms`, or `sse-c` |
+| `CI_SECRETS_S3_PREFIX`            | `--secrets-s3-prefix`            | S3 key prefix                                           |
 
 ## Backend Configuration
 
 ### SQLite
 
-The `sqlite` backend stores secrets in a SQLite database, encrypted with
-AES-256-GCM. The encryption key is derived from the passphrase in the DSN using
-SHA-256.
+The SQLite backend stores secrets in a local database file, encrypted with
+AES-256-GCM. The encryption key is derived from the passphrase using SHA-256.
 
-**DSN Format**:
-
-```
-sqlite://<sqlite-path>?key=<passphrase>
-```
-
-| Component       | Description                           | Example                   |
-| --------------- | ------------------------------------- | ------------------------- |
-| `<sqlite-path>` | Path to the SQLite database file      | `secrets.db`, `/tmp/s.db` |
-| `<passphrase>`  | Passphrase used to derive the AES key | `my-strong-passphrase`    |
-
-**Examples**:
+| Flag                          | Env                            | Default   | Description                                                             |
+| ----------------------------- | ------------------------------ | --------- | ----------------------------------------------------------------------- |
+| `--secrets-sqlite-path`       | `CI_SECRETS_SQLITE_PATH`       | `test.db` | Path to the SQLite database file. Use `:memory:` for ephemeral storage. |
+| `--secrets-sqlite-passphrase` | `CI_SECRETS_SQLITE_PASSPHRASE` | —         | Passphrase used to derive the AES-256 key                               |
 
 ```bash
 # File-based storage
---secrets "sqlite://secrets.db?key=my-passphrase"
+pocketci server \
+  --secrets-sqlite-path secrets.db \
+  --secrets-sqlite-passphrase my-passphrase
 
 # Absolute path
---secrets "sqlite:///var/lib/pocketci/secrets.db?key=my-passphrase"
+pocketci server \
+  --secrets-sqlite-path /var/lib/pocketci/secrets.db \
+  --secrets-sqlite-passphrase my-passphrase
 
-# In-memory (useful for testing, secrets don't persist)
---secrets "sqlite://:memory:?key=test-key"
+# In-memory (useful for testing — secrets don't persist)
+pocketci server \
+  --secrets-sqlite-path :memory: \
+  --secrets-sqlite-passphrase test-key
+```
+
+### S3
+
+The S3 backend stores encrypted secrets in an S3-compatible object store. Set
+`--secrets-s3-bucket` to enable it; when set it takes precedence over SQLite.
+
+| Flag                             | Env                               | Description                                                       |
+| -------------------------------- | --------------------------------- | ----------------------------------------------------------------- |
+| `--secrets-s3-bucket`            | `CI_SECRETS_S3_BUCKET`            | S3 bucket name (required to use S3 backend)                       |
+| `--secrets-s3-endpoint`          | `CI_SECRETS_S3_ENDPOINT`          | S3-compatible endpoint URL (e.g. `http://localhost:9000`)         |
+| `--secrets-s3-region`            | `CI_SECRETS_S3_REGION`            | AWS region                                                        |
+| `--secrets-s3-access-key-id`     | `CI_SECRETS_S3_ACCESS_KEY_ID`     | S3 access key ID                                                  |
+| `--secrets-s3-secret-access-key` | `CI_SECRETS_S3_SECRET_ACCESS_KEY` | S3 secret access key                                              |
+| `--secrets-s3-passphrase`        | `CI_SECRETS_S3_PASSPHRASE`        | Application-layer AES-256-GCM encryption passphrase (recommended) |
+| `--secrets-s3-encrypt`           | `CI_SECRETS_S3_ENCRYPT`           | Provider SSE: `sse-s3` (AES-256), `sse-kms` (KMS), or `sse-c`     |
+| `--secrets-s3-prefix`            | `CI_SECRETS_S3_PREFIX`            | Key prefix to scope all secrets within the bucket                 |
+
+```bash
+# AWS S3 with application-layer encryption
+pocketci server \
+  --secrets-s3-bucket my-secrets-bucket \
+  --secrets-s3-region us-east-1 \
+  --secrets-s3-passphrase my-encryption-passphrase
+
+# MinIO (local development)
+pocketci server \
+  --secrets-s3-bucket secrets \
+  --secrets-s3-endpoint http://localhost:9000 \
+  --secrets-s3-region us-east-1 \
+  --secrets-s3-access-key-id minioadmin \
+  --secrets-s3-secret-access-key minioadmin \
+  --secrets-s3-passphrase my-encryption-passphrase
 ```
 
 ## Using Secrets in Pipelines
@@ -245,61 +257,16 @@ of another, the longer value is redacted first to avoid partial matches.
 ## Full Example
 
 ```bash
-# Set global secrets on the server
+# Start server with SQLite secrets backend and a global secret
 pocketci server \
-  --secrets "sqlite://my-secrets.db?key=change-me-in-production" \
+  --secrets-sqlite-path my-secrets.db \
+  --secrets-sqlite-passphrase change-me-in-production \
   --secret REGISTRY_TOKEN=ghp-abc123
 
-# Set pipeline-scoped secrets and run
-pocketci run examples/both/secrets-basic.ts \
-  --driver docker \
-  --secrets "sqlite://my-secrets.db?key=change-me-in-production" \
-  --secret API_KEY=sk-live-abc123 \
-  --global-secret WEBHOOK_TOKEN=whsec-xyz789
-```
-
-## Backend Configuration
-
-### S3
-
-The `s3` backend stores encrypted secrets as JSON objects in an S3-compatible
-bucket. Every object is protected by application-layer AES-256-GCM encryption
-(key derived from the `key=` passphrase) before any bytes leave the process. An
-optional provider-level SSE layer may be added via the `encrypt=` parameter.
-
-**DSN Format**:
-
-```
-s3://[http://|https://][ACCESS_KEY_ID:SECRET_ACCESS_KEY@]host[:port]/bucket[/prefix]?region=...&key=passphrase[&encrypt=sse-s3]
-```
-
-| Parameter        | Description                                              | Required | Example                        |
-| ---------------- | -------------------------------------------------------- | -------- | ------------------------------ |
-| `key`            | Passphrase for app-layer AES-256-GCM                     | ✅       | `key=my-strong-passphrase`     |
-| `region`         | AWS region                                               | —        | `region=us-east-1`             |
-| `encrypt`        | Provider SSE: `sse-s3`, `sse-kms`, or `sse-c` (optional) | —        | `encrypt=sse-s3`               |
-| `sse_kms_key_id` | KMS key ARN (only with `encrypt=sse-kms`)                | —        | `sse_kms_key_id=arn:aws:kms:…` |
-
-**Examples**:
-
-```bash
-# AWS S3 — app-layer AES only (recommended for R2, providers without SSE)
---secrets "s3://s3.amazonaws.com/my-secrets-bucket?region=us-east-1&key=my-passphrase"
-
-# AWS S3 with provider-level SSE-S3 (double encryption)
---secrets "s3://s3.amazonaws.com/my-secrets-bucket?region=us-east-1&key=my-passphrase&encrypt=sse-s3"
-
-# MinIO (local) with inline credentials
---secrets "s3://http://minioadmin:minioadmin@localhost:9000/secrets?region=us-east-1&key=my-passphrase"
-
-# Cloudflare R2 (no provider SSE needed — R2 encrypts at rest by default)
---secrets "s3://https://AKID:SECRET@ACCOUNT_ID.r2.cloudflarestorage.com/secrets?region=auto&key=my-passphrase"
-```
-
-Object layout within the bucket:
-
-```
-[prefix/]secrets/{scope}/{url-encoded-key}.json
+# Upload pipeline with a pipeline-scoped secret
+pocketci set-pipeline examples/both/secrets-basic.ts \
+  --server http://localhost:8080 \
+  --secret API_KEY=sk-live-abc123
 ```
 
 ## Architecture

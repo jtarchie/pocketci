@@ -25,7 +25,7 @@ Honeybadger webhooks always require `--webhook-secret` and a matching
 ```bash
 pocketci server \
   --port 8080 \
-  --storage sqlite://pocketci.db \
+  --storage-sqlite-path pocketci.db \
   --webhook-timeout 5s   # How long to wait for http.respond() (default: 5s)
 ```
 

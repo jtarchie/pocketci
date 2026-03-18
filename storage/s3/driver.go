@@ -19,8 +19,6 @@ import (
 // S3 implements the storage.Driver interface using AWS S3 (or S3-compatible
 // stores like MinIO) as the backend. All data is stored as JSON objects at
 // hierarchical paths within the configured bucket and prefix.
-//
-// DSN format: s3://[http://|https://][id:secret@]host[:port]/bucket[/prefix]?region=us-east-1
 type S3 struct {
 	*s3config.Client
 	namespace string

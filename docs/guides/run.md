@@ -117,7 +117,7 @@ The `/api/pipelines/:name/run` endpoint is always available.
 ```bash
 pocketci server \
   --port 8080 \
-  --storage sqlite://pocketci.db \
+  --storage-sqlite-path pocketci.db \
   --allowed-drivers docker
 ```
 

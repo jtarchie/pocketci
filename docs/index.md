@@ -19,7 +19,6 @@ pipelines and supports Concourse-style YAML compatibility.
 
 ## Drivers
 
-- [Driver DSN Reference](drivers/dsn)
 - [Native Resources](drivers/native-resources)
 - [Implementing a New Driver](drivers/implementing-driver)
 

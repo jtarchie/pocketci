@@ -18,65 +18,77 @@ is enabled or not.
 
 ## Configuration
 
-Caching is configured via the driver DSN using query parameters:
+Caching is enabled on the server by setting `--cache-s3-bucket`. All cache
+configuration is done via server flags or environment variables.
 
-```bash
---driver=docker://?cache=s3://bucket-name&cache_compression=zstd&cache_prefix=myproject
-```
-
-### DSN Parameters
-
-| Parameter           | Description                         | Default | Example                                          |
-| ------------------- | ----------------------------------- | ------- | ------------------------------------------------ |
-| `cache`             | S3 URL for cache storage (required) | —       | `s3://my-cache-bucket`                           |
-| `cache_compression` | Compression algorithm               | `zstd`  | `zstd`, `gzip`, `none`                           |
-| `cache_prefix`      | Key prefix for all cache entries    | `""`    | `myproject` → keys become `myproject/volume.tar` |
-
-### S3 URL Format
-
-```
-s3://[http://|https://][ACCESS_KEY_ID:SECRET_ACCESS_KEY@]host[:port]/bucket[/prefix]?region=us-east-1&ttl=24h
-```
-
-The host is the S3 endpoint. Prefix with `http://` or `https://` to control the
-transport scheme (`https://` assumed when omitted). Credentials may be embedded
-as `id:secret@` userinfo immediately after the scheme.
-
-| Parameter          | Description                                                                       | Default                 | Example                        |
-| ------------------ | --------------------------------------------------------------------------------- | ----------------------- | ------------------------------ |
-| `region`           | AWS region                                                                        | AWS SDK default         | `us-east-1`                    |
-| `force_path_style` | Force path-style URLs (`true`/`false`). Auto-enabled when a custom host is given. | `true` when custom host | `false` for virtual-host style |
-| `encrypt`          | Provider SSE: `sse-s3` (AES-256), `sse-kms` (KMS), or `sse-c` (customer key)      | None (no SSE headers)   | `sse-s3`                       |
-| `sse_kms_key_id`   | KMS key ARN/ID (only with `encrypt=sse-kms`; omit for provider default key)       | Provider default key    | `arn:aws:kms:…:key/mrk-abc`    |
-| `key`              | Customer-provided key passphrase (required for `encrypt=sse-c`)                   | —                       | `my-passphrase`                |
-| `ttl`              | Cache expiration duration                                                         | No expiration           | `24h`, `7d`, `168h`            |
+| Flag                           | Env                             | Default | Description                                               |
+| ------------------------------ | ------------------------------- | ------- | --------------------------------------------------------- |
+| `--cache-s3-bucket`            | `CI_CACHE_S3_BUCKET`            | —       | S3 bucket for cache storage (required to enable cache)    |
+| `--cache-s3-endpoint`          | `CI_CACHE_S3_ENDPOINT`          | —       | S3-compatible endpoint URL (e.g. `http://localhost:9000`) |
+| `--cache-s3-region`            | `CI_CACHE_S3_REGION`            | —       | AWS region                                                |
+| `--cache-s3-access-key-id`     | `CI_CACHE_S3_ACCESS_KEY_ID`     | —       | S3 access key ID                                          |
+| `--cache-s3-secret-access-key` | `CI_CACHE_S3_SECRET_ACCESS_KEY` | —       | S3 secret access key                                      |
+| `--cache-s3-prefix`            | `CI_CACHE_S3_PREFIX`            | —       | Key prefix for all cache entries                          |
+| `--cache-s3-ttl`               | `CI_CACHE_S3_TTL`               | `0`     | Cache expiration duration (0 = no expiry, e.g. `24h`)     |
+| `--cache-compression`          | `CI_CACHE_COMPRESSION`          | `zstd`  | Compression algorithm: `zstd`, `gzip`, or `none`          |
+| `--cache-key-prefix`           | `CI_CACHE_KEY_PREFIX`           | —       | Logical key prefix within the bucket                      |
 
 ## Full Examples
 
 ### AWS S3
 
 ```bash
-pocketci run pipeline.yml \
-  --driver='docker://?cache=s3://s3.amazonaws.com/my-pocketci-cache?region=us-west-2&cache_prefix=project-a'
+pocketci server \
+  --cache-s3-bucket my-pocketci-cache \
+  --cache-s3-region us-west-2 \
+  --cache-key-prefix project-a
 ```
 
 ### Cloudflare R2
 
 ```bash
-pocketci run pipeline.yml \
-  --driver='docker://?cache=s3://https://AKID:SECRET@ACCOUNT_ID.r2.cloudflarestorage.com/cache-bucket?region=auto&cache_prefix=project-a'
+pocketci server \
+  --cache-s3-bucket cache-bucket \
+  --cache-s3-endpoint https://ACCOUNT_ID.r2.cloudflarestorage.com \
+  --cache-s3-region auto \
+  --cache-s3-access-key-id AKID \
+  --cache-s3-secret-access-key SECRET \
+  --cache-key-prefix project-a
 ```
 
-### AWS S3 with SSE encryption
+### MinIO (Local S3-Compatible)
 
 ```bash
-# SSE-S3 (AES-256) — AWS-managed encryption key
-pocketci run pipeline.yml \
-  --driver='docker://?cache=s3://s3.amazonaws.com/cache-bucket?region=us-east-1&encrypt=sse-s3'
+# Start MinIO locally
+docker run -p 9000:9000 -p 9001:9001 \
+  -e MINIO_ROOT_USER=minioadmin \
+  -e MINIO_ROOT_PASSWORD=minioadmin \
+  minio/minio server /data --console-address ":9001"
 
-# SSE-KMS — provider default KMS key
-pocketci run pipeline.yml \
-  --driver='docker://?cache=s3://s3.amazonaws.com/cache-bucket?region=us-east-1&encrypt=sse-kms'
+# Create bucket
+aws --endpoint-url http://localhost:9000 s3 mb s3://cache-bucket
+
+# Start server with caching
+pocketci server \
+  --cache-s3-bucket cache-bucket \
+  --cache-s3-endpoint http://localhost:9000 \
+  --cache-s3-region us-east-1 \
+  --cache-s3-access-key-id minioadmin \
+  --cache-s3-secret-access-key minioadmin
+```
+
+### With Compression Options
+
+```bash
+# Use gzip instead of zstd
+pocketci server \
+  --cache-s3-bucket my-cache \
+  --cache-compression gzip
+
+# Disable compression (faster for already-compressed data)
+pocketci server \
+  --cache-s3-bucket my-cache \
+  --cache-compression none
 ```
 
 ### MinIO (Local S3-Compatible)

@@ -45,7 +45,6 @@ export default defineConfig({
       ],
       "/drivers/": [
         { text: "Overview", link: "/drivers/" },
-        { text: "Driver DSNs", link: "dsn" },
         { text: "Native Resources", link: "native-resources" },
         { text: "Implementing Drivers", link: "implementing-driver" },
       ],

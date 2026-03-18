@@ -63,7 +63,7 @@ pipelines. It stores everything in a single SQLite database.
 The full docs live under [`docs/`](docs/) and are served at `/docs/` when
 running the PocketCI server. Topics include the [runtime API](docs/runtime/),
 [secrets](docs/operations/secrets), [caching](docs/operations/caching),
-[driver configuration](docs/drivers/dsn), and
+[driver configuration](docs/drivers/index), and
 [webhook integrations](docs/guides/webhooks).
 
 ## Contributing

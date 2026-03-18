@@ -33,7 +33,7 @@ brew install k6
 
 1. Start the CI server:
    ```bash
-   go run main.go server --storage sqlite://bench.db
+   go run main.go server --storage-sqlite-path bench.db
    ```
 
 2. Run the load test:
