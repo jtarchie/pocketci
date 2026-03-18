@@ -91,35 +91,6 @@ pocketci server \
   --cache-compression none
 ```
 
-### MinIO (Local S3-Compatible)
-
-```bash
-# Start MinIO locally
-docker run -p 9000:9000 -p 9001:9001 \
-  -e MINIO_ROOT_USER=minioadmin \
-  -e MINIO_ROOT_PASSWORD=minioadmin \
-  minio/minio server /data --console-address ":9001"
-
-# Create bucket
-aws --endpoint-url http://localhost:9000 s3 mb s3://cache-bucket
-
-# Run with caching
-pocketci run pipeline.yml \
-  --driver='docker://?cache=s3://http://minioadmin:minioadmin@localhost:9000/cache-bucket?region=us-east-1'
-```
-
-### With Compression Options
-
-```bash
-# Use gzip instead of zstd
-pocketci run pipeline.yml \
-  --driver='docker://?cache=s3://bucket&cache_compression=gzip'
-
-# Disable compression (faster for already-compressed data)
-pocketci run pipeline.yml \
-  --driver='docker://?cache=s3://bucket&cache_compression=none'
-```
-
 ## YAML Pipeline Usage
 
 Use the `caches` field in task configs to define cache directories:
@@ -218,7 +189,7 @@ export AWS_ACCESS_KEY_ID=your-key
 export AWS_SECRET_ACCESS_KEY=your-secret
 export AWS_REGION=us-east-1
 
-pocketci run pipeline.yml --driver='docker://?cache=s3://bucket'
+pocketci server --cache-s3-bucket my-cache
 ```
 
 Or use IAM roles, instance profiles, or other AWS SDK credential sources.

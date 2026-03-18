@@ -12,8 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jtarchie/pocketci/orchestra"
-	"github.com/jtarchie/pocketci/orchestra/native"
 	"github.com/jtarchie/pocketci/server/auth"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/labstack/echo/v5"
@@ -102,9 +100,7 @@ func TestExecutePipelineLoggerIncludesRequestID(t *testing.T) {
 
 	var buf bytes.Buffer
 	svc := NewExecutionService(store, slog.New(slog.NewJSONHandler(&buf, nil)), 1, nil)
-	svc.DriverFactory = func(ns string) (orchestra.Driver, error) {
-		return native.New(native.Config{Namespace: ns}, slog.Default())
-	}
+	svc.DriverConfigs = map[string]map[string]string{"native": {}}
 	svc.wg.Add(1)
 	svc.inFlight.Add(1)
 
@@ -170,9 +166,7 @@ func TestExecutePipelineLoggerIncludesActor(t *testing.T) {
 
 	var buf bytes.Buffer
 	svc := NewExecutionService(store, slog.New(slog.NewJSONHandler(&buf, nil)), 1, nil)
-	svc.DriverFactory = func(ns string) (orchestra.Driver, error) {
-		return native.New(native.Config{Namespace: ns}, slog.Default())
-	}
+	svc.DriverConfigs = map[string]map[string]string{"native": {}}
 	svc.wg.Add(1)
 	svc.inFlight.Add(1)
 

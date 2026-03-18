@@ -27,7 +27,8 @@ The K8s driver is configured via the `--driver` flag:
 go run main.go runner --driver=k8s examples/both/hello-world.ts
 ```
 
-**Available Parameters** (set via server CLI flags or set-pipeline driver config):
+**Available Parameters** (set via server CLI flags or set-pipeline driver
+config):
 
 - `namespace` - Kubernetes namespace for resource placement (default: `default`)
 - `kubeconfig` - Path to kubeconfig file (default: `~/.kube/config` or

@@ -14,7 +14,6 @@ import (
 	"github.com/jtarchie/pocketci/observability"
 	"github.com/jtarchie/pocketci/observability/honeybadger"
 	"github.com/jtarchie/pocketci/observability/posthog"
-	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/orchestra/k8s"
 	"github.com/jtarchie/pocketci/s3config"
 	"github.com/jtarchie/pocketci/secrets"
@@ -297,68 +296,92 @@ func (c *Server) Run(logger *slog.Logger) error {
 		}
 	}
 
-	// Build driver config map and determine default driver name.
-	var driverName string
-	driverConfig := map[string]string{}
+	// Build driver configs for all configured drivers.
+	driverConfigs := map[string]map[string]string{}
 
-	switch {
-	case c.HetznerToken != "":
-		driverName = "hetzner"
-		driverConfig["token"] = c.HetznerToken
-		driverConfig["image"] = c.HetznerImage
-		driverConfig["server_type"] = c.HetznerServerType
-		driverConfig["location"] = c.HetznerLocation
+	// Docker and native are always available.
+	driverConfigs["docker"] = map[string]string{"host": c.DockerHost}
+	driverConfigs["native"] = map[string]string{}
+
+	if c.HetznerToken != "" {
+		cfg := map[string]string{
+			"token":       c.HetznerToken,
+			"image":       c.HetznerImage,
+			"server_type": c.HetznerServerType,
+			"location":    c.HetznerLocation,
+		}
 		if c.HetznerMaxWorkers > 0 {
-			driverConfig["max_workers"] = fmt.Sprintf("%d", c.HetznerMaxWorkers)
+			cfg["max_workers"] = fmt.Sprintf("%d", c.HetznerMaxWorkers)
 		}
 		if c.HetznerReuseWorker {
-			driverConfig["reuse_worker"] = "true"
+			cfg["reuse_worker"] = "true"
 		}
-	case c.DigitalOceanToken != "":
-		driverName = "digitalocean"
-		driverConfig["token"] = c.DigitalOceanToken
-		driverConfig["image"] = c.DigitalOceanImage
-		driverConfig["size"] = c.DigitalOceanSize
-		driverConfig["region"] = c.DigitalOceanRegion
+		driverConfigs["hetzner"] = cfg
+	}
+
+	if c.DigitalOceanToken != "" {
+		cfg := map[string]string{
+			"token":  c.DigitalOceanToken,
+			"image":  c.DigitalOceanImage,
+			"size":   c.DigitalOceanSize,
+			"region": c.DigitalOceanRegion,
+		}
 		if c.DigitalOceanMaxWorkers > 0 {
-			driverConfig["max_workers"] = fmt.Sprintf("%d", c.DigitalOceanMaxWorkers)
+			cfg["max_workers"] = fmt.Sprintf("%d", c.DigitalOceanMaxWorkers)
 		}
 		if c.DigitalOceanReuseWorker {
-			driverConfig["reuse_worker"] = "true"
+			cfg["reuse_worker"] = "true"
 		}
+		driverConfigs["digitalocean"] = cfg
+	}
+
+	if c.FlyToken != "" {
+		driverConfigs["fly"] = map[string]string{
+			"token":  c.FlyToken,
+			"app":    c.FlyApp,
+			"region": c.FlyRegion,
+			"org":    c.FlyOrg,
+			"size":   c.FlySize,
+		}
+	}
+
+	if c.K8sKubeconfig != "" || k8s.IsAvailable() {
+		driverConfigs["k8s"] = map[string]string{
+			"kubeconfig": c.K8sKubeconfig,
+			"namespace":  c.K8sNamespace,
+		}
+	}
+
+	if c.QEMUImage != "" {
+		driverConfigs["qemu"] = map[string]string{
+			"memory":    c.QEMUMemory,
+			"cpus":      c.QEMUCPUs,
+			"accel":     c.QEMUAccel,
+			"binary":    c.QEMUBinary,
+			"cache_dir": c.QEMUCacheDir,
+			"image":     c.QEMUImage,
+		}
+	}
+
+	// Determine default driver: prefer cloud/VM drivers over local ones.
+	defaultDriver := "docker"
+	switch {
+	case c.HetznerToken != "":
+		defaultDriver = "hetzner"
+	case c.DigitalOceanToken != "":
+		defaultDriver = "digitalocean"
 	case c.FlyToken != "":
-		driverName = "fly"
-		driverConfig["token"] = c.FlyToken
-		driverConfig["app"] = c.FlyApp
-		driverConfig["region"] = c.FlyRegion
-		driverConfig["org"] = c.FlyOrg
-		driverConfig["size"] = c.FlySize
+		defaultDriver = "fly"
 	case c.K8sKubeconfig != "" || k8s.IsAvailable():
-		driverName = "k8s"
-		driverConfig["kubeconfig"] = c.K8sKubeconfig
-		driverConfig["namespace"] = c.K8sNamespace
+		defaultDriver = "k8s"
 	case c.QEMUImage != "":
-		driverName = "qemu"
-		driverConfig["memory"] = c.QEMUMemory
-		driverConfig["cpus"] = c.QEMUCPUs
-		driverConfig["accel"] = c.QEMUAccel
-		driverConfig["binary"] = c.QEMUBinary
-		driverConfig["cache_dir"] = c.QEMUCacheDir
-		driverConfig["image"] = c.QEMUImage
-	default: // docker (including when DockerHost is empty = local socket)
-		driverName = "docker"
-		driverConfig["host"] = c.DockerHost
+		defaultDriver = "qemu"
 	}
 
-	// Build driver factory via registry
-	baseFactory := func(ns string) (orchestra.Driver, error) {
-		return orchestra.CreateDriver(driverName, ns, driverConfig, logger)
-	}
-
-	// Optionally wrap with cache
-	driverFactory := baseFactory
+	// Build optional cache store.
+	var cacheStore cache.CacheStore
 	if c.CacheS3Bucket != "" {
-		store, err := cacheplugins3.New(cacheplugins3.Config{Config: s3config.Config{
+		cacheStore, err = cacheplugins3.New(cacheplugins3.Config{Config: s3config.Config{
 			Bucket:          c.CacheS3Bucket,
 			Prefix:          c.CacheS3Prefix,
 			Endpoint:        c.CacheS3Endpoint,
@@ -370,13 +393,6 @@ func (c *Server) Run(logger *slog.Logger) error {
 		}})
 		if err != nil {
 			return fmt.Errorf("could not create cache store: %w", err)
-		}
-		driverFactory = func(ns string) (orchestra.Driver, error) {
-			d, err := baseFactory(ns)
-			if err != nil {
-				return nil, err
-			}
-			return cache.WrapWithCaching(d, store, c.CacheCompression, c.CacheKeyPrefix, logger), nil
 		}
 	}
 
@@ -392,9 +408,11 @@ func (c *Server) Run(logger *slog.Logger) error {
 		FetchMaxResponseBytes: int64(c.FetchMaxResponseMB) * 1024 * 1024,
 		AuthConfig:            authConfig,
 		ObservabilityProvider: obsProvider,
-		DriverFactory:         driverFactory,
-		DriverName:            driverName,
-		DefaultDriverConfig:   driverConfig,
+		DefaultDriver:         defaultDriver,
+		DriverConfigs:         driverConfigs,
+		CacheStore:            cacheStore,
+		CacheCompression:      c.CacheCompression,
+		CacheKeyPrefix:        c.CacheKeyPrefix,
 		WebhookProviders: []webhooks.Provider{
 			webhookgithub.New(),
 			webhookhoneybadger.New(),

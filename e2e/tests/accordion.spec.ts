@@ -44,7 +44,7 @@ test.describe("Task Accordion State during Live Updates", () => {
             command: { path: "sleep", args: ["15"] },
           });
         };`,
-        "docker://",
+        "docker",
       );
 
       // ── Navigate to the pipeline detail page ──────────────────────────────

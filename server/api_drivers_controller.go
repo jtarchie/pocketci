@@ -8,8 +8,8 @@ import (
 
 // APIDriversController handles JSON API endpoints for listing available drivers.
 type APIDriversController struct {
-	allowedDrivers []string
-	driverName     string
+	allowedDrivers    []string
+	configuredDrivers []string
 }
 
 // Index handles GET /api/drivers - List allowed drivers.
@@ -17,9 +17,7 @@ func (c *APIDriversController) Index(ctx *echo.Context) error {
 	var drivers []string
 
 	if len(c.allowedDrivers) == 1 && c.allowedDrivers[0] == "*" {
-		if c.driverName != "" {
-			drivers = []string{c.driverName}
-		}
+		drivers = c.configuredDrivers
 	} else {
 		drivers = c.allowedDrivers
 	}

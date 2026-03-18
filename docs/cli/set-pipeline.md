@@ -12,11 +12,15 @@ pocketci set-pipeline <pipeline-file> --server <url> [options]
 - `--name` — pipeline name (if omitted, derived from filename)
 - `--driver` — orchestration driver (e.g., `docker`, `native`, `k8s`)
 - `--docker-host` — Docker daemon host URL (env: `CI_DOCKER_HOST`)
-- `--fly-token`, `--fly-app`, `--fly-region`, `--fly-org`, `--fly-size` — Fly.io driver config
-- `--hetzner-token`, `--hetzner-image`, `--hetzner-server-type`, `--hetzner-location` — Hetzner driver config
-- `--digitalocean-token`, `--digitalocean-image`, `--digitalocean-size`, `--digitalocean-region` — DigitalOcean driver config
+- `--fly-token`, `--fly-app`, `--fly-region`, `--fly-org`, `--fly-size` — Fly.io
+  driver config
+- `--hetzner-token`, `--hetzner-image`, `--hetzner-server-type`,
+  `--hetzner-location` — Hetzner driver config
+- `--digitalocean-token`, `--digitalocean-image`, `--digitalocean-size`,
+  `--digitalocean-region` — DigitalOcean driver config
 - `--k8s-kubeconfig`, `--k8s-namespace` — Kubernetes driver config
-- `--qemu-memory`, `--qemu-cpus`, `--qemu-accel`, `--qemu-image` — QEMU driver config
+- `--qemu-memory`, `--qemu-cpus`, `--qemu-accel`, `--qemu-image` — QEMU driver
+  config
 - `--webhook-secret` — secret for webhook requests (optional)
 - `--basic-auth-username` — server basic auth user (env:
   `CI_BASIC_AUTH_USERNAME`)

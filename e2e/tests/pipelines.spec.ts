@@ -53,7 +53,7 @@ test.describe("Pipeline Management UI", () => {
         request,
         pipelineName,
         `export const pipeline = async () => { console.log("test"); };`,
-        "docker://",
+        "docker",
       );
 
       await page.goto("/pipelines/");
@@ -107,7 +107,7 @@ test.describe("Pipeline Management UI", () => {
         request,
         pipelineName,
         `export const pipeline = async () => { console.log("test"); };`,
-        "docker://",
+        "docker",
       );
 
       await page.goto("/pipelines/");
@@ -444,7 +444,7 @@ test.describe("Live Updates", () => {
           command: { path: "sleep", args: ["10"] }
         });
       };`,
-      "docker://",
+      "docker",
     );
 
     await page.goto("/pipelines/");
@@ -478,7 +478,7 @@ test.describe("Live Updates", () => {
           command: { path: "sleep", args: ["5"] }
         });
       };`,
-      "docker://",
+      "docker",
     );
 
     await page.goto("/pipelines/");
@@ -522,7 +522,7 @@ test.describe("Live Updates", () => {
           command: { path: "sleep", args: ["5"] }
         });
       };`,
-      "docker://",
+      "docker",
     );
 
     await page.goto("/pipelines/");
@@ -560,7 +560,7 @@ test.describe("Live Updates", () => {
           command: { path: "sleep", args: ["3"] }
         });
       };`,
-      "docker://",
+      "docker",
     );
 
     await page.goto("/pipelines/");

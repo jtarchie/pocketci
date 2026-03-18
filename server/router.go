@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/server/auth"
 	"github.com/jtarchie/pocketci/storage"
@@ -38,14 +38,18 @@ type RouterOptions struct {
 	FetchMaxResponseBytes int64
 	AuthConfig            *auth.Config
 	ObservabilityProvider ObservabilityProvider
-	// DriverFactory creates a new orchestra.Driver for each pipeline execution.
-	DriverFactory func(namespace string) (orchestra.Driver, error)
-	// DriverName is the name of the configured driver (used in API responses).
-	DriverName string
-	// DefaultDriverConfig is the flat config map for the server's default driver.
-	// Used as fallback when a pipeline's driver matches the server default but
-	// has no pipeline-specific driver config secrets.
-	DefaultDriverConfig map[string]string
+	// DefaultDriver is the name of the default driver when a pipeline doesn't specify one.
+	DefaultDriver string
+	// DriverConfigs maps driver names to their flat config maps.
+	// Every driver the server is willing to serve should have an entry.
+	DriverConfigs map[string]map[string]string
+	// CacheStore is the optional cache backend. When non-nil every created
+	// driver is wrapped with caching.
+	CacheStore cache.CacheStore
+	// CacheCompression is the compression algorithm for the cache (zstd, gzip, none).
+	CacheCompression string
+	// CacheKeyPrefix is prepended to all cache keys.
+	CacheKeyPrefix string
 	// WebhookProviders is the ordered list of webhook providers to use for detection.
 	// Providers are checked in order; the first match wins.
 	WebhookProviders []webhooks.Provider
@@ -178,8 +182,14 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	execService.AllowedFeatures = allowedFeatures
 	execService.FetchTimeout = opts.FetchTimeout
 	execService.FetchMaxResponseBytes = opts.FetchMaxResponseBytes
-	execService.DriverFactory = opts.DriverFactory
-	execService.DefaultDriverConfig = opts.DefaultDriverConfig
+	execService.DriverConfigs = opts.DriverConfigs
+	execService.CacheStore = opts.CacheStore
+	execService.CacheCompression = opts.CacheCompression
+	execService.CacheKeyPrefix = opts.CacheKeyPrefix
+
+	if opts.DefaultDriver != "" {
+		execService.DefaultDriver = opts.DefaultDriver
+	}
 
 	// Recover orphaned runs from previous server instance
 	execService.RecoverOrphanedRuns(context.Background())
@@ -300,7 +310,12 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 		api.Use(newBasicAuthMiddleware(opts.BasicAuthUsername, opts.BasicAuthPassword))
 	}
 
-	registerRoutes(router, api, web, store, execService, allowedDrivers, opts.DriverName, allowedFeatures, opts.SecretsManager, opts.WebhookProviders, webhookTimeout, logger)
+	configuredDrivers := make([]string, 0, len(opts.DriverConfigs))
+	for name := range opts.DriverConfigs {
+		configuredDrivers = append(configuredDrivers, name)
+	}
+
+	registerRoutes(router, api, web, store, execService, allowedDrivers, configuredDrivers, allowedFeatures, opts.SecretsManager, opts.WebhookProviders, webhookTimeout, logger)
 
 	return &Router{Echo: router, execService: execService, webGroup: web, allowedDrivers: allowedDrivers, allowedFeatures: allowedFeatures}, nil
 }
@@ -313,7 +328,7 @@ func registerRoutes(
 	store storage.Driver,
 	execService *ExecutionService,
 	allowedDrivers []string,
-	driverName string,
+	configuredDrivers []string,
 	allowedFeatures []Feature,
 	secretsMgr secrets.Manager,
 	webhookProviders []webhooks.Provider,
@@ -325,7 +340,7 @@ func registerRoutes(
 	// API controllers (JSON responses)
 	(&APIPipelinesController{BaseController: base, allowedDrivers: allowedDrivers, allowedFeatures: allowedFeatures, secretsMgr: secretsMgr}).RegisterRoutes(api)
 	(&APIRunsController{BaseController: base, allowedFeatures: allowedFeatures}).RegisterRoutes(api)
-	(&APIDriversController{allowedDrivers: allowedDrivers, driverName: driverName}).RegisterRoutes(api)
+	(&APIDriversController{allowedDrivers: allowedDrivers, configuredDrivers: configuredDrivers}).RegisterRoutes(api)
 	(&APIFeaturesController{allowedFeatures: allowedFeatures}).RegisterRoutes(api)
 
 	// Webhooks registered on the main router (no auth group, before API group)
