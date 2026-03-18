@@ -5,6 +5,112 @@
  * - Help panel
  */
 
+function initTerminalLineLinks() {
+  let lastClickedLineId = null;
+
+  function parseLineHash(hash) {
+    if (!hash || hash.length < 2) return null;
+    const fragment = hash.substring(1);
+    // Match patterns like "termid-L5" or "termid-L5-L10"
+    const rangeMatch = fragment.match(/^(.+)-L(\d+)-L(\d+)$/);
+    if (rangeMatch) {
+      return {
+        terminalID: rangeMatch[1],
+        startLine: parseInt(rangeMatch[2], 10),
+        endLine: parseInt(rangeMatch[3], 10),
+      };
+    }
+    const singleMatch = fragment.match(/^(.+)-L(\d+)$/);
+    if (singleMatch) {
+      return {
+        terminalID: singleMatch[1],
+        startLine: parseInt(singleMatch[2], 10),
+        endLine: parseInt(singleMatch[2], 10),
+      };
+    }
+    return null;
+  }
+
+  function clearHighlights() {
+    document.querySelectorAll(".term-line.highlighted").forEach(function (el) {
+      el.classList.remove("highlighted");
+    });
+  }
+
+  function highlightRange(terminalID, startLine, endLine) {
+    clearHighlights();
+    const lo = Math.min(startLine, endLine);
+    const hi = Math.max(startLine, endLine);
+    let firstEl = null;
+    for (let i = lo; i <= hi; i++) {
+      const el = document.getElementById(terminalID + "-L" + i);
+      if (el) {
+        el.classList.add("highlighted");
+        if (!firstEl) firstEl = el;
+      }
+    }
+    return firstEl;
+  }
+
+  function applyHash() {
+    const parsed = parseLineHash(window.location.hash);
+    if (!parsed) return;
+    // Open parent <details> if closed
+    const firstLineEl = document.getElementById(
+      parsed.terminalID + "-L" + parsed.startLine,
+    );
+    if (firstLineEl) {
+      const details = firstLineEl.closest("details.task-item");
+      if (details && !details.hasAttribute("open")) {
+        details.setAttribute("open", "");
+      }
+    }
+    const firstHighlighted = highlightRange(
+      parsed.terminalID,
+      parsed.startLine,
+      parsed.endLine,
+    );
+    if (firstHighlighted) {
+      firstHighlighted.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
+
+  globalThis.addEventListener("hashchange", applyHash);
+  applyHash();
+
+  // Delegated click handler for line number links
+  document.addEventListener("click", function (e) {
+    const link = e.target.closest(".term-line-num");
+    if (!link) return;
+    e.preventDefault();
+    const lineDiv = link.closest(".term-line");
+    if (!lineDiv) return;
+    const lineId = lineDiv.id;
+
+    if (e.shiftKey && lastClickedLineId) {
+      // Range selection
+      const lastParsed = parseLineHash("#" + lastClickedLineId);
+      const currentParsed = parseLineHash("#" + lineId);
+      if (
+        lastParsed && currentParsed &&
+        lastParsed.terminalID === currentParsed.terminalID
+      ) {
+        const lo = Math.min(lastParsed.startLine, currentParsed.startLine);
+        const hi = Math.max(lastParsed.startLine, currentParsed.startLine);
+        const rangeHash = "#" + lastParsed.terminalID + "-L" + lo + "-L" + hi;
+        history.replaceState(null, "", rangeHash);
+        highlightRange(lastParsed.terminalID, lo, hi);
+        return;
+      }
+    }
+
+    lastClickedLineId = lineId;
+    history.replaceState(null, "", "#" + lineId);
+    clearHighlights();
+    lineDiv.classList.add("highlighted");
+  });
+}
+
 export function initResults() {
   const searchInput = document.getElementById("task-search");
   const expandAllBtn = document.getElementById("expand-all");
@@ -17,6 +123,8 @@ export function initResults() {
   }
 
   if (!getTasksContainer()) return;
+
+  initTerminalLineLinks();
 
   // Help panel toggle
   if (helpToggle && helpPanel) {

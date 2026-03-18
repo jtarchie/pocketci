@@ -2,6 +2,8 @@ package server
 
 import (
 	"encoding/json"
+	"strconv"
+	"strings"
 
 	terminal "github.com/buildkite/terminal-to-html/v3"
 )
@@ -41,6 +43,57 @@ func ParseTerminalLogs(raw any) []TerminalLogEntry {
 	}
 
 	return logs
+}
+
+// SanitizeTerminalID converts a storage path into a valid HTML ID.
+func SanitizeTerminalID(fullPath string) string {
+	id := strings.ReplaceAll(fullPath, "/", "_")
+	id = strings.TrimLeft(id, "_")
+
+	return id
+}
+
+// WrapTerminalLines wraps each line of terminal HTML output with numbered
+// anchors for permalink linking, similar to GitHub's code view.
+func WrapTerminalLines(html string, terminalID string) string {
+	if html == "" {
+		return ""
+	}
+
+	lineCount := strings.Count(html, "\n") + 1
+
+	var sb strings.Builder
+
+	sb.Grow(len(html) + lineCount*100)
+
+	lineNum := 1
+	start := 0
+
+	for i := 0; i <= len(html); i++ {
+		if i == len(html) || html[i] == '\n' {
+			line := html[start:i]
+			numStr := strconv.Itoa(lineNum)
+
+			sb.WriteString(`<div class="term-line" id="`)
+			sb.WriteString(terminalID)
+			sb.WriteString("-L")
+			sb.WriteString(numStr)
+			sb.WriteString(`"><a class="term-line-num" href="#`)
+			sb.WriteString(terminalID)
+			sb.WriteString("-L")
+			sb.WriteString(numStr)
+			sb.WriteString(`">`)
+			sb.WriteString(numStr)
+			sb.WriteString(`</a><span class="term-line-content">`)
+			sb.WriteString(line)
+			sb.WriteString("</span></div>")
+
+			lineNum++
+			start = i + 1
+		}
+	}
+
+	return sb.String()
 }
 
 func ToTerminalHTML(text string) string {

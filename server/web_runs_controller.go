@@ -81,6 +81,9 @@ func (c *WebRunsController) preloadTerminalHTML(ctx *echo.Context, lookupPath st
 			html = ToTerminalHTML(displayOutput)
 		}
 
+		terminalID := SanitizeTerminalID(r.Path)
+		html = WrapTerminalLines(html, terminalID)
+
 		if status == "running" || status == "" {
 			htmlByPath[r.Path] = template.HTML(fmt.Sprintf(
 				`<div class="term-container" hx-get="/terminal%s" hx-trigger="load delay:2s" hx-swap="outerHTML">%s</div>`,
@@ -122,6 +125,9 @@ func (c *WebRunsController) Terminal(ctx *echo.Context) error {
 
 		html = ToTerminalHTML(displayOutput)
 	}
+
+	terminalID := SanitizeTerminalID(lookupPath)
+	html = WrapTerminalLines(html, terminalID)
 
 	status, _ := payload["status"].(string)
 	if status == "running" || status == "" {

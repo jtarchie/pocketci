@@ -115,16 +115,25 @@ document.body.addEventListener("htmx:afterSettle", function (event) {
 // the `open` attribute. We save which <details> elements the user has opened
 // before the morph and restore them afterward.
 const openDetailsIds = new Set();
+const highlightedLineIds = new Set();
 document.body.addEventListener("htmx:beforeSwap", function () {
   openDetailsIds.clear();
   document.querySelectorAll("details.task-item[open]").forEach(function (el) {
     if (el.id) openDetailsIds.add(el.id);
+  });
+  highlightedLineIds.clear();
+  document.querySelectorAll(".term-line.highlighted").forEach(function (el) {
+    if (el.id) highlightedLineIds.add(el.id);
   });
 });
 document.body.addEventListener("htmx:afterSwap", function () {
   openDetailsIds.forEach(function (id) {
     const el = document.getElementById(id);
     if (el) el.setAttribute("open", "");
+  });
+  highlightedLineIds.forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.classList.add("highlighted");
   });
 });
 

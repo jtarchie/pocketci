@@ -26,7 +26,7 @@ type SetPipeline struct {
 	Secret        []string `help:"Set a pipeline-scoped secret as KEY=VALUE (can be repeated)" short:"e"`
 	SecretFile    string   `help:"Path to a file containing secrets in KEY=VALUE format (one per line)" type:"existingfile"`
 	Resume        bool     `help:"Enable automatic resume for this pipeline" default:"false"`
-	RBAC          string   `help:"RBAC expression to control access to this pipeline (expr-lang)" env:"CI_PIPELINE_RBAC"`
+	RBAC          string   `name:"rbac" help:"RBAC expression to control access to this pipeline (expr-lang)" env:"CI_PIPELINE_RBAC"`
 	AuthToken     string   `env:"CI_AUTH_TOKEN"      help:"Bearer token for OAuth-authenticated servers"                   short:"t"`
 	ConfigFile    string   `env:"CI_AUTH_CONFIG"     help:"Path to auth config file (default: ~/.pocketci/auth.config)"   short:"c"`
 }

@@ -10,7 +10,36 @@
   font-size: 12px;
   line-height: 20px;
   padding: 14px 18px;
+}
+
+.term-line {
+  display: flex;
+  min-height: 20px;
+}
+.term-line-num {
+  display: inline-block;
+  min-width: 4ch;
+  padding-right: 1.5ch;
+  text-align: right;
+  color: #555;
+  user-select: none;
+  cursor: pointer;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.term-line-num:hover {
+  color: #8db7e0;
+}
+.term-line-content {
+  flex: 1;
   white-space: pre-wrap;
+  word-break: break-word;
+}
+.term-line.highlighted {
+  background-color: rgba(255, 208, 0, 0.15);
+}
+.term-line:target {
+  background-color: rgba(255, 208, 0, 0.15);
 }
 
 .term-container img {
