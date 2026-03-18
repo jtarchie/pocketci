@@ -36,9 +36,11 @@ func TestDigitalOcean(t *testing.T) {
 
 		namespace := "test-" + gonanoid.Must()
 		client, err := digitalocean.New(digitalocean.Config{
+			ServerConfig: digitalocean.ServerConfig{
+				Token: token,
+				Tags:  testTag,
+			},
 			Namespace: namespace,
-			Token:     token,
-			Tags:      testTag,
 		}, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
@@ -86,10 +88,12 @@ func TestDigitalOcean(t *testing.T) {
 
 		namespace := "test-" + gonanoid.Must()
 		client, err := digitalocean.New(digitalocean.Config{
+			ServerConfig: digitalocean.ServerConfig{
+				Token: token,
+				Size:  "auto",
+				Tags:  testTag,
+			},
 			Namespace: namespace,
-			Token:     token,
-			Size:      "auto",
-			Tags:      testTag,
 		}, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
@@ -131,11 +135,13 @@ func TestDigitalOcean(t *testing.T) {
 		// Use a shared namespace so both drivers target the same worker pool
 		namespace := "test-" + gonanoid.Must()
 		cfg := digitalocean.Config{
-			Namespace:   namespace,
-			Token:       token,
-			Tags:        testTag,
-			ReuseWorker: true,
-			MaxWorkers:  1,
+			ServerConfig: digitalocean.ServerConfig{
+				Token:       token,
+				Tags:        testTag,
+				ReuseWorker: true,
+				MaxWorkers:  1,
+			},
+			Namespace: namespace,
 		}
 
 		// First run: creates a new machine and parks it on close
@@ -192,12 +198,14 @@ func TestDigitalOcean(t *testing.T) {
 		// Use a shared namespace so both drivers share the same worker pool
 		namespace := "test-" + gonanoid.Must()
 		cfg := digitalocean.Config{
-			Namespace:    namespace,
-			Token:        token,
-			Tags:         testTag,
-			MaxWorkers:   1,
-			PollInterval: 5 * time.Second,
-			WaitTimeout:  15 * time.Minute,
+			ServerConfig: digitalocean.ServerConfig{
+				Token:        token,
+				Tags:         testTag,
+				MaxWorkers:   1,
+				PollInterval: orchestra.Duration(5 * time.Second),
+				WaitTimeout:  orchestra.Duration(15 * time.Minute),
+			},
+			Namespace: namespace,
 		}
 
 		var (

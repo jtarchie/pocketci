@@ -25,9 +25,11 @@ func TestMain(m *testing.M) {
 
 	var err error
 	testDriver, err = vzdriver.New(vzdriver.Config{
+		ServerConfig: vzdriver.ServerConfig{
+			Memory: "2048",
+			CPUs:   "2",
+		},
 		Namespace: namespace,
-		Memory:    "2048",
-		CPUs:      "2",
 	}, logger)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create VZ driver: %v\n", err)

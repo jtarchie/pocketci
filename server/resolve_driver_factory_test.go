@@ -2,13 +2,15 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"os"
 	"testing"
 
-	_ "github.com/jtarchie/pocketci/orchestra/docker"
-	_ "github.com/jtarchie/pocketci/orchestra/native"
+	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/orchestra/docker"
+	"github.com/jtarchie/pocketci/orchestra/native"
 	"github.com/jtarchie/pocketci/secrets"
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/storage"
@@ -45,9 +47,9 @@ func TestResolveDriverFactory(t *testing.T) {
 
 		svc, store := newTestExecService(t)
 		svc.DefaultDriver = "native"
-		svc.DriverConfigs = map[string]map[string]string{
-			"native": {},
-			"docker": {"host": "tcp://remote:2376"},
+		svc.DriverConfigs = map[string]orchestra.DriverConfig{
+			"native": native.ServerConfig{},
+			"docker": docker.ServerConfig{Host: "tcp://remote:2376"},
 		}
 
 		pipeline, err := store.SavePipeline(context.Background(), "no-driver", "export const pipeline = async () => {};", "", "")
@@ -66,9 +68,9 @@ func TestResolveDriverFactory(t *testing.T) {
 
 		svc, store := newTestExecService(t)
 		svc.DefaultDriver = "docker"
-		svc.DriverConfigs = map[string]map[string]string{
-			"native": {},
-			"docker": {"host": ""},
+		svc.DriverConfigs = map[string]orchestra.DriverConfig{
+			"native": native.ServerConfig{},
+			"docker": docker.ServerConfig{},
 		}
 
 		pipeline, err := store.SavePipeline(context.Background(), "explicit-native", "export const pipeline = async () => {};", "native", "")
@@ -87,8 +89,8 @@ func TestResolveDriverFactory(t *testing.T) {
 
 		svc, store := newTestExecService(t)
 		svc.DefaultDriver = "docker"
-		svc.DriverConfigs = map[string]map[string]string{
-			"docker": {"host": ""},
+		svc.DriverConfigs = map[string]orchestra.DriverConfig{
+			"docker": docker.ServerConfig{},
 		}
 
 		// native works with empty config since it needs nothing
@@ -108,9 +110,9 @@ func TestResolveDriverFactory(t *testing.T) {
 
 		svc, store := newTestExecService(t)
 		svc.DefaultDriver = "docker"
-		svc.DriverConfigs = map[string]map[string]string{
-			"native": {},
-			"docker": {"host": "tcp://server-default:2376"},
+		svc.DriverConfigs = map[string]orchestra.DriverConfig{
+			"native": native.ServerConfig{},
+			"docker": docker.ServerConfig{Host: "tcp://server-default:2376"},
 		}
 
 		secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -121,9 +123,10 @@ func TestResolveDriverFactory(t *testing.T) {
 		pipeline, err := store.SavePipeline(context.Background(), "custom-docker", "export const pipeline = async () => {};", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		// Set pipeline-specific driver secret
+		// Set pipeline-specific driver config as JSON secret
 		scope := secrets.PipelineScope(pipeline.ID)
-		err = secretsMgr.Set(context.Background(), scope, "driver.host", "tcp://pipeline-custom:2376")
+		cfgJSON, _ := json.Marshal(docker.ServerConfig{Host: "tcp://pipeline-custom:2376"})
+		err = secretsMgr.Set(context.Background(), scope, "driver_config", string(cfgJSON))
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		factory := svc.resolveDriverFactory(pipeline, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -141,9 +144,9 @@ func TestResolveDriverFactory(t *testing.T) {
 
 		svc, store := newTestExecService(t)
 		svc.DefaultDriver = "native"
-		svc.DriverConfigs = map[string]map[string]string{
-			"native": {},
-			"docker": {"host": "tcp://server:2376"},
+		svc.DriverConfigs = map[string]orchestra.DriverConfig{
+			"native": native.ServerConfig{},
+			"docker": docker.ServerConfig{Host: "tcp://server:2376"},
 		}
 
 		secretsMgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -154,9 +157,10 @@ func TestResolveDriverFactory(t *testing.T) {
 		pipeline, err := store.SavePipeline(context.Background(), "partial-config", "export const pipeline = async () => {};", "native", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		// Set a single pipeline secret — this should be the ONLY config used.
+		// Set pipeline-specific driver config as JSON — overrides server config entirely.
 		scope := secrets.PipelineScope(pipeline.ID)
-		err = secretsMgr.Set(context.Background(), scope, "driver.custom_key", "custom_value")
+		cfgJSON, _ := json.Marshal(native.ServerConfig{})
+		err = secretsMgr.Set(context.Background(), scope, "driver_config", string(cfgJSON))
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		factory := svc.resolveDriverFactory(pipeline, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -173,9 +177,9 @@ func TestResolveDriverFactory(t *testing.T) {
 
 		svc, store := newTestExecService(t)
 		svc.DefaultDriver = "docker"
-		svc.DriverConfigs = map[string]map[string]string{
-			"native": {},
-			"docker": {"host": ""},
+		svc.DriverConfigs = map[string]orchestra.DriverConfig{
+			"native": native.ServerConfig{},
+			"docker": docker.ServerConfig{},
 		}
 
 		// Pipeline A uses native

@@ -33,21 +33,29 @@ const (
 	DefaultWaitTimeout   = 10 * time.Minute
 )
 
+// ServerConfig holds server-level configuration for the DigitalOcean driver.
+type ServerConfig struct {
+	Token         string             `json:"token,omitempty"`          // DigitalOcean API token (required)
+	Image         string             `json:"image,omitempty"`          // Droplet image slug (default: docker-20-04)
+	Size          string             `json:"size,omitempty"`           // Droplet size slug or "auto" (default: s-1vcpu-1gb)
+	Region        string             `json:"region,omitempty"`         // Droplet region (default: nyc3)
+	DiskSize      int                `json:"disk_size,omitempty"`      // Volume disk size in GB (default: 25)
+	MaxWorkers    int                `json:"max_workers,omitempty"`    // Max concurrent droplets (default: 1)
+	ReuseWorker   bool               `json:"reuse_worker,omitempty"`   // Reuse idle droplets across runs
+	Tags          string             `json:"tags,omitempty"`           // Comma-separated custom tags
+	SSHTimeout    orchestra.Duration `json:"ssh_timeout,omitempty"`    // Timeout for SSH to become available (default: 5m)
+	DockerTimeout orchestra.Duration `json:"docker_timeout,omitempty"` // Timeout for Docker to become available (default: 5m)
+	PollInterval  orchestra.Duration `json:"poll_interval,omitempty"`  // Poll interval for worker slot (default: 10s)
+	WaitTimeout   orchestra.Duration `json:"wait_timeout,omitempty"`   // Timeout waiting for worker slot (default: 10m)
+}
+
+// DriverName implements orchestra.DriverConfig.
+func (ServerConfig) DriverName() string { return "digitalocean" }
+
 // Config holds configuration for the DigitalOcean driver.
 type Config struct {
-	Namespace     string        // Per-execution namespace identifier
-	Token         string        // DigitalOcean API token (required)
-	Image         string        // Droplet image slug (default: docker-20-04)
-	Size          string        // Droplet size slug or "auto" (default: s-1vcpu-1gb)
-	Region        string        // Droplet region (default: nyc3)
-	DiskSize      int           // Volume disk size in GB (default: 25)
-	MaxWorkers    int           // Max concurrent droplets (default: 1)
-	ReuseWorker   bool          // Reuse idle droplets across runs
-	Tags          string        // Comma-separated custom tags
-	SSHTimeout    time.Duration // Timeout for SSH to become available (default: 5m)
-	DockerTimeout time.Duration // Timeout for Docker to become available (default: 5m)
-	PollInterval  time.Duration // Poll interval for worker slot (default: 10s)
-	WaitTimeout   time.Duration // Timeout waiting for worker slot (default: 10m)
+	ServerConfig
+	Namespace string // Per-execution namespace identifier
 }
 
 // sanitizeHostname converts a string to a valid hostname.
@@ -112,12 +120,12 @@ func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 		maxWorkers = DefaultMaxWorkers
 	}
 
-	pollInterval := cfg.PollInterval
+	pollInterval := cfg.PollInterval.Std()
 	if pollInterval <= 0 {
 		pollInterval = DefaultPollInterval
 	}
 
-	waitTimeout := cfg.WaitTimeout
+	waitTimeout := cfg.WaitTimeout.Std()
 	if waitTimeout <= 0 {
 		waitTimeout = DefaultWaitTimeout
 	}
@@ -597,7 +605,7 @@ func (d *DigitalOcean) waitForDroplet(ctx context.Context, dropletID int) (*godo
 func (d *DigitalOcean) waitForSSH(ctx context.Context, ip string) error {
 	d.logger.Info("digitalocean.ssh.waiting", "ip", ip)
 
-	sshTimeout := d.cfg.SSHTimeout
+	sshTimeout := d.cfg.SSHTimeout.Std()
 	if sshTimeout <= 0 {
 		sshTimeout = DefaultSSHTimeout
 	}
@@ -657,7 +665,7 @@ func (d *DigitalOcean) waitForSSH(ctx context.Context, ip string) error {
 func (d *DigitalOcean) waitForDocker(ctx context.Context) error {
 	d.logger.Info("digitalocean.docker.wait")
 
-	dockerTimeout := d.cfg.DockerTimeout
+	dockerTimeout := d.cfg.DockerTimeout.Std()
 	if dockerTimeout <= 0 {
 		dockerTimeout = DefaultDockerTimeout
 	}

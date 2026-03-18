@@ -39,7 +39,7 @@ func TestDrivers(t *testing.T) {
 			return k8s.New(k8s.Config{Namespace: ns}, slog.Default())
 		}},
 		{"fly", func(ns string) (orchestra.Driver, error) {
-			return fly.New(fly.Config{Namespace: ns, Token: os.Getenv("FLY_API_TOKEN")}, slog.Default())
+			return fly.New(fly.Config{ServerConfig: fly.ServerConfig{Token: os.Getenv("FLY_API_TOKEN")}, Namespace: ns}, slog.Default())
 		}},
 	}
 
@@ -490,7 +490,7 @@ func TestSandboxDrivers(t *testing.T) {
 			return k8s.New(k8s.Config{Namespace: ns}, slog.Default())
 		}},
 		{"fly", func(ns string) (orchestra.Driver, error) {
-			return fly.New(fly.Config{Namespace: ns, Token: os.Getenv("FLY_API_TOKEN")}, slog.Default())
+			return fly.New(fly.Config{ServerConfig: fly.ServerConfig{Token: os.Getenv("FLY_API_TOKEN")}, Namespace: ns}, slog.Default())
 		}},
 	}
 

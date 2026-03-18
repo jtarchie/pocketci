@@ -36,9 +36,11 @@ func TestHetzner(t *testing.T) {
 
 		namespace := "test-" + gonanoid.Must()
 		client, err := hetzner.New(hetzner.Config{
+			ServerConfig: hetzner.ServerConfig{
+				Token:  token,
+				Labels: testLabel,
+			},
 			Namespace: namespace,
-			Token:     token,
-			Labels:    testLabel,
 		}, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
@@ -86,10 +88,12 @@ func TestHetzner(t *testing.T) {
 
 		namespace := "test-" + gonanoid.Must()
 		client, err := hetzner.New(hetzner.Config{
-			Namespace:  namespace,
-			Token:      token,
-			ServerType: "auto",
-			Labels:     testLabel,
+			ServerConfig: hetzner.ServerConfig{
+				Token:      token,
+				ServerType: "auto",
+				Labels:     testLabel,
+			},
+			Namespace: namespace,
 		}, slog.Default())
 		assert.Expect(err).NotTo(HaveOccurred())
 
@@ -142,11 +146,13 @@ func TestHetzner(t *testing.T) {
 		// Use a shared namespace so both drivers target the same worker pool
 		namespace := "test-" + gonanoid.Must()
 		cfg := hetzner.Config{
-			Namespace:   namespace,
-			Token:       token,
-			Labels:      testLabel,
-			ReuseWorker: true,
-			MaxWorkers:  1,
+			ServerConfig: hetzner.ServerConfig{
+				Token:       token,
+				Labels:      testLabel,
+				ReuseWorker: true,
+				MaxWorkers:  1,
+			},
+			Namespace: namespace,
 		}
 
 		// First run: creates a new machine and parks it on close
@@ -203,12 +209,14 @@ func TestHetzner(t *testing.T) {
 		// Use a shared namespace so both drivers share the same worker pool
 		namespace := "test-" + gonanoid.Must()
 		cfg := hetzner.Config{
-			Namespace:    namespace,
-			Token:        token,
-			Labels:       testLabel,
-			MaxWorkers:   1,
-			PollInterval: 5 * time.Second,
-			WaitTimeout:  15 * time.Minute,
+			ServerConfig: hetzner.ServerConfig{
+				Token:        token,
+				Labels:       testLabel,
+				MaxWorkers:   1,
+				PollInterval: orchestra.Duration(5 * time.Second),
+				WaitTimeout:  orchestra.Duration(15 * time.Minute),
+			},
+			Namespace: namespace,
 		}
 
 		var (

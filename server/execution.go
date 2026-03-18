@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -34,7 +33,7 @@ type ExecutionService struct {
 	mu                    sync.Mutex
 	wg                    sync.WaitGroup
 	DefaultDriver         string
-	DriverConfigs         map[string]map[string]string
+	DriverConfigs         map[string]orchestra.DriverConfig
 	CacheStore            cache.CacheStore
 	CacheCompression      string
 	CacheKeyPrefix        string
@@ -592,9 +591,9 @@ func (s *ExecutionService) determineRunStatus(ctx context.Context, runID string,
 }
 
 // resolveDriverFactory returns a driver factory for the given pipeline.
-// It reads the pipeline's driver name and any driver.* config secrets.
-// Fallback: if the pipeline driver matches the server default and has no
-// pipeline-specific config, the server's default config is used.
+// It reads the pipeline's driver name and any driver config from secrets.
+// Fallback: if the pipeline has no pipeline-specific config, the server's
+// default config is used.
 func (s *ExecutionService) resolveDriverFactory(pipeline *storage.Pipeline, logger *slog.Logger) func(namespace string) (orchestra.Driver, error) {
 	driverName := pipeline.Driver
 	if driverName == "" {
@@ -602,49 +601,30 @@ func (s *ExecutionService) resolveDriverFactory(pipeline *storage.Pipeline, logg
 	}
 
 	// Attempt to load pipeline-specific driver config from secrets.
-	var driverConfig map[string]string
+	var serverCfg orchestra.DriverConfig
 	if s.SecretsManager != nil {
 		scope := secrets.PipelineScope(pipeline.ID)
 
-		keys, err := s.SecretsManager.ListByScope(context.Background(), scope)
-		if err == nil {
-			cfg := map[string]string{}
-
-			for _, key := range keys {
-				if !strings.HasPrefix(key, "driver.") {
-					continue
-				}
-
-				val, getErr := s.SecretsManager.Get(context.Background(), scope, key)
-				if getErr != nil {
-					continue
-				}
-
-				cfg[strings.TrimPrefix(key, "driver.")] = val
-			}
-
-			if len(cfg) > 0 {
-				driverConfig = cfg
+		raw, err := s.SecretsManager.Get(context.Background(), scope, "driver_config")
+		if err == nil && raw != "" {
+			cfg, unmarshalErr := unmarshalDriverConfig(driverName, json.RawMessage(raw))
+			if unmarshalErr == nil {
+				serverCfg = cfg
 			}
 		}
 	}
 
 	// Fall back to server-level config for this driver.
-	if driverConfig == nil {
+	if serverCfg == nil {
 		if cfg, ok := s.DriverConfigs[driverName]; ok {
-			driverConfig = cfg
+			serverCfg = cfg
 		}
-	}
-
-	// Final fallback: empty config (works for native, docker with defaults).
-	if driverConfig == nil {
-		driverConfig = map[string]string{}
 	}
 
 	logger.Info("driver.resolve", "driver", driverName)
 
 	return func(ns string) (orchestra.Driver, error) {
-		d, err := orchestra.CreateDriver(driverName, ns, driverConfig, logger)
+		d, err := createDriver(driverName, ns, serverCfg, logger)
 		if err != nil {
 			return nil, err
 		}

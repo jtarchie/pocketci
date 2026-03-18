@@ -3,7 +3,6 @@ package secrets
 import (
 	"context"
 	"errors"
-	"strings"
 )
 
 // ErrNotFound is returned when a requested secret does not exist.
@@ -50,14 +49,13 @@ const GlobalScope = "global"
 // through user-facing secret mechanisms.
 var systemManagedKeys = map[string]struct{}{
 	"driver":         {},
+	"driver_config":  {},
 	"webhook_secret": {},
 }
 
 // IsSystemKey reports whether the given key is reserved for internal system use.
 func IsSystemKey(key string) bool {
-	if _, ok := systemManagedKeys[key]; ok {
-		return true
-	}
+	_, ok := systemManagedKeys[key]
 
-	return strings.HasPrefix(key, "driver.")
+	return ok
 }

@@ -5,6 +5,9 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/orchestra/docker"
+	"github.com/jtarchie/pocketci/orchestra/native"
 	"github.com/jtarchie/pocketci/secrets"
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/server"
@@ -20,9 +23,9 @@ func newStrictSecretRouter(t *testing.T, client storage.Driver, opts server.Rout
 	t.Helper()
 
 	if opts.DriverConfigs == nil {
-		opts.DriverConfigs = map[string]map[string]string{
-			"native": {},
-			"docker": {},
+		opts.DriverConfigs = map[string]orchestra.DriverConfig{
+			"native": native.ServerConfig{},
+			"docker": docker.ServerConfig{},
 		}
 		opts.DefaultDriver = "native"
 	}

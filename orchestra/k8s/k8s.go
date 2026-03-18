@@ -13,11 +13,19 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-// Config holds configuration for the Kubernetes driver.
+// ServerConfig holds server-level configuration for the Kubernetes driver.
+type ServerConfig struct {
+	Kubeconfig   string `json:"kubeconfig,omitempty"`    // Path to kubeconfig file; empty uses in-cluster config
+	K8sNamespace string `json:"k8s_namespace,omitempty"` // Kubernetes namespace for jobs (default: "default")
+}
+
+// DriverName implements orchestra.DriverConfig.
+func (ServerConfig) DriverName() string { return "k8s" }
+
+// Config holds the full configuration for the Kubernetes driver.
 type Config struct {
-	Namespace    string // Per-execution namespace identifier
-	Kubeconfig   string // Path to kubeconfig file; empty uses in-cluster config
-	K8sNamespace string // Kubernetes namespace for jobs (default: "default")
+	ServerConfig
+	Namespace string // Per-execution namespace identifier
 }
 
 type K8s struct {

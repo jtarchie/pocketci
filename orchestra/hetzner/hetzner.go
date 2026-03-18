@@ -31,21 +31,29 @@ const (
 	DefaultWaitTimeout   = 10 * time.Minute
 )
 
+// ServerConfig holds server-level configuration for the Hetzner Cloud driver.
+type ServerConfig struct {
+	Token         string             `json:"token,omitempty"`          // Hetzner Cloud API token (required)
+	Image         string             `json:"image,omitempty"`          // Server image name (default: docker-ce)
+	ServerType    string             `json:"server_type,omitempty"`    // Server type or "auto" (default: cx23)
+	Location      string             `json:"location,omitempty"`       // Server location (default: nbg1)
+	MaxWorkers    int                `json:"max_workers,omitempty"`    // Max concurrent servers (default: 1)
+	ReuseWorker   bool               `json:"reuse_worker,omitempty"`   // Reuse idle servers across runs
+	Labels        string             `json:"labels,omitempty"`         // Comma-separated key=value labels
+	DiskSize      int                `json:"disk_size,omitempty"`      // Volume disk size in GB (default: 10)
+	SSHTimeout    orchestra.Duration `json:"ssh_timeout,omitempty"`    // Timeout for SSH to become available (default: 5m)
+	DockerTimeout orchestra.Duration `json:"docker_timeout,omitempty"` // Timeout for Docker to become available (default: 5m)
+	PollInterval  orchestra.Duration `json:"poll_interval,omitempty"`  // Poll interval for worker slot (default: 10s)
+	WaitTimeout   orchestra.Duration `json:"wait_timeout,omitempty"`   // Timeout waiting for worker slot (default: 10m)
+}
+
+// DriverName implements orchestra.DriverConfig.
+func (ServerConfig) DriverName() string { return "hetzner" }
+
 // Config holds configuration for the Hetzner Cloud driver.
 type Config struct {
-	Namespace     string        // Per-execution namespace identifier
-	Token         string        // Hetzner Cloud API token (required)
-	Image         string        // Server image name (default: docker-ce)
-	ServerType    string        // Server type or "auto" (default: cx23)
-	Location      string        // Server location (default: nbg1)
-	MaxWorkers    int           // Max concurrent servers (default: 1)
-	ReuseWorker   bool          // Reuse idle servers across runs
-	Labels        string        // Comma-separated key=value labels
-	DiskSize      int           // Volume disk size in GB (default: 10)
-	SSHTimeout    time.Duration // Timeout for SSH to become available (default: 5m)
-	DockerTimeout time.Duration // Timeout for Docker to become available (default: 5m)
-	PollInterval  time.Duration // Poll interval for worker slot (default: 10s)
-	WaitTimeout   time.Duration // Timeout waiting for worker slot (default: 10m)
+	ServerConfig
+	Namespace string // Per-execution namespace identifier
 }
 
 // sanitizeHostname converts a string to a valid hostname.
@@ -112,12 +120,12 @@ func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 		maxWorkers = DefaultMaxWorkers
 	}
 
-	pollInterval := cfg.PollInterval
+	pollInterval := cfg.PollInterval.Std()
 	if pollInterval <= 0 {
 		pollInterval = DefaultPollInterval
 	}
 
-	waitTimeout := cfg.WaitTimeout
+	waitTimeout := cfg.WaitTimeout.Std()
 	if waitTimeout <= 0 {
 		waitTimeout = DefaultWaitTimeout
 	}
@@ -599,7 +607,7 @@ func (h *Hetzner) waitForServer(ctx context.Context, serverID int64) (*hcloud.Se
 func (h *Hetzner) waitForSSH(ctx context.Context, ip string) error {
 	h.logger.Info("hetzner.ssh.waiting", "ip", ip)
 
-	sshTimeout := h.cfg.SSHTimeout
+	sshTimeout := h.cfg.SSHTimeout.Std()
 	if sshTimeout <= 0 {
 		sshTimeout = DefaultSSHTimeout
 	}
@@ -659,7 +667,7 @@ func (h *Hetzner) waitForSSH(ctx context.Context, ip string) error {
 func (h *Hetzner) waitForDocker(ctx context.Context) error {
 	h.logger.Info("hetzner.docker.waiting")
 
-	dockerTimeout := h.cfg.DockerTimeout
+	dockerTimeout := h.cfg.DockerTimeout.Std()
 	if dockerTimeout <= 0 {
 		dockerTimeout = DefaultDockerTimeout
 	}

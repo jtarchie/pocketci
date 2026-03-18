@@ -6,13 +6,6 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/jtarchie/pocketci/commands"
-	_ "github.com/jtarchie/pocketci/orchestra/digitalocean"
-	_ "github.com/jtarchie/pocketci/orchestra/docker"
-	_ "github.com/jtarchie/pocketci/orchestra/fly"
-	_ "github.com/jtarchie/pocketci/orchestra/hetzner"
-	_ "github.com/jtarchie/pocketci/orchestra/k8s"
-	_ "github.com/jtarchie/pocketci/orchestra/native"
-	_ "github.com/jtarchie/pocketci/orchestra/qemu"
 	_ "github.com/jtarchie/pocketci/resources/mock"
 	"github.com/lmittmann/tint"
 )

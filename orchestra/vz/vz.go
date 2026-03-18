@@ -21,13 +21,21 @@ import (
 	"github.com/jtarchie/pocketci/orchestra/vz/agent"
 )
 
+// ServerConfig holds server-level configuration for the VZ driver.
+type ServerConfig struct {
+	Memory   string `json:"memory,omitempty"`    // VM memory in MB (default: "2048")
+	CPUs     string `json:"cpus,omitempty"`      // VM CPU count (default: "2")
+	CacheDir string `json:"cache_dir,omitempty"` // Directory for image cache
+	Image    string `json:"image,omitempty"`     // Boot image path (optional; downloaded if empty)
+}
+
+// DriverName implements orchestra.DriverConfig.
+func (ServerConfig) DriverName() string { return "vz" }
+
 // Config holds configuration for the VZ (Apple Virtualization) driver.
 type Config struct {
+	ServerConfig
 	Namespace string // Per-execution namespace identifier
-	Memory    string // VM memory in MB (default: "2048")
-	CPUs      string // VM CPU count (default: "2")
-	CacheDir  string // Directory for image cache
-	Image     string // Boot image path (optional; downloaded if empty)
 }
 
 // VZ implements orchestra.Driver using Apple's Virtualization.framework.

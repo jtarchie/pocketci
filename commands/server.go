@@ -14,7 +14,14 @@ import (
 	"github.com/jtarchie/pocketci/observability"
 	"github.com/jtarchie/pocketci/observability/honeybadger"
 	"github.com/jtarchie/pocketci/observability/posthog"
+	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/orchestra/digitalocean"
+	"github.com/jtarchie/pocketci/orchestra/docker"
+	"github.com/jtarchie/pocketci/orchestra/fly"
+	"github.com/jtarchie/pocketci/orchestra/hetzner"
 	"github.com/jtarchie/pocketci/orchestra/k8s"
+	"github.com/jtarchie/pocketci/orchestra/native"
+	"github.com/jtarchie/pocketci/orchestra/qemu"
 	"github.com/jtarchie/pocketci/s3config"
 	"github.com/jtarchie/pocketci/secrets"
 	secretss3 "github.com/jtarchie/pocketci/secrets/s3"
@@ -297,69 +304,59 @@ func (c *Server) Run(logger *slog.Logger) error {
 	}
 
 	// Build driver configs for all configured drivers.
-	driverConfigs := map[string]map[string]string{}
+	driverConfigs := map[string]orchestra.DriverConfig{}
 
 	// Docker and native are always available.
-	driverConfigs["docker"] = map[string]string{"host": c.DockerHost}
-	driverConfigs["native"] = map[string]string{}
+	driverConfigs["docker"] = docker.ServerConfig{Host: c.DockerHost}
+	driverConfigs["native"] = native.ServerConfig{}
 
 	if c.HetznerToken != "" {
-		cfg := map[string]string{
-			"token":       c.HetznerToken,
-			"image":       c.HetznerImage,
-			"server_type": c.HetznerServerType,
-			"location":    c.HetznerLocation,
+		driverConfigs["hetzner"] = hetzner.ServerConfig{
+			Token:       c.HetznerToken,
+			Image:       c.HetznerImage,
+			ServerType:  c.HetznerServerType,
+			Location:    c.HetznerLocation,
+			MaxWorkers:  c.HetznerMaxWorkers,
+			ReuseWorker: c.HetznerReuseWorker,
 		}
-		if c.HetznerMaxWorkers > 0 {
-			cfg["max_workers"] = fmt.Sprintf("%d", c.HetznerMaxWorkers)
-		}
-		if c.HetznerReuseWorker {
-			cfg["reuse_worker"] = "true"
-		}
-		driverConfigs["hetzner"] = cfg
 	}
 
 	if c.DigitalOceanToken != "" {
-		cfg := map[string]string{
-			"token":  c.DigitalOceanToken,
-			"image":  c.DigitalOceanImage,
-			"size":   c.DigitalOceanSize,
-			"region": c.DigitalOceanRegion,
+		driverConfigs["digitalocean"] = digitalocean.ServerConfig{
+			Token:       c.DigitalOceanToken,
+			Image:       c.DigitalOceanImage,
+			Size:        c.DigitalOceanSize,
+			Region:      c.DigitalOceanRegion,
+			MaxWorkers:  c.DigitalOceanMaxWorkers,
+			ReuseWorker: c.DigitalOceanReuseWorker,
 		}
-		if c.DigitalOceanMaxWorkers > 0 {
-			cfg["max_workers"] = fmt.Sprintf("%d", c.DigitalOceanMaxWorkers)
-		}
-		if c.DigitalOceanReuseWorker {
-			cfg["reuse_worker"] = "true"
-		}
-		driverConfigs["digitalocean"] = cfg
 	}
 
 	if c.FlyToken != "" {
-		driverConfigs["fly"] = map[string]string{
-			"token":  c.FlyToken,
-			"app":    c.FlyApp,
-			"region": c.FlyRegion,
-			"org":    c.FlyOrg,
-			"size":   c.FlySize,
+		driverConfigs["fly"] = fly.ServerConfig{
+			Token:  c.FlyToken,
+			App:    c.FlyApp,
+			Region: c.FlyRegion,
+			Org:    c.FlyOrg,
+			Size:   c.FlySize,
 		}
 	}
 
 	if c.K8sKubeconfig != "" || k8s.IsAvailable() {
-		driverConfigs["k8s"] = map[string]string{
-			"kubeconfig": c.K8sKubeconfig,
-			"namespace":  c.K8sNamespace,
+		driverConfigs["k8s"] = k8s.ServerConfig{
+			Kubeconfig:   c.K8sKubeconfig,
+			K8sNamespace: c.K8sNamespace,
 		}
 	}
 
 	if c.QEMUImage != "" {
-		driverConfigs["qemu"] = map[string]string{
-			"memory":    c.QEMUMemory,
-			"cpus":      c.QEMUCPUs,
-			"accel":     c.QEMUAccel,
-			"binary":    c.QEMUBinary,
-			"cache_dir": c.QEMUCacheDir,
-			"image":     c.QEMUImage,
+		driverConfigs["qemu"] = qemu.ServerConfig{
+			Memory:   c.QEMUMemory,
+			CPUs:     c.QEMUCPUs,
+			Accel:    c.QEMUAccel,
+			Binary:   c.QEMUBinary,
+			CacheDir: c.QEMUCacheDir,
+			Image:    c.QEMUImage,
 		}
 	}
 

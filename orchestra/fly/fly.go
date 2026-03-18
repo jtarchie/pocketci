@@ -15,14 +15,22 @@ import (
 	"github.com/jtarchie/pocketci/orchestra"
 )
 
-// Config holds configuration for the Fly.io driver.
+// ServerConfig holds server-level configuration for the Fly.io driver.
+type ServerConfig struct {
+	Token  string `json:"token,omitempty"`  // Fly.io API token (required)
+	App    string `json:"app,omitempty"`    // Fly.io app name; if empty, an ephemeral app is created
+	Region string `json:"region,omitempty"` // Fly.io machine region
+	Org    string `json:"org,omitempty"`    // Fly.io org slug (default: "personal")
+	Size   string `json:"size,omitempty"`   // Fly.io machine size (default: "shared-cpu-1x")
+}
+
+// DriverName implements orchestra.DriverConfig.
+func (ServerConfig) DriverName() string { return "fly" }
+
+// Config holds the full configuration for the Fly.io driver.
 type Config struct {
+	ServerConfig
 	Namespace string // Per-execution namespace identifier
-	Token     string // Fly.io API token (required)
-	App       string // Fly.io app name; if empty, an ephemeral app is created
-	Region    string // Fly.io machine region
-	Org       string // Fly.io org slug (default: "personal")
-	Size      string // Fly.io machine size (default: "shared-cpu-1x")
 }
 
 type Fly struct {

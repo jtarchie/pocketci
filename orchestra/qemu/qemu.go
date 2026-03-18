@@ -18,15 +18,23 @@ import (
 	"github.com/jtarchie/pocketci/orchestra"
 )
 
-// Config holds configuration for the QEMU driver.
+// ServerConfig holds server-level configuration for the QEMU driver.
+type ServerConfig struct {
+	Memory   string `json:"memory,omitempty"`    // VM memory (e.g., "2048" or "2G"); default: "2048"
+	CPUs     string `json:"cpus,omitempty"`      // VM CPU count; default: "2"
+	Accel    string `json:"accel,omitempty"`     // Acceleration: hvf, kvm, tcg, or auto-detected
+	Binary   string `json:"binary,omitempty"`    // Path to qemu-system binary (auto-detected by arch)
+	CacheDir string `json:"cache_dir,omitempty"` // Directory for image cache (default: ~/.cache/pocketci/qemu)
+	Image    string `json:"image,omitempty"`     // Boot image path or URL (optional; downloaded if empty)
+}
+
+// DriverName implements orchestra.DriverConfig.
+func (ServerConfig) DriverName() string { return "qemu" }
+
+// Config holds the full configuration for the QEMU driver.
 type Config struct {
+	ServerConfig
 	Namespace string // Per-execution namespace identifier
-	Memory    string // VM memory (e.g., "2048" or "2G"); default: "2048"
-	CPUs      string // VM CPU count; default: "2"
-	Accel     string // Acceleration: hvf, kvm, tcg, or auto-detected
-	Binary    string // Path to qemu-system binary (auto-detected by arch)
-	CacheDir  string // Directory for image cache (default: ~/.cache/pocketci/qemu)
-	Image     string // Boot image path or URL (optional; downloaded if empty)
 }
 
 // QEMU implements orchestra.Driver using a local QEMU virtual machine.

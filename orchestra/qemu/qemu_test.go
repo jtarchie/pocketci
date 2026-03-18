@@ -41,9 +41,11 @@ func TestMain(m *testing.M) {
 
 	var err error
 	testDriver, err = qemu.New(qemu.Config{
+		ServerConfig: qemu.ServerConfig{
+			Memory: "2048",
+			CPUs:   "2",
+		},
 		Namespace: namespace,
-		Memory:    "2048",
-		CPUs:      "2",
 	}, logger)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create QEMU driver: %v\n", err)

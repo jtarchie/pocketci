@@ -18,10 +18,18 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// Config holds configuration for the Docker driver.
+// ServerConfig holds server-level configuration for the Docker driver.
+type ServerConfig struct {
+	Host string `json:"host,omitempty"` // Docker daemon host URL (e.g., "tcp://host:2376", "ssh://user@host"); defaults to DOCKER_HOST env var
+}
+
+// DriverName implements orchestra.DriverConfig.
+func (ServerConfig) DriverName() string { return "docker" }
+
+// Config holds the full configuration for the Docker driver.
 type Config struct {
+	ServerConfig
 	Namespace string // Per-execution namespace identifier
-	Host      string // Docker daemon host URL (e.g., "tcp://host:2376", "ssh://user@host"); defaults to DOCKER_HOST env var
 }
 
 type Docker struct {

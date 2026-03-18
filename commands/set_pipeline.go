@@ -8,11 +8,17 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/jtarchie/pocketci/backwards"
+	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/orchestra/digitalocean"
+	"github.com/jtarchie/pocketci/orchestra/docker"
+	"github.com/jtarchie/pocketci/orchestra/fly"
+	"github.com/jtarchie/pocketci/orchestra/hetzner"
+	"github.com/jtarchie/pocketci/orchestra/k8s"
+	"github.com/jtarchie/pocketci/orchestra/qemu"
 	"github.com/jtarchie/pocketci/runtime"
 	secretsPkg "github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
@@ -65,7 +71,7 @@ type pipelineRequest struct {
 	Content        string            `json:"content"`
 	ContentType    string            `json:"content_type"`
 	Driver         string            `json:"driver"`
-	DriverConfig   map[string]string `json:"driver_config,omitempty"`
+	DriverConfig   json.RawMessage   `json:"driver_config,omitempty"`
 	WebhookSecret  string            `json:"webhook_secret"`
 	Secrets        map[string]string `json:"secrets,omitempty"`
 	ResumeEnabled  *bool             `json:"resume_enabled,omitempty"`
@@ -316,82 +322,76 @@ func parseSecretFlag(s string) (string, string, bool) {
 	return key, value, true
 }
 
-// buildDriverConfig builds a flat key→value driver config map from the CLI flags.
-// Only non-zero values are included.
-func (c *SetPipeline) buildDriverConfig() map[string]string {
-	m := map[string]string{}
+// buildDriverConfig builds a typed driver config from the CLI flags and
+// marshals it to JSON for the server. Returns nil if no config flags are set.
+func (c *SetPipeline) buildDriverConfig() json.RawMessage {
+	var cfg orchestra.DriverConfig
 
-	set := func(k, v string) {
-		if v != "" {
-			m[k] = v
+	switch c.Driver {
+	case "docker":
+		if c.DockerHost != "" {
+			cfg = docker.ServerConfig{Host: c.DockerHost}
+		}
+	case "hetzner":
+		if c.HetznerToken != "" {
+			cfg = hetzner.ServerConfig{
+				Token:       c.HetznerToken,
+				Image:       c.HetznerImage,
+				ServerType:  c.HetznerServerType,
+				Location:    c.HetznerLocation,
+				MaxWorkers:  c.HetznerMaxWorkers,
+				ReuseWorker: c.HetznerReuseWorker,
+			}
+		}
+	case "digitalocean":
+		if c.DigitalOceanToken != "" {
+			cfg = digitalocean.ServerConfig{
+				Token:       c.DigitalOceanToken,
+				Image:       c.DigitalOceanImage,
+				Size:        c.DigitalOceanSize,
+				Region:      c.DigitalOceanRegion,
+				MaxWorkers:  c.DigitalOceanMaxWorkers,
+				ReuseWorker: c.DigitalOceanReuseWorker,
+			}
+		}
+	case "fly":
+		if c.FlyToken != "" {
+			cfg = fly.ServerConfig{
+				Token:  c.FlyToken,
+				App:    c.FlyApp,
+				Region: c.FlyRegion,
+				Org:    c.FlyOrg,
+				Size:   c.FlySize,
+			}
+		}
+	case "k8s":
+		if c.K8sKubeconfig != "" {
+			cfg = k8s.ServerConfig{
+				Kubeconfig:   c.K8sKubeconfig,
+				K8sNamespace: c.K8sNamespace,
+			}
+		}
+	case "qemu":
+		if c.QEMUImage != "" {
+			cfg = qemu.ServerConfig{
+				Memory:   c.QEMUMemory,
+				CPUs:     c.QEMUCPUs,
+				Accel:    c.QEMUAccel,
+				Image:    c.QEMUImage,
+				Binary:   c.QEMUBinary,
+				CacheDir: c.QEMUCacheDir,
+			}
 		}
 	}
-	setInt := func(k string, v int) {
-		if v != 0 {
-			m[k] = strconv.Itoa(v)
-		}
-	}
-	setBool := func(k string, v bool) {
-		if v {
-			m[k] = "true"
-		}
-	}
 
-	set("host", c.DockerHost)
-	set("token", c.HetznerToken)
-	set("image", c.HetznerImage)
-	set("server_type", c.HetznerServerType)
-	set("location", c.HetznerLocation)
-	setInt("max_workers", c.HetznerMaxWorkers)
-	setBool("reuse_worker", c.HetznerReuseWorker)
-
-	// DigitalOcean — token/image/size/region overlap with Hetzner keys,
-	// but only one driver is active so the right values land in the map.
-	if c.DigitalOceanToken != "" {
-		set("token", c.DigitalOceanToken)
-	}
-	if c.DigitalOceanImage != "" {
-		set("image", c.DigitalOceanImage)
-	}
-	set("size", c.DigitalOceanSize)
-	set("region", c.DigitalOceanRegion)
-	if c.DigitalOceanMaxWorkers != 0 {
-		setInt("max_workers", c.DigitalOceanMaxWorkers)
-	}
-	if c.DigitalOceanReuseWorker {
-		setBool("reuse_worker", c.DigitalOceanReuseWorker)
-	}
-
-	// Fly
-	if c.FlyToken != "" {
-		set("token", c.FlyToken)
-	}
-	set("app", c.FlyApp)
-	if c.FlyRegion != "" {
-		set("region", c.FlyRegion)
-	}
-	set("org", c.FlyOrg)
-	if c.FlySize != "" {
-		set("size", c.FlySize)
-	}
-
-	// Kubernetes
-	set("kubeconfig", c.K8sKubeconfig)
-	set("namespace", c.K8sNamespace)
-
-	// QEMU
-	set("memory", c.QEMUMemory)
-	set("cpus", c.QEMUCPUs)
-	set("accel", c.QEMUAccel)
-	if c.QEMUImage != "" {
-		set("image", c.QEMUImage)
-	}
-	set("binary", c.QEMUBinary)
-	set("cache_dir", c.QEMUCacheDir)
-
-	if len(m) == 0 {
+	if cfg == nil {
 		return nil
 	}
 
-	return m
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return nil
+	}
+
+	return raw
 }

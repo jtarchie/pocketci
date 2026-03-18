@@ -148,9 +148,9 @@ func (c *Runner) Run(logger *slog.Logger) error {
 
 	switch c.Driver {
 	case "docker":
-		driver, err = docker.New(docker.Config{Namespace: namespace, Host: c.DockerHost}, logger)
+		driver, err = docker.New(docker.Config{ServerConfig: docker.ServerConfig{Host: c.DockerHost}, Namespace: namespace}, logger)
 	case "k8s":
-		driver, err = k8s.New(k8s.Config{Namespace: namespace, Kubeconfig: c.K8sKubeconfig, K8sNamespace: c.K8sNamespace}, logger)
+		driver, err = k8s.New(k8s.Config{ServerConfig: k8s.ServerConfig{Kubeconfig: c.K8sKubeconfig, K8sNamespace: c.K8sNamespace}, Namespace: namespace}, logger)
 	default: // native
 		driver, err = native.New(native.Config{Namespace: namespace}, logger)
 	}

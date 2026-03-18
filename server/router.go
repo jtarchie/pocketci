@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jtarchie/pocketci/cache"
+	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/server/auth"
 	"github.com/jtarchie/pocketci/storage"
@@ -40,9 +41,9 @@ type RouterOptions struct {
 	ObservabilityProvider ObservabilityProvider
 	// DefaultDriver is the name of the default driver when a pipeline doesn't specify one.
 	DefaultDriver string
-	// DriverConfigs maps driver names to their flat config maps.
+	// DriverConfigs maps driver names to their typed server configurations.
 	// Every driver the server is willing to serve should have an entry.
-	DriverConfigs map[string]map[string]string
+	DriverConfigs map[string]orchestra.DriverConfig
 	// CacheStore is the optional cache backend. When non-nil every created
 	// driver is wrapped with caching.
 	CacheStore cache.CacheStore

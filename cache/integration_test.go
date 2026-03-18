@@ -58,7 +58,7 @@ func getAvailableDrivers() []driverEntry {
 		entries = append(entries, driverEntry{
 			name: "digitalocean",
 			factory: func(ns string, logger *slog.Logger) (orchestra.Driver, error) {
-				return digitalocean.New(digitalocean.Config{Namespace: ns, Token: token}, logger)
+				return digitalocean.New(digitalocean.Config{ServerConfig: digitalocean.ServerConfig{Token: token}, Namespace: ns}, logger)
 			},
 		})
 	}
@@ -68,7 +68,7 @@ func getAvailableDrivers() []driverEntry {
 		entries = append(entries, driverEntry{
 			name: "hetzner",
 			factory: func(ns string, logger *slog.Logger) (orchestra.Driver, error) {
-				return hetzner.New(hetzner.Config{Namespace: ns, Token: token}, logger)
+				return hetzner.New(hetzner.Config{ServerConfig: hetzner.ServerConfig{Token: token}, Namespace: ns}, logger)
 			},
 		})
 	}
@@ -78,7 +78,7 @@ func getAvailableDrivers() []driverEntry {
 		entries = append(entries, driverEntry{
 			name: "fly",
 			factory: func(ns string, logger *slog.Logger) (orchestra.Driver, error) {
-				return fly.New(fly.Config{Namespace: ns, Token: token}, logger)
+				return fly.New(fly.Config{ServerConfig: fly.ServerConfig{Token: token}, Namespace: ns}, logger)
 			},
 		})
 	}

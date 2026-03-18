@@ -9,8 +9,15 @@ import (
 	"github.com/jtarchie/pocketci/orchestra"
 )
 
-// Config holds configuration for the native driver.
+// ServerConfig holds server-level configuration for the native driver.
+type ServerConfig struct{}
+
+// DriverName implements orchestra.DriverConfig.
+func (ServerConfig) DriverName() string { return "native" }
+
+// Config holds the full configuration for the native driver.
 type Config struct {
+	ServerConfig
 	Namespace string // Per-execution namespace identifier
 }
 

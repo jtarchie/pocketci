@@ -2,33 +2,15 @@ package orchestra
 
 import (
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 )
 
-// DriverFactory creates a new Driver instance from a flat config map and logger.
-// The namespace is set by the caller for per-execution isolation.
-type DriverFactory func(namespace string, config map[string]string, logger *slog.Logger) (Driver, error)
-
-// registry is the explicit driver name → factory mapping.
-// Populated by RegisterDriver at init-time from the individual driver packages.
-var registry = map[string]DriverFactory{}
-
-// RegisterDriver adds a driver factory to the registry.
-// Called from driver package init() functions.
-func RegisterDriver(name string, factory DriverFactory) {
-	registry[name] = factory
-}
-
-// CreateDriver creates a new driver by name using the registry.
-func CreateDriver(name, namespace string, config map[string]string, logger *slog.Logger) (Driver, error) {
-	factory, ok := registry[name]
-	if !ok {
-		return nil, fmt.Errorf("unknown driver %q", name)
-	}
-
-	return factory(namespace, config, logger)
+// DriverConfig is the interface that typed driver configurations implement.
+// Each driver's ServerConfig embeds the server-level settings and identifies
+// which driver it belongs to.
+type DriverConfig interface {
+	DriverName() string
 }
 
 // IsDriverAllowed validates that the driver name is in the allowed list.
