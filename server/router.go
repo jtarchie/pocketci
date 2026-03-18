@@ -85,15 +85,12 @@ func newSlogMiddleware(logger *slog.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			start := time.Now()
-			req := c.Request()
-			requestID, _ := RequestIDFromContext(req.Context())
-			actor, _ := RequestActorFromContext(req.Context())
-			if requestID == "" {
-				requestID = req.Header.Get(echo.HeaderXRequestID)
-			}
 
 			err := next(c)
 
+			// Read from the post-handler request — auth middlewares enrich
+			// the context during next(c), so a single read captures everything.
+			req := c.Request()
 			level := slog.LevelInfo
 
 			attrs := []slog.Attr{
@@ -103,19 +100,15 @@ func newSlogMiddleware(logger *slog.Logger) echo.MiddlewareFunc {
 				slog.String("remote_ip", c.RealIP()),
 			}
 
-			if requestID == "" {
-				requestID, _ = RequestIDFromContext(c.Request().Context())
-			}
-			if actor.User == "" || actor.Provider == "" {
-				actor, _ = RequestActorFromContext(c.Request().Context())
-			}
+			requestID, _ := RequestIDFromContext(req.Context())
 			if requestID == "" {
 				requestID = c.Response().Header().Get(echo.HeaderXRequestID)
 			}
 			if requestID != "" {
 				attrs = append(attrs, slog.String("request_id", requestID))
 			}
-			if actor.Provider != "" && actor.User != "" {
+
+			if actor, ok := RequestActorFromContext(req.Context()); ok {
 				attrs = append(attrs,
 					slog.String("auth_provider", actor.Provider),
 					slog.String("user", actor.User),

@@ -298,12 +298,8 @@ func RunAgent(
 		// Accumulate token usage from every LLM response.
 		var eventUsage *AuditUsage
 		if event.UsageMetadata != nil {
-			usage.PromptTokens += event.UsageMetadata.PromptTokenCount
-			usage.CompletionTokens += event.UsageMetadata.CandidatesTokenCount
-			usage.TotalTokens += event.UsageMetadata.TotalTokenCount
-			usage.LLMRequests++
+			accumulateUsage(&usage, event.UsageMetadata, config.OnUsage)
 			turnCount++
-			emitUsageSnapshot(config.OnUsage, usage)
 			eventUsage = &AuditUsage{
 				PromptTokens:     event.UsageMetadata.PromptTokenCount,
 				CompletionTokens: event.UsageMetadata.CandidatesTokenCount,
@@ -409,12 +405,6 @@ func RunAgent(
 				continue
 			}
 
-			textBuilder.WriteString(part.Text)
-
-			if config.OnOutput != nil {
-				config.OnOutput("stdout", part.Text)
-			}
-
 			eventType := "model_text"
 			if isFinal {
 				eventType = "model_final"
@@ -433,7 +423,7 @@ func RunAgent(
 				usageAttached = true
 			}
 
-			appendAuditEvent(&auditEvents, ae, config.OnAuditEvent)
+			processTextOutput(part.Text, &textBuilder, config.OnOutput, &auditEvents, ae, config.OnAuditEvent)
 		}
 	}
 
@@ -497,11 +487,7 @@ func RunAgent(
 				}
 
 				if event.UsageMetadata != nil {
-					usage.PromptTokens += event.UsageMetadata.PromptTokenCount
-					usage.CompletionTokens += event.UsageMetadata.CandidatesTokenCount
-					usage.TotalTokens += event.UsageMetadata.TotalTokenCount
-					usage.LLMRequests++
-					emitUsageSnapshot(config.OnUsage, usage)
+					accumulateUsage(&usage, event.UsageMetadata, config.OnUsage)
 				}
 
 				if event.Content == nil {
@@ -513,13 +499,7 @@ func RunAgent(
 						continue
 					}
 
-					textBuilder.WriteString(part.Text)
-
-					if config.OnOutput != nil {
-						config.OnOutput("stdout", part.Text)
-					}
-
-					appendAuditEvent(&auditEvents, AuditEvent{
+					processTextOutput(part.Text, &textBuilder, config.OnOutput, &auditEvents, AuditEvent{
 						Timestamp: time.Now().UTC().Format(time.RFC3339),
 						Author:    event.Author,
 						Type:      "model_final",

@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"google.golang.org/genai"
+
+	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
 )
 
 // resultJsonWriteCmd builds a shell command that creates mountName/ and writes
@@ -99,4 +103,29 @@ func appendAuditEvent(auditEvents *[]AuditEvent, event AuditEvent, onAuditEvent 
 	if onAuditEvent != nil {
 		onAuditEvent(event)
 	}
+}
+
+// accumulateUsage adds event-level token counts to the running total and emits a snapshot.
+func accumulateUsage(usage *AgentUsage, meta *genai.GenerateContentResponseUsageMetadata, onUsage func(AgentUsage)) {
+	usage.PromptTokens += meta.PromptTokenCount
+	usage.CompletionTokens += meta.CandidatesTokenCount
+	usage.TotalTokens += meta.TotalTokenCount
+	usage.LLMRequests++
+	emitUsageSnapshot(onUsage, *usage)
+}
+
+// processTextOutput writes text to the builder, calls the output callback, and appends an audit event.
+func processTextOutput(
+	text string,
+	textBuilder *strings.Builder,
+	onOutput pipelinerunner.OutputCallback,
+	auditEvents *[]AuditEvent,
+	event AuditEvent,
+	onAuditEvent func(AuditEvent),
+) {
+	textBuilder.WriteString(text)
+	if onOutput != nil {
+		onOutput("stdout", text)
+	}
+	appendAuditEvent(auditEvents, event, onAuditEvent)
 }
