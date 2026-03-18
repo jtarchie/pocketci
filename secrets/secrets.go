@@ -3,6 +3,7 @@ package secrets
 import (
 	"context"
 	"errors"
+	"strings"
 )
 
 // ErrNotFound is returned when a requested secret does not exist.
@@ -54,6 +55,9 @@ var systemManagedKeys = map[string]struct{}{
 
 // IsSystemKey reports whether the given key is reserved for internal system use.
 func IsSystemKey(key string) bool {
-	_, ok := systemManagedKeys[key]
-	return ok
+	if _, ok := systemManagedKeys[key]; ok {
+		return true
+	}
+
+	return strings.HasPrefix(key, "driver.")
 }

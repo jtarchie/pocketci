@@ -60,8 +60,8 @@ func TestPipelineAPI(t *testing.T) {
 			router := newRouterWithSecrets(t, client, server.RouterOptions{})
 
 			body := map[string]string{
-				"content":    "export { pipeline };",
-				"driver": "docker",
+				"content": "export { pipeline };",
+				"driver":  "docker",
 			}
 			jsonBody, _ := json.Marshal(body)
 
@@ -274,7 +274,7 @@ func TestPipelineAPI(t *testing.T) {
 
 			body := map[string]any{
 				"content":        "content-v2",
-				"driver":     "native",
+				"driver":         "native",
 				"webhook_secret": "new-webhook-secret",
 				"secrets": map[string]string{
 					"GITHUB_TOKEN": "token-value",
@@ -323,8 +323,8 @@ func TestPipelineAPI(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			body := map[string]any{
-				"content":    "content-v2",
-				"driver": "native",
+				"content": "content-v2",
+				"driver":  "native",
 				"secrets": map[string]string{
 					"OTHER_KEY": "other",
 				},
@@ -358,8 +358,8 @@ func TestPipelineAPI(t *testing.T) {
 			router := newRouterWithSecrets(t, client, server.RouterOptions{})
 
 			body := map[string]any{
-				"content":    "export { pipeline };",
-				"driver": "docker",
+				"content": "export { pipeline };",
+				"driver":  "docker",
 				"secrets": map[string]string{
 					"driver": "docker://attacker.com",
 				},
@@ -394,8 +394,8 @@ func TestPipelineAPI(t *testing.T) {
 			router := newRouterWithSecrets(t, client, server.RouterOptions{})
 
 			body := map[string]any{
-				"content":    "export { pipeline };",
-				"driver": "docker",
+				"content": "export { pipeline };",
+				"driver":  "docker",
 				"secrets": map[string]string{
 					"webhook_secret": "malicious",
 				},

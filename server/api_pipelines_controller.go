@@ -23,6 +23,7 @@ type PipelineRequest struct {
 	Content        string            `json:"content"`
 	ContentType    string            `json:"content_type"`
 	Driver         string            `json:"driver"`
+	DriverConfig   map[string]string `json:"driver_config,omitempty"`
 	WebhookSecret  *string           `json:"webhook_secret,omitempty"`
 	Secrets        map[string]string `json:"secrets,omitempty"`
 	ResumeEnabled  *bool             `json:"resume_enabled,omitempty"`
@@ -223,13 +224,20 @@ func (c *APIPipelinesController) validateSecrets(ctx context.Context, name strin
 	return nil
 }
 
-// persistSecrets stores the driver, webhook secret, and user-provided
+// persistSecrets stores the driver, driver config, webhook secret, and user-provided
 // secrets for the given pipeline.
 func (c *APIPipelinesController) persistSecrets(ctx context.Context, pipeline *storage.Pipeline, req PipelineRequest) error {
 	scope := secrets.PipelineScope(pipeline.ID)
 
 	if err := c.secretsMgr.Set(ctx, scope, pipelineDriverSecretKey, req.Driver); err != nil {
 		return fmt.Errorf("failed to store driver: %w", err)
+	}
+
+	// Store driver config values under "driver." prefix
+	for key, value := range req.DriverConfig {
+		if err := c.secretsMgr.Set(ctx, scope, "driver."+key, value); err != nil {
+			return fmt.Errorf("failed to store driver config %q: %w", key, err)
+		}
 	}
 
 	if req.WebhookSecret != nil {

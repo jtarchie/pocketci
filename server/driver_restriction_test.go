@@ -46,8 +46,8 @@ func TestDriverRestriction(t *testing.T) {
 
 			// Try to create pipeline with docker driver (should fail)
 			body := map[string]string{
-				"content":    "export { pipeline };",
-				"driver": "docker",
+				"content": "export { pipeline };",
+				"driver":  "docker",
 			}
 			jsonBody, _ := json.Marshal(body)
 
@@ -98,8 +98,8 @@ func TestDriverRestriction(t *testing.T) {
 
 			// Try to create pipeline with any driver (should succeed)
 			body := map[string]string{
-				"content":    "export { pipeline };",
-				"driver": "docker",
+				"content": "export { pipeline };",
+				"driver":  "docker",
 			}
 			jsonBody, _ := json.Marshal(body)
 
@@ -241,8 +241,8 @@ func TestDriverRestriction(t *testing.T) {
 
 			// Test native (should succeed)
 			body := map[string]string{
-				"content":    "export { pipeline };",
-				"driver": "native",
+				"content": "export { pipeline };",
+				"driver":  "native",
 			}
 			jsonBody, _ := json.Marshal(body)
 			req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline-native", bytes.NewReader(jsonBody))

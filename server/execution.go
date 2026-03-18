@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,6 +34,7 @@ type ExecutionService struct {
 	mu                    sync.Mutex
 	wg                    sync.WaitGroup
 	DefaultDriver         string
+	DefaultDriverConfig   map[string]string
 	DriverFactory         func(namespace string) (orchestra.Driver, error)
 	SecretsManager        secrets.Manager
 	AllowedFeatures       []Feature
@@ -327,7 +329,7 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 		return
 	}
 
-	execOpts.DriverFactory = s.DriverFactory
+	execOpts.DriverFactory = s.resolveDriverFactory(pipeline, logger)
 	err = runtime.ExecutePipeline(ctx, executableContent, s.store, logger, execOpts)
 	if err != nil {
 		logger.Error("pipeline.execute.failed", "error", err)
@@ -502,7 +504,7 @@ func (s *ExecutionService) RunByNameSync(
 	}
 
 	if driver == nil {
-		opts.DriverFactory = s.DriverFactory
+		opts.DriverFactory = s.resolveDriverFactory(pipeline, s.logger)
 	}
 	execErr := runtime.ExecutePipeline(ctx, executableContent, s.store, s.logger, opts)
 
@@ -583,6 +585,67 @@ func (s *ExecutionService) determineRunStatus(ctx context.Context, runID string,
 	}
 
 	return storage.RunStatusSuccess, ""
+}
+
+// resolveDriverFactory returns a driver factory for the given pipeline.
+// It reads the pipeline's driver name and any driver.* config secrets.
+// Fallback: if the pipeline driver matches the server default and has no
+// pipeline-specific config, the server's default config is used.
+func (s *ExecutionService) resolveDriverFactory(pipeline *storage.Pipeline, logger *slog.Logger) func(namespace string) (orchestra.Driver, error) {
+	driverName := pipeline.Driver
+	if driverName == "" {
+		driverName = s.DefaultDriver
+	}
+
+	// Attempt to load pipeline-specific driver config from secrets.
+	var pipelineConfig map[string]string
+	if s.SecretsManager != nil {
+		scope := secrets.PipelineScope(pipeline.ID)
+
+		keys, err := s.SecretsManager.ListByScope(context.Background(), scope)
+		if err == nil {
+			cfg := map[string]string{}
+
+			for _, key := range keys {
+				if !strings.HasPrefix(key, "driver.") {
+					continue
+				}
+
+				val, getErr := s.SecretsManager.Get(context.Background(), scope, key)
+				if getErr != nil {
+					continue
+				}
+
+				cfg[strings.TrimPrefix(key, "driver.")] = val
+			}
+
+			if len(cfg) > 0 {
+				pipelineConfig = cfg
+			}
+		}
+	}
+
+	if pipelineConfig != nil {
+		// Pipeline has its own driver config — use it.
+		logger.Info("driver.resolve.pipeline_config", "driver", driverName)
+
+		return func(ns string) (orchestra.Driver, error) {
+			return orchestra.CreateDriver(driverName, ns, pipelineConfig, logger)
+		}
+	}
+
+	if driverName == s.DefaultDriver {
+		// Pipeline uses default driver with server config — use default factory.
+		return s.DriverFactory
+	}
+
+	// Pipeline requests a different driver but has no config for it.
+	// Try the registry with an empty config (works for native/docker with defaults).
+	logger.Info("driver.resolve.no_config", "driver", driverName)
+
+	return func(ns string) (orchestra.Driver, error) {
+		return orchestra.CreateDriver(driverName, ns, map[string]string{}, logger)
+	}
 }
 
 // resolveExecutableContent returns JS/TS content ready for the runtime.

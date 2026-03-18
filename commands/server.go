@@ -15,12 +15,7 @@ import (
 	"github.com/jtarchie/pocketci/observability/honeybadger"
 	"github.com/jtarchie/pocketci/observability/posthog"
 	"github.com/jtarchie/pocketci/orchestra"
-	"github.com/jtarchie/pocketci/orchestra/digitalocean"
-	"github.com/jtarchie/pocketci/orchestra/docker"
-	"github.com/jtarchie/pocketci/orchestra/fly"
-	"github.com/jtarchie/pocketci/orchestra/hetzner"
 	"github.com/jtarchie/pocketci/orchestra/k8s"
-	"github.com/jtarchie/pocketci/orchestra/qemu"
 	"github.com/jtarchie/pocketci/s3config"
 	"github.com/jtarchie/pocketci/secrets"
 	secretss3 "github.com/jtarchie/pocketci/secrets/s3"
@@ -302,82 +297,65 @@ func (c *Server) Run(logger *slog.Logger) error {
 		}
 	}
 
-	// Build driver factory based on configured driver
+	// Build driver config map and determine default driver name.
 	var driverName string
-	var baseFactory func(namespace string) (orchestra.Driver, error)
+	driverConfig := map[string]string{}
 
 	switch {
 	case c.HetznerToken != "":
 		driverName = "hetzner"
-		baseFactory = func(ns string) (orchestra.Driver, error) {
-			return hetzner.New(hetzner.Config{
-				Namespace:   ns,
-				Token:       c.HetznerToken,
-				Image:       c.HetznerImage,
-				ServerType:  c.HetznerServerType,
-				Location:    c.HetznerLocation,
-				MaxWorkers:  c.HetznerMaxWorkers,
-				ReuseWorker: c.HetznerReuseWorker,
-			}, logger)
+		driverConfig["token"] = c.HetznerToken
+		driverConfig["image"] = c.HetznerImage
+		driverConfig["server_type"] = c.HetznerServerType
+		driverConfig["location"] = c.HetznerLocation
+		if c.HetznerMaxWorkers > 0 {
+			driverConfig["max_workers"] = fmt.Sprintf("%d", c.HetznerMaxWorkers)
+		}
+		if c.HetznerReuseWorker {
+			driverConfig["reuse_worker"] = "true"
 		}
 	case c.DigitalOceanToken != "":
 		driverName = "digitalocean"
-		baseFactory = func(ns string) (orchestra.Driver, error) {
-			return digitalocean.New(digitalocean.Config{
-				Namespace:   ns,
-				Token:       c.DigitalOceanToken,
-				Image:       c.DigitalOceanImage,
-				Size:        c.DigitalOceanSize,
-				Region:      c.DigitalOceanRegion,
-				MaxWorkers:  c.DigitalOceanMaxWorkers,
-				ReuseWorker: c.DigitalOceanReuseWorker,
-			}, logger)
+		driverConfig["token"] = c.DigitalOceanToken
+		driverConfig["image"] = c.DigitalOceanImage
+		driverConfig["size"] = c.DigitalOceanSize
+		driverConfig["region"] = c.DigitalOceanRegion
+		if c.DigitalOceanMaxWorkers > 0 {
+			driverConfig["max_workers"] = fmt.Sprintf("%d", c.DigitalOceanMaxWorkers)
+		}
+		if c.DigitalOceanReuseWorker {
+			driverConfig["reuse_worker"] = "true"
 		}
 	case c.FlyToken != "":
 		driverName = "fly"
-		baseFactory = func(ns string) (orchestra.Driver, error) {
-			return fly.New(fly.Config{
-				Namespace: ns,
-				Token:     c.FlyToken,
-				App:       c.FlyApp,
-				Region:    c.FlyRegion,
-				Org:       c.FlyOrg,
-				Size:      c.FlySize,
-			}, logger)
-		}
+		driverConfig["token"] = c.FlyToken
+		driverConfig["app"] = c.FlyApp
+		driverConfig["region"] = c.FlyRegion
+		driverConfig["org"] = c.FlyOrg
+		driverConfig["size"] = c.FlySize
 	case c.K8sKubeconfig != "" || k8s.IsAvailable():
 		driverName = "k8s"
-		baseFactory = func(ns string) (orchestra.Driver, error) {
-			return k8s.New(k8s.Config{
-				Namespace:    ns,
-				Kubeconfig:   c.K8sKubeconfig,
-				K8sNamespace: c.K8sNamespace,
-			}, logger)
-		}
+		driverConfig["kubeconfig"] = c.K8sKubeconfig
+		driverConfig["namespace"] = c.K8sNamespace
 	case c.QEMUImage != "":
 		driverName = "qemu"
-		baseFactory = func(ns string) (orchestra.Driver, error) {
-			return qemu.New(qemu.Config{
-				Namespace: ns,
-				Memory:    c.QEMUMemory,
-				CPUs:      c.QEMUCPUs,
-				Accel:     c.QEMUAccel,
-				Binary:    c.QEMUBinary,
-				CacheDir:  c.QEMUCacheDir,
-				Image:     c.QEMUImage,
-			}, logger)
-		}
+		driverConfig["memory"] = c.QEMUMemory
+		driverConfig["cpus"] = c.QEMUCPUs
+		driverConfig["accel"] = c.QEMUAccel
+		driverConfig["binary"] = c.QEMUBinary
+		driverConfig["cache_dir"] = c.QEMUCacheDir
+		driverConfig["image"] = c.QEMUImage
 	default: // docker (including when DockerHost is empty = local socket)
 		driverName = "docker"
-		baseFactory = func(ns string) (orchestra.Driver, error) {
-			return docker.New(docker.Config{
-				Namespace: ns,
-				Host:      c.DockerHost,
-			}, logger)
-		}
+		driverConfig["host"] = c.DockerHost
 	}
 
-	// Optionally wrap with native fallback or cache
+	// Build driver factory via registry
+	baseFactory := func(ns string) (orchestra.Driver, error) {
+		return orchestra.CreateDriver(driverName, ns, driverConfig, logger)
+	}
+
+	// Optionally wrap with cache
 	driverFactory := baseFactory
 	if c.CacheS3Bucket != "" {
 		store, err := cacheplugins3.New(cacheplugins3.Config{Config: s3config.Config{
@@ -416,6 +394,7 @@ func (c *Server) Run(logger *slog.Logger) error {
 		ObservabilityProvider: obsProvider,
 		DriverFactory:         driverFactory,
 		DriverName:            driverName,
+		DefaultDriverConfig:   driverConfig,
 		WebhookProviders: []webhooks.Provider{
 			webhookgithub.New(),
 			webhookhoneybadger.New(),

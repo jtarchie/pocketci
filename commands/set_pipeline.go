@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/go-resty/resty/v2"
@@ -29,6 +30,34 @@ type SetPipeline struct {
 	RBAC          string   `name:"rbac" help:"RBAC expression to control access to this pipeline (expr-lang)" env:"CI_PIPELINE_RBAC"`
 	AuthToken     string   `env:"CI_AUTH_TOKEN"      help:"Bearer token for OAuth-authenticated servers"                   short:"t"`
 	ConfigFile    string   `env:"CI_AUTH_CONFIG"     help:"Path to auth config file (default: ~/.pocketci/auth.config)"   short:"c"`
+
+	// Driver-specific configuration (passed via driver_config map)
+	DockerHost              string `name:"docker-host"              env:"CI_DOCKER_HOST"              help:"Docker daemon host URL"`
+	HetznerToken            string `name:"hetzner-token"            env:"CI_HETZNER_TOKEN"            help:"Hetzner Cloud API token"`
+	HetznerImage            string `name:"hetzner-image"            env:"CI_HETZNER_IMAGE"            help:"Hetzner server image"`
+	HetznerServerType       string `name:"hetzner-server-type"      env:"CI_HETZNER_SERVER_TYPE"      help:"Hetzner server type"`
+	HetznerLocation         string `name:"hetzner-location"         env:"CI_HETZNER_LOCATION"         help:"Hetzner datacenter location"`
+	HetznerMaxWorkers       int    `name:"hetzner-max-workers"      env:"CI_HETZNER_MAX_WORKERS"      help:"Max concurrent Hetzner servers"`
+	HetznerReuseWorker      bool   `name:"hetzner-reuse-worker"     env:"CI_HETZNER_REUSE_WORKER"     help:"Reuse idle Hetzner servers"`
+	DigitalOceanToken       string `name:"digitalocean-token"       env:"CI_DIGITALOCEAN_TOKEN"       help:"DigitalOcean API token"`
+	DigitalOceanImage       string `name:"digitalocean-image"       env:"CI_DIGITALOCEAN_IMAGE"       help:"Droplet image slug"`
+	DigitalOceanSize        string `name:"digitalocean-size"        env:"CI_DIGITALOCEAN_SIZE"        help:"Droplet size slug"`
+	DigitalOceanRegion      string `name:"digitalocean-region"      env:"CI_DIGITALOCEAN_REGION"      help:"Droplet region"`
+	DigitalOceanMaxWorkers  int    `name:"digitalocean-max-workers" env:"CI_DIGITALOCEAN_MAX_WORKERS" help:"Max concurrent droplets"`
+	DigitalOceanReuseWorker bool   `name:"digitalocean-reuse-worker" env:"CI_DIGITALOCEAN_REUSE_WORKER" help:"Reuse idle droplets"`
+	FlyToken                string `name:"fly-token"                env:"CI_FLY_TOKEN"                help:"Fly.io API token"`
+	FlyApp                  string `name:"fly-app"                  env:"CI_FLY_APP"                  help:"Fly.io app name"`
+	FlyRegion               string `name:"fly-region"               env:"CI_FLY_REGION"               help:"Fly.io machine region"`
+	FlyOrg                  string `name:"fly-org"                  env:"CI_FLY_ORG"                  help:"Fly.io org slug"`
+	FlySize                 string `name:"fly-size"                 env:"CI_FLY_SIZE"                 help:"Fly.io machine size"`
+	K8sKubeconfig           string `name:"k8s-kubeconfig"           env:"CI_K8S_KUBECONFIG"           help:"Path to kubeconfig file"`
+	K8sNamespace            string `name:"k8s-namespace"            env:"CI_K8S_NAMESPACE"            help:"Kubernetes namespace for jobs"`
+	QEMUMemory              string `name:"qemu-memory"              env:"CI_QEMU_MEMORY"              help:"QEMU VM memory"`
+	QEMUCPUs                string `name:"qemu-cpus"                env:"CI_QEMU_CPUS"                help:"QEMU VM CPU count"`
+	QEMUAccel               string `name:"qemu-accel"               env:"CI_QEMU_ACCEL"               help:"QEMU acceleration mode"`
+	QEMUImage               string `name:"qemu-image"               env:"CI_QEMU_IMAGE"               help:"QEMU boot image path or URL"`
+	QEMUBinary              string `name:"qemu-binary"              env:"CI_QEMU_BINARY"              help:"Path to qemu-system binary"`
+	QEMUCacheDir            string `name:"qemu-cache-dir"           env:"CI_QEMU_CACHE_DIR"           help:"Directory for QEMU image cache"`
 }
 
 // pipelineRequest matches the server's expected JSON body for PUT /api/pipelines/:name.
@@ -36,6 +65,7 @@ type pipelineRequest struct {
 	Content        string            `json:"content"`
 	ContentType    string            `json:"content_type"`
 	Driver         string            `json:"driver"`
+	DriverConfig   map[string]string `json:"driver_config,omitempty"`
 	WebhookSecret  string            `json:"webhook_secret"`
 	Secrets        map[string]string `json:"secrets,omitempty"`
 	ResumeEnabled  *bool             `json:"resume_enabled,omitempty"`
@@ -123,6 +153,7 @@ func (c *SetPipeline) Run(logger *slog.Logger) error {
 		Content:       string(content),
 		ContentType:   contentType,
 		Driver:        c.Driver,
+		DriverConfig:  c.buildDriverConfig(),
 		WebhookSecret: c.WebhookSecret,
 		Secrets:       secretsMap,
 		ResumeEnabled: &c.Resume,
@@ -283,4 +314,84 @@ func parseSecretFlag(s string) (string, string, bool) {
 	}
 
 	return key, value, true
+}
+
+// buildDriverConfig builds a flat key→value driver config map from the CLI flags.
+// Only non-zero values are included.
+func (c *SetPipeline) buildDriverConfig() map[string]string {
+	m := map[string]string{}
+
+	set := func(k, v string) {
+		if v != "" {
+			m[k] = v
+		}
+	}
+	setInt := func(k string, v int) {
+		if v != 0 {
+			m[k] = strconv.Itoa(v)
+		}
+	}
+	setBool := func(k string, v bool) {
+		if v {
+			m[k] = "true"
+		}
+	}
+
+	set("host", c.DockerHost)
+	set("token", c.HetznerToken)
+	set("image", c.HetznerImage)
+	set("server_type", c.HetznerServerType)
+	set("location", c.HetznerLocation)
+	setInt("max_workers", c.HetznerMaxWorkers)
+	setBool("reuse_worker", c.HetznerReuseWorker)
+
+	// DigitalOcean — token/image/size/region overlap with Hetzner keys,
+	// but only one driver is active so the right values land in the map.
+	if c.DigitalOceanToken != "" {
+		set("token", c.DigitalOceanToken)
+	}
+	if c.DigitalOceanImage != "" {
+		set("image", c.DigitalOceanImage)
+	}
+	set("size", c.DigitalOceanSize)
+	set("region", c.DigitalOceanRegion)
+	if c.DigitalOceanMaxWorkers != 0 {
+		setInt("max_workers", c.DigitalOceanMaxWorkers)
+	}
+	if c.DigitalOceanReuseWorker {
+		setBool("reuse_worker", c.DigitalOceanReuseWorker)
+	}
+
+	// Fly
+	if c.FlyToken != "" {
+		set("token", c.FlyToken)
+	}
+	set("app", c.FlyApp)
+	if c.FlyRegion != "" {
+		set("region", c.FlyRegion)
+	}
+	set("org", c.FlyOrg)
+	if c.FlySize != "" {
+		set("size", c.FlySize)
+	}
+
+	// Kubernetes
+	set("kubeconfig", c.K8sKubeconfig)
+	set("namespace", c.K8sNamespace)
+
+	// QEMU
+	set("memory", c.QEMUMemory)
+	set("cpus", c.QEMUCPUs)
+	set("accel", c.QEMUAccel)
+	if c.QEMUImage != "" {
+		set("image", c.QEMUImage)
+	}
+	set("binary", c.QEMUBinary)
+	set("cache_dir", c.QEMUCacheDir)
+
+	if len(m) == 0 {
+		return nil
+	}
+
+	return m
 }

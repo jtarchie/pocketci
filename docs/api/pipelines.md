@@ -24,6 +24,7 @@ curl -X PUT http://localhost:8080/api/pipelines/my-pipeline \
   -d '{
     "content": "export const pipeline = async () => { console.log(\"test\"); };",
     "driver": "docker",
+    "driver_config": {"host": "tcp://remote:2376"},
     "webhook_secret": "optional-secret"
   }'
 ```

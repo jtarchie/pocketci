@@ -42,6 +42,10 @@ type RouterOptions struct {
 	DriverFactory func(namespace string) (orchestra.Driver, error)
 	// DriverName is the name of the configured driver (used in API responses).
 	DriverName string
+	// DefaultDriverConfig is the flat config map for the server's default driver.
+	// Used as fallback when a pipeline's driver matches the server default but
+	// has no pipeline-specific driver config secrets.
+	DefaultDriverConfig map[string]string
 	// WebhookProviders is the ordered list of webhook providers to use for detection.
 	// Providers are checked in order; the first match wins.
 	WebhookProviders []webhooks.Provider
@@ -175,6 +179,7 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	execService.FetchTimeout = opts.FetchTimeout
 	execService.FetchMaxResponseBytes = opts.FetchMaxResponseBytes
 	execService.DriverFactory = opts.DriverFactory
+	execService.DefaultDriverConfig = opts.DefaultDriverConfig
 
 	// Recover orphaned runs from previous server instance
 	execService.RecoverOrphanedRuns(context.Background())
