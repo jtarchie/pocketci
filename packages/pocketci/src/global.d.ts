@@ -766,7 +766,7 @@ declare global {
     fail_fast?: boolean;
   }
 
-  // Agent step: runs an LLM agent with a run_command tool in a sandbox container.
+  // Agent step: runs an LLM agent with tools in a sandbox container.
   interface AgentStep extends StepHooks {
     agent: string; // Agent name (used as step identifier)
     prompt: string; // Instruction sent to the model

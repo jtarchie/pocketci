@@ -22,7 +22,7 @@ func TestProgressiveCallbackEmission(t *testing.T) {
 		var events []AuditEvent
 
 		appendAuditEvent(&events, AuditEvent{Type: "user_message", Text: "start"}, onAudit)
-		appendAuditEvent(&events, AuditEvent{Type: "tool_call", ToolName: "run_command"}, onAudit)
+		appendAuditEvent(&events, AuditEvent{Type: "tool_call", ToolName: "run_script"}, onAudit)
 		appendAuditEvent(&events, AuditEvent{Type: "model_final", Text: "done"}, onAudit)
 
 		assert.Expect(capturedEvents).To(HaveLen(3))

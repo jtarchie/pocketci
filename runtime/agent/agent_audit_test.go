@@ -20,7 +20,7 @@ func TestAuditEventJSONTags(t *testing.T) {
 			InvocationID: "inv-1",
 			Author:       "my-agent",
 			Type:         "tool_call",
-			ToolName:     "run_command",
+			ToolName:     "run_script",
 			ToolCallID:   "call-abc",
 			ToolArgs:     map[string]any{"command": "ls"},
 		}
@@ -36,7 +36,7 @@ func TestAuditEventJSONTags(t *testing.T) {
 		assert.Expect(m["invocationId"]).To(Equal("inv-1"))
 		assert.Expect(m["author"]).To(Equal("my-agent"))
 		assert.Expect(m["type"]).To(Equal("tool_call"))
-		assert.Expect(m["toolName"]).To(Equal("run_command"))
+		assert.Expect(m["toolName"]).To(Equal("run_script"))
 		assert.Expect(m["toolCallId"]).To(Equal("call-abc"))
 		assert.Expect(m["toolArgs"]).NotTo(BeNil())
 
@@ -56,7 +56,7 @@ func TestAuditEventJSONTags(t *testing.T) {
 
 		ae := AuditEvent{
 			Type:       "tool_response",
-			ToolName:   "run_command",
+			ToolName:   "run_script",
 			ToolCallID: "call-abc",
 			ToolResult: map[string]any{"stdout": "hello", "exit_code": float64(0)},
 		}

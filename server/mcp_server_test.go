@@ -178,7 +178,7 @@ func TestMCPGetRunTask(t *testing.T) {
 	err = store.Set(ctx, taskPath, map[string]any{
 		"status":    "running",
 		"logs":      []map[string]any{{"type": "stdout", "content": "line 1\nline 2\n"}},
-		"audit_log": []any{map[string]any{"type": "tool_call", "toolName": "run_command"}},
+		"audit_log": []any{map[string]any{"type": "tool_call", "toolName": "run_script"}},
 	})
 	assert.Expect(err).NotTo(HaveOccurred())
 

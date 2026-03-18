@@ -14,13 +14,7 @@ import (
 	"github.com/jtarchie/pocketci/storage"
 )
 
-// runCommandInput is the tool schema for run_command.
-type runCommandInput struct {
-	Command string   `json:"command"`
-	Args    []string `json:"args"`
-}
-
-// runCommandOutput is the tool result schema for run_command and run_script.
+// runCommandOutput is the tool result schema for run_script.
 type runCommandOutput struct {
 	Stdout   string `json:"stdout"`
 	Stderr   string `json:"stderr"`
@@ -307,39 +301,12 @@ func taskSummaryToMap(t taskSummary) map[string]any {
 	return m
 }
 
-// newRunCommandTool creates the run_command tool backed by a sandbox.
-func newRunCommandTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.OutputCallback) (adktool.Tool, error) {
-	return functiontool.New[runCommandInput, runCommandOutput](
-		functiontool.Config{
-			Name:        "run_command",
-			Description: "Run a single executable with explicit args. Prefer run_script when you need multiple sequential shell steps.",
-		},
-		func(_ adktool.Context, input runCommandInput) (runCommandOutput, error) {
-			var execInput pipelinerunner.ExecInput
-			execInput.Command.Path = input.Command
-			execInput.Command.Args = input.Args
-			execInput.OnOutput = onOutput
-
-			result, execErr := sandbox.Exec(execInput)
-			if execErr != nil {
-				return runCommandOutput{}, execErr
-			}
-
-			return runCommandOutput{
-				Stdout:   result.Stdout,
-				Stderr:   result.Stderr,
-				ExitCode: result.Code,
-			}, nil
-		},
-	)
-}
-
 // newRunScriptTool creates the run_script tool backed by a sandbox.
 func newRunScriptTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.OutputCallback) (adktool.Tool, error) {
 	return functiontool.New[runScriptInput, runCommandOutput](
 		functiontool.Config{
 			Name:        "run_script",
-			Description: "Run a multi-line shell script via /bin/sh. Use this instead of run_command when executing multiple sequential steps — it avoids extra LLM round-trips. Add 'set -e' at the top to abort on the first failure. Volume paths are accessible as relative paths from the working directory.",
+			Description: "Run a multi-line shell script via /bin/sh. Add 'set -e' at the top to abort on the first failure. Volume paths are accessible as relative paths from the working directory.",
 		},
 		func(_ adktool.Context, input runScriptInput) (runCommandOutput, error) {
 			var execInput pipelinerunner.ExecInput

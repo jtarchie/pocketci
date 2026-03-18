@@ -96,7 +96,7 @@ jobs:
       #   b) input volume mounts — result.json files are also mounted at
       #      code-quality-output/result.json, security-output/result.json,
       #      maintainability-output/result.json and can be cat'd via
-      #      run_command if the agent needs to re-read raw content.
+      #      run_script if the agent needs to re-read raw content.
       - agent: final-reviewer
         file: repo/examples/agent/agents/final-reviewer.yml
         validation:

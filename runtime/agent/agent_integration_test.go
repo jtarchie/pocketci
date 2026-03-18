@@ -179,8 +179,8 @@ func TestRunAgent_FakeLLM_RealDocker(t *testing.T) {
 						"id":"call_ls",
 						"type":"function",
 						"function":{
-							"name":"run_command",
-							"arguments":"{\"command\":\"/bin/sh\",\"args\":[\"-c\",\"ls diff\"]}"
+							"name":"run_script",
+							"arguments":"{\"script\":\"ls diff\"}"
 						}
 					}]
 				},
@@ -202,8 +202,8 @@ func TestRunAgent_FakeLLM_RealDocker(t *testing.T) {
 						"id":"call_cat",
 						"type":"function",
 						"function":{
-							"name":"run_command",
-							"arguments":"{\"command\":\"/bin/sh\",\"args\":[\"-c\",\"cat diff/pr.diff\"]}"
+							"name":"run_script",
+							"arguments":"{\"script\":\"cat diff/pr.diff\"}"
 						}
 					}]
 				},
@@ -238,7 +238,7 @@ func TestRunAgent_FakeLLM_RealDocker(t *testing.T) {
 
 	result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
 		Name:   "final-reviewer",
-		Prompt: "Use run_command to verify diff file via ls and cat, then summarize.",
+		Prompt: "Use run_script to verify diff file via ls and cat, then summarize.",
 		Model:  "openai/fake-model",
 		Image:  "busybox",
 		Mounts: map[string]pipelinerunner.VolumeResult{
@@ -256,7 +256,7 @@ func TestRunAgent_FakeLLM_RealDocker(t *testing.T) {
 	var sawLS bool
 	var sawCat bool
 	for _, event := range result.AuditLog {
-		if event.Type != "tool_response" || event.ToolName != "run_command" || event.ToolResult == nil {
+		if event.Type != "tool_response" || event.ToolName != "run_script" || event.ToolResult == nil {
 			continue
 		}
 
@@ -396,8 +396,8 @@ func TestRunAgent_FakeLLM_InvalidToolArgs_RealDocker(t *testing.T) {
 						"id":"call_invalid",
 						"type":"function",
 						"function":{
-							"name":"run_command",
-							"arguments":"{\"args\":[\"-c\",\"ls\"]}"
+							"name":"run_script",
+							"arguments":"{}"
 						}
 					}]
 				},
@@ -443,7 +443,7 @@ func TestRunAgent_FakeLLM_InvalidToolArgs_RealDocker(t *testing.T) {
 
 	var validationErr string
 	for _, event := range result.AuditLog {
-		if event.Type != "tool_response" || event.ToolName != "run_command" || event.ToolResult == nil {
+		if event.Type != "tool_response" || event.ToolName != "run_script" || event.ToolResult == nil {
 			continue
 		}
 

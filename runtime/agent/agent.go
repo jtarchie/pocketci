@@ -113,7 +113,7 @@ type AuditEvent struct {
 	Usage        *AuditUsage    `json:"usage,omitempty"`
 }
 
-// RunAgent executes an LLM agent with a run_command tool backed by a sandbox container.
+// RunAgent executes an LLM agent with tools backed by a sandbox container.
 // It writes a result.json to outputVolumePath when the agent finishes.
 func RunAgent(
 	ctx context.Context,
@@ -144,11 +144,6 @@ func RunAgent(
 	defer func() { _ = sandbox.Close() }()
 
 	// Build sandbox tools.
-	runCmd, err := newRunCommandTool(sandbox, config.OnOutput)
-	if err != nil {
-		return nil, fmt.Errorf("agent: failed to create run_command tool: %w", err)
-	}
-
 	runScript, err := newRunScriptTool(sandbox, config.OnOutput)
 	if err != nil {
 		return nil, fmt.Errorf("agent: failed to create run_script tool: %w", err)
@@ -188,7 +183,7 @@ func RunAgent(
 		Model:                 llmModel,
 		Description:           "An agent running in a CI/CD system with access to a containerized environment.",
 		Instruction:           instruction,
-		Tools:                 []adktool.Tool{runCmd, runScript, readFileTool, listTasksTool, getTaskResultTool},
+		Tools:                 []adktool.Tool{runScript, readFileTool, listTasksTool, getTaskResultTool},
 		GenerateContentConfig: genCfg,
 	})
 	if err != nil {

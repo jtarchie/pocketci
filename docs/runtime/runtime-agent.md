@@ -2,9 +2,9 @@
 
 Run an LLM agent that can use a sandboxed container as a tool.
 
-The agent receives a prompt, calls an LLM, and iteratively invokes a built-in
-`run_command` tool backed by the container image you provide. Results stream
-back in real time.
+The agent receives a prompt, calls an LLM, and iteratively invokes built-in
+tools backed by the container image you provide. Results stream back in real
+time.
 
 ```typescript
 const result = await runtime.agent(options);
@@ -192,7 +192,8 @@ required.
 
 | Tool              | Description                                                             |
 | ----------------- | ----------------------------------------------------------------------- |
-| `run_command`     | Execute a shell command inside the sandbox container                    |
+| `run_script`      | Run a multi-line shell script inside the sandbox container              |
+| `read_file`       | Read a file from a mounted volume without a shell subprocess            |
 | `list_tasks`      | List all tasks in the current pipeline run with their status and timing |
 | `get_task_result` | Fetch the stdout, stderr, and exit code for a specific task by name     |
 
