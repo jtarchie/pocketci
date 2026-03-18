@@ -44,11 +44,11 @@ func PipelineScope(pipelineID string) string {
 const GlobalScope = "global"
 
 // systemManagedKeys are secret keys reserved for internal use by the system.
-// These keys are managed through dedicated API fields (e.g., driver_dsn via
-// DriverDSN, webhook_secret via WebhookSecret) and must not be set or read
+// These keys are managed through dedicated API fields (e.g., driver via
+// Driver, webhook_secret via WebhookSecret) and must not be set or read
 // through user-facing secret mechanisms.
 var systemManagedKeys = map[string]struct{}{
-	"driver_dsn":     {},
+	"driver":         {},
 	"webhook_secret": {},
 }
 

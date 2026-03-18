@@ -75,7 +75,7 @@ func TestMCPGetRun(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 
-	pipeline, err := store.SavePipeline(ctx, "test-pipeline", "export const pipeline = async () => {};", "native://", "")
+	pipeline, err := store.SavePipeline(ctx, "test-pipeline", "export const pipeline = async () => {};", "native", "")
 	NewWithT(t).Expect(err).NotTo(HaveOccurred())
 
 	run, err := store.SaveRun(ctx, pipeline.ID)
@@ -124,7 +124,7 @@ func TestMCPListRunTasks(t *testing.T) {
 	store := newTestStore(t)
 	assert := NewWithT(t)
 
-	pipeline, err := store.SavePipeline(ctx, "tasks-pipeline", "export const pipeline = async () => {};", "native://", "")
+	pipeline, err := store.SavePipeline(ctx, "tasks-pipeline", "export const pipeline = async () => {};", "native", "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	run, err := store.SaveRun(ctx, pipeline.ID)
@@ -168,7 +168,7 @@ func TestMCPGetRunTask(t *testing.T) {
 	store := newTestStore(t)
 	assert := NewWithT(t)
 
-	pipeline, err := store.SavePipeline(ctx, "single-task-pipeline", "export const pipeline = async () => {};", "native://", "")
+	pipeline, err := store.SavePipeline(ctx, "single-task-pipeline", "export const pipeline = async () => {};", "native", "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	run, err := store.SaveRun(ctx, pipeline.ID)
@@ -244,7 +244,7 @@ func TestMCPSearchTasks(t *testing.T) {
 	store := newTestStore(t)
 	assert := NewWithT(t)
 
-	pipeline, err := store.SavePipeline(ctx, "search-pipeline", "export const pipeline = async () => {};", "native://", "")
+	pipeline, err := store.SavePipeline(ctx, "search-pipeline", "export const pipeline = async () => {};", "native", "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	run, err := store.SaveRun(ctx, pipeline.ID)
@@ -331,9 +331,9 @@ func TestMCPSearchPipelines(t *testing.T) {
 	store := newTestStore(t)
 	root := NewWithT(t)
 
-	_, err := store.SavePipeline(ctx, "alpha-pipeline", "export const pipeline = async () => {};", "native://", "")
+	_, err := store.SavePipeline(ctx, "alpha-pipeline", "export const pipeline = async () => {};", "native", "")
 	root.Expect(err).NotTo(HaveOccurred())
-	_, err = store.SavePipeline(ctx, "beta-pipeline", "export const pipeline = async () => {};", "native://", "")
+	_, err = store.SavePipeline(ctx, "beta-pipeline", "export const pipeline = async () => {};", "native", "")
 	root.Expect(err).NotTo(HaveOccurred())
 
 	session := setupMCPSession(t, store)

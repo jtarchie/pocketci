@@ -40,7 +40,7 @@ type pipelineScan struct {
 	Name           string `db:"name"`
 	Content        string `db:"content"`
 	ContentType    string `db:"content_type"`
-	DriverDSN      string `db:"driver_dsn"`
+	Driver         string `db:"driver"`
 	ResumeEnabled  int    `db:"resume_enabled"`
 	RBACExpression string `db:"rbac_expression"`
 	CreatedAt      string `db:"created_at"`
@@ -56,7 +56,7 @@ func (p pipelineScan) toStorage() storage.Pipeline {
 		Name:           p.Name,
 		Content:        p.Content,
 		ContentType:    p.ContentType,
-		DriverDSN:      p.DriverDSN,
+		Driver:         p.Driver,
 		ResumeEnabled:  p.ResumeEnabled != 0,
 		RBACExpression: p.RBACExpression,
 		CreatedAt:      createdAt,
@@ -338,7 +338,7 @@ func (s *Sqlite) Close() error {
 // SavePipeline creates or updates a pipeline in the database.
 // Pipeline names are unique; saving with an existing name updates the record
 // while preserving the original ID so existing pipeline_runs references remain valid.
-func (s *Sqlite) SavePipeline(ctx context.Context, name, content, driverDSN, contentType string) (*storage.Pipeline, error) {
+func (s *Sqlite) SavePipeline(ctx context.Context, name, content, driver, contentType string) (*storage.Pipeline, error) {
 	newID := support.PipelineID(name, content)
 	now := time.Now().UTC()
 
@@ -347,14 +347,14 @@ func (s *Sqlite) SavePipeline(ctx context.Context, name, content, driverDSN, con
 	_ = sqlscan.Get(ctx, s.writer, &existingID, `SELECT id FROM pipelines WHERE name = ?`, name)
 
 	_, err := s.writer.ExecContext(ctx, `
-		INSERT INTO pipelines (id, name, content, content_type, driver_dsn, created_at, updated_at)
+		INSERT INTO pipelines (id, name, content, content_type, driver, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET
 			content=excluded.content,
 			content_type=excluded.content_type,
-			driver_dsn=excluded.driver_dsn,
+			driver=excluded.driver,
 			updated_at=excluded.updated_at
-	`, newID, name, content, contentType, driverDSN, now.Format(time.RFC3339), now.Format(time.RFC3339))
+	`, newID, name, content, contentType, driver, now.Format(time.RFC3339), now.Format(time.RFC3339))
 	if err != nil {
 		return nil, fmt.Errorf("failed to save pipeline: %w", err)
 	}
@@ -388,7 +388,7 @@ func (s *Sqlite) SavePipeline(ctx context.Context, name, content, driverDSN, con
 		Name:        name,
 		Content:     content,
 		ContentType: contentType,
-		DriverDSN:   driverDSN,
+		Driver:      driver,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}, nil
@@ -399,7 +399,7 @@ func (s *Sqlite) GetPipeline(ctx context.Context, id string) (*storage.Pipeline,
 	var row pipelineScan
 
 	err := sqlscan.Get(ctx, s.writer, &row, `
-		SELECT id, name, content, content_type, driver_dsn, resume_enabled, rbac_expression, created_at, updated_at
+		SELECT id, name, content, content_type, driver, resume_enabled, rbac_expression, created_at, updated_at
 		FROM pipelines WHERE id = ?
 	`, id)
 	if err != nil {
@@ -420,7 +420,7 @@ func (s *Sqlite) GetPipelineByName(ctx context.Context, name string) (*storage.P
 	var row pipelineScan
 
 	err := sqlscan.Get(ctx, s.writer, &row, `
-		SELECT id, name, content, content_type, driver_dsn, resume_enabled, rbac_expression, created_at, updated_at
+		SELECT id, name, content, content_type, driver, resume_enabled, rbac_expression, created_at, updated_at
 		FROM pipelines WHERE name = ?
 		ORDER BY updated_at DESC LIMIT 1
 	`, name)
@@ -785,7 +785,7 @@ func (s *Sqlite) SearchPipelines(ctx context.Context, query string, page, perPag
 
 		var rows []pipelineScan
 		err = sqlscan.Select(ctx, s.writer, &rows, `
-			SELECT id, name, content, content_type, driver_dsn, resume_enabled, rbac_expression, created_at, updated_at
+			SELECT id, name, content, content_type, driver, resume_enabled, rbac_expression, created_at, updated_at
 			FROM pipelines ORDER BY created_at DESC
 			LIMIT ? OFFSET ?
 		`, perPage, offset)
@@ -825,7 +825,7 @@ func (s *Sqlite) SearchPipelines(ctx context.Context, query string, page, perPag
 	var rows []pipelineScan
 
 	err = sqlscan.Select(ctx, s.writer, &rows, `
-		SELECT p.id, p.name, p.content, p.content_type, p.driver_dsn, p.resume_enabled, p.rbac_expression, p.created_at, p.updated_at
+		SELECT p.id, p.name, p.content, p.content_type, p.driver, p.resume_enabled, p.rbac_expression, p.created_at, p.updated_at
 		FROM pipelines p
 		WHERE p.id IN (SELECT id FROM pipelines_fts WHERE pipelines_fts MATCH ?)
 		ORDER BY p.created_at DESC

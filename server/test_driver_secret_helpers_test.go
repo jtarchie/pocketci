@@ -58,20 +58,20 @@ func newStrictSecretRouter(t *testing.T, client storage.Driver, opts server.Rout
 
 	for i := range result.Items {
 		pipeline := result.Items[i]
-		if pipeline.DriverDSN == "" {
+		if pipeline.Driver == "" {
 			continue
 		}
 
-		persistPipelineDriverDSNSecret(t, opts.SecretsManager, pipeline.ID, pipeline.DriverDSN)
+		persistPipelineDriverSecret(t, opts.SecretsManager, pipeline.ID, pipeline.Driver)
 	}
 
 	return router
 }
 
-func persistPipelineDriverDSNSecret(t *testing.T, mgr secrets.Manager, pipelineID string, driverDSN string) {
+func persistPipelineDriverSecret(t *testing.T, mgr secrets.Manager, pipelineID string, driver string) {
 	t.Helper()
 
-	if err := mgr.Set(context.Background(), secrets.PipelineScope(pipelineID), "driver_dsn", driverDSN); err != nil {
+	if err := mgr.Set(context.Background(), secrets.PipelineScope(pipelineID), "driver", driver); err != nil {
 		t.Fatalf("could not persist pipeline driver secret: %v", err)
 	}
 }

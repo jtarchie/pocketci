@@ -16,7 +16,7 @@ func TestFTS(t *testing.T) {
 					assert := NewGomegaWithT(t)
 					client := df.new(t, "ns")
 
-					_, err := client.SavePipeline(context.Background(), "hello-world", "echo hello", "native://", "")
+					_, err := client.SavePipeline(context.Background(), "hello-world", "echo hello", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					result, err := client.SearchPipelines(context.Background(), "", 1, 20)
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -28,9 +28,9 @@ func TestFTS(t *testing.T) {
 					assert := NewGomegaWithT(t)
 					client := df.new(t, "ns")
 
-					_, err := client.SavePipeline(context.Background(), "hello-world", "echo hello", "native://", "")
+					_, err := client.SavePipeline(context.Background(), "hello-world", "echo hello", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
-					_, err = client.SavePipeline(context.Background(), "deploy-prod", "kubectl apply", "native://", "")
+					_, err = client.SavePipeline(context.Background(), "deploy-prod", "kubectl apply", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					result, err := client.SearchPipelines(context.Background(), "hello", 1, 20)
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -41,9 +41,9 @@ func TestFTS(t *testing.T) {
 				t.Run("finds pipeline by content keyword", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
 					client := df.new(t, "ns")
-					_, err := client.SavePipeline(context.Background(), "pipeline-a", "run unit tests with pytest", "native://", "")
+					_, err := client.SavePipeline(context.Background(), "pipeline-a", "run unit tests with pytest", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
-					_, err = client.SavePipeline(context.Background(), "pipeline-b", "deploy to kubernetes", "native://", "")
+					_, err = client.SavePipeline(context.Background(), "pipeline-b", "deploy to kubernetes", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					result, err := client.SearchPipelines(context.Background(), "pytest", 1, 20)
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -54,7 +54,7 @@ func TestFTS(t *testing.T) {
 				t.Run("returns empty when no pipeline matches", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
 					client := df.new(t, "ns")
-					_, err := client.SavePipeline(context.Background(), "hello", "echo hi", "native://", "")
+					_, err := client.SavePipeline(context.Background(), "hello", "echo hi", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					result, err := client.SearchPipelines(context.Background(), "zzznomatch", 1, 20)
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -64,7 +64,7 @@ func TestFTS(t *testing.T) {
 				t.Run("prefix matching works for partial tokens", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
 					client := df.new(t, "ns")
-					_, err := client.SavePipeline(context.Background(), "integration-tests", "run integration suite", "native://", "")
+					_, err := client.SavePipeline(context.Background(), "integration-tests", "run integration suite", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					result, err := client.SearchPipelines(context.Background(), "integr", 1, 20)
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -181,7 +181,7 @@ func TestFTS(t *testing.T) {
 				t.Run("finds run by status", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
 					client := df.new(t, "ns")
-					pipeline, err := client.SavePipeline(context.Background(), "my-pipe", "echo hi", "native://", "")
+					pipeline, err := client.SavePipeline(context.Background(), "my-pipe", "echo hi", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					run1, err := client.SaveRun(context.Background(), pipeline.ID)
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -198,7 +198,7 @@ func TestFTS(t *testing.T) {
 				t.Run("finds run by error message word", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
 					client := df.new(t, "ns")
-					pipeline, err := client.SavePipeline(context.Background(), "my-pipe", "echo hi", "native://", "")
+					pipeline, err := client.SavePipeline(context.Background(), "my-pipe", "echo hi", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					run1, err := client.SaveRun(context.Background(), pipeline.ID)
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -215,7 +215,7 @@ func TestFTS(t *testing.T) {
 				t.Run("returns empty when no run matches", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
 					client := df.new(t, "ns")
-					pipeline, err := client.SavePipeline(context.Background(), "my-pipe", "echo hi", "native://", "")
+					pipeline, err := client.SavePipeline(context.Background(), "my-pipe", "echo hi", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					_, err = client.SaveRun(context.Background(), pipeline.ID)
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -227,7 +227,7 @@ func TestFTS(t *testing.T) {
 				t.Run("prefix matching works for partial status tokens", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
 					client := df.new(t, "ns")
-					pipeline, err := client.SavePipeline(context.Background(), "my-pipe", "echo hi", "native://", "")
+					pipeline, err := client.SavePipeline(context.Background(), "my-pipe", "echo hi", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					run1, err := client.SaveRun(context.Background(), pipeline.ID)
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -242,9 +242,9 @@ func TestFTS(t *testing.T) {
 				t.Run("scoped to pipeline - does not return runs from other pipelines", func(t *testing.T) {
 					assert := NewGomegaWithT(t)
 					client := df.new(t, "ns")
-					pipe1, err := client.SavePipeline(context.Background(), "pipe-one", "echo one", "native://", "")
+					pipe1, err := client.SavePipeline(context.Background(), "pipe-one", "echo one", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
-					pipe2, err := client.SavePipeline(context.Background(), "pipe-two", "echo two", "native://", "")
+					pipe2, err := client.SavePipeline(context.Background(), "pipe-two", "echo two", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					run1, err := client.SaveRun(context.Background(), pipe1.ID)
 					assert.Expect(err).NotTo(HaveOccurred())

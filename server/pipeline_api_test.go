@@ -61,7 +61,7 @@ func TestPipelineAPI(t *testing.T) {
 
 			body := map[string]string{
 				"content":    "export { pipeline };",
-				"driver_dsn": "docker://",
+				"driver": "docker",
 			}
 			jsonBody, _ := json.Marshal(body)
 
@@ -78,7 +78,7 @@ func TestPipelineAPI(t *testing.T) {
 			assert.Expect(resp["id"]).NotTo(BeNil())
 			assert.Expect(resp["name"]).To(Equal("test-pipeline"))
 			assert.Expect(resp["content"]).To(Equal("export { pipeline };"))
-			_, hasDriver := resp["driver_dsn"]
+			_, hasDriver := resp["driver"]
 			assert.Expect(hasDriver).To(BeFalse())
 		})
 
@@ -119,7 +119,7 @@ func TestPipelineAPI(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = client.Close() }()
 
-			_, err = client.SavePipeline(context.Background(), "pipeline-1", "content1", "docker://", "")
+			_, err = client.SavePipeline(context.Background(), "pipeline-1", "content1", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			router := newRouterWithSecrets(t, client, server.RouterOptions{})
@@ -138,7 +138,7 @@ func TestPipelineAPI(t *testing.T) {
 			assert.Expect(items).To(HaveLen(1))
 			item, ok := items[0].(map[string]any)
 			assert.Expect(ok).To(BeTrue())
-			_, hasDriver := item["driver_dsn"]
+			_, hasDriver := item["driver"]
 			assert.Expect(hasDriver).To(BeFalse())
 		})
 
@@ -154,7 +154,7 @@ func TestPipelineAPI(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = client.Close() }()
 
-			saved, err := client.SavePipeline(context.Background(), "my-pipeline", "content", "docker://", "")
+			saved, err := client.SavePipeline(context.Background(), "my-pipeline", "content", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			router := newRouterWithSecrets(t, client, server.RouterOptions{})
@@ -170,7 +170,7 @@ func TestPipelineAPI(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(resp["id"]).To(Equal(saved.ID))
 			assert.Expect(resp["name"]).To(Equal("my-pipeline"))
-			_, hasDriver := resp["driver_dsn"]
+			_, hasDriver := resp["driver"]
 			assert.Expect(hasDriver).To(BeFalse())
 		})
 
@@ -207,7 +207,7 @@ func TestPipelineAPI(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = client.Close() }()
 
-			saved, err := client.SavePipeline(context.Background(), "to-delete", "content", "docker://", "")
+			saved, err := client.SavePipeline(context.Background(), "to-delete", "content", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			router := newRouterWithSecrets(t, client, server.RouterOptions{})
@@ -266,7 +266,7 @@ func TestPipelineAPI(t *testing.T) {
 			})
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			pipeline, err := client.SavePipeline(context.Background(), "with-webhook", "content-v1", "native://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "with-webhook", "content-v1", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = secretsMgr.Set(context.Background(), secrets.PipelineScope(pipeline.ID), "webhook_secret", "existing-webhook-secret")
@@ -274,7 +274,7 @@ func TestPipelineAPI(t *testing.T) {
 
 			body := map[string]any{
 				"content":        "content-v2",
-				"driver_dsn":     "native://",
+				"driver":     "native",
 				"webhook_secret": "new-webhook-secret",
 				"secrets": map[string]string{
 					"GITHUB_TOKEN": "token-value",
@@ -316,7 +316,7 @@ func TestPipelineAPI(t *testing.T) {
 			})
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			pipeline, err := client.SavePipeline(context.Background(), "atomic-update", "content-v1", "native://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "atomic-update", "content-v1", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = secretsMgr.Set(context.Background(), secrets.PipelineScope(pipeline.ID), "REQUIRED_KEY", "initial")
@@ -324,7 +324,7 @@ func TestPipelineAPI(t *testing.T) {
 
 			body := map[string]any{
 				"content":    "content-v2",
-				"driver_dsn": "native://",
+				"driver": "native",
 				"secrets": map[string]string{
 					"OTHER_KEY": "other",
 				},
@@ -343,7 +343,7 @@ func TestPipelineAPI(t *testing.T) {
 			assert.Expect(reloaded.Content).To(Equal("content-v1"))
 		})
 
-		t.Run("PUT /api/pipelines/:name rejects system key driver_dsn in user secrets", func(t *testing.T) {
+		t.Run("PUT /api/pipelines/:name rejects system key driver in user secrets", func(t *testing.T) {
 			t.Parallel()
 			assert := NewGomegaWithT(t)
 
@@ -359,9 +359,9 @@ func TestPipelineAPI(t *testing.T) {
 
 			body := map[string]any{
 				"content":    "export { pipeline };",
-				"driver_dsn": "docker://",
+				"driver": "docker",
 				"secrets": map[string]string{
-					"driver_dsn": "docker://attacker.com",
+					"driver": "docker://attacker.com",
 				},
 			}
 			jsonBody, _ := json.Marshal(body)
@@ -395,7 +395,7 @@ func TestPipelineAPI(t *testing.T) {
 
 			body := map[string]any{
 				"content":    "export { pipeline };",
-				"driver_dsn": "docker://",
+				"driver": "docker",
 				"secrets": map[string]string{
 					"webhook_secret": "malicious",
 				},

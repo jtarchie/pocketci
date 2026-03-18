@@ -33,11 +33,11 @@ func TestExecutionAPI(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Create a simple pipeline that will fail quickly (no actual execution in test)
-			pipeline, err := client.SavePipeline(context.Background(), "test-pipeline", "export const pipeline = async () => {};", "native://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "test-pipeline", "export const pipeline = async () => {};", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			router := newStrictSecretRouter(t, client, server.RouterOptions{MaxInFlight: 5})
-			persistPipelineDriverDSNSecret(t, router.ExecutionService().SecretsManager, pipeline.ID, "native://")
+			persistPipelineDriverSecret(t, router.ExecutionService().SecretsManager, pipeline.ID, "native")
 
 			req := httptest.NewRequest(http.MethodPost, "/api/pipelines/"+pipeline.ID+"/trigger", nil)
 			rec := httptest.NewRecorder()
@@ -94,7 +94,7 @@ func TestExecutionAPI(t *testing.T) {
 			defer func() { _ = client.Close() }()
 
 			// Create pipeline and run directly
-			pipeline, err := client.SavePipeline(context.Background(), "my-pipeline", "content", "docker://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "my-pipeline", "content", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			run, err := client.SaveRun(context.Background(), pipeline.ID)
@@ -151,7 +151,7 @@ func TestExecutionAPI(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = client.Close() }()
 
-			pipeline, err := client.SavePipeline(context.Background(), "agent-pipeline", "content", "docker://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "agent-pipeline", "content", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			run, err := client.SaveRun(context.Background(), pipeline.ID)
@@ -201,7 +201,7 @@ func TestExecutionAPI(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = client.Close() }()
 
-			pipeline, err := client.SavePipeline(context.Background(), "filtered-pipeline", "content", "docker://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "filtered-pipeline", "content", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			run, err := client.SaveRun(context.Background(), pipeline.ID)
@@ -266,9 +266,9 @@ func TestExecutionAPI(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Create multiple pipelines
-			pipeline1, err := client.SavePipeline(context.Background(), "pipeline-1", "export const pipeline = async () => { console.log('pipeline 1'); };", "docker://", "")
+			pipeline1, err := client.SavePipeline(context.Background(), "pipeline-1", "export const pipeline = async () => { console.log('pipeline 1'); };", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
-			pipeline2, err := client.SavePipeline(context.Background(), "pipeline-2", "export const pipeline = async () => { console.log('pipeline 2'); };", "docker://", "")
+			pipeline2, err := client.SavePipeline(context.Background(), "pipeline-2", "export const pipeline = async () => { console.log('pipeline 2'); };", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Set max-in-flight to 0 - should reject all new executions
@@ -282,8 +282,8 @@ func TestExecutionAPI(t *testing.T) {
 			// We'll trigger once then immediately trigger again before goroutine gets far
 
 			router2 := newStrictSecretRouter(t, client, server.RouterOptions{MaxInFlight: 1})
-			persistPipelineDriverDSNSecret(t, router2.ExecutionService().SecretsManager, pipeline1.ID, "docker://")
-			persistPipelineDriverDSNSecret(t, router2.ExecutionService().SecretsManager, pipeline2.ID, "docker://")
+			persistPipelineDriverSecret(t, router2.ExecutionService().SecretsManager, pipeline1.ID, "docker")
+			persistPipelineDriverSecret(t, router2.ExecutionService().SecretsManager, pipeline2.ID, "docker")
 
 			// Make first request
 			req1 := httptest.NewRequest(http.MethodPost, "/api/pipelines/"+pipeline1.ID+"/trigger", nil)
@@ -324,11 +324,11 @@ func TestExecutionAPI(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = client.Close() }()
 
-			pipeline, err := client.SavePipeline(context.Background(), "my-pipeline", "export const pipeline = async () => {};", "native://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "my-pipeline", "export const pipeline = async () => {};", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			router := newStrictSecretRouter(t, client, server.RouterOptions{MaxInFlight: 5})
-			persistPipelineDriverDSNSecret(t, router.ExecutionService().SecretsManager, pipeline.ID, "native://")
+			persistPipelineDriverSecret(t, router.ExecutionService().SecretsManager, pipeline.ID, "native")
 
 			req := httptest.NewRequest(http.MethodPost, "/api/pipelines/my-pipeline/run", nil)
 			rec := httptest.NewRecorder()

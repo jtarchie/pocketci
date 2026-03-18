@@ -10,7 +10,7 @@ pocketci set-pipeline <pipeline-file> --server <url> [options]
 
 - `--server` — server URL (required; e.g., `http://localhost:8080`)
 - `--name` — pipeline name (if omitted, derived from filename)
-- `--driver` — orchestration driver DSN
+- `--driver` — orchestration driver (e.g., `docker`, `native`, `k8s`)
 - `--webhook-secret` — secret for webhook requests (optional)
 - `--basic-auth-username` — server basic auth user (env:
   `CI_BASIC_AUTH_USERNAME`)

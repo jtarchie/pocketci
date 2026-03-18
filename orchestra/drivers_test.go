@@ -639,80 +639,24 @@ func TestSandboxDrivers(t *testing.T) {
 	}
 }
 
-func TestParseDriverDSN(t *testing.T) {
+func TestIsDriverAllowed(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name           string
-		dsn            string
-		expectedName   string
-		expectedNS     string
-		expectedParams map[string]string
-		expectError    bool
-	}{
-		{
-			name:           "simple driver name",
-			dsn:            "docker",
-			expectedName:   "docker",
-			expectedNS:     "",
-			expectedParams: map[string]string{},
-		},
-		{
-			name:           "driver with parameters",
-			dsn:            "k8s:namespace=my-ns,timeout=30",
-			expectedName:   "k8s",
-			expectedNS:     "",
-			expectedParams: map[string]string{"namespace": "my-ns", "timeout": "30"},
-		},
-		{
-			name:           "URL-style with namespace",
-			dsn:            "k8s://my-namespace",
-			expectedName:   "k8s",
-			expectedNS:     "my-namespace",
-			expectedParams: map[string]string{},
-		},
-		{
-			name:           "URL-style with namespace and params",
-			dsn:            "k8s://production?timeout=60&region=us-west",
-			expectedName:   "k8s",
-			expectedNS:     "production",
-			expectedParams: map[string]string{"timeout": "60", "region": "us-west"},
-		},
-		{
-			name:           "native driver",
-			dsn:            "native",
-			expectedName:   "native",
-			expectedNS:     "",
-			expectedParams: map[string]string{},
-		},
-		{
-			name:           "driver with empty params",
-			dsn:            "docker:",
-			expectedName:   "docker",
-			expectedNS:     "",
-			expectedParams: map[string]string{},
-		},
-	}
+	assert := NewGomegaWithT(t)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+	// Wildcard allows anything
+	assert.Expect(orchestra.IsDriverAllowed("docker", []string{"*"})).NotTo(HaveOccurred())
+	assert.Expect(orchestra.IsDriverAllowed("native", []string{"*"})).NotTo(HaveOccurred())
 
-			assert := NewGomegaWithT(t)
+	// Specific driver in list
+	assert.Expect(orchestra.IsDriverAllowed("docker", []string{"docker", "native"})).NotTo(HaveOccurred())
+	assert.Expect(orchestra.IsDriverAllowed("native", []string{"docker", "native"})).NotTo(HaveOccurred())
 
-			config, err := orchestra.ParseDriverDSN(tt.dsn)
+	// Driver not in list
+	assert.Expect(orchestra.IsDriverAllowed("fly", []string{"docker", "native"})).To(HaveOccurred())
 
-			if tt.expectError {
-				assert.Expect(err).To(HaveOccurred())
-				return
-			}
-
-			assert.Expect(err).NotTo(HaveOccurred())
-			assert.Expect(config.Name).To(Equal(tt.expectedName))
-			assert.Expect(config.Namespace).To(Equal(tt.expectedNS))
-			assert.Expect(config.Params).To(Equal(tt.expectedParams))
-		})
-	}
+	// Empty driver name
+	assert.Expect(orchestra.IsDriverAllowed("", []string{"*"})).To(HaveOccurred())
 }
 
 // extractTarFiles reads a tar stream and returns a map of file path to contents.

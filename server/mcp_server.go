@@ -186,7 +186,7 @@ func buildMCPServer(store storage.Driver) *mcp.Server {
 	}
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "search_pipelines",
-		Description: "Search pipelines by name or pipeline content using full-text search. Returns paginated results including pipeline IDs, names, and driver DSNs.",
+		Description: "Search pipelines by name or pipeline content using full-text search. Returns paginated results including pipeline IDs, names, and drivers.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input SearchPipelinesInput) (*mcp.CallToolResult, any, error) {
 		page := 1
 		if input.Page != nil && *input.Page > 0 {

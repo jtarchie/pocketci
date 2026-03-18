@@ -21,7 +21,7 @@ type SetPipeline struct {
 	Pipeline      string   `arg:""                  help:"Path to pipeline file (JS, TS, or YAML)"  required:"" type:"existingfile"`
 	Name          string   `help:"Name for the pipeline (defaults to filename without extension)" short:"n"`
 	ServerURL     string   `env:"CI_SERVER_URL"      help:"URL of the CI server"                                           required:"" short:"s"`
-	Driver        string   `env:"CI_DRIVER"          help:"Orchestrator driver DSN (e.g., 'docker', 'native', 'k8s')"      short:"d"`
+	Driver        string   `env:"CI_DRIVER"          help:"Orchestrator driver (e.g., 'docker', 'native', 'k8s')"      short:"d"`
 	WebhookSecret string   `env:"CI_WEBHOOK_SECRET"  help:"Secret for webhook signature validation"                        short:"w"`
 	Secret        []string `help:"Set a pipeline-scoped secret as KEY=VALUE (can be repeated)" short:"e"`
 	SecretFile    string   `help:"Path to a file containing secrets in KEY=VALUE format (one per line)" type:"existingfile"`
@@ -35,7 +35,7 @@ type SetPipeline struct {
 type pipelineRequest struct {
 	Content        string            `json:"content"`
 	ContentType    string            `json:"content_type"`
-	DriverDSN      string            `json:"driver_dsn"`
+	Driver         string            `json:"driver"`
 	WebhookSecret  string            `json:"webhook_secret"`
 	Secrets        map[string]string `json:"secrets,omitempty"`
 	ResumeEnabled  *bool             `json:"resume_enabled,omitempty"`
@@ -122,7 +122,7 @@ func (c *SetPipeline) Run(logger *slog.Logger) error {
 	reqBody := pipelineRequest{
 		Content:       string(content),
 		ContentType:   contentType,
-		DriverDSN:     c.Driver,
+		Driver:        c.Driver,
 		WebhookSecret: c.WebhookSecret,
 		Secrets:       secretsMap,
 		ResumeEnabled: &c.Resume,

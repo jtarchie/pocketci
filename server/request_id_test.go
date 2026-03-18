@@ -94,7 +94,7 @@ func TestExecutePipelineLoggerIncludesRequestID(t *testing.T) {
 	assert.Expect(err).NotTo(HaveOccurred())
 	defer func() { _ = store.Close() }()
 
-	pipeline, err := store.SavePipeline(context.Background(), "request-id-pipeline", "export const pipeline = async () => {};", "native://", "")
+	pipeline, err := store.SavePipeline(context.Background(), "request-id-pipeline", "export const pipeline = async () => {};", "native", "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	run, err := store.SaveRun(context.Background(), pipeline.ID)
@@ -162,7 +162,7 @@ func TestExecutePipelineLoggerIncludesActor(t *testing.T) {
 	assert.Expect(err).NotTo(HaveOccurred())
 	defer func() { _ = store.Close() }()
 
-	pipeline, err := store.SavePipeline(context.Background(), "request-actor-pipeline", "export const pipeline = async () => {};", "native://", "")
+	pipeline, err := store.SavePipeline(context.Background(), "request-actor-pipeline", "export const pipeline = async () => {};", "native", "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	run, err := store.SaveRun(context.Background(), pipeline.ID)

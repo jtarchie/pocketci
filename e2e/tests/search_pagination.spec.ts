@@ -10,12 +10,12 @@ async function createPipeline(
   request: APIRequestContext,
   name: string,
   content: string,
-  driverDsn: string = "native://",
+  driver: string = "native",
 ): Promise<string> {
   const response = await request.put(
     `/api/pipelines/${encodeURIComponent(name)}`,
     {
-      data: { content, driver_dsn: driverDsn },
+      data: { content, driver: driver },
     },
   );
   expect(response.ok()).toBeTruthy();

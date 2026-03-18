@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
-	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/server/auth"
 	"github.com/jtarchie/pocketci/storage"
 	"github.com/labstack/echo/v5"
@@ -26,29 +24,21 @@ type PipelineRow struct {
 func buildPipelineRows(ctx context.Context, store storage.Driver, pipelines []storage.Pipeline, defaultDriver string) []PipelineRow {
 	rows := make([]PipelineRow, 0, len(pipelines))
 	for _, p := range pipelines {
-		row := PipelineRow{Pipeline: p, DriverName: driverNameFromDSN(p.DriverDSN, defaultDriver)}
+		driverName := p.Driver
+		if driverName == "" {
+			if defaultDriver != "" {
+				driverName = defaultDriver
+			} else {
+				driverName = "default"
+			}
+		}
+		row := PipelineRow{Pipeline: p, DriverName: driverName}
 		if res, err := store.SearchRunsByPipeline(ctx, p.ID, "", 1, 1); err == nil && len(res.Items) > 0 {
 			row.LatestRun = &res.Items[0]
 		}
 		rows = append(rows, row)
 	}
 	return rows
-}
-
-func driverNameFromDSN(dsn, defaultDriver string) string {
-	if strings.TrimSpace(dsn) == "" {
-		if defaultDriver != "" {
-			return defaultDriver
-		}
-		return "default"
-	}
-
-	config, err := orchestra.ParseDriverDSN(dsn)
-	if err != nil || config.Name == "" {
-		return "unknown"
-	}
-
-	return config.Name
 }
 
 // WebPipelinesController handles HTML view endpoints for pipelines.
@@ -182,7 +172,10 @@ func (c *WebPipelinesController) Show(ctx *echo.Context) error {
 		}
 	}
 
-	driverName := driverNameFromDSN(pipeline.DriverDSN, c.execService.DefaultDriver)
+	driverName := pipeline.Driver
+	if driverName == "" {
+		driverName = c.execService.DefaultDriver
+	}
 	return ctx.Render(http.StatusOK, "pipeline_detail.html", map[string]any{
 		"Pipeline":   pipeline,
 		"DriverName": driverName,

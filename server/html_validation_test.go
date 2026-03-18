@@ -28,7 +28,7 @@ func TestHTMLEndpointsAreStrictlyValid(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = client.Close() }()
 
-		pipeline, err := client.SavePipeline(context.Background(), "html-validation-pipeline", "export const pipeline = async () => {};", "docker://", "")
+		pipeline, err := client.SavePipeline(context.Background(), "html-validation-pipeline", "export const pipeline = async () => {};", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		run, err := client.SaveRun(context.Background(), pipeline.ID)

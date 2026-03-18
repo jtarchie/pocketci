@@ -248,18 +248,18 @@ func TestResourceRunnerPushSecretMissing(t *testing.T) {
 }
 
 // TestResolveSecretStringRejectsSystemKeys verifies that system-managed secret
-// keys (driver_dsn, webhook_secret) cannot be read through the secret: prefix.
+// keys (driver, webhook_secret) cannot be read through the secret: prefix.
 func TestResolveSecretStringRejectsSystemKeys(t *testing.T) {
 	t.Parallel()
 
 	assert := NewGomegaWithT(t)
 
 	mgr := newMapSecretsManager(map[string]string{
-		"pipeline/pipe1/driver_dsn":     "docker://internal-host",
+		"pipeline/pipe1/driver":         "docker",
 		"pipeline/pipe1/webhook_secret": "super-secret-webhook",
 	})
 
-	for _, key := range []string{"driver_dsn", "webhook_secret"} {
+	for _, key := range []string{"driver", "webhook_secret"} {
 		_, _, err := support.ResolveSecretString(context.Background(), mgr, "pipe1", "secret:"+key)
 		assert.Expect(err).To(HaveOccurred())
 		assert.Expect(err.Error()).To(ContainSubstring("reserved for system use"))

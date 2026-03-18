@@ -22,7 +22,7 @@ import (
 type PipelineRequest struct {
 	Content        string            `json:"content"`
 	ContentType    string            `json:"content_type"`
-	DriverDSN      string            `json:"driver_dsn"`
+	Driver         string            `json:"driver"`
 	WebhookSecret  *string           `json:"webhook_secret,omitempty"`
 	Secrets        map[string]string `json:"secrets,omitempty"`
 	ResumeEnabled  *bool             `json:"resume_enabled,omitempty"`
@@ -66,7 +66,7 @@ type APIPipelinesController struct {
 	secretsMgr      secrets.Manager
 }
 
-const pipelineDriverDSNSecretKey = "driver_dsn"
+const pipelineDriverSecretKey = "driver"
 
 // checkPipelineRBAC evaluates a pipeline's RBAC expression against the current user.
 // Returns nil if access is allowed, or an error response if denied.
@@ -223,13 +223,13 @@ func (c *APIPipelinesController) validateSecrets(ctx context.Context, name strin
 	return nil
 }
 
-// persistSecrets stores the driver DSN, webhook secret, and user-provided
+// persistSecrets stores the driver, webhook secret, and user-provided
 // secrets for the given pipeline.
 func (c *APIPipelinesController) persistSecrets(ctx context.Context, pipeline *storage.Pipeline, req PipelineRequest) error {
 	scope := secrets.PipelineScope(pipeline.ID)
 
-	if err := c.secretsMgr.Set(ctx, scope, pipelineDriverDSNSecretKey, req.DriverDSN); err != nil {
-		return fmt.Errorf("failed to store driver DSN: %w", err)
+	if err := c.secretsMgr.Set(ctx, scope, pipelineDriverSecretKey, req.Driver); err != nil {
+		return fmt.Errorf("failed to store driver: %w", err)
 	}
 
 	if req.WebhookSecret != nil {
@@ -284,11 +284,11 @@ func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
 		})
 	}
 
-	if req.DriverDSN == "" {
-		req.DriverDSN = c.execService.DefaultDriver
+	if req.Driver == "" {
+		req.Driver = c.execService.DefaultDriver
 	}
 
-	if err := orchestra.IsDriverAllowed(req.DriverDSN, c.allowedDrivers); err != nil {
+	if err := orchestra.IsDriverAllowed(req.Driver, c.allowedDrivers); err != nil {
 		return ctx.JSON(http.StatusBadRequest, map[string]string{
 			"error": fmt.Sprintf("driver not allowed: %v", err),
 		})
@@ -324,14 +324,7 @@ func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
 		})
 	}
 
-	driverConfig, err := orchestra.ParseDriverDSN(req.DriverDSN)
-	if err != nil {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{
-			"error": fmt.Sprintf("invalid driver DSN: %v", err),
-		})
-	}
-
-	pipeline, err := c.store.SavePipeline(ctx.Request().Context(), name, req.Content, driverConfig.Name, req.ContentType)
+	pipeline, err := c.store.SavePipeline(ctx.Request().Context(), name, req.Content, req.Driver, req.ContentType)
 	if err != nil {
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to save pipeline: %v", err),

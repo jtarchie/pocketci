@@ -16,13 +16,13 @@ func TestPipelineStorage(t *testing.T) {
 
 				client := df.new(t, "namespace")
 
-				pipeline, err := client.SavePipeline(context.Background(), "test-pipeline", "console.log('hello');", "docker://", "")
+				pipeline, err := client.SavePipeline(context.Background(), "test-pipeline", "console.log('hello');", "docker", "")
 				assert.Expect(err).NotTo(HaveOccurred())
 				assert.Expect(pipeline).NotTo(BeNil())
 				assert.Expect(pipeline.ID).NotTo(BeEmpty())
 				assert.Expect(pipeline.Name).To(Equal("test-pipeline"))
 				assert.Expect(pipeline.Content).To(Equal("console.log('hello');"))
-				assert.Expect(pipeline.DriverDSN).To(Equal("docker://"))
+				assert.Expect(pipeline.Driver).To(Equal("docker"))
 				assert.Expect(pipeline.CreatedAt).NotTo(BeZero())
 				assert.Expect(pipeline.UpdatedAt).NotTo(BeZero())
 			})
@@ -32,7 +32,7 @@ func TestPipelineStorage(t *testing.T) {
 
 				client := df.new(t, "namespace")
 
-				saved, err := client.SavePipeline(context.Background(), "my-pipeline", "export { pipeline };", "native://", "")
+				saved, err := client.SavePipeline(context.Background(), "my-pipeline", "export { pipeline };", "native", "")
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				retrieved, err := client.GetPipeline(context.Background(), saved.ID)
@@ -40,7 +40,7 @@ func TestPipelineStorage(t *testing.T) {
 				assert.Expect(retrieved.ID).To(Equal(saved.ID))
 				assert.Expect(retrieved.Name).To(Equal("my-pipeline"))
 				assert.Expect(retrieved.Content).To(Equal("export { pipeline };"))
-				assert.Expect(retrieved.DriverDSN).To(Equal("native://"))
+				assert.Expect(retrieved.Driver).To(Equal("native"))
 			})
 
 			t.Run("GetPipeline returns error for non-existent ID", func(t *testing.T) {
@@ -57,10 +57,10 @@ func TestPipelineStorage(t *testing.T) {
 
 				client := df.new(t, "namespace")
 
-				_, err := client.SavePipeline(context.Background(), "pipeline-1", "content1", "docker://", "")
+				_, err := client.SavePipeline(context.Background(), "pipeline-1", "content1", "docker", "")
 				assert.Expect(err).NotTo(HaveOccurred())
 
-				_, err = client.SavePipeline(context.Background(), "pipeline-2", "content2", "native://", "")
+				_, err = client.SavePipeline(context.Background(), "pipeline-2", "content2", "native", "")
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				result, err := client.SearchPipelines(context.Background(), "", 1, 100)
@@ -83,7 +83,7 @@ func TestPipelineStorage(t *testing.T) {
 
 				client := df.new(t, "namespace")
 
-				saved, err := client.SavePipeline(context.Background(), "to-delete", "content", "docker://", "")
+				saved, err := client.SavePipeline(context.Background(), "to-delete", "content", "docker", "")
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				err = client.DeletePipeline(context.Background(), saved.ID)
@@ -113,7 +113,7 @@ func TestPipelineStorage(t *testing.T) {
 
 				ctx := context.Background()
 
-				pipeline, err := client.SavePipeline(ctx, "cascade-test", "export { pipeline };", "native://", "")
+				pipeline, err := client.SavePipeline(ctx, "cascade-test", "export { pipeline };", "native", "")
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				run, err := client.SaveRun(ctx, pipeline.ID)
@@ -149,7 +149,7 @@ func TestPipelineStorage(t *testing.T) {
 
 				ctx := context.Background()
 
-				saved, err := client.SavePipeline(ctx, "k6", "export { pipeline };", "native://", "")
+				saved, err := client.SavePipeline(ctx, "k6", "export { pipeline };", "native", "")
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				retrieved, err := client.GetPipelineByName(ctx, "k6")
@@ -174,10 +174,10 @@ func TestPipelineStorage(t *testing.T) {
 
 				ctx := context.Background()
 
-				first, err := client.SavePipeline(ctx, "my-pipeline", "content-v1", "docker://", "")
+				first, err := client.SavePipeline(ctx, "my-pipeline", "content-v1", "docker", "")
 				assert.Expect(err).NotTo(HaveOccurred())
 
-				second, err := client.SavePipeline(ctx, "my-pipeline", "content-v2", "docker://", "")
+				second, err := client.SavePipeline(ctx, "my-pipeline", "content-v2", "docker", "")
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				// The stable ID must not change across updates.

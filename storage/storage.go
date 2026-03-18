@@ -28,7 +28,7 @@ type Pipeline struct {
 	Name           string      `json:"name"`
 	Content        string      `json:"content"`
 	ContentType    ContentType `json:"content_type"`
-	DriverDSN      string      `json:"driver_dsn"`
+	Driver         string      `json:"driver"`
 	ResumeEnabled  bool        `json:"resume_enabled"`
 	RBACExpression string      `json:"rbac_expression,omitempty"`
 	CreatedAt      time.Time   `json:"created_at"`
@@ -79,7 +79,7 @@ type Driver interface {
 	UpdateStatusForPrefix(ctx context.Context, prefix string, matchStatuses []string, newStatus string) error
 
 	// Pipeline CRUD operations
-	SavePipeline(ctx context.Context, name, content, driverDSN, contentType string) (*Pipeline, error)
+	SavePipeline(ctx context.Context, name, content, driver, contentType string) (*Pipeline, error)
 	UpdatePipelineResumeEnabled(ctx context.Context, pipelineID string, enabled bool) error
 	UpdatePipelineRBACExpression(ctx context.Context, pipelineID, expression string) error
 	GetPipeline(ctx context.Context, id string) (*Pipeline, error)

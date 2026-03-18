@@ -23,7 +23,7 @@ curl -X PUT http://localhost:8080/api/pipelines/my-pipeline \
   -H "Content-Type: application/json" \
   -d '{
     "content": "export const pipeline = async () => { console.log(\"test\"); };",
-    "driver_dsn": "docker://",
+    "driver": "docker",
     "webhook_secret": "optional-secret"
   }'
 ```

@@ -44,7 +44,7 @@ func TestCacheS3Persistence(t *testing.T) {
 	})
 }
 
-func testCachePersistence(t *testing.T, minio *testhelpers.MinioServer, driverDSN, cacheValue string) {
+func testCachePersistence(t *testing.T, minio *testhelpers.MinioServer, driver, cacheValue string) {
 	assert := NewGomegaWithT(t)
 
 	// Create temp directory for pipeline files
@@ -115,7 +115,7 @@ jobs:
 	t.Log("Running write pipeline...")
 	runner1 := testhelpers.Runner{
 		Pipeline:               writePipelinePath,
-		Driver:                 driverDSN,
+		Driver:                 driver,
 		StorageSQLitePath:      ":memory:",
 		CacheS3Bucket:          minio.Bucket(),
 		CacheS3Endpoint:        minio.Endpoint(),
@@ -139,7 +139,7 @@ jobs:
 	t.Log("Running read pipeline (should restore from S3)...")
 	runner2 := testhelpers.Runner{
 		Pipeline:               readPipelinePath,
-		Driver:                 driverDSN,
+		Driver:                 driver,
 		StorageSQLitePath:      ":memory:",
 		CacheS3Bucket:          minio.Bucket(),
 		CacheS3Endpoint:        minio.Endpoint(),
@@ -177,7 +177,7 @@ func TestCacheS3Contents(t *testing.T) {
 	})
 }
 
-func testCacheContents(t *testing.T, minio *testhelpers.MinioServer, driverDSN, cacheValue string) {
+func testCacheContents(t *testing.T, minio *testhelpers.MinioServer, driver, cacheValue string) {
 	assert := NewGomegaWithT(t)
 
 	// Create temp directory for pipeline file
@@ -219,7 +219,7 @@ jobs:
 	t.Log("Running write pipeline...")
 	runner := testhelpers.Runner{
 		Pipeline:               writePipelinePath,
-		Driver:                 driverDSN,
+		Driver:                 driver,
 		StorageSQLitePath:      ":memory:",
 		CacheS3Bucket:          minio.Bucket(),
 		CacheS3Endpoint:        minio.Endpoint(),

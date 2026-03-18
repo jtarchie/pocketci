@@ -64,9 +64,9 @@ func TestMetricsDashboard(t *testing.T) {
 			client := newMetricsTestClient(t)
 
 			// Create two pipelines
-			p1, err := client.SavePipeline(ctx, "pipeline-alpha", "export {};", "native://", "js")
+			p1, err := client.SavePipeline(ctx, "pipeline-alpha", "export {};", "native", "js")
 			assert.Expect(err).NotTo(HaveOccurred())
-			p2, err := client.SavePipeline(ctx, "pipeline-beta", "export {};", "native://", "js")
+			p2, err := client.SavePipeline(ctx, "pipeline-beta", "export {};", "native", "js")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// 2 success runs for pipeline-alpha
@@ -126,7 +126,7 @@ func TestMetricsDashboard(t *testing.T) {
 			ctx := context.Background()
 			client := newMetricsTestClient(t)
 
-			p, err := client.SavePipeline(ctx, "stats-pipeline", "export {};", "native://", "js")
+			p, err := client.SavePipeline(ctx, "stats-pipeline", "export {};", "native", "js")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			statuses := []storage.RunStatus{
@@ -156,7 +156,7 @@ func TestMetricsDashboard(t *testing.T) {
 			ctx := context.Background()
 			client := newMetricsTestClient(t)
 
-			p, err := client.SavePipeline(ctx, "recent-pipeline", "export {};", "native://", "js")
+			p, err := client.SavePipeline(ctx, "recent-pipeline", "export {};", "native", "js")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Create 5 failed runs

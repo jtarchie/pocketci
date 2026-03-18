@@ -190,7 +190,7 @@ func (s *S3) UpdateStatusForPrefix(ctx context.Context, prefix string, matchStat
 
 // ─── Pipeline CRUD ──────────────────────────────────────────────────────────
 
-func (s *S3) SavePipeline(ctx context.Context, name, content, driverDSN, contentType string) (*storage.Pipeline, error) {
+func (s *S3) SavePipeline(ctx context.Context, name, content, driver, contentType string) (*storage.Pipeline, error) {
 	newID := support.PipelineID(name, content)
 	now := time.Now().UTC()
 
@@ -214,7 +214,7 @@ func (s *S3) SavePipeline(ctx context.Context, name, content, driverDSN, content
 		Name:        name,
 		Content:     content,
 		ContentType: contentType,
-		DriverDSN:   driverDSN,
+		Driver:      driver,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}

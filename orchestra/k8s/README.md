@@ -20,26 +20,14 @@ The driver uses standard Kubernetes client configuration:
 
 ### Configuration
 
-The K8s driver is configured via **Driver DSN**:
+The K8s driver is configured via the `--driver` flag:
 
 ```bash
 # Simple usage (uses 'default' namespace)
 go run main.go runner --driver=k8s examples/both/hello-world.ts
-
-# URL-style with namespace
-go run main.go runner --driver=k8s://my-namespace examples/both/hello-world.ts
-
-# Colon-separated parameters
-go run main.go runner --driver=k8s:namespace=staging examples/both/hello-world.ts
-
-# With custom kubeconfig
-go run main.go runner --driver=k8s:kubeconfig=/path/to/config examples/both/hello-world.ts
-
-# Multiple parameters
-go run main.go runner --driver=k8s://production?kubeconfig=/etc/k8s/config examples/both/hello-world.ts
 ```
 
-**Available Parameters**:
+**Available Parameters** (set via server CLI flags or set-pipeline driver config):
 
 - `namespace` - Kubernetes namespace for resource placement (default: `default`)
 - `kubeconfig` - Path to kubeconfig file (default: `~/.kube/config` or
@@ -48,7 +36,7 @@ go run main.go runner --driver=k8s://production?kubeconfig=/etc/k8s/config examp
 **Authentication Priority**:
 
 1. In-cluster service account credentials (when running inside Kubernetes)
-2. Kubeconfig from DSN parameter (`kubeconfig=...`)
+2. Kubeconfig from driver config (`kubeconfig=...`)
 3. Kubeconfig from `KUBECONFIG` environment variable
 4. Default kubeconfig at `~/.kube/config`
 
@@ -80,7 +68,7 @@ go run main.go runner --driver=k8s://production?kubeconfig=/etc/k8s/config examp
   the stdout writer. See the "Feature Gates" section below for setup
   instructions.
 - ✅ **Namespace**: Resources are created in the Kubernetes namespace specified
-  by the `namespace` DSN parameter (defaults to `default`).
+  by the `namespace` config parameter (defaults to `default`).
 - ⚠️ **Storage classes**: PVCs use the default storage class. Custom storage
   class selection is not supported.
 

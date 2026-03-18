@@ -52,7 +52,7 @@ func TestBasicAuthDisabled(t *testing.T) {
 	// Create a pipeline for testing
 	req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader([]byte(`{
 		"content": "const pipeline = async () => {}; export { pipeline };",
-		"driver_dsn": "native://",
+		"driver": "native",
 		"webhook_secret": ""
 	}`)))
 	req.Header.Set("Content-Type", "application/json")
@@ -68,7 +68,7 @@ func TestBasicAuthMissingHeader(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader([]byte(`{
 		"content": "const pipeline = async () => {}; export { pipeline };",
-		"driver_dsn": "native://",
+		"driver": "native",
 		"webhook_secret": ""
 	}`)))
 	req.Header.Set("Content-Type", "application/json")
@@ -84,7 +84,7 @@ func TestBasicAuthInvalidCredentials(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader([]byte(`{
 		"content": "const pipeline = async () => {}; export { pipeline };",
-		"driver_dsn": "native://",
+		"driver": "native",
 		"webhook_secret": ""
 	}`)))
 	req.Header.Set("Content-Type", "application/json")
@@ -101,7 +101,7 @@ func TestBasicAuthWrongUsername(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader([]byte(`{
 		"content": "const pipeline = async () => {}; export { pipeline };",
-		"driver_dsn": "native://",
+		"driver": "native",
 		"webhook_secret": ""
 	}`)))
 	req.Header.Set("Content-Type", "application/json")
@@ -118,7 +118,7 @@ func TestBasicAuthValidCredentials(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader([]byte(`{
 		"content": "const pipeline = async () => {}; export { pipeline };",
-		"driver_dsn": "native://",
+		"driver": "native",
 		"webhook_secret": ""
 	}`)))
 	req.Header.Set("Content-Type", "application/json")
@@ -136,7 +136,7 @@ func TestBasicAuthProtectsAllAPIEndpoints(t *testing.T) {
 	// Create a pipeline first with auth
 	req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader([]byte(`{
 		"content": "const pipeline = async () => {}; export { pipeline };",
-		"driver_dsn": "native://",
+		"driver": "native",
 		"webhook_secret": ""
 	}`)))
 	req.Header.Set("Content-Type", "application/json")
@@ -261,7 +261,7 @@ func TestBasicAuthWebhooksSignatureOnly(t *testing.T) {
 	// Create a pipeline with no webhook secret (so no signature validation required)
 	req := httptest.NewRequest(http.MethodPut, "/api/pipelines/webhook-pipeline", bytes.NewReader([]byte(`{
 		"content": "const pipeline = async () => {}; export { pipeline };",
-		"driver_dsn": "native://",
+		"driver": "native",
 		"webhook_secret": ""
 	}`)))
 	req.Header.Set("Content-Type", "application/json")

@@ -38,7 +38,7 @@ func TestResumeAPI(t *testing.T) {
 export const pipeline = async () => {
 	throw new Error("intentional failure");
 };`
-			pipeline, err := client.SavePipeline(context.Background(), "resume-test", pipelineContent, "native://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "resume-test", pipelineContent, "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			router := newStrictSecretRouter(t, client, server.RouterOptions{MaxInFlight: 5})
@@ -95,7 +95,7 @@ export const pipeline = async () => {
 		command: { path: "sh", args: ["-c", "exit 0"] },
 	});
 };`
-			pipeline, err := client.SavePipeline(context.Background(), "resume-test-success", pipelineContent, "native://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "resume-test-success", pipelineContent, "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			router := newStrictSecretRouter(t, client, server.RouterOptions{MaxInFlight: 5})
@@ -165,7 +165,7 @@ func TestOrphanRecovery(t *testing.T) {
 			defer func() { _ = client.Close() }()
 
 			// Create a pipeline
-			pipeline, err := client.SavePipeline(context.Background(), "orphan-test", "export const pipeline = async () => {};", "native://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "orphan-test", "export const pipeline = async () => {};", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Create a run and set its status to "running" to simulate a crash
@@ -208,7 +208,7 @@ export const pipeline = async () => {
 		command: { path: "sh", args: ["-c", "exit 0"] },
 	});
 };`
-			pipeline, err := client.SavePipeline(context.Background(), "orphan-resume-test", pipelineContent, "native://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "orphan-resume-test", pipelineContent, "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Enable resume on the pipeline
@@ -252,7 +252,7 @@ export const pipeline = async () => {
 			defer func() { _ = client.Close() }()
 
 			// Create a pipeline WITHOUT resume_enabled
-			pipeline, err := client.SavePipeline(context.Background(), "orphan-no-resume", "export const pipeline = async () => {};", "native://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "orphan-no-resume", "export const pipeline = async () => {};", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Create a run and set its status to "running" to simulate a crash
@@ -295,7 +295,7 @@ func TestResumeEnabled(t *testing.T) {
 			defer func() { _ = client.Close() }()
 
 			// Create pipeline - defaults to resume_enabled=false
-			pipeline, err := client.SavePipeline(context.Background(), "resume-persist", "export const pipeline = async () => {};", "native://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "resume-persist", "export const pipeline = async () => {};", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(pipeline.ResumeEnabled).To(BeFalse())
 
@@ -329,7 +329,7 @@ func TestResumeEnabled(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = client.Close() }()
 
-			pipeline, err := client.SavePipeline(context.Background(), "status-test", "export const pipeline = async () => {};", "native://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "status-test", "export const pipeline = async () => {};", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Create some runs with different statuses
@@ -388,7 +388,7 @@ export const pipeline = async () => {
 		command: { path: "sh", args: ["-c", "echo hello && exit 0"] },
 	});
 };`
-			pipeline, err := client.SavePipeline(context.Background(), "full-resume", pipelineContent, "native://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "full-resume", pipelineContent, "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Enable resume
@@ -400,7 +400,7 @@ export const pipeline = async () => {
 export const pipeline = async () => {
 	throw new Error("simulated failure");
 };`
-			failPipeline, err := client.SavePipeline(context.Background(), "fail-first", failContent, "native://", "")
+			failPipeline, err := client.SavePipeline(context.Background(), "fail-first", failContent, "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			router := newStrictSecretRouter(t, client, server.RouterOptions{MaxInFlight: 5})
@@ -439,7 +439,7 @@ export const pipeline = async () => {
 			assert.Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = client.Close() }()
 
-			pipeline, err := client.SavePipeline(context.Background(), "api-resume-test", "export const pipeline = async () => {};", "native://", "")
+			pipeline, err := client.SavePipeline(context.Background(), "api-resume-test", "export const pipeline = async () => {};", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.UpdatePipelineResumeEnabled(context.Background(), pipeline.ID, true)

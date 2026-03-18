@@ -48,7 +48,7 @@ func TestWebhookAPI(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(),
 				"webhook-pipeline",
 				"export const pipeline = async () => { console.log('running'); };",
-				"native://",
+				"native",
 				"",
 			)
 			assert.Expect(err).NotTo(HaveOccurred())
@@ -111,7 +111,7 @@ func TestWebhookAPI(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(),
 				"secure-pipeline",
 				"export const pipeline = async () => {};",
-				"native://",
+				"native",
 				"",
 			)
 			assert.Expect(err).NotTo(HaveOccurred())
@@ -158,7 +158,7 @@ func TestWebhookAPI(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(),
 				"secure-pipeline-qp",
 				"export const pipeline = async () => {};",
-				"native://",
+				"native",
 				"",
 			)
 			assert.Expect(err).NotTo(HaveOccurred())
@@ -204,7 +204,7 @@ func TestWebhookAPI(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(),
 				"secure-pipeline-nosig",
 				"export const pipeline = async () => {};",
-				"native://",
+				"native",
 				"",
 			)
 			assert.Expect(err).NotTo(HaveOccurred())
@@ -244,7 +244,7 @@ func TestWebhookAPI(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(),
 				"secure-pipeline-badsig",
 				"export const pipeline = async () => {};",
-				"native://",
+				"native",
 				"",
 			)
 			assert.Expect(err).NotTo(HaveOccurred())
@@ -284,7 +284,7 @@ func TestWebhookAPI(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(),
 				"open-pipeline",
 				"export const pipeline = async () => {};",
-				"native://",
+				"native",
 				"",
 			)
 			assert.Expect(err).NotTo(HaveOccurred())
@@ -320,7 +320,7 @@ func TestWebhookAPI(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(),
 				"any-method-pipeline",
 				"export const pipeline = async () => {};",
-				"native://",
+				"native",
 				"",
 			)
 			assert.Expect(err).NotTo(HaveOccurred())
@@ -377,7 +377,7 @@ func TestWebhookAPI(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(),
 				"respond-pipeline",
 				content,
-				"native://",
+				"native",
 				"",
 			)
 			assert.Expect(err).NotTo(HaveOccurred())

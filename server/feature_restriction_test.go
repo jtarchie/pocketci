@@ -48,7 +48,7 @@ func TestFeatureRestriction(t *testing.T) {
 
 			body := map[string]string{
 				"content":        "export { pipeline };",
-				"driver_dsn":     "native",
+				"driver":     "native",
 				"webhook_secret": "my-secret",
 			}
 			jsonBody, _ := json.Marshal(body)
@@ -88,7 +88,7 @@ func TestFeatureRestriction(t *testing.T) {
 
 			body := map[string]string{
 				"content":        "export { pipeline };",
-				"driver_dsn":     "native",
+				"driver":     "native",
 				"webhook_secret": "my-secret",
 			}
 			jsonBody, _ := json.Marshal(body)
@@ -163,7 +163,7 @@ func TestFeatureRestriction(t *testing.T) {
 			// Should allow pipeline with webhook_secret
 			body := map[string]string{
 				"content":        "export { pipeline };",
-				"driver_dsn":     "native",
+				"driver":     "native",
 				"webhook_secret": "my-secret",
 			}
 			jsonBody, _ := json.Marshal(body)
@@ -224,7 +224,7 @@ func TestFeatureRestriction(t *testing.T) {
 			// Should allow pipelines with webhook_secret (all features enabled)
 			body := map[string]string{
 				"content":        "export { pipeline };",
-				"driver_dsn":     "native",
+				"driver":     "native",
 				"webhook_secret": "my-secret",
 			}
 			jsonBody, _ := json.Marshal(body)
@@ -264,7 +264,7 @@ func TestFeatureRestriction(t *testing.T) {
 			// Pipeline without webhook_secret should work fine
 			body := map[string]string{
 				"content":    "export { pipeline };",
-				"driver_dsn": "native",
+				"driver": "native",
 			}
 			jsonBody, _ := json.Marshal(body)
 

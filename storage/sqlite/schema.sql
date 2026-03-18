@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS pipelines (
   name TEXT NOT NULL UNIQUE,
   content TEXT NOT NULL,
   content_type TEXT NOT NULL DEFAULT '',
-  driver_dsn TEXT NOT NULL,
+  driver TEXT NOT NULL,
   resume_enabled INTEGER NOT NULL DEFAULT 0,
   rbac_expression TEXT NOT NULL DEFAULT '',
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,

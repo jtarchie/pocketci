@@ -235,7 +235,7 @@ pagination.
 | `page`     | integer | 1-based page number (default: 1)   |
 | `per_page` | integer | Results per page (default: 20)     |
 
-**Returns** Paginated list of pipelines with `id`, `name`, and `driver_dsn`.
+**Returns** Paginated list of pipelines with `id`, `name`, and `driver`.
 
 **Example prompt**
 

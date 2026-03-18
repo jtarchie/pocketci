@@ -89,7 +89,7 @@ export default function () {
       const payload = JSON.stringify({
         name: uniqueName(),
         content: MINIMAL_PIPELINE,
-        driver_dsn: "docker://",
+        driver: "docker",
       });
 
       const createRes = http.post(`${BASE_URL}/api/pipelines`, payload, {

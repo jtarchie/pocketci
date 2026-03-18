@@ -47,7 +47,7 @@ func TestDriverRestriction(t *testing.T) {
 			// Try to create pipeline with docker driver (should fail)
 			body := map[string]string{
 				"content":    "export { pipeline };",
-				"driver_dsn": "docker://",
+				"driver": "docker",
 			}
 			jsonBody, _ := json.Marshal(body)
 
@@ -62,7 +62,7 @@ func TestDriverRestriction(t *testing.T) {
 			assert.Expect(message).To(ContainSubstring("not allowed"))
 
 			// Try to create pipeline with native driver (should succeed)
-			body["driver_dsn"] = "native"
+			body["driver"] = "native"
 			jsonBody, _ = json.Marshal(body)
 
 			req = httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline", bytes.NewReader(jsonBody))
@@ -96,10 +96,10 @@ func TestDriverRestriction(t *testing.T) {
 			})
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			// Try to create pipeline with any driver (should succeed if DSN is valid)
+			// Try to create pipeline with any driver (should succeed)
 			body := map[string]string{
 				"content":    "export { pipeline };",
-				"driver_dsn": "docker://",
+				"driver": "docker",
 			}
 			jsonBody, _ := json.Marshal(body)
 
@@ -150,7 +150,7 @@ func TestDriverRestriction(t *testing.T) {
 			var resp map[string]any
 			err = json.Unmarshal(rec.Body.Bytes(), &resp)
 			assert.Expect(err).NotTo(HaveOccurred())
-			_, hasDriver := resp["driver_dsn"]
+			_, hasDriver := resp["driver"]
 			assert.Expect(hasDriver).To(BeFalse())
 		})
 
@@ -242,7 +242,7 @@ func TestDriverRestriction(t *testing.T) {
 			// Test native (should succeed)
 			body := map[string]string{
 				"content":    "export { pipeline };",
-				"driver_dsn": "native",
+				"driver": "native",
 			}
 			jsonBody, _ := json.Marshal(body)
 			req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline-native", bytes.NewReader(jsonBody))
@@ -252,7 +252,7 @@ func TestDriverRestriction(t *testing.T) {
 			assert.Expect(rec.Code).To(Equal(http.StatusOK))
 
 			// Test docker (should succeed)
-			body["driver_dsn"] = "docker"
+			body["driver"] = "docker"
 			jsonBody, _ = json.Marshal(body)
 			req = httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline-docker", bytes.NewReader(jsonBody))
 			req.Header.Set("Content-Type", "application/json")
@@ -261,7 +261,7 @@ func TestDriverRestriction(t *testing.T) {
 			assert.Expect(rec.Code).To(Equal(http.StatusOK))
 
 			// Test k8s (should succeed)
-			body["driver_dsn"] = "k8s://production"
+			body["driver"] = "k8s"
 			jsonBody, _ = json.Marshal(body)
 			req = httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline-k8s", bytes.NewReader(jsonBody))
 			req.Header.Set("Content-Type", "application/json")
@@ -270,7 +270,7 @@ func TestDriverRestriction(t *testing.T) {
 			assert.Expect(rec.Code).To(Equal(http.StatusOK))
 
 			// Test qemu (should fail - not in allowed list)
-			body["driver_dsn"] = "qemu"
+			body["driver"] = "qemu"
 			jsonBody, _ = json.Marshal(body)
 			req = httptest.NewRequest(http.MethodPut, "/api/pipelines/test-pipeline-qemu", bytes.NewReader(jsonBody))
 			req.Header.Set("Content-Type", "application/json")
