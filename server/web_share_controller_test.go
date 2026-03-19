@@ -8,9 +8,9 @@ import (
 	"os"
 	"testing"
 
+	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/server"
 	"github.com/jtarchie/pocketci/server/auth"
-	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/storage"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
