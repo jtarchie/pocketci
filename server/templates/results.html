@@ -374,7 +374,8 @@ true }}
   hx-trigger="every 3s"
   hx-swap="morph:outerHTML"
   {{ end }}
-  data-run-active="{{ if .IsActive }}true{{ else }}false{{ end }}">
+  data-run-active="{{ if .IsActive }}true{{ else }}false{{ end }}"
+  {{ if .ReadOnly }}data-readonly="true"{{ end }}>
   {{ template "renderPath" dict "Path" .Tree "Depth" 0 "Order" 1 "RunID"
   .RunID "ReadOnly" .ReadOnly }}
 </div>

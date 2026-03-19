@@ -78,6 +78,10 @@ function initTerminalLineLinks() {
   globalThis.addEventListener("hashchange", applyHash);
   applyHash();
 
+  // Skip click handler in read-only mode (shared view)
+  const tasksContainer = document.getElementById("tasks-container");
+  if (tasksContainer?.dataset.readonly === "true") return;
+
   // Delegated click handler for line number links
   document.addEventListener("click", function (e) {
     const link = e.target.closest(".term-line-num");

@@ -234,6 +234,126 @@ func TestWebShareController(t *testing.T) {
 		assert.Expect(body).To(ContainSubstring("[REDACTED]"))
 	})
 
+	t.Run("shared view has no Share button", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		router, sharePath, _ := newShareTestSetup(t)
+
+		req := httptest.NewRequest(http.MethodGet, sharePath, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		assert.Expect(rec.Code).To(Equal(http.StatusOK))
+		doc := mustHTMLDocument(t, rec)
+		assert.Expect(doc.Find("#share-run-button").Length()).To(Equal(0))
+	})
+
+	t.Run("shared view has data-readonly on tasks-container", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		router, sharePath, _ := newShareTestSetup(t)
+
+		req := httptest.NewRequest(http.MethodGet, sharePath, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		assert.Expect(rec.Code).To(Equal(http.StatusOK))
+		doc := mustHTMLDocument(t, rec)
+		val, exists := doc.Find("#tasks-container").Attr("data-readonly")
+		assert.Expect(exists).To(BeTrue())
+		assert.Expect(val).To(Equal("true"))
+	})
+
+	t.Run("shared view redacts global secrets from terminal output", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		buildFile, err := os.CreateTemp(t.TempDir(), "")
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = buildFile.Close() }()
+
+		client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = client.Close() }()
+
+		mgr, err := secretssqlite.New(secretssqlite.Config{Path: ":memory:", Passphrase: "test"}, slog.Default())
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = mgr.Close() }()
+
+		pipeline, err := client.SavePipeline(context.Background(), "global-secret-pipeline", "export const pipeline = async () => {};", "docker", "")
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		const globalSecretValue = "global-token-xyz-9876"
+
+		err = mgr.Set(context.Background(), "global", "token", globalSecretValue)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-deploy", map[string]any{
+			"status": "success",
+			"stdout": "Using token: " + globalSecretValue,
+		})
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusSuccess, "")
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{SecretsManager: mgr})
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		apiReq := httptest.NewRequest(http.MethodPost, "/api/runs/"+run.ID+"/share", nil)
+		apiRec := httptest.NewRecorder()
+		router.ServeHTTP(apiRec, apiReq)
+		assert.Expect(apiRec.Code).To(Equal(http.StatusOK))
+
+		apiResp := mustJSONMap(t, apiRec)
+		sharePath := apiResp["share_path"].(string)
+
+		req := httptest.NewRequest(http.MethodGet, sharePath, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		assert.Expect(rec.Code).To(Equal(http.StatusOK))
+		body := rec.Body.String()
+		assert.Expect(body).NotTo(ContainSubstring(globalSecretValue))
+		assert.Expect(body).To(ContainSubstring("[REDACTED]"))
+	})
+
+	t.Run("normal view has no data-readonly on tasks-container", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		buildFile, err := os.CreateTemp(t.TempDir(), "")
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = buildFile.Close() }()
+
+		client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = client.Close() }()
+
+		pipeline, err := client.SavePipeline(context.Background(), "normal-view-pipeline", "export const pipeline = async () => {};", "docker", "")
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		req := httptest.NewRequest(http.MethodGet, "/runs/"+run.ID+"/tasks", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		assert.Expect(rec.Code).To(Equal(http.StatusOK))
+		doc := mustHTMLDocument(t, rec)
+		_, exists := doc.Find("#tasks-container").Attr("data-readonly")
+		assert.Expect(exists).To(BeFalse())
+	})
+
 	t.Run("normal view still shows Share button in ... menu", func(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
