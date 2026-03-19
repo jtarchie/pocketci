@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
+	"github.com/jtarchie/pocketci/server"
 	"github.com/jtarchie/pocketci/server/auth"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/onsi/gomega"
@@ -19,11 +20,11 @@ import (
 
 const testSessionSecret = "test-secret-key-at-least-32-bytes-long"
 
-func setupRouterWithOAuth(t *testing.T, rbacExpression string) *Router {
+func setupRouterWithOAuth(t *testing.T, rbacExpression string) *server.Router {
 	return setupRouterWithOAuthLogger(t, rbacExpression, slog.Default())
 }
 
-func setupRouterWithOAuthLogger(t *testing.T, rbacExpression string, logger *slog.Logger) *Router {
+func setupRouterWithOAuthLogger(t *testing.T, rbacExpression string, logger *slog.Logger) *server.Router {
 	t.Helper()
 
 	tempDir := t.TempDir()
@@ -54,7 +55,7 @@ func setupRouterWithOAuthLogger(t *testing.T, rbacExpression string, logger *slo
 		ServerRBAC:         rbacExpression,
 	}
 
-	router, err := NewRouter(logger, client, RouterOptions{
+	router, err := server.NewRouter(logger, client, server.RouterOptions{
 		SecretsManager: secretsManager,
 		AuthConfig:     authCfg,
 	})
@@ -202,7 +203,7 @@ func TestOAuthRequireAuthNoProvidersBypass(t *testing.T) {
 		SessionSecret: testSessionSecret,
 	}
 
-	router, err := NewRouter(slog.Default(), client, RouterOptions{
+	router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{
 		SecretsManager: secretsManager,
 		AuthConfig:     authCfg,
 	})

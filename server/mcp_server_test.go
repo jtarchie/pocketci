@@ -1,42 +1,23 @@
-package server
+package server_test
 
 import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net/http/httptest"
 	"os"
 	"testing"
 
+	"github.com/jtarchie/pocketci/server"
 	"github.com/jtarchie/pocketci/storage"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/gomega"
 )
 
-// setupMCPSession creates an in-process MCP client session backed by the given
-// storage driver. The caller is responsible for closing the store.
-func setupMCPSession(t *testing.T, store storage.Driver) *mcp.ClientSession {
-	t.Helper()
-	assert := NewWithT(t)
-
-	mcpServer := buildMCPServer(store)
-	serverTransport, clientTransport := mcp.NewInMemoryTransports()
-	ctx := context.Background()
-
-	ss, err := mcpServer.Connect(ctx, serverTransport, nil)
-	assert.Expect(err).NotTo(HaveOccurred())
-	t.Cleanup(func() { _ = ss.Close() })
-
-	c := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1.0"}, nil)
-	session, err := c.Connect(ctx, clientTransport, nil)
-	assert.Expect(err).NotTo(HaveOccurred())
-	t.Cleanup(func() { _ = session.Close() })
-
-	return session
-}
-
-// newTestStore creates a temporary SQLite-backed storage driver for testing.
-func newTestStore(t *testing.T) storage.Driver {
+// newMCPTestSession creates a router with an HTTP test server, connects an MCP
+// client via StreamableHTTP, and returns the session and the storage driver.
+func newMCPTestSession(t *testing.T) (*mcp.ClientSession, storage.Driver) {
 	t.Helper()
 	assert := NewWithT(t)
 
@@ -48,14 +29,24 @@ func newTestStore(t *testing.T) storage.Driver {
 	assert.Expect(err).NotTo(HaveOccurred())
 	t.Cleanup(func() { _ = store.Close() })
 
-	return store
+	router, err := server.NewRouter(slog.Default(), store, server.RouterOptions{})
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	ts := httptest.NewServer(router)
+	t.Cleanup(ts.Close)
+
+	c := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1.0"}, nil)
+	session, err := c.Connect(context.Background(), &mcp.StreamableClientTransport{Endpoint: ts.URL + "/mcp"}, nil)
+	assert.Expect(err).NotTo(HaveOccurred())
+	t.Cleanup(func() { _ = session.Close() })
+
+	return session, store
 }
 
 func TestMCPListTools(t *testing.T) {
 	t.Parallel()
 
-	store := newTestStore(t)
-	session := setupMCPSession(t, store)
+	session, _ := newMCPTestSession(t)
 
 	result, err := session.ListTools(context.Background(), nil)
 	assert := NewWithT(t)
@@ -73,15 +64,13 @@ func TestMCPGetRun(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	session, store := newMCPTestSession(t)
 
 	pipeline, err := store.SavePipeline(ctx, "test-pipeline", "export const pipeline = async () => {};", "native", "")
 	NewWithT(t).Expect(err).NotTo(HaveOccurred())
 
 	run, err := store.SaveRun(ctx, pipeline.ID)
 	NewWithT(t).Expect(err).NotTo(HaveOccurred())
-
-	session := setupMCPSession(t, store)
 
 	t.Run("returns run details for a valid run ID", func(t *testing.T) {
 		t.Parallel()
@@ -112,7 +101,6 @@ func TestMCPGetRun(t *testing.T) {
 			Arguments: map[string]any{"run_id": "no-such-run"},
 		})
 		assert.Expect(err).NotTo(HaveOccurred())
-		// Errors from tool handlers are embedded as IsError=true per the MCP spec.
 		assert.Expect(result.IsError).To(BeTrue())
 	})
 }
@@ -121,7 +109,7 @@ func TestMCPListRunTasks(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	session, store := newMCPTestSession(t)
 	assert := NewWithT(t)
 
 	pipeline, err := store.SavePipeline(ctx, "tasks-pipeline", "export const pipeline = async () => {};", "native", "")
@@ -130,7 +118,6 @@ func TestMCPListRunTasks(t *testing.T) {
 	run, err := store.SaveRun(ctx, pipeline.ID)
 	assert.Expect(err).NotTo(HaveOccurred())
 
-	// Write two task payloads under the run's path prefix.
 	err = store.Set(ctx, "/pipeline/"+run.ID+"/tasks/echo", map[string]any{
 		"status": "success",
 		"logs":   []map[string]any{{"type": "stdout", "content": "hello world"}},
@@ -144,8 +131,6 @@ func TestMCPListRunTasks(t *testing.T) {
 		"type":   "task",
 	})
 	assert.Expect(err).NotTo(HaveOccurred())
-
-	session := setupMCPSession(t, store)
 
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name:      "list_run_tasks",
@@ -165,7 +150,7 @@ func TestMCPGetRunTask(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	session, store := newMCPTestSession(t)
 	assert := NewWithT(t)
 
 	pipeline, err := store.SavePipeline(ctx, "single-task-pipeline", "export const pipeline = async () => {};", "native", "")
@@ -181,8 +166,6 @@ func TestMCPGetRunTask(t *testing.T) {
 		"audit_log": []any{map[string]any{"type": "tool_call", "toolName": "run_script"}},
 	})
 	assert.Expect(err).NotTo(HaveOccurred())
-
-	session := setupMCPSession(t, store)
 
 	t.Run("returns full payload for absolute path", func(t *testing.T) {
 		t.Parallel()
@@ -241,7 +224,7 @@ func TestMCPSearchTasks(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	session, store := newMCPTestSession(t)
 	assert := NewWithT(t)
 
 	pipeline, err := store.SavePipeline(ctx, "search-pipeline", "export const pipeline = async () => {};", "native", "")
@@ -261,8 +244,6 @@ func TestMCPSearchTasks(t *testing.T) {
 		"logs":   []map[string]any{{"type": "stdout", "content": "something else entirely"}},
 	})
 	assert.Expect(err).NotTo(HaveOccurred())
-
-	session := setupMCPSession(t, store)
 
 	t.Run("run_id mode searches task output within a run", func(t *testing.T) {
 		t.Parallel()
@@ -328,15 +309,13 @@ func TestMCPSearchPipelines(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store := newTestStore(t)
+	session, store := newMCPTestSession(t)
 	root := NewWithT(t)
 
 	_, err := store.SavePipeline(ctx, "alpha-pipeline", "export const pipeline = async () => {};", "native", "")
 	root.Expect(err).NotTo(HaveOccurred())
 	_, err = store.SavePipeline(ctx, "beta-pipeline", "export const pipeline = async () => {};", "native", "")
 	root.Expect(err).NotTo(HaveOccurred())
-
-	session := setupMCPSession(t, store)
 
 	t.Run("empty query returns all pipelines", func(t *testing.T) {
 		t.Parallel()

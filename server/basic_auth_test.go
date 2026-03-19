@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"bytes"
@@ -9,11 +9,12 @@ import (
 	"testing"
 
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
+	"github.com/jtarchie/pocketci/server"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/onsi/gomega"
 )
 
-func setupRouterWithAuth(t *testing.T, username, password string) *Router {
+func setupRouterWithAuth(t *testing.T, username, password string) *server.Router {
 	tempDir := t.TempDir()
 	buildFile, err := os.CreateTemp(tempDir, "")
 	if err != nil {
@@ -33,7 +34,7 @@ func setupRouterWithAuth(t *testing.T, username, password string) *Router {
 	}
 	t.Cleanup(func() { _ = secretsManager.Close() })
 
-	router, err := NewRouter(slog.Default(), client, RouterOptions{
+	router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{
 		BasicAuthUsername: username,
 		BasicAuthPassword: password,
 		SecretsManager:    secretsManager,
