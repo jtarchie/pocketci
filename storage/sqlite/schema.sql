@@ -1,13 +1,19 @@
 CREATE TABLE IF NOT EXISTS tasks (
-  id         INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-  path       TEXT    NOT NULL,
-  run_id     TEXT,
-  payload    BLOB,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  id            INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  path          TEXT    NOT NULL,
+  run_id        TEXT,
+  status        TEXT,
+  started_at    TEXT,
+  elapsed       TEXT,
+  error_message TEXT,
+  error_type    TEXT,
+  payload       BLOB,
+  created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
   UNIQUE(path)
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS idx_tasks_run_id ON tasks(run_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status  ON tasks(status);
 
 CREATE TABLE IF NOT EXISTS pipelines (
   id              TEXT    NOT NULL PRIMARY KEY,

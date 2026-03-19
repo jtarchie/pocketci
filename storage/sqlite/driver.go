@@ -176,11 +176,25 @@ func (s *Sqlite) Set(ctx context.Context, prefix string, payload any) error {
 	}
 
 	_, err = s.writer.ExecContext(ctx, `
-		INSERT INTO tasks (path, run_id, payload)
-		VALUES (?, NULLIF(?, ''), jsonb(?))
+		INSERT INTO tasks (path, run_id, status, started_at, elapsed, error_message, error_type, payload)
+		VALUES (
+			?,
+			NULLIF(?, ''),
+			json_extract(?, '$.status'),
+			json_extract(?, '$.started_at'),
+			json_extract(?, '$.elapsed'),
+			json_extract(?, '$.error_message'),
+			json_extract(?, '$.error_type'),
+			jsonb(?)
+		)
 		ON CONFLICT(path) DO UPDATE SET
-		payload = jsonb_patch(tasks.payload, excluded.payload);
-	`, path, runID, contents)
+			status        = COALESCE(json_extract(json(excluded.payload), '$.status'),        tasks.status),
+			started_at    = COALESCE(json_extract(json(excluded.payload), '$.started_at'),    tasks.started_at),
+			elapsed       = COALESCE(json_extract(json(excluded.payload), '$.elapsed'),       tasks.elapsed),
+			error_message = COALESCE(json_extract(json(excluded.payload), '$.error_message'), tasks.error_message),
+			error_type    = COALESCE(json_extract(json(excluded.payload), '$.error_type'),    tasks.error_type),
+			payload       = jsonb_patch(tasks.payload, excluded.payload);
+	`, path, runID, contents, contents, contents, contents, contents, contents)
 	if err != nil {
 		return fmt.Errorf("failed to insert task: %w", err)
 	}
@@ -250,8 +264,18 @@ func (s *Sqlite) GetAll(ctx context.Context, prefix string, fields []string) (st
 				id ASC
 		`
 	} else {
+		// Fields that have been promoted to real columns — read directly instead of
+		// computing json_extract(payload, '$.field') on every row.
+		knownColumns := map[string]struct{}{
+			"status": {}, "started_at": {}, "elapsed": {}, "error_message": {}, "error_type": {},
+		}
+
 		jsonSelects := strings.Join(
 			lo.Map(fields, func(field string, _ int) string {
+				if _, ok := knownColumns[field]; ok {
+					return fmt.Sprintf("'%s', %s", field, field)
+				}
+
 				return fmt.Sprintf("'%s', json_extract(payload, '$.%s')", field, field)
 			}),
 			",",
@@ -293,13 +317,15 @@ func (s *Sqlite) UpdateStatusForPrefix(ctx context.Context, prefix string, match
 	placeholders = placeholders[:len(placeholders)-1]
 
 	query := fmt.Sprintf(
-		`UPDATE tasks SET payload = jsonb_patch(payload, json_object('status', ?))
-		 WHERE json_extract(payload, '$.status') IN (%s) AND path GLOB ?`,
+		`UPDATE tasks
+		 SET   status  = ?,
+		       payload = jsonb_patch(payload, json_object('status', ?))
+		 WHERE status IN (%s) AND path GLOB ?`,
 		placeholders,
 	)
 
-	args := make([]any, 0, 1+len(matchStatuses)+1)
-	args = append(args, newStatus)
+	args := make([]any, 0, 2+len(matchStatuses)+1)
+	args = append(args, newStatus, newStatus)
 	for _, status := range matchStatuses {
 		args = append(args, status)
 	}
