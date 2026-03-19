@@ -351,4 +351,9 @@ func registerRoutes(
 	(&WebPipelinesController{BaseController: base}).RegisterRoutes(web)
 	(&WebRunsController{BaseController: base}).RegisterRoutes(web)
 	(&WebMetricsController{BaseController: base}).RegisterRoutes(web)
+
+	// Share controllers (public web + authenticated API)
+	webShare, apiShare := newShareControllers(base, secretsMgr, logger)
+	webShare.RegisterRoutes(router)
+	apiShare.RegisterRoutes(api)
 }

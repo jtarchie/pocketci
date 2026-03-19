@@ -57,6 +57,14 @@ func countTaskStatsRecursive(node *storage.Tree[storage.Payload], stats *TaskSta
 // into each leaf node's Payload. This lets templates render terminal output
 // inline without a separate lazy-loading request.
 func (c *WebRunsController) preloadTerminalHTML(ctx *echo.Context, lookupPath string, tree *storage.Tree[storage.Payload]) {
+	c.preloadTerminalHTMLWithOptions(ctx, lookupPath, tree, "/terminal", func(s string) string { return s })
+}
+
+// preloadTerminalHTMLWithOptions is the parameterized variant used by the share
+// controller. terminalBaseURL is prepended to the task path in HTMX reload
+// attributes (use "/terminal" for normal views). redact is applied to the
+// rendered HTML before storage — pass an identity function for no redaction.
+func (c *WebRunsController) preloadTerminalHTMLWithOptions(ctx *echo.Context, lookupPath string, tree *storage.Tree[storage.Payload], terminalBaseURL string, redact func(string) string) {
 	stdoutResults, err := c.store.GetAll(ctx.Request().Context(), lookupPath, []string{"logs", "stdout", "stderr", "status", "error_message"})
 	if err != nil {
 		return
@@ -83,11 +91,12 @@ func (c *WebRunsController) preloadTerminalHTML(ctx *echo.Context, lookupPath st
 
 		terminalID := SanitizeTerminalID(r.Path)
 		html = WrapTerminalLines(html, terminalID)
+		html = redact(html)
 
 		if status == "running" || status == "" {
 			htmlByPath[r.Path] = template.HTML(fmt.Sprintf(
-				`<div class="term-container" hx-get="/terminal%s" hx-trigger="load delay:2s" hx-swap="outerHTML">%s</div>`,
-				r.Path, html,
+				`<div class="term-container" hx-get="%s%s" hx-trigger="load delay:2s" hx-swap="outerHTML">%s</div>`,
+				terminalBaseURL, r.Path, html,
 			))
 		} else {
 			htmlByPath[r.Path] = template.HTML(fmt.Sprintf(

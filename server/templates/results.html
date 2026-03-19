@@ -5,6 +5,7 @@
   aria-label="Breadcrumb">
   <ol
     class="flex items-center list-none overflow-x-auto whitespace-nowrap px-4 py-2 sm:py-3">
+    {{ if not .ReadOnly }}
     <li><a href="/pipelines/"
         class="text-blue-600 dark:text-blue-400 hover:underline">Pipelines</a></li>
     {{ if .RunID }}
@@ -43,6 +44,14 @@
     {{ end }}
     {{ end }}
     {{ end }}
+    {{ else }}
+    {{/* Read-only breadcrumb: just show the run ID without navigable links */}}
+    {{ if .RunID }}
+    <li><span class="text-gray-500 dark:text-gray-400">Shared Run</span></li>
+    <li class="text-gray-400 mx-1.5" aria-hidden="true">/</li>
+    <li><span class="text-gray-800 dark:text-white font-medium">{{ .RunID }}</span></li>
+    {{ end }}
+    {{ end }}
   </ol>
 </nav>
 
@@ -70,6 +79,7 @@
         {{ template "run-live-badge" dict "IsActive" .IsActive }}
         {{ template "run-status-badge" dict "Run" .Run "IsActive" .IsActive }}
       </div>
+      {{ if not .ReadOnly }}
       <div
         class="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
         <!-- Graph View button (matches Trigger button style) -->
@@ -141,10 +151,23 @@
               View Source
             </a>
             {{ end }}
+            <hr class="my-1 border-gray-200 dark:border-gray-700">
+            <button
+              id="share-run-button"
+              hx-post="/api/runs/{{ .RunID }}/share"
+              hx-swap="none"
+              hx-on:htmx:after-request="copyShareLink(event)"
+              class="flex items-center justify-between w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:bg-gray-100 dark:focus:bg-gray-700"
+              role="menuitem"
+              aria-label="Copy share link for this run"
+              title="Copy a public share link for this run">
+              <span>Share</span>
+            </button>
             {{ end }}
           </div>
         </details>
       </div>
+      {{ end }}
     </div>
 
     <!-- Search and Stats Bar -->
@@ -165,7 +188,7 @@
           placeholder="Search task output…"
           aria-label="Search task output"
           autocomplete="off"
-          {{ if .RunID }}
+          {{ if and .RunID (not .ReadOnly) }}
           hx-get="/runs/{{ .RunID }}/tasks-partial/"
           hx-trigger="input changed delay:400ms, search"
           hx-target="#tasks-container"
@@ -261,10 +284,24 @@
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6"
       id="pipeline">
       {{ template "tasks-partial" dict "Tree" .Tree "RunID" .RunID "IsActive"
-      .IsActive "Run" .Run "Stats" .Stats "OOB" false }}
+      .IsActive "Run" .Run "Stats" .Stats "OOB" false "ReadOnly" .ReadOnly }}
     </div>
   </div>
 </main>
+
+{{ if not .ReadOnly }}
+<script>
+function copyShareLink(event) {
+  if (event.detail.xhr.status !== 200) return;
+  var data = JSON.parse(event.detail.xhr.responseText);
+  var url = window.location.origin + data.share_path + window.location.hash;
+  navigator.clipboard.writeText(url).then(function() {
+    document.body.dispatchEvent(new CustomEvent('showToast',
+      {detail: {message: 'Share link copied!', type: 'success'}}));
+  });
+}
+</script>
+{{ end }}
 
 {{ template "footer" }}
 {{ template "toast-container" }}
@@ -332,14 +369,14 @@ true }}
 {{ template "_run_error_alert" dict "Run" .Run "SwapOOB" true }}
 {{ end }}
 <div class="space-y-4" id="tasks-container"
-  {{ if .RunID }}
+  {{ if and .RunID .IsActive (not .ReadOnly) }}
   hx-get="/runs/{{ .RunID }}/tasks-partial/"
   hx-trigger="every 3s"
   hx-swap="morph:outerHTML"
   {{ end }}
   data-run-active="{{ if .IsActive }}true{{ else }}false{{ end }}">
   {{ template "renderPath" dict "Path" .Tree "Depth" 0 "Order" 1 "RunID"
-  .RunID }}
+  .RunID "ReadOnly" .ReadOnly }}
 </div>
 {{ end }}
 
@@ -465,7 +502,8 @@ border-indigo-300 dark:border-indigo-600
 {{- $path := .Path -}}
 {{- $order := .Order -}}
 {{- $runID := .RunID -}}
-<details class="task-item 
+{{- $readOnly := .ReadOnly -}}
+<details class="task-item
     {{ template "getStatusColor" $path }} border rounded-md p-3 transition-all
   dark:text-gray-200"
   id="task-{{ $path.FullPath | urlquery }}"
@@ -484,7 +522,7 @@ border-indigo-300 dark:border-indigo-600
       </div>
     </div>
     <div class="flex items-center gap-2 pr-1">
-      {{ if $runID }}
+      {{ if and $runID (not $readOnly) }}
       <a
         href="/api/runs/{{ $runID }}/tasks?path={{ $path.FullPath | urlquery }}"
         target="_blank" rel="noopener noreferrer"
@@ -541,10 +579,12 @@ border-indigo-300 dark:border-indigo-600
           safeHTML $path.Value.terminalHTML }}</div>
         {{ else }}
         <div id="terminal-{{ $path.FullPath | urlquery }}"
+          {{ if not $readOnly }}
           hx-get="/terminal{{ $path.FullPath }}"
           hx-trigger="revealed once"
           hx-target="this"
           hx-swap="innerHTML"
+          {{ end }}
           class="w-full max-w-full overflow-x-auto font-mono text-sm bg-black text-white rounded p-2 min-h-8"></div>
         {{ end }}
       </div>
@@ -557,6 +597,7 @@ border-indigo-300 dark:border-indigo-600
 {{- define "renderGroup" -}}
 {{- $path := .Path -}}
 {{- $depth := .Depth -}}
+{{- $readOnly := .ReadOnly -}}
 <div class="group-container border-l-4 pl-4 {{ template "getGroupColor" $depth
   }}"
   id="group-{{ $path.FullPath | urlquery }}">
@@ -566,22 +607,28 @@ border-indigo-300 dark:border-indigo-600
       {{ range $path.Children }}{{ if and (eq .Name "") .Value.status }}
       <span class="mr-2">{{ template "getStatusIcon" . }}</span>
       {{ end }}{{ end }}
-      <div class="font-medium text-gray-700 dark:text-gray-300"><a
-          href="/tasks{{ $path.FullPath }}/">{{
-          $path.Name }}</a></div>
+      <div class="font-medium text-gray-700 dark:text-gray-300">
+        {{ if not $readOnly }}
+        <a href="/tasks{{ $path.FullPath }}/">{{ $path.Name }}</a>
+        {{ else }}
+        <span>{{ $path.Name }}</span>
+        {{ end }}
+      </div>
     </div>
+    {{ if not $readOnly }}
     <a href="/graph{{ $path.FullPath }}/"
       class="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900/40 hover:bg-blue-200 dark:hover:bg-blue-800/60 text-blue-700 dark:text-blue-300 rounded transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 dark:focus:ring-offset-gray-800"
       title="View as graph">
       Graph
     </a>
+    {{ end }}
   </div>
   <div class="space-y-2">
     {{/* Render children */}}
     {{ range $index, $child := $path.Children }}
     {{ template "renderPath" dict "Path" $child "Depth" (add $depth 1) "Order"
     (add $index 1) "RunID"
-    $.RunID }}
+    $.RunID "ReadOnly" $.ReadOnly }}
     {{ end }}
   </div>
 </div>
@@ -594,16 +641,16 @@ border-indigo-300 dark:border-indigo-600
 {{ $order := .Order }}
 
 {{ if and $path.IsGroup (ne $path.Name "") }}
-{{ template "renderGroup" dict "Path" $path "Depth" $depth "RunID" .RunID }}
+{{ template "renderGroup" dict "Path" $path "Depth" $depth "RunID" .RunID "ReadOnly" .ReadOnly }}
 {{ else if ne $path.Name "" }}
-{{ template "renderTask" dict "Path" $path "Order" $order "RunID" .RunID }}
+{{ template "renderTask" dict "Path" $path "Order" $order "RunID" .RunID "ReadOnly" .ReadOnly }}
 {{ else if $path.IsLeaf }}
-{{ template "renderTask" dict "Path" $path "Order" $order "RunID" .RunID }}
+{{ template "renderTask" dict "Path" $path "Order" $order "RunID" .RunID "ReadOnly" .ReadOnly }}
 {{ else }}
 {{ range $index, $child := $path.Children }}
 {{ template "renderPath" dict "Path" $child "Depth" $depth "Order" (add $index
 1)
-"RunID" $.RunID }}
+"RunID" $.RunID "ReadOnly" $.ReadOnly }}
 {{ end }}
 {{ end }}
 {{ end }}
