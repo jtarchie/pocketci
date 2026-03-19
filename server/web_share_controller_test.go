@@ -160,6 +160,51 @@ func TestWebShareController(t *testing.T) {
 		assert.Expect(body).NotTo(ContainSubstring("tasks-partial"))
 	})
 
+	t.Run("shared view disables line number clicks via CSS", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		router, sharePath, _ := newShareTestSetup(t)
+
+		req := httptest.NewRequest(http.MethodGet, sharePath, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		assert.Expect(rec.Code).To(Equal(http.StatusOK))
+		body := rec.Body.String()
+		assert.Expect(body).To(ContainSubstring("pointer-events: none"))
+	})
+
+	t.Run("normal view does not disable line number clicks via CSS", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		buildFile, err := os.CreateTemp(t.TempDir(), "")
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = buildFile.Close() }()
+
+		client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = client.Close() }()
+
+		pipeline, err := client.SavePipeline(context.Background(), "normal-css-pipeline", "export const pipeline = async () => {};", "docker", "")
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		req := httptest.NewRequest(http.MethodGet, "/runs/"+run.ID+"/tasks", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		assert.Expect(rec.Code).To(Equal(http.StatusOK))
+		body := rec.Body.String()
+		assert.Expect(body).NotTo(ContainSubstring("pointer-events: none"))
+	})
+
 	t.Run("shared view has no lazy-load terminal attributes", func(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
