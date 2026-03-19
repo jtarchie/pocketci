@@ -296,10 +296,27 @@ function copyShareLink(event) {
   if (event.detail.xhr.status !== 200) return;
   var data = JSON.parse(event.detail.xhr.responseText);
   var url = window.location.origin + data.share_path + window.location.hash;
-  navigator.clipboard.writeText(url).then(function() {
+  function showCopied() {
     document.body.dispatchEvent(new CustomEvent('showToast',
       {detail: {message: 'Share link copied!', type: 'success'}}));
-  });
+  }
+  function fallbackCopy() {
+    var ta = document.createElement('textarea');
+    ta.value = url;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand('copy'); showCopied(); }
+    catch (_) { prompt('Copy this share link:', url); }
+    document.body.removeChild(ta);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(showCopied, fallbackCopy);
+  } else {
+    fallbackCopy();
+  }
 }
 </script>
 {{ end }}
