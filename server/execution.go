@@ -383,6 +383,8 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 	default:
 		logger.Info("pipeline.execute.completed_with_failures")
 	}
+
+	s.pruneOldRuns(dbCtx, pipeline, logger)
 }
 
 // RunByNameSync executes a stored pipeline by name, synchronously.
@@ -533,6 +535,8 @@ func (s *ExecutionService) RunByNameSync(
 		s.logger.Error("run.update.failed.to_final", "error", err)
 	}
 
+	s.pruneOldRuns(ctx, pipeline, s.logger)
+
 	// Write SSE exit event.
 	exitEvent := map[string]any{"event": "exit", "code": exitCode, "run_id": run.ID}
 	if errMsg != "" {
@@ -588,6 +592,54 @@ func (s *ExecutionService) determineRunStatus(ctx context.Context, runID string,
 	}
 
 	return storage.RunStatusSuccess, ""
+}
+
+// pruneOldRuns enforces build_log_retention policy for YAML pipelines.
+// It parses the pipeline config, finds the most restrictive retention across
+// all jobs, and deletes runs that exceed the limits. Errors are non-fatal.
+func (s *ExecutionService) pruneOldRuns(ctx context.Context, pipeline *storage.Pipeline, logger *slog.Logger) {
+	if pipeline.ContentType != storage.ContentTypeYAML {
+		return
+	}
+
+	cfg, err := backwards.ParseConfig(pipeline.Content)
+	if err != nil || len(cfg.Jobs) == 0 {
+		return
+	}
+
+	keepBuilds, keepDays := 0, 0
+
+	for _, job := range cfg.Jobs {
+		if job.BuildLogRetention == nil {
+			continue
+		}
+
+		if job.BuildLogRetention.Builds > 0 {
+			if keepBuilds == 0 || job.BuildLogRetention.Builds < keepBuilds {
+				keepBuilds = job.BuildLogRetention.Builds
+			}
+		}
+
+		if job.BuildLogRetention.Days > 0 {
+			if keepDays == 0 || job.BuildLogRetention.Days < keepDays {
+				keepDays = job.BuildLogRetention.Days
+			}
+		}
+	}
+
+	if keepBuilds == 0 && keepDays == 0 {
+		return
+	}
+
+	var cutoff *time.Time
+	if keepDays > 0 {
+		t := time.Now().UTC().AddDate(0, 0, -keepDays)
+		cutoff = &t
+	}
+
+	if err := s.store.PruneRunsByPipeline(ctx, pipeline.ID, keepBuilds, cutoff); err != nil {
+		logger.Warn("pipeline.retention.prune_failed", "error", err)
+	}
 }
 
 // resolveDriverFactory returns a driver factory for the given pipeline.

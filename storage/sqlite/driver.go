@@ -779,6 +779,42 @@ func (s *Sqlite) UpdateRunStatus(ctx context.Context, runID string, status stora
 	return nil
 }
 
+// PruneRunsByPipeline deletes old pipeline runs for a pipeline.
+// If keepBuilds > 0, runs beyond the N most recent are deleted.
+// If cutoffTime is non-nil, runs created before that time are deleted.
+// Both constraints are applied independently.
+// The cascade trigger pipeline_runs_tasks_delete handles associated task cleanup.
+func (s *Sqlite) PruneRunsByPipeline(ctx context.Context, pipelineID string, keepBuilds int, cutoffTime *time.Time) error {
+	if keepBuilds > 0 {
+		_, err := s.writer.ExecContext(ctx, `
+			DELETE FROM pipeline_runs
+			WHERE pipeline_id = ?
+			  AND id NOT IN (
+			    SELECT id FROM pipeline_runs
+			    WHERE pipeline_id = ?
+			    ORDER BY created_at DESC
+			    LIMIT ?
+			  )
+		`, pipelineID, pipelineID, keepBuilds)
+		if err != nil {
+			return fmt.Errorf("failed to prune runs by count: %w", err)
+		}
+	}
+
+	if cutoffTime != nil {
+		_, err := s.writer.ExecContext(ctx, `
+			DELETE FROM pipeline_runs
+			WHERE pipeline_id = ?
+			  AND created_at < ?
+		`, pipelineID, cutoffTime.Unix())
+		if err != nil {
+			return fmt.Errorf("failed to prune runs by age: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // SearchPipelines returns pipelines whose name or content contain query using
 // the FTS5 index. When query is empty it returns all pipelines ordered by
 // creation date descending.

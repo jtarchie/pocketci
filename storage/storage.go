@@ -96,6 +96,11 @@ type Driver interface {
 	GetRecentRunsByStatus(ctx context.Context, status RunStatus, limit int) ([]PipelineRun, error)
 	SearchRunsByPipeline(ctx context.Context, pipelineID, query string, page, perPage int) (*PaginationResult[PipelineRun], error)
 	UpdateRunStatus(ctx context.Context, runID string, status RunStatus, errorMessage string) error
+	// PruneRunsByPipeline deletes old pipeline runs according to retention limits.
+	// keepBuilds: if > 0, delete runs beyond the N most recent.
+	// cutoffTime: if non-nil, delete runs created before this time.
+	// Both constraints are applied independently (a run is deleted if it exceeds either).
+	PruneRunsByPipeline(ctx context.Context, pipelineID string, keepBuilds int, cutoffTime *time.Time) error
 
 	// Full-text search operations
 	//

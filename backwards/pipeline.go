@@ -54,6 +54,16 @@ func NewPipeline(filename string) (string, error) {
 	return NewPipelineFromContent(string(contents))
 }
 
+// ParseConfig unmarshals a Concourse YAML pipeline content into a Config.
+func ParseConfig(content string) (*Config, error) {
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(content), &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse pipeline config: %w", err)
+	}
+
+	return &cfg, nil
+}
+
 // NewPipelineFromContent transpiles a YAML pipeline string into a TypeScript
 // pipeline definition that can be executed by the JS runtime. Unlike NewPipeline
 // it accepts content directly instead of reading from a file.

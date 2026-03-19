@@ -3,6 +3,7 @@ package storage_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/jtarchie/pocketci/storage"
 	. "github.com/onsi/gomega"
@@ -158,6 +159,125 @@ func TestPipelineRunStorage(t *testing.T) {
 
 				err := client.UpdateRunStatus(context.Background(), "non-existent-id", storage.RunStatusRunning, "")
 				assert.Expect(err).To(Equal(storage.ErrNotFound))
+			})
+
+			t.Run("PruneRunsByPipeline", func(t *testing.T) {
+				t.Run("count-based prunes runs beyond the limit", func(t *testing.T) {
+					assert := NewGomegaWithT(t)
+					ctx := context.Background()
+					client := df.new(t, "namespace")
+
+					pipeline, err := client.SavePipeline(ctx, "prune-count", "content", "docker", "")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					for range 5 {
+						_, err := client.SaveRun(ctx, pipeline.ID)
+						assert.Expect(err).NotTo(HaveOccurred())
+					}
+
+					err = client.PruneRunsByPipeline(ctx, pipeline.ID, 3, nil)
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					result, err := client.SearchRunsByPipeline(ctx, pipeline.ID, "", 1, 20)
+					assert.Expect(err).NotTo(HaveOccurred())
+					assert.Expect(result.Items).To(HaveLen(3))
+				})
+
+				t.Run("count-based is a no-op when runs are within limit", func(t *testing.T) {
+					assert := NewGomegaWithT(t)
+					ctx := context.Background()
+					client := df.new(t, "namespace")
+
+					pipeline, err := client.SavePipeline(ctx, "prune-noop", "content", "docker", "")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					for range 2 {
+						_, err := client.SaveRun(ctx, pipeline.ID)
+						assert.Expect(err).NotTo(HaveOccurred())
+					}
+
+					err = client.PruneRunsByPipeline(ctx, pipeline.ID, 5, nil)
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					result, err := client.SearchRunsByPipeline(ctx, pipeline.ID, "", 1, 20)
+					assert.Expect(err).NotTo(HaveOccurred())
+					assert.Expect(result.Items).To(HaveLen(2))
+				})
+
+				t.Run("time-based prunes runs before cutoff", func(t *testing.T) {
+					assert := NewGomegaWithT(t)
+					ctx := context.Background()
+					client := df.new(t, "namespace")
+
+					pipeline, err := client.SavePipeline(ctx, "prune-time", "content", "docker", "")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					for range 3 {
+						_, err := client.SaveRun(ctx, pipeline.ID)
+						assert.Expect(err).NotTo(HaveOccurred())
+					}
+
+					// cutoff in the future deletes all existing runs
+					future := time.Now().UTC().Add(time.Second)
+					err = client.PruneRunsByPipeline(ctx, pipeline.ID, 0, &future)
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					result, err := client.SearchRunsByPipeline(ctx, pipeline.ID, "", 1, 20)
+					assert.Expect(err).NotTo(HaveOccurred())
+					assert.Expect(result.Items).To(BeEmpty())
+				})
+
+				t.Run("no-op when keepBuilds=0 and cutoffTime=nil", func(t *testing.T) {
+					assert := NewGomegaWithT(t)
+					ctx := context.Background()
+					client := df.new(t, "namespace")
+
+					pipeline, err := client.SavePipeline(ctx, "prune-none", "content", "docker", "")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					for range 3 {
+						_, err := client.SaveRun(ctx, pipeline.ID)
+						assert.Expect(err).NotTo(HaveOccurred())
+					}
+
+					err = client.PruneRunsByPipeline(ctx, pipeline.ID, 0, nil)
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					result, err := client.SearchRunsByPipeline(ctx, pipeline.ID, "", 1, 20)
+					assert.Expect(err).NotTo(HaveOccurred())
+					assert.Expect(result.Items).To(HaveLen(3))
+				})
+
+				t.Run("only prunes runs for the target pipeline", func(t *testing.T) {
+					assert := NewGomegaWithT(t)
+					ctx := context.Background()
+					client := df.new(t, "namespace")
+
+					pipA, err := client.SavePipeline(ctx, "prune-pipeline-a", "content", "docker", "")
+					assert.Expect(err).NotTo(HaveOccurred())
+					pipB, err := client.SavePipeline(ctx, "prune-pipeline-b", "content", "docker", "")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					for range 5 {
+						_, err := client.SaveRun(ctx, pipA.ID)
+						assert.Expect(err).NotTo(HaveOccurred())
+					}
+					for range 3 {
+						_, err := client.SaveRun(ctx, pipB.ID)
+						assert.Expect(err).NotTo(HaveOccurred())
+					}
+
+					err = client.PruneRunsByPipeline(ctx, pipA.ID, 2, nil)
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					resultA, err := client.SearchRunsByPipeline(ctx, pipA.ID, "", 1, 20)
+					assert.Expect(err).NotTo(HaveOccurred())
+					assert.Expect(resultA.Items).To(HaveLen(2))
+
+					resultB, err := client.SearchRunsByPipeline(ctx, pipB.ID, "", 1, 20)
+					assert.Expect(err).NotTo(HaveOccurred())
+					assert.Expect(resultB.Items).To(HaveLen(3))
+				})
 			})
 
 			t.Run("SearchRunsByPipeline", func(t *testing.T) {

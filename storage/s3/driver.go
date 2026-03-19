@@ -478,6 +478,56 @@ func (s *S3) SearchRunsByPipeline(ctx context.Context, pipelineID, query string,
 	return paginate(matched, page, perPage), nil
 }
 
+// PruneRunsByPipeline deletes old pipeline runs for a pipeline.
+// If keepBuilds > 0, runs beyond the N most recent are deleted.
+// If cutoffTime is non-nil, runs created before that time are deleted.
+// Both constraints are applied independently.
+func (s *S3) PruneRunsByPipeline(ctx context.Context, pipelineID string, keepBuilds int, cutoffTime *time.Time) error {
+	keys, err := s.ListKeys(ctx, s.runsPrefix())
+	if err != nil {
+		return nil
+	}
+
+	var runs []storage.PipelineRun
+
+	for _, key := range keys {
+		run, err := s.getRun(ctx, key)
+		if err != nil {
+			continue
+		}
+
+		if run.PipelineID == pipelineID {
+			runs = append(runs, *run)
+		}
+	}
+
+	sort.Slice(runs, func(i, j int) bool {
+		return runs[i].CreatedAt.After(runs[j].CreatedAt)
+	})
+
+	toDelete := map[string]bool{}
+
+	if keepBuilds > 0 && len(runs) > keepBuilds {
+		for _, r := range runs[keepBuilds:] {
+			toDelete[r.ID] = true
+		}
+	}
+
+	if cutoffTime != nil {
+		for _, r := range runs {
+			if r.CreatedAt.Before(*cutoffTime) {
+				toDelete[r.ID] = true
+			}
+		}
+	}
+
+	for id := range toDelete {
+		_ = s.DeleteKey(ctx, s.runKey(id))
+	}
+
+	return nil
+}
+
 // ─── Search operations ──────────────────────────────────────────────────────
 
 func (s *S3) SearchPipelines(ctx context.Context, query string, page, perPage int) (*storage.PaginationResult[storage.Pipeline], error) {
