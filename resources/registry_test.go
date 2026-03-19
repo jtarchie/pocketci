@@ -9,6 +9,7 @@ import (
 )
 
 func TestRegistry(t *testing.T) {
+	t.Parallel()
 	t.Run("List returns registered resources", func(t *testing.T) {
 		assert := NewGomegaWithT(t)
 

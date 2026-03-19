@@ -32,7 +32,7 @@ tasks:
     cmds:
       - task: cleanup
       - defer: { task: cleanup }
-      - go test -race ./... -count=1 -parallel=1
+      - go test -race ./...
       - task: test:e2e
   default:
     cmds:

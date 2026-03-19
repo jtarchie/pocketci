@@ -49,7 +49,9 @@ func TestDrivers(t *testing.T) {
 		init := tc.newDriver
 
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
+			if name == "native" {
+				t.Parallel()
+			}
 
 			// Skip k8s tests if cluster is not available
 			if name == "k8s" && !k8s.IsAvailable() {
@@ -74,7 +76,9 @@ func TestDrivers(t *testing.T) {
 			}
 
 			t.Run("with stdin", func(t *testing.T) {
-				t.Parallel()
+				if name == "native" {
+					t.Parallel()
+				}
 
 				// Fly machines don't support piping stdin from the client
 				if name == "fly" {
@@ -123,7 +127,9 @@ func TestDrivers(t *testing.T) {
 			})
 
 			t.Run("exit code failed", func(t *testing.T) {
-				t.Parallel()
+				if name == "native" {
+					t.Parallel()
+				}
 
 				assert := NewGomegaWithT(t)
 
@@ -162,7 +168,9 @@ func TestDrivers(t *testing.T) {
 			})
 
 			t.Run("happy path", func(t *testing.T) {
-				t.Parallel()
+				if name == "native" {
+					t.Parallel()
+				}
 
 				assert := NewGomegaWithT(t)
 
@@ -234,7 +242,9 @@ func TestDrivers(t *testing.T) {
 			})
 
 			t.Run("volume", func(t *testing.T) {
-				t.Parallel()
+				if name == "native" {
+					t.Parallel()
+				}
 
 				assert := NewGomegaWithT(t)
 
@@ -299,7 +309,9 @@ func TestDrivers(t *testing.T) {
 			})
 
 			t.Run("read files from volume", func(t *testing.T) {
-				t.Parallel()
+				if name == "native" {
+					t.Parallel()
+				}
 
 				assert := NewGomegaWithT(t)
 
@@ -361,7 +373,9 @@ func TestDrivers(t *testing.T) {
 			})
 
 			t.Run("environment variables", func(t *testing.T) {
-				t.Parallel()
+				if name == "native" {
+					t.Parallel()
+				}
 
 				assert := NewGomegaWithT(t)
 
@@ -404,7 +418,9 @@ func TestDrivers(t *testing.T) {
 			})
 
 			t.Run("streaming logs with follow", func(t *testing.T) {
-				t.Parallel()
+				if name == "native" {
+					t.Parallel()
+				}
 
 				assert := NewGomegaWithT(t)
 
@@ -500,7 +516,9 @@ func TestSandboxDrivers(t *testing.T) {
 		init := tc.newDriver
 
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
+			if name == "native" {
+				t.Parallel()
+			}
 
 			// Skip k8s tests if cluster is not available.
 			if name == "k8s" && !k8s.IsAvailable() {
@@ -539,7 +557,9 @@ func TestSandboxDrivers(t *testing.T) {
 			}
 
 			t.Run("sequential commands share environment", func(t *testing.T) {
-				t.Parallel()
+				if name == "native" {
+					t.Parallel()
+				}
 
 				assert := NewGomegaWithT(t)
 
@@ -572,7 +592,9 @@ func TestSandboxDrivers(t *testing.T) {
 			})
 
 			t.Run("exec respects env and workdir", func(t *testing.T) {
-				t.Parallel()
+				if name == "native" {
+					t.Parallel()
+				}
 
 				assert := NewGomegaWithT(t)
 
@@ -598,7 +620,9 @@ func TestSandboxDrivers(t *testing.T) {
 			})
 
 			t.Run("exec captures non-zero exit code", func(t *testing.T) {
-				t.Parallel()
+				if name == "native" {
+					t.Parallel()
+				}
 
 				assert := NewGomegaWithT(t)
 
@@ -620,7 +644,9 @@ func TestSandboxDrivers(t *testing.T) {
 			})
 
 			t.Run("cleanup removes sandbox", func(t *testing.T) {
-				t.Parallel()
+				if name == "native" {
+					t.Parallel()
+				}
 
 				assert := NewGomegaWithT(t)
 

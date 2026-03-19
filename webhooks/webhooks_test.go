@@ -32,6 +32,7 @@ func (p *unauthorizedProvider) Parse(_ *http.Request, _ []byte, _ string) (*webh
 }
 
 func TestDetect_FirstMatchWins(t *testing.T) {
+	t.Parallel()
 	providers := []webhooks.Provider{&noopProvider{"first"}, &noopProvider{"second"}}
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
@@ -48,6 +49,7 @@ func TestDetect_FirstMatchWins(t *testing.T) {
 }
 
 func TestDetect_NoMatch(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 
 	_, err := webhooks.Detect(nil, req, nil, "")
@@ -57,6 +59,7 @@ func TestDetect_NoMatch(t *testing.T) {
 }
 
 func TestDetect_UnauthorizedPropagated(t *testing.T) {
+	t.Parallel()
 	providers := []webhooks.Provider{&unauthorizedProvider{}}
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))

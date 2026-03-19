@@ -22,6 +22,7 @@ func sign(body []byte, secret string) string {
 }
 
 func TestGitHub_Match(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 	req.Header.Set("X-GitHub-Event", "push")
 
@@ -40,6 +41,7 @@ func TestGitHub_Match(t *testing.T) {
 }
 
 func TestGitHub_ValidSignature(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"action":"opened"}`)
 	secret := "mysecret"
 
@@ -62,6 +64,7 @@ func TestGitHub_ValidSignature(t *testing.T) {
 }
 
 func TestGitHub_InvalidSignature(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"action":"opened"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
@@ -75,6 +78,7 @@ func TestGitHub_InvalidSignature(t *testing.T) {
 }
 
 func TestGitHub_MissingSignatureWithSecret(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
@@ -100,6 +104,7 @@ func TestGitHub_MissingSignatureWithSecret(t *testing.T) {
 // GitHub hashed differ from the UI rendering (e.g. whitespace, trailing newline)
 // — the test output will show the computed signature for comparison.
 func TestGitHub_RealDelivery(t *testing.T) {
+	t.Parallel()
 	const secret = "getreadyforthis123"
 	const wantSig = "sha256=3c37703eefe36749098b4fb27bf82972475a0bd6224df301ce9d484bd09556a2"
 

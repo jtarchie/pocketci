@@ -14,15 +14,12 @@ import (
 )
 
 func TestK8s(t *testing.T) {
-	t.Parallel()
-
 	// Check if k8s is available
 	if !k8s.IsAvailable() {
 		t.Skip("Kubernetes cluster not available")
 	}
 
 	t.Run("with a user", func(t *testing.T) {
-		t.Parallel()
 
 		assert := NewGomegaWithT(t)
 
@@ -68,7 +65,6 @@ func TestK8s(t *testing.T) {
 	})
 
 	t.Run("with privileged", func(t *testing.T) {
-		t.Parallel()
 
 		assert := NewGomegaWithT(t)
 
@@ -102,7 +98,6 @@ func TestK8s(t *testing.T) {
 	})
 
 	t.Run("with container limits", func(t *testing.T) {
-		t.Parallel()
 
 		assert := NewGomegaWithT(t)
 

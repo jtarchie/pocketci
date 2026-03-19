@@ -12,6 +12,7 @@ import (
 )
 
 func TestMockResource(t *testing.T) {
+	t.Parallel()
 	t.Run("is registered", func(t *testing.T) {
 		assert := NewGomegaWithT(t)
 

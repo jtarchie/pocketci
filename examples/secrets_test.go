@@ -17,7 +17,9 @@ func TestSecretsBasic(t *testing.T) {
 
 	for _, driver := range drivers {
 		t.Run(driver, func(t *testing.T) {
-			t.Parallel()
+			if driver == "native" {
+				t.Parallel()
+			}
 
 			assert := NewGomegaWithT(t)
 
@@ -83,7 +85,9 @@ func TestSecretsGlobal(t *testing.T) {
 
 	for _, driver := range drivers {
 		t.Run(driver, func(t *testing.T) {
-			t.Parallel()
+			if driver == "native" {
+				t.Parallel()
+			}
 
 			assert := NewGomegaWithT(t)
 

@@ -9,6 +9,7 @@ import (
 )
 
 func TestShareToken_RoundTrip(t *testing.T) {
+	t.Parallel()
 	assert := NewGomegaWithT(t)
 
 	token, err := auth.GenerateShareToken("run-abc123", "my-secret")
@@ -21,6 +22,7 @@ func TestShareToken_RoundTrip(t *testing.T) {
 }
 
 func TestShareToken_WrongSecret(t *testing.T) {
+	t.Parallel()
 	assert := NewGomegaWithT(t)
 
 	token, err := auth.GenerateShareToken("run-abc123", "correct-secret")
@@ -31,6 +33,7 @@ func TestShareToken_WrongSecret(t *testing.T) {
 }
 
 func TestShareToken_CrossRunForgery(t *testing.T) {
+	t.Parallel()
 	assert := NewGomegaWithT(t)
 
 	// Token for run A is not valid for run B, even with same secret.
@@ -46,6 +49,7 @@ func TestShareToken_CrossRunForgery(t *testing.T) {
 }
 
 func TestShareToken_TamperedSignature(t *testing.T) {
+	t.Parallel()
 	assert := NewGomegaWithT(t)
 
 	token, err := auth.GenerateShareToken("run-abc123", "secret")
@@ -59,6 +63,7 @@ func TestShareToken_TamperedSignature(t *testing.T) {
 }
 
 func TestShareToken_MalformedNoDot(t *testing.T) {
+	t.Parallel()
 	assert := NewGomegaWithT(t)
 
 	_, err := auth.ValidateShareToken("nodothere", "secret")
@@ -66,6 +71,7 @@ func TestShareToken_MalformedNoDot(t *testing.T) {
 }
 
 func TestShareToken_MalformedEmpty(t *testing.T) {
+	t.Parallel()
 	assert := NewGomegaWithT(t)
 
 	_, err := auth.ValidateShareToken("", "secret")
@@ -73,6 +79,7 @@ func TestShareToken_MalformedEmpty(t *testing.T) {
 }
 
 func TestShareToken_EmptyRunID(t *testing.T) {
+	t.Parallel()
 	assert := NewGomegaWithT(t)
 
 	_, err := auth.GenerateShareToken("", "secret")
@@ -80,6 +87,7 @@ func TestShareToken_EmptyRunID(t *testing.T) {
 }
 
 func TestShareToken_InvalidHexSignature(t *testing.T) {
+	t.Parallel()
 	assert := NewGomegaWithT(t)
 
 	_, err := auth.ValidateShareToken("run-abc123.not-valid-hex!!", "secret")

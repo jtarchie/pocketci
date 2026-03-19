@@ -14,7 +14,6 @@ import (
 )
 
 func TestResumeSkipsCompletedSteps(t *testing.T) {
-	t.Parallel()
 	assert := NewGomegaWithT(t)
 
 	// Create a persistent storage file for this test
@@ -156,7 +155,6 @@ func TestResumeContainerReattachment(t *testing.T) {
 }
 
 func TestGetContainerDockerDriver(t *testing.T) {
-	t.Parallel()
 	assert := NewGomegaWithT(t)
 
 	ctx := context.Background()

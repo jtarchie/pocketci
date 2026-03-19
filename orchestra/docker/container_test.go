@@ -15,10 +15,7 @@ import (
 )
 
 func TestDocker(t *testing.T) {
-	t.Parallel()
-
 	t.Run("with a user", func(t *testing.T) {
-		t.Parallel()
 
 		assert := NewGomegaWithT(t)
 
@@ -62,7 +59,6 @@ func TestDocker(t *testing.T) {
 	})
 
 	t.Run("with privileged", func(t *testing.T) {
-		t.Parallel()
 
 		assert := NewGomegaWithT(t)
 
@@ -96,7 +92,6 @@ func TestDocker(t *testing.T) {
 	})
 
 	t.Run("with container limits", func(t *testing.T) {
-		t.Parallel()
 
 		assert := NewGomegaWithT(t)
 

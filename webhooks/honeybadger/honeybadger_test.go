@@ -11,6 +11,7 @@ import (
 )
 
 func TestHoneybadger_MatchAndValidToken(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"type":"check_in"}`)
 	secret := "my-secret"
 
@@ -32,6 +33,7 @@ func TestHoneybadger_MatchAndValidToken(t *testing.T) {
 }
 
 func TestHoneybadger_MissingTokenNoDetection(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"type":"check_in"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
@@ -43,6 +45,7 @@ func TestHoneybadger_MissingTokenNoDetection(t *testing.T) {
 }
 
 func TestHoneybadger_InvalidToken(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"type":"check_in"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
@@ -55,6 +58,7 @@ func TestHoneybadger_InvalidToken(t *testing.T) {
 }
 
 func TestHoneybadger_EmptySecretIsUnauthorized(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"event":"uptime"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
@@ -67,6 +71,7 @@ func TestHoneybadger_EmptySecretIsUnauthorized(t *testing.T) {
 }
 
 func TestHoneybadger_EventTypeFallbackToEvent(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"event":"uptime.alert"}`)
 	secret := "my-secret"
 

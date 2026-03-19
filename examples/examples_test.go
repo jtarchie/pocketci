@@ -11,8 +11,6 @@ import (
 )
 
 func TestExamplesDocker(t *testing.T) {
-	t.Parallel()
-
 	assert := NewGomegaWithT(t)
 
 	matches, err := doublestar.FilepathGlob("docker/*.{js,ts,yml,yaml}")
@@ -30,8 +28,6 @@ func TestExamplesDocker(t *testing.T) {
 
 		for _, driver := range drivers {
 			t.Run(driver+": "+match, func(t *testing.T) {
-				t.Parallel()
-
 				assert := NewGomegaWithT(t)
 				runner := testhelpers.Runner{
 					Pipeline:          examplePath,
@@ -64,7 +60,9 @@ func TestExamplesAll(t *testing.T) {
 
 		for _, driver := range drivers {
 			t.Run(driver+": "+match, func(t *testing.T) {
-				t.Parallel()
+				if driver == "native" {
+					t.Parallel()
+				}
 
 				assert := NewGomegaWithT(t)
 				runner := testhelpers.Runner{

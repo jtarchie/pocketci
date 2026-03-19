@@ -19,6 +19,7 @@ import (
 )
 
 func TestMCPTokenVerifier(t *testing.T) {
+	t.Parallel()
 	secret := "test-secret-key-at-least-32-bytes-long"
 
 	t.Run("valid token with scopes", func(t *testing.T) {
@@ -85,6 +86,7 @@ func TestMCPTokenVerifier(t *testing.T) {
 }
 
 func TestProtectedResourceMetadata(t *testing.T) {
+	t.Parallel()
 	assert := NewGomegaWithT(t)
 
 	meta := auth.NewProtectedResourceMetadata("https://ci.example.com")
@@ -96,6 +98,7 @@ func TestProtectedResourceMetadata(t *testing.T) {
 }
 
 func TestProtectedResourceMetadataHandler(t *testing.T) {
+	t.Parallel()
 	assert := NewGomegaWithT(t)
 
 	meta := auth.NewProtectedResourceMetadata("https://ci.example.com")
@@ -118,6 +121,7 @@ func TestProtectedResourceMetadataHandler(t *testing.T) {
 }
 
 func TestAuthServerMetadata(t *testing.T) {
+	t.Parallel()
 	assert := NewGomegaWithT(t)
 
 	meta := auth.NewAuthServerMetadata("https://ci.example.com")
@@ -141,6 +145,7 @@ func TestAuthServerMetadata(t *testing.T) {
 }
 
 func TestOAuthServer(t *testing.T) {
+	t.Parallel()
 	secret := "test-secret-key-at-least-32-bytes-long"
 	cfg := &auth.Config{
 		SessionSecret: secret,

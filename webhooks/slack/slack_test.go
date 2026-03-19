@@ -22,6 +22,7 @@ func sign(body []byte, secret, timestamp string) string {
 }
 
 func TestSlack_Match(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"type":"event_callback"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
@@ -43,6 +44,7 @@ func TestSlack_Match(t *testing.T) {
 }
 
 func TestSlack_ValidSignature(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"type":"url_verification","challenge":"abc123"}`)
 	secret := "signing_secret"
 	timestamp := "1609459200"
@@ -62,6 +64,7 @@ func TestSlack_ValidSignature(t *testing.T) {
 }
 
 func TestSlack_InvalidSignature(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"type":"event_callback"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
@@ -75,6 +78,7 @@ func TestSlack_InvalidSignature(t *testing.T) {
 }
 
 func TestSlack_MissingHeaders(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"type":"event_callback"}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))

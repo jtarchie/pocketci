@@ -11,6 +11,7 @@ import (
 )
 
 func TestAuthConfig(t *testing.T) {
+	t.Parallel()
 	t.Run("load returns empty config when file does not exist", func(t *testing.T) {
 		assert := NewGomegaWithT(t)
 

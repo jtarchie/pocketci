@@ -10,6 +10,7 @@ import (
 )
 
 func TestEvaluateAccess(t *testing.T) {
+	t.Parallel()
 	user := auth.User{
 		Email:         "alice@example.com",
 		Name:          "Alice",
@@ -87,6 +88,7 @@ func TestEvaluateAccess(t *testing.T) {
 }
 
 func TestValidateExpression(t *testing.T) {
+	t.Parallel()
 	t.Run("valid expression", func(t *testing.T) {
 		assert := NewGomegaWithT(t)
 		err := auth.ValidateExpression("Email == \"test@example.com\"")
@@ -107,6 +109,7 @@ func TestValidateExpression(t *testing.T) {
 }
 
 func TestToken(t *testing.T) {
+	t.Parallel()
 	secret := "test-secret-key-at-least-32-bytes-long"
 
 	user := &auth.User{
@@ -164,6 +167,7 @@ func TestToken(t *testing.T) {
 }
 
 func TestConfig(t *testing.T) {
+	t.Parallel()
 	t.Run("no providers", func(t *testing.T) {
 		assert := NewGomegaWithT(t)
 		cfg := &auth.Config{}
