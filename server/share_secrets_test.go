@@ -75,7 +75,7 @@ func TestRedactSecretValuesViaShareView(t *testing.T) {
 
 		body := rec.Body.String()
 		assert.Expect(body).NotTo(ContainSubstring("my-super-secret-token"))
-		assert.Expect(body).To(ContainSubstring("[REDACTED]"))
+		assert.Expect(body).To(ContainSubstring("***REDACTED***"))
 	})
 
 	t.Run("replaces multiple secrets in shared view", func(t *testing.T) {
@@ -134,7 +134,7 @@ func TestRedactSecretValuesViaShareView(t *testing.T) {
 		body := rec.Body.String()
 		assert.Expect(body).NotTo(ContainSubstring("token-A-value"))
 		assert.Expect(body).NotTo(ContainSubstring("token-B-value"))
-		assert.Expect(body).To(ContainSubstring("[REDACTED]"))
+		assert.Expect(body).To(ContainSubstring("***REDACTED***"))
 	})
 
 	t.Run("handles no secrets gracefully", func(t *testing.T) {
@@ -186,6 +186,6 @@ func TestRedactSecretValuesViaShareView(t *testing.T) {
 
 		body := rec.Body.String()
 		assert.Expect(body).To(ContainSubstring("no secrets here"))
-		assert.Expect(body).NotTo(ContainSubstring("[REDACTED]"))
+		assert.Expect(body).NotTo(ContainSubstring("***REDACTED***"))
 	})
 }

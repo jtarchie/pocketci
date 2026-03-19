@@ -276,7 +276,7 @@ func TestWebShareController(t *testing.T) {
 		assert.Expect(rec.Code).To(Equal(http.StatusOK))
 		body := rec.Body.String()
 		assert.Expect(body).NotTo(ContainSubstring(secretValue))
-		assert.Expect(body).To(ContainSubstring("[REDACTED]"))
+		assert.Expect(body).To(ContainSubstring("***REDACTED***"))
 	})
 
 	t.Run("shared view has no Share button", func(t *testing.T) {
@@ -365,7 +365,7 @@ func TestWebShareController(t *testing.T) {
 		assert.Expect(rec.Code).To(Equal(http.StatusOK))
 		body := rec.Body.String()
 		assert.Expect(body).NotTo(ContainSubstring(globalSecretValue))
-		assert.Expect(body).To(ContainSubstring("[REDACTED]"))
+		assert.Expect(body).To(ContainSubstring("***REDACTED***"))
 	})
 
 	t.Run("normal view has no data-readonly on tasks-container", func(t *testing.T) {

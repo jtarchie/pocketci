@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 
 	"github.com/jtarchie/pocketci/secrets"
@@ -64,20 +63,6 @@ func resolveShareSigningSecret(ctx context.Context, mgr secrets.Manager, logger 
 	}
 
 	return key, nil
-}
-
-// redactSecretValues replaces each known secret value in html with [REDACTED].
-// Empty values are skipped to avoid corrupting the HTML.
-func redactSecretValues(html string, values []string) string {
-	for _, v := range values {
-		if v == "" {
-			continue
-		}
-
-		html = strings.ReplaceAll(html, v, "[REDACTED]")
-	}
-
-	return html
 }
 
 // collectSecretValues retrieves all decrypted secret values for the global scope

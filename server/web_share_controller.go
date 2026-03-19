@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/jtarchie/pocketci/runtime/support"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/server/auth"
 	"github.com/jtarchie/pocketci/storage"
@@ -70,7 +71,7 @@ func (c *WebShareController) Show(ctx *echo.Context) error {
 	// Collect secret values for redaction and preload terminal HTML statically.
 	secretValues := collectSecretValues(ctx.Request().Context(), c.secretsMgr, pipelineID)
 	redact := func(html string) string {
-		return redactSecretValues(html, secretValues)
+		return support.RedactSecrets(html, secretValues)
 	}
 
 	// Force all tasks to be treated as non-running so no HTMX reload attributes
