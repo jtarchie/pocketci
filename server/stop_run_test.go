@@ -133,7 +133,10 @@ export const pipeline = async () => {
 			err = json.Unmarshal(rec.Body.Bytes(), &resp)
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(resp["run_id"]).To(Equal(run.ID))
-			assert.Expect(resp["status"]).To(Equal("stopping"))
+			// Both "stopping" and "stopped" are valid: "stopping" means the run was actively
+			// in-flight and cancelled asynchronously; "stopped" means the run completed just
+			// before the stop was processed (race window). The definitive check is below.
+			assert.Expect(resp["status"]).To(Or(Equal("stopping"), Equal("stopped")))
 
 			// Wait for the goroutine to fully exit
 			execService.Wait()
