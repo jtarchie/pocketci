@@ -23,9 +23,6 @@ import (
 //go:embed schema.sql
 var schemaSQL string
 
-//go:embed migrations.sql
-var migrationsSQL string
-
 type Sqlite struct {
 	writer    *sql.DB
 	reader    *sql.DB
@@ -34,7 +31,7 @@ type Sqlite struct {
 }
 
 // pipelineScan is an intermediate struct for scanning pipeline rows.
-// SQLite stores timestamps as RFC3339 strings, so we scan into strings first.
+// Timestamps are stored as INTEGER (Unix epoch seconds).
 type pipelineScan struct {
 	ID             string `db:"id"`
 	Name           string `db:"name"`
@@ -43,14 +40,11 @@ type pipelineScan struct {
 	Driver         string `db:"driver"`
 	ResumeEnabled  int    `db:"resume_enabled"`
 	RBACExpression string `db:"rbac_expression"`
-	CreatedAt      string `db:"created_at"`
-	UpdatedAt      string `db:"updated_at"`
+	CreatedAt      int64  `db:"created_at"`
+	UpdatedAt      int64  `db:"updated_at"`
 }
 
 func (p pipelineScan) toStorage() storage.Pipeline {
-	createdAt, _ := time.Parse(time.RFC3339, p.CreatedAt)
-	updatedAt, _ := time.Parse(time.RFC3339, p.UpdatedAt)
-
 	return storage.Pipeline{
 		ID:             p.ID,
 		Name:           p.Name,
@@ -59,20 +53,21 @@ func (p pipelineScan) toStorage() storage.Pipeline {
 		Driver:         p.Driver,
 		ResumeEnabled:  p.ResumeEnabled != 0,
 		RBACExpression: p.RBACExpression,
-		CreatedAt:      createdAt,
-		UpdatedAt:      updatedAt,
+		CreatedAt:      time.Unix(p.CreatedAt, 0).UTC(),
+		UpdatedAt:      time.Unix(p.UpdatedAt, 0).UTC(),
 	}
 }
 
 // pipelineRunScan is an intermediate struct for scanning pipeline run rows.
+// Timestamps are stored as INTEGER (Unix epoch seconds); nullable timestamps use sql.NullInt64.
 type pipelineRunScan struct {
 	ID           string         `db:"id"`
 	PipelineID   string         `db:"pipeline_id"`
 	Status       string         `db:"status"`
-	StartedAt    sql.NullString `db:"started_at"`
-	CompletedAt  sql.NullString `db:"completed_at"`
+	StartedAt    sql.NullInt64  `db:"started_at"`
+	CompletedAt  sql.NullInt64  `db:"completed_at"`
 	ErrorMessage sql.NullString `db:"error_message"`
-	CreatedAt    string         `db:"created_at"`
+	CreatedAt    int64          `db:"created_at"`
 }
 
 func (p pipelineRunScan) toStorage() storage.PipelineRun {
@@ -80,17 +75,16 @@ func (p pipelineRunScan) toStorage() storage.PipelineRun {
 		ID:         p.ID,
 		PipelineID: p.PipelineID,
 		Status:     storage.RunStatus(p.Status),
+		CreatedAt:  time.Unix(p.CreatedAt, 0).UTC(),
 	}
 
-	run.CreatedAt, _ = time.Parse(time.RFC3339, p.CreatedAt)
-
 	if p.StartedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, p.StartedAt.String)
+		t := time.Unix(p.StartedAt.Int64, 0).UTC()
 		run.StartedAt = &t
 	}
 
 	if p.CompletedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, p.CompletedAt.String)
+		t := time.Unix(p.CompletedAt.Int64, 0).UTC()
 		run.CompletedAt = &t
 	}
 
@@ -139,18 +133,6 @@ func NewSqlite(cfg Config, namespace string, _ *slog.Logger) (storage.Driver, er
 		return nil, fmt.Errorf("failed to apply schema: %w", err)
 	}
 
-	// Run idempotent migrations from migrations.sql.
-	// Each ALTER TABLE is a no-op if the column already exists.
-	for _, stmt := range strings.Split(migrationsSQL, ";") {
-		stmt = strings.TrimSpace(stmt)
-		if stmt == "" {
-			continue
-		}
-
-		//nolint: noctx
-		_, _ = writer.Exec(stmt)
-	}
-
 	writer.SetMaxIdleConns(1)
 	writer.SetMaxOpenConns(1)
 
@@ -171,8 +153,22 @@ func NewSqlite(cfg Config, namespace string, _ *slog.Logger) (storage.Driver, er
 	}, nil
 }
 
+// extractRunID returns the run ID from a task path if the path contains a
+// "pipeline" segment (e.g. /ns/pipeline/{run_id}/steps/...). Returns "" otherwise.
+func extractRunID(path string) string {
+	parts := strings.Split(path, "/")
+	for i, p := range parts {
+		if p == "pipeline" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+
+	return ""
+}
+
 func (s *Sqlite) Set(ctx context.Context, prefix string, payload any) error {
 	path := filepath.Clean("/" + s.namespace + "/" + prefix)
+	runID := extractRunID(path)
 
 	contents, err := json.Marshal(payload)
 	if err != nil {
@@ -180,11 +176,11 @@ func (s *Sqlite) Set(ctx context.Context, prefix string, payload any) error {
 	}
 
 	_, err = s.writer.ExecContext(ctx, `
-		INSERT INTO tasks (path, payload)
-		VALUES (?, jsonb(?))
+		INSERT INTO tasks (path, run_id, payload)
+		VALUES (?, NULLIF(?, ''), jsonb(?))
 		ON CONFLICT(path) DO UPDATE SET
 		payload = jsonb_patch(tasks.payload, excluded.payload);
-	`, path, contents)
+	`, path, runID, contents)
 	if err != nil {
 		return fmt.Errorf("failed to insert task: %w", err)
 	}
@@ -354,7 +350,7 @@ func (s *Sqlite) SavePipeline(ctx context.Context, name, content, driver, conten
 			content_type=excluded.content_type,
 			driver=excluded.driver,
 			updated_at=excluded.updated_at
-	`, newID, name, content, contentType, driver, now.Format(time.RFC3339), now.Format(time.RFC3339))
+	`, newID, name, content, contentType, driver, now.Unix(), now.Unix())
 	if err != nil {
 		return nil, fmt.Errorf("failed to save pipeline: %w", err)
 	}
@@ -535,7 +531,7 @@ func (s *Sqlite) SaveRun(ctx context.Context, pipelineID string) (*storage.Pipel
 	_, err := s.writer.ExecContext(ctx, `
 		INSERT INTO pipeline_runs (id, pipeline_id, status, created_at)
 		VALUES (?, ?, ?, ?)
-	`, id, pipelineID, storage.RunStatusQueued, now.Format(time.RFC3339))
+	`, id, pipelineID, storage.RunStatusQueued, now.Unix())
 	if err != nil {
 		return nil, fmt.Errorf("failed to save run: %w", err)
 	}
@@ -735,10 +731,10 @@ func (s *Sqlite) UpdateRunStatus(ctx context.Context, runID string, status stora
 	switch status {
 	case storage.RunStatusRunning:
 		query = `UPDATE pipeline_runs SET status = ?, started_at = ? WHERE id = ?`
-		args = []any{status, now.Format(time.RFC3339), runID}
+		args = []any{status, now.Unix(), runID}
 	case storage.RunStatusSuccess, storage.RunStatusFailed, storage.RunStatusSkipped:
 		query = `UPDATE pipeline_runs SET status = ?, completed_at = ?, error_message = ? WHERE id = ?`
-		args = []any{status, now.Format(time.RFC3339), errorMessage, runID}
+		args = []any{status, now.Unix(), errorMessage, runID}
 	default:
 		query = `UPDATE pipeline_runs SET status = ? WHERE id = ?`
 		args = []any{status, runID}

@@ -1,33 +1,40 @@
 CREATE TABLE IF NOT EXISTS tasks (
-  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-  path TEXT NOT NULL,
-  payload BLOB,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  id         INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  path       TEXT    NOT NULL,
+  run_id     TEXT,
+  payload    BLOB,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   UNIQUE(path)
 ) STRICT;
 
+CREATE INDEX IF NOT EXISTS idx_tasks_run_id ON tasks(run_id);
+
 CREATE TABLE IF NOT EXISTS pipelines (
-  id TEXT NOT NULL PRIMARY KEY,
-  name TEXT NOT NULL UNIQUE,
-  content TEXT NOT NULL,
-  content_type TEXT NOT NULL DEFAULT '',
-  driver TEXT NOT NULL,
-  resume_enabled INTEGER NOT NULL DEFAULT 0,
-  rbac_expression TEXT NOT NULL DEFAULT '',
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  id              TEXT    NOT NULL PRIMARY KEY,
+  name            TEXT    NOT NULL UNIQUE,
+  content         TEXT    NOT NULL,
+  content_type    TEXT    NOT NULL DEFAULT '',
+  driver          TEXT    NOT NULL,
+  resume_enabled  INTEGER NOT NULL DEFAULT 0,
+  rbac_expression TEXT    NOT NULL DEFAULT '',
+  created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS pipeline_runs (
-  id TEXT NOT NULL PRIMARY KEY,
-  pipeline_id TEXT NOT NULL,
-  status TEXT NOT NULL,
-  started_at TEXT,
-  completed_at TEXT,
+  id            TEXT    NOT NULL PRIMARY KEY,
+  pipeline_id   TEXT    NOT NULL,
+  status        TEXT    NOT NULL,
+  started_at    INTEGER,
+  completed_at  INTEGER,
   error_message TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
   FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
 ) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pipeline_id ON pipeline_runs(pipeline_id);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status      ON pipeline_runs(status);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_created_at  ON pipeline_runs(created_at);
 
 -- FTS5 virtual table for pipeline full-text search (name + content).
 CREATE VIRTUAL TABLE IF NOT EXISTS pipelines_fts USING fts5(
@@ -43,106 +50,53 @@ CREATE VIRTUAL TABLE IF NOT EXISTS data_fts USING fts5(path, content, tokenize =
 
 -- Remove FTS entries when a pipeline is deleted.
 CREATE TRIGGER IF NOT EXISTS pipelines_fts_delete
-AFTER
-  DELETE ON pipelines BEGIN
-DELETE FROM
-  pipelines_fts
-WHERE
-  id = OLD.id;
-
+AFTER DELETE ON pipelines BEGIN
+  DELETE FROM pipelines_fts WHERE id = OLD.id;
 END;
 
 -- Remove FTS entries when a task is deleted.
 CREATE TRIGGER IF NOT EXISTS data_fts_delete
-AFTER
-  DELETE ON tasks BEGIN
-DELETE FROM
-  data_fts
-WHERE
-  path = OLD.path;
-
+AFTER DELETE ON tasks BEGIN
+  DELETE FROM data_fts WHERE path = OLD.path;
 END;
 
--- FTS5 virtual table for pipeline run search (id, status, error_message).
+-- FTS5 virtual table for pipeline run search using external content table.
+-- Avoids duplicating data; triggers keep it in sync using the rowid of pipeline_runs.
 CREATE VIRTUAL TABLE IF NOT EXISTS pipeline_runs_fts USING fts5(
   id,
   status,
   error_message,
-  tokenize = 'unicode61'
+  content     = pipeline_runs,
+  content_rowid = rowid,
+  tokenize    = 'unicode61'
 );
 
 -- Populate FTS when a run is created.
 CREATE TRIGGER IF NOT EXISTS pipeline_runs_fts_insert
-AFTER
-INSERT
-  ON pipeline_runs BEGIN
-INSERT INTO
-  pipeline_runs_fts(id, status, error_message)
-VALUES
-  (
-    NEW.id,
-    NEW.status,
-    COALESCE(NEW.error_message, '')
-  );
-
+AFTER INSERT ON pipeline_runs BEGIN
+  INSERT INTO pipeline_runs_fts(rowid, id, status, error_message)
+  VALUES (NEW.rowid, NEW.id, NEW.status, COALESCE(NEW.error_message, ''));
 END;
 
 -- Keep FTS in sync when a run's status or error_message changes.
 CREATE TRIGGER IF NOT EXISTS pipeline_runs_fts_update
-AFTER
-UPDATE
-  ON pipeline_runs BEGIN
-DELETE FROM
-  pipeline_runs_fts
-WHERE
-  rowid IN (
-    SELECT
-      rowid
-    FROM
-      pipeline_runs_fts
-    WHERE
-      id = OLD.id
-  );
-
-INSERT INTO
-  pipeline_runs_fts(id, status, error_message)
-VALUES
-  (
-    NEW.id,
-    NEW.status,
-    COALESCE(NEW.error_message, '')
-  );
-
+AFTER UPDATE ON pipeline_runs BEGIN
+  INSERT INTO pipeline_runs_fts(pipeline_runs_fts, rowid, id, status, error_message)
+  VALUES ('delete', OLD.rowid, OLD.id, OLD.status, COALESCE(OLD.error_message, ''));
+  INSERT INTO pipeline_runs_fts(rowid, id, status, error_message)
+  VALUES (NEW.rowid, NEW.id, NEW.status, COALESCE(NEW.error_message, ''));
 END;
 
 -- Remove FTS entries when a run is deleted.
 CREATE TRIGGER IF NOT EXISTS pipeline_runs_fts_delete
-AFTER
-  DELETE ON pipeline_runs BEGIN
-DELETE FROM
-  pipeline_runs_fts
-WHERE
-  rowid IN (
-    SELECT
-      rowid
-    FROM
-      pipeline_runs_fts
-    WHERE
-      id = OLD.id
-  );
-
+AFTER DELETE ON pipeline_runs BEGIN
+  INSERT INTO pipeline_runs_fts(pipeline_runs_fts, rowid, id, status, error_message)
+  VALUES ('delete', OLD.rowid, OLD.id, OLD.status, COALESCE(OLD.error_message, ''));
 END;
 
 -- Remove task data stored under .../{namespace}/pipeline/{run_id}/... when a pipeline run is deleted.
--- This fires for each run row cascade-deleted from pipeline_runs (e.g. when deleting a pipeline),
--- and the existing data_fts_delete trigger then cleans the FTS index for each removed task row.
--- The leading '%' matches any namespace prefix prepended by the storage layer.
+-- Uses the indexed run_id column instead of a leading-wildcard LIKE scan.
 CREATE TRIGGER IF NOT EXISTS pipeline_runs_tasks_delete
-AFTER
-  DELETE ON pipeline_runs BEGIN
-DELETE FROM
-  tasks
-WHERE
-  path LIKE '%/pipeline/' || OLD.id || '/%';
-
+AFTER DELETE ON pipeline_runs BEGIN
+  DELETE FROM tasks WHERE run_id = OLD.id;
 END;

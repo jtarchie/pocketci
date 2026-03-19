@@ -6,7 +6,6 @@ import (
 	_ "embed"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/georgysavva/scany/v2/sqlscan"
 	"github.com/jtarchie/pocketci/secrets"
@@ -105,34 +104,20 @@ func (s *SQLite) Set(ctx context.Context, scope string, key string, value string
 		return fmt.Errorf("could not encrypt secret: %w", err)
 	}
 
-	// Determine next version
-	var currentVersion string
-
-	err = sqlscan.Get(ctx, s.db, &currentVersion, `
-		SELECT version FROM secrets WHERE scope = ? AND key = ?
-	`, scope, key)
-	if err != nil && !sqlscan.NotFound(err) {
-		return fmt.Errorf("could not check existing secret: %w", err)
-	}
-
-	nextVersion := "v1"
-	if currentVersion != "" {
-		nextVersion = incrementVersion(currentVersion)
-	}
-
+	// Version and updated_at are managed automatically:
+	// INSERT starts at version=1; the secrets_version_update trigger increments
+	// version and refreshes updated_at on every subsequent UPDATE.
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO secrets (scope, key, encrypted_value, version, updated_at)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO secrets (scope, key, encrypted_value)
+		VALUES (?, ?, ?)
 		ON CONFLICT(scope, key) DO UPDATE SET
-			encrypted_value = excluded.encrypted_value,
-			version = excluded.version,
-			updated_at = excluded.updated_at
-	`, scope, key, encrypted, nextVersion, time.Now().UTC().Format(time.RFC3339))
+			encrypted_value = excluded.encrypted_value
+	`, scope, key, encrypted)
 	if err != nil {
 		return fmt.Errorf("could not store secret: %w", err)
 	}
 
-	s.logger.Info("secret.set", "scope", scope, "key", key, "version", nextVersion)
+	s.logger.Info("secret.set", "scope", scope, "key", key)
 
 	return nil
 }
@@ -187,16 +172,4 @@ func (s *SQLite) DeleteByScope(ctx context.Context, scope string) error {
 
 func (s *SQLite) Close() error {
 	return s.db.Close()
-}
-
-// incrementVersion increments a version string like "v1" -> "v2".
-func incrementVersion(version string) string {
-	var num int
-
-	_, err := fmt.Sscanf(version, "v%d", &num)
-	if err != nil {
-		return "v1"
-	}
-
-	return fmt.Sprintf("v%d", num+1)
 }
