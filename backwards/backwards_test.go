@@ -643,6 +643,20 @@ func TestBackwardsCompatibility(t *testing.T) {
 		assert.Expect(foundSkippedA).To(BeTrue(), "expected skipped-task-a in skipped entries")
 		assert.Expect(foundSkippedB).To(BeTrue(), "expected skipped-task-b in skipped entries")
 	})
+
+	t.Run("image shorthand on task config", func(t *testing.T) {
+		t.Parallel()
+
+		_, logger := createLogger()
+		assert := NewGomegaWithT(t)
+		runner := testhelpers.Runner{
+			Pipeline:          "steps/image_shorthand.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
+		}
+		err := runner.Run(logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
 }
 
 func TestVersionEveryWithMock(t *testing.T) {

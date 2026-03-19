@@ -688,8 +688,9 @@ declare global {
     caches?: CacheConfig[];
     container_limits?: ContainerLimits;
     env?: EnvVars;
+    image?: string;
     platform?: string;
-    image_resource: ImageResource;
+    image_resource?: ImageResource;
     inputs?: { name: string }[];
     outputs?: { name: string }[];
     run?: CommandConfig;

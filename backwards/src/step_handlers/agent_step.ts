@@ -53,7 +53,8 @@ export class AgentStepHandler implements StepHandler {
     const auditBaseKey =
       `/agent-audit/${ctx.buildID}/jobs/${ctx.jobName}/${pathContext}/events`;
 
-    const image = agentStep.config?.image_resource?.source?.repository ??
+    const image = agentStep.config?.image ??
+      agentStep.config?.image_resource?.source?.repository ??
       "busybox";
 
     // Collect input and output mounts from earlier get/put steps and volumes.

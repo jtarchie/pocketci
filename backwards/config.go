@@ -46,6 +46,7 @@ type TaskConfig struct {
 	Caches          Caches            `yaml:"caches,omitempty"`
 	ContainerLimits ContainerLimits   `yaml:"container_limits,omitempty"`
 	Env             map[string]string `yaml:"env,omitempty"`
+	Image           string            `yaml:"image,omitempty"`
 	ImageResource   ImageResource     `yaml:"image_resource,omitempty"`
 	Inputs          Inputs            `yaml:"inputs,omitempty"`
 	Outputs         Outputs           `yaml:"outputs,omitempty"`

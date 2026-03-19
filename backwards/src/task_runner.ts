@@ -47,9 +47,12 @@ export class TaskRunner {
         );
       }
       image = resource.source.repository;
+    } else if (step.config?.image) {
+      // TaskConfig shorthand: direct image string
+      image = step.config.image;
     } else {
       // Fall back to image_resource in config
-      image = step.config?.image_resource.source.repository!;
+      image = step.config?.image_resource?.source?.repository!;
     }
 
     const logs: Array<{ type: "stdout" | "stderr"; content: string }> = [];
