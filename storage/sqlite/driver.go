@@ -200,11 +200,7 @@ func (s *Sqlite) Set(ctx context.Context, prefix string, payload any) error {
 	}
 
 	// Keep the FTS index in sync: delete any stale entry then insert fresh.
-	_, err = s.writer.ExecContext(ctx, `
-		DELETE FROM data_fts WHERE rowid IN (
-			SELECT rowid FROM data_fts WHERE path = ?
-		)
-	`, path)
+	_, err = s.writer.ExecContext(ctx, `DELETE FROM data_fts WHERE path = ?`, path)
 	if err != nil {
 		return fmt.Errorf("failed to clear data_fts: %w", err)
 	}
@@ -892,9 +888,9 @@ func (s *Sqlite) Search(ctx context.Context, prefix, query string) (storage.Resu
 			f.path AS path,
 			COALESCE(
 				json_object(
-					'status',     json_extract(t.payload, '$.status'),
-					'elapsed',    json_extract(t.payload, '$.elapsed'),
-					'started_at', json_extract(t.payload, '$.started_at')
+					'status',     t.status,
+					'elapsed',    t.elapsed,
+					'started_at', t.started_at
 				),
 				'{}'
 			) AS payload
