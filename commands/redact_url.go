@@ -2,9 +2,9 @@ package commands
 
 import "net/url"
 
-// redactURL returns the URL string with any password replaced by "xxxxx",
+// RedactURL returns the URL string with any password replaced by "xxxxx",
 // so it is safe to include in log output.
-func redactURL(rawURL string) string {
+func RedactURL(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return rawURL

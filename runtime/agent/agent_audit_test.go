@@ -1,10 +1,12 @@
-package agent
+package agent_test
 
 import (
 	"encoding/json"
 	"testing"
 
 	. "github.com/onsi/gomega"
+
+	"github.com/jtarchie/pocketci/runtime/agent"
 )
 
 func TestAuditEventJSONTags(t *testing.T) {
@@ -15,7 +17,7 @@ func TestAuditEventJSONTags(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		ae := AuditEvent{
+		ae := agent.AuditEvent{
 			Timestamp:    "2026-03-07T12:00:00Z",
 			InvocationID: "inv-1",
 			Author:       "my-agent",
@@ -54,7 +56,7 @@ func TestAuditEventJSONTags(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		ae := AuditEvent{
+		ae := agent.AuditEvent{
 			Type:       "tool_response",
 			ToolName:   "run_script",
 			ToolCallID: "call-abc",
@@ -80,11 +82,11 @@ func TestAuditEventJSONTags(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		ae := AuditEvent{
+		ae := agent.AuditEvent{
 			Type:   "model_final",
 			Author: "my-agent",
 			Text:   "All done.",
-			Usage: &AuditUsage{
+			Usage: &agent.AuditUsage{
 				PromptTokens:     100,
 				CompletionTokens: 50,
 				TotalTokens:      150,
@@ -113,7 +115,7 @@ func TestAuditEventJSONTags(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		ae := AuditEvent{
+		ae := agent.AuditEvent{
 			Type: "model_text",
 			Text: "thinking...",
 		}
@@ -134,7 +136,7 @@ func TestAuditEventJSONTags(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		ae := AuditEvent{
+		ae := agent.AuditEvent{
 			Type:   "user_message",
 			Author: "user",
 			Text:   "Please run the tests.",
@@ -162,7 +164,7 @@ func TestAuditEventJSONTags(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		// list_tasks has no input args; the empty map is omitted by omitempty.
-		ae := AuditEvent{
+		ae := agent.AuditEvent{
 			Timestamp:  "2026-03-07T12:00:00Z",
 			Author:     "my-agent",
 			Type:       "pre_context",
@@ -196,7 +198,7 @@ func TestAuditEventJSONTags(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		ae := AuditEvent{
+		ae := agent.AuditEvent{
 			Timestamp:  "2026-03-07T12:00:00Z",
 			Author:     "my-agent",
 			Type:       "pre_context",
@@ -223,7 +225,7 @@ func TestAuditUsageJSONTags(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	au := AuditUsage{
+	au := agent.AuditUsage{
 		PromptTokens:     200,
 		CompletionTokens: 80,
 		TotalTokens:      280,
@@ -251,10 +253,10 @@ func TestAgentResultAuditLog(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		result := AgentResult{
+		result := agent.AgentResult{
 			Text:   "done",
 			Status: "success",
-			AuditLog: []AuditEvent{
+			AuditLog: []agent.AuditEvent{
 				{Type: "user_message", Author: "user", Text: "go"},
 				{Type: "model_final", Author: "agent", Text: "done"},
 			},
@@ -283,7 +285,7 @@ func TestAgentResultAuditLog(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		result := AgentResult{
+		result := agent.AgentResult{
 			Text:   "done",
 			Status: "success",
 		}
@@ -320,11 +322,11 @@ func TestAuditEventTypes(t *testing.T) {
 
 			assert := NewGomegaWithT(t)
 
-			ae := AuditEvent{Type: typ, Text: "x"}
+			ae := agent.AuditEvent{Type: typ, Text: "x"}
 			b, err := json.Marshal(ae)
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			var got AuditEvent
+			var got agent.AuditEvent
 			err = json.Unmarshal(b, &got)
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(got.Type).To(Equal(typ))

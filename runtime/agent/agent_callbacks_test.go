@@ -1,9 +1,11 @@
-package agent
+package agent_test
 
 import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
+	"github.com/jtarchie/pocketci/runtime/agent"
 )
 
 func TestProgressiveCallbackEmission(t *testing.T) {
@@ -14,16 +16,16 @@ func TestProgressiveCallbackEmission(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		var capturedEvents []AuditEvent
-		onAudit := func(event AuditEvent) {
+		var capturedEvents []agent.AuditEvent
+		onAudit := func(event agent.AuditEvent) {
 			capturedEvents = append(capturedEvents, event)
 		}
 
-		var events []AuditEvent
+		var events []agent.AuditEvent
 
-		appendAuditEvent(&events, AuditEvent{Type: "user_message", Text: "start"}, onAudit)
-		appendAuditEvent(&events, AuditEvent{Type: "tool_call", ToolName: "run_script"}, onAudit)
-		appendAuditEvent(&events, AuditEvent{Type: "model_final", Text: "done"}, onAudit)
+		agent.AppendAuditEvent(&events, agent.AuditEvent{Type: "user_message", Text: "start"}, onAudit)
+		agent.AppendAuditEvent(&events, agent.AuditEvent{Type: "tool_call", ToolName: "run_script"}, onAudit)
+		agent.AppendAuditEvent(&events, agent.AuditEvent{Type: "model_final", Text: "done"}, onAudit)
 
 		assert.Expect(capturedEvents).To(HaveLen(3))
 		assert.Expect(capturedEvents[0].Type).To(Equal("user_message"))
@@ -36,9 +38,9 @@ func TestProgressiveCallbackEmission(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		var events []AuditEvent
+		var events []agent.AuditEvent
 
-		appendAuditEvent(&events, AuditEvent{Type: "user_message"}, nil)
+		agent.AppendAuditEvent(&events, agent.AuditEvent{Type: "user_message"}, nil)
 
 		assert.Expect(events).To(HaveLen(1))
 	})
@@ -48,13 +50,13 @@ func TestProgressiveCallbackEmission(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		var capturedUsage []AgentUsage
-		onUsage := func(usage AgentUsage) {
+		var capturedUsage []agent.AgentUsage
+		onUsage := func(usage agent.AgentUsage) {
 			capturedUsage = append(capturedUsage, usage)
 		}
 
-		emitUsageSnapshot(onUsage, AgentUsage{TotalTokens: 100, LLMRequests: 1})
-		emitUsageSnapshot(onUsage, AgentUsage{TotalTokens: 250, LLMRequests: 2})
+		agent.EmitUsageSnapshot(onUsage, agent.AgentUsage{TotalTokens: 100, LLMRequests: 1})
+		agent.EmitUsageSnapshot(onUsage, agent.AgentUsage{TotalTokens: 250, LLMRequests: 2})
 
 		assert.Expect(capturedUsage).To(HaveLen(2))
 		assert.Expect(capturedUsage[1].TotalTokens).To(Equal(int32(250)))
@@ -67,7 +69,7 @@ func TestProgressiveCallbackEmission(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		assert.Expect(func() {
-			emitUsageSnapshot(nil, AgentUsage{TotalTokens: 50})
+			agent.EmitUsageSnapshot(nil, agent.AgentUsage{TotalTokens: 50})
 		}).NotTo(Panic())
 	})
 }

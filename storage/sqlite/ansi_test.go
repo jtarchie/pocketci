@@ -1,9 +1,11 @@
-package storage
+package storage_test
 
 import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
+	storage "github.com/jtarchie/pocketci/storage/sqlite"
 )
 
 func TestStripANSI(t *testing.T) {
@@ -75,7 +77,7 @@ func TestStripANSI(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			assert := NewGomegaWithT(t)
-			got := stripANSI(tc.input)
+			got := storage.StripANSI(tc.input)
 			assert.Expect(got).To(Equal(tc.want))
 		})
 	}

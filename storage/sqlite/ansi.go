@@ -31,9 +31,9 @@ var ansiEscape = regexp.MustCompile(
 		`|[\x80-\x9f]`,
 )
 
-// stripANSI removes all ANSI escape sequences from s, returning plain text
+// StripANSI removes all ANSI escape sequences from s, returning plain text
 // suitable for full-text indexing.
-func stripANSI(s string) string {
+func StripANSI(s string) string {
 	return ansiEscape.ReplaceAllString(s, "")
 }
 

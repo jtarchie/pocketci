@@ -14,8 +14,8 @@ import (
 	"github.com/jtarchie/pocketci/secrets"
 )
 
-// defaultBaseURLs maps providers (that use the OpenAI-compatible API) to their base URLs.
-var defaultBaseURLs = map[string]string{
+// DefaultBaseURLs maps providers (that use the OpenAI-compatible API) to their base URLs.
+var DefaultBaseURLs = map[string]string{
 	"openrouter": "https://openrouter.ai/api/v1",
 	"ollama":     "http://localhost:11434/v1",
 	"openai":     "https://api.openai.com/v1",
@@ -79,7 +79,7 @@ func resolveModel(provider, modelName, apiKey string, llmCfg *AgentLLMConfig, th
 		return genaianthropic.New(cfg), nil
 	default:
 		// openrouter, openai, ollama, etc. all speak OpenAI-compatible API.
-		baseURL := defaultBaseURLs[provider]
+		baseURL := DefaultBaseURLs[provider]
 		if baseURL == "" {
 			return nil, fmt.Errorf("unknown provider %q: set a base URL or use anthropic/openai/openrouter/ollama", provider)
 		}

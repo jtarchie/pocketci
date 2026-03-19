@@ -161,7 +161,7 @@ func RunAgent(
 	}
 
 	// Build the system instruction.
-	maxTurns, maxTotalTokens := effectiveLimits(config.Limits)
+	maxTurns, maxTotalTokens := EffectiveLimits(config.Limits)
 	instruction := buildSystemInstruction(config, maxTurns)
 
 	// Build storage-backed tools.
@@ -253,7 +253,7 @@ func RunAgent(
 
 	_ = sessionService.AppendEvent(ctx, sessResp.Session, userEvent)
 
-	appendAuditEvent(&auditEvents, AuditEvent{
+	AppendAuditEvent(&auditEvents, AuditEvent{
 		Timestamp: now.Format(time.RFC3339),
 		Author:    "user",
 		Type:      "user_message",
@@ -303,7 +303,7 @@ func RunAgent(
 
 			// Check hard token limit.
 			if maxTotalTokens > 0 && usage.TotalTokens >= maxTotalTokens {
-				appendAuditEvent(&auditEvents, AuditEvent{
+				AppendAuditEvent(&auditEvents, AuditEvent{
 					Timestamp: time.Now().UTC().Format(time.RFC3339),
 					Author:    "system",
 					Type:      "limit_warning",
@@ -324,7 +324,7 @@ func RunAgent(
 					turnCount, maxTurns, limitWarningTurnsBefore,
 				)
 
-				appendAuditEvent(&auditEvents, AuditEvent{
+				AppendAuditEvent(&auditEvents, AuditEvent{
 					Timestamp: time.Now().UTC().Format(time.RFC3339),
 					Author:    "system",
 					Type:      "limit_warning",
@@ -336,7 +336,7 @@ func RunAgent(
 
 			// Check hard turn limit.
 			if turnCount >= maxTurns {
-				appendAuditEvent(&auditEvents, AuditEvent{
+				AppendAuditEvent(&auditEvents, AuditEvent{
 					Timestamp: time.Now().UTC().Format(time.RFC3339),
 					Author:    "system",
 					Type:      "limit_warning",
@@ -369,7 +369,7 @@ func RunAgent(
 				fc := part.FunctionCall
 				usage.ToolCallCount++
 
-				appendAuditEvent(&auditEvents, AuditEvent{
+				AppendAuditEvent(&auditEvents, AuditEvent{
 					Timestamp:    ts,
 					InvocationID: event.InvocationID,
 					Author:       event.Author,
@@ -378,14 +378,14 @@ func RunAgent(
 					ToolCallID:   fc.ID,
 					ToolArgs:     fc.Args,
 				}, config.OnAuditEvent)
-				emitUsageSnapshot(config.OnUsage, usage)
+				EmitUsageSnapshot(config.OnUsage, usage)
 			}
 
 			// Track function responses (tool results).
 			if part.FunctionResponse != nil {
 				fr := part.FunctionResponse
 
-				appendAuditEvent(&auditEvents, AuditEvent{
+				AppendAuditEvent(&auditEvents, AuditEvent{
 					Timestamp:    ts,
 					InvocationID: event.InvocationID,
 					Author:       event.Author,
@@ -442,7 +442,7 @@ func RunAgent(
 
 			passed, evalErr := evalValidation(config.Validation.Expr, env)
 			if evalErr != nil {
-				appendAuditEvent(&auditEvents, AuditEvent{
+				AppendAuditEvent(&auditEvents, AuditEvent{
 					Timestamp: time.Now().UTC().Format(time.RFC3339),
 					Author:    "system",
 					Type:      "validation_error",
@@ -463,7 +463,7 @@ func RunAgent(
 		}
 
 		if needsFollowUp {
-			appendAuditEvent(&auditEvents, AuditEvent{
+			AppendAuditEvent(&auditEvents, AuditEvent{
 				Timestamp: time.Now().UTC().Format(time.RFC3339),
 				Author:    "system",
 				Type:      "validation_followup",
@@ -517,7 +517,7 @@ func RunAgent(
 	}
 
 	// Write result.json to the output path inside the sandbox if configured.
-	outputMountPath := resolveOutputMountPath(config)
+	outputMountPath := ResolveOutputMountPath(config)
 	if outputMountPath != "" {
 		resultData := map[string]string{"status": status, "text": finalText}
 		data, err := json.Marshal(resultData)
@@ -527,7 +527,7 @@ func RunAgent(
 
 		var execInput pipelinerunner.ExecInput
 		execInput.Command.Path = "sh"
-		execInput.Command.Args = []string{"-c", resultJsonWriteCmd(outputMountPath, data)}
+		execInput.Command.Args = []string{"-c", ResultJsonWriteCmd(outputMountPath, data)}
 
 		execResult, execErr := sandbox.Exec(execInput)
 		if execErr != nil {

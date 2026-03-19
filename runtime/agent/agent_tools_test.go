@@ -1,4 +1,4 @@
-package agent
+package agent_test
 
 import (
 	"encoding/json"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jtarchie/pocketci/runtime/agent"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
 
 	. "github.com/onsi/gomega"
@@ -33,7 +34,7 @@ func TestResultJsonWriteCmd_StdinDependency(t *testing.T) {
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	// This is the exact command from RunAgent — it depends on stdin.
-	writeCmd := resultJsonWriteCmd(mountName, data)
+	writeCmd := agent.ResultJsonWriteCmd(mountName, data)
 
 	cmd := exec.Command("sh", "-c", writeCmd) //nolint:gosec
 	cmd.Dir = tmpDir
@@ -72,7 +73,7 @@ func TestParseTaskStepID(t *testing.T) {
 		{"badid", -1, "badid"},
 		{"x-name", -1, "x-name"},
 	} {
-		idx, name := parseTaskStepID(tc.input)
+		idx, name := agent.ParseTaskStepID(tc.input)
 		assert.Expect(idx).To(Equal(tc.wantIdx), "idx for %q", tc.input)
 		assert.Expect(name).To(Equal(tc.wantName), "name for %q", tc.input)
 	}
@@ -122,14 +123,14 @@ func TestLevenshtein(t *testing.T) {
 		{"abc", "abc", 0},
 		{"BUILD", "build", 0}, // case-insensitive
 	} {
-		assert.Expect(levenshtein(tc.a, tc.b)).To(Equal(tc.want), "%q vs %q", tc.a, tc.b)
+		assert.Expect(agent.Levenshtein(tc.a, tc.b)).To(Equal(tc.want), "%q vs %q", tc.a, tc.b)
 	}
 }
 
 func TestFuzzyFindTask(t *testing.T) {
 	t.Parallel()
 
-	tasks := []taskSummary{
+	tasks := []agent.TaskSummary{
 		{Name: "git-clone", Index: 0, Status: "success"},
 		{Name: "run-tests", Index: 1, Status: "failure"},
 		{Name: "build", Index: 2, Status: "success"},
@@ -140,7 +141,7 @@ func TestFuzzyFindTask(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		got, ok := fuzzyFindTask(tasks, "build")
+		got, ok := agent.FuzzyFindTask(tasks, "build")
 		assert.Expect(ok).To(BeTrue())
 		assert.Expect(got.Name).To(Equal("build"))
 		assert.Expect(got.Index).To(Equal(2))
@@ -150,7 +151,7 @@ func TestFuzzyFindTask(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		got, ok := fuzzyFindTask(tasks, "test")
+		got, ok := agent.FuzzyFindTask(tasks, "test")
 		assert.Expect(ok).To(BeTrue())
 		assert.Expect(got.Name).To(Equal("run-tests"))
 	})
@@ -159,7 +160,7 @@ func TestFuzzyFindTask(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		got, ok := fuzzyFindTask(tasks, "GIT")
+		got, ok := agent.FuzzyFindTask(tasks, "GIT")
 		assert.Expect(ok).To(BeTrue())
 		assert.Expect(got.Name).To(Equal("git-clone"))
 	})
@@ -169,7 +170,7 @@ func TestFuzzyFindTask(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 		// "deploi" is closest in edit distance to "deploy".
-		got, ok := fuzzyFindTask(tasks, "deploi")
+		got, ok := agent.FuzzyFindTask(tasks, "deploi")
 		assert.Expect(ok).To(BeTrue())
 		assert.Expect(got.Name).To(Equal("deploy"))
 	})
@@ -178,7 +179,7 @@ func TestFuzzyFindTask(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		_, ok := fuzzyFindTask(nil, "build")
+		_, ok := agent.FuzzyFindTask(nil, "build")
 		assert.Expect(ok).To(BeFalse())
 	})
 }
@@ -190,7 +191,7 @@ func TestTruncateStr(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		s, truncated := truncateStr("hello", 10)
+		s, truncated := agent.TruncateStr("hello", 10)
 		assert.Expect(s).To(Equal("hello"))
 		assert.Expect(truncated).To(BeFalse())
 	})
@@ -199,7 +200,7 @@ func TestTruncateStr(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		s, truncated := truncateStr("hello world", 5)
+		s, truncated := agent.TruncateStr("hello world", 5)
 		assert.Expect(s).To(Equal("hello"))
 		assert.Expect(truncated).To(BeTrue())
 	})
@@ -208,7 +209,7 @@ func TestTruncateStr(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		s, truncated := truncateStr("hello", 0)
+		s, truncated := agent.TruncateStr("hello", 0)
 		assert.Expect(s).To(Equal("hello"))
 		assert.Expect(truncated).To(BeFalse())
 	})
@@ -219,7 +220,7 @@ func TestLoadTaskSummaries_Sorting(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	tasks := []taskSummary{
+	tasks := []agent.TaskSummary{
 		{Name: "build", Index: 2},
 		{Name: "clone", Index: 0},
 		{Name: "test", Index: 1},
@@ -241,14 +242,14 @@ func TestTaskSummaryToMap(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		ts := taskSummary{
+		ts := agent.TaskSummary{
 			Name:      "build",
 			Index:     3,
 			Status:    "success",
 			StartedAt: "2026-01-01T00:00:00Z",
 			Elapsed:   "5s",
 		}
-		m := taskSummaryToMap(ts)
+		m := agent.TaskSummaryToMap(ts)
 		assert.Expect(m["name"]).To(Equal("build"))
 		assert.Expect(m["index"]).To(Equal(3))
 		assert.Expect(m["status"]).To(Equal("success"))
@@ -260,8 +261,8 @@ func TestTaskSummaryToMap(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		ts := taskSummary{Name: "build", Index: 0}
-		m := taskSummaryToMap(ts)
+		ts := agent.TaskSummary{Name: "build", Index: 0}
+		m := agent.TaskSummaryToMap(ts)
 		_, hasStartedAt := m["started_at"]
 		_, hasElapsed := m["elapsed"]
 		assert.Expect(hasStartedAt).To(BeFalse())
@@ -276,7 +277,7 @@ func TestParseTaskSummaryPath(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		idx, name, ok := parseTaskSummaryPath("/pipeline/run-1/tasks/2-build")
+		idx, name, ok := agent.ParseTaskSummaryPath("/pipeline/run-1/tasks/2-build")
 		assert.Expect(ok).To(BeTrue())
 		assert.Expect(idx).To(Equal(2))
 		assert.Expect(name).To(Equal("build"))
@@ -286,7 +287,7 @@ func TestParseTaskSummaryPath(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		idx, name, ok := parseTaskSummaryPath("/pipeline/run-1/jobs/review-pr/4/agent/final-reviewer")
+		idx, name, ok := agent.ParseTaskSummaryPath("/pipeline/run-1/jobs/review-pr/4/agent/final-reviewer")
 		assert.Expect(ok).To(BeTrue())
 		assert.Expect(idx).To(Equal(4))
 		assert.Expect(name).To(Equal("final-reviewer"))
@@ -296,7 +297,7 @@ func TestParseTaskSummaryPath(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		idx, name, ok := parseTaskSummaryPath("/pipeline/run-1/jobs/review-pr/0/tasks/clone-pr")
+		idx, name, ok := agent.ParseTaskSummaryPath("/pipeline/run-1/jobs/review-pr/0/tasks/clone-pr")
 		assert.Expect(ok).To(BeTrue())
 		assert.Expect(idx).To(Equal(0))
 		assert.Expect(name).To(Equal("clone-pr"))
@@ -306,7 +307,7 @@ func TestParseTaskSummaryPath(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		idx, name, ok := parseTaskSummaryPath("/pipeline/run-1/jobs/review-pr/5/tasks/post-comment/attempt/2")
+		idx, name, ok := agent.ParseTaskSummaryPath("/pipeline/run-1/jobs/review-pr/5/tasks/post-comment/attempt/2")
 		assert.Expect(ok).To(BeTrue())
 		assert.Expect(idx).To(Equal(5))
 		assert.Expect(name).To(Equal("post-comment"))
@@ -316,7 +317,7 @@ func TestParseTaskSummaryPath(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		_, _, ok := parseTaskSummaryPath("/pipeline/run-1/jobs/review-pr")
+		_, _, ok := agent.ParseTaskSummaryPath("/pipeline/run-1/jobs/review-pr")
 		assert.Expect(ok).To(BeFalse())
 	})
 }
@@ -324,7 +325,7 @@ func TestParseTaskSummaryPath(t *testing.T) {
 func TestResolveOutputMountPath(t *testing.T) {
 	t.Parallel()
 
-	config := AgentConfig{
+	config := agent.AgentConfig{
 		OutputVolumePath: "/workspace/volumes/out",
 		Mounts: map[string]pipelinerunner.VolumeResult{
 			"final-review": {
@@ -338,7 +339,7 @@ func TestResolveOutputMountPath(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		resolved := resolveOutputMountPath(config)
+		resolved := agent.ResolveOutputMountPath(config)
 		assert.Expect(resolved).To(Equal("final-review"))
 	})
 
@@ -348,7 +349,7 @@ func TestResolveOutputMountPath(t *testing.T) {
 		assert := NewGomegaWithT(t)
 		cfg := config
 		cfg.OutputVolumePath = "final-review"
-		resolved := resolveOutputMountPath(cfg)
+		resolved := agent.ResolveOutputMountPath(cfg)
 		assert.Expect(resolved).To(Equal("final-review"))
 	})
 }
@@ -360,7 +361,7 @@ func TestNormalizeContextGuardConfig(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		strategy, value, err := normalizeContextGuardConfig(nil)
+		strategy, value, err := agent.NormalizeContextGuardConfig(nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(strategy).To(Equal(""))
 		assert.Expect(value).To(Equal(0))
@@ -370,7 +371,7 @@ func TestNormalizeContextGuardConfig(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		strategy, value, err := normalizeContextGuardConfig(&AgentContextGuardConfig{
+		strategy, value, err := agent.NormalizeContextGuardConfig(&agent.AgentContextGuardConfig{
 			Strategy: "sliding_window",
 			MaxTurns: 12,
 		})
@@ -383,17 +384,17 @@ func TestNormalizeContextGuardConfig(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		strategy, value, err := normalizeContextGuardConfig(&AgentContextGuardConfig{Strategy: "sliding_window"})
+		strategy, value, err := agent.NormalizeContextGuardConfig(&agent.AgentContextGuardConfig{Strategy: "sliding_window"})
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(strategy).To(Equal("sliding_window"))
-		assert.Expect(value).To(Equal(defaultContextGuardMaxTurns))
+		assert.Expect(value).To(Equal(agent.DefaultContextGuardMaxTurns))
 	})
 
 	t.Run("threshold uses explicit max tokens", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		strategy, value, err := normalizeContextGuardConfig(&AgentContextGuardConfig{
+		strategy, value, err := agent.NormalizeContextGuardConfig(&agent.AgentContextGuardConfig{
 			Strategy:  "threshold",
 			MaxTokens: 64000,
 		})
@@ -406,17 +407,17 @@ func TestNormalizeContextGuardConfig(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		strategy, value, err := normalizeContextGuardConfig(&AgentContextGuardConfig{Strategy: "threshold"})
+		strategy, value, err := agent.NormalizeContextGuardConfig(&agent.AgentContextGuardConfig{Strategy: "threshold"})
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(strategy).To(Equal("threshold"))
-		assert.Expect(value).To(Equal(defaultContextGuardMaxTokens))
+		assert.Expect(value).To(Equal(agent.DefaultContextGuardMaxTokens))
 	})
 
 	t.Run("missing strategy infers sliding window from max turns", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		strategy, value, err := normalizeContextGuardConfig(&AgentContextGuardConfig{MaxTurns: 7})
+		strategy, value, err := agent.NormalizeContextGuardConfig(&agent.AgentContextGuardConfig{MaxTurns: 7})
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(strategy).To(Equal("sliding_window"))
 		assert.Expect(value).To(Equal(7))
@@ -426,17 +427,17 @@ func TestNormalizeContextGuardConfig(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		strategy, value, err := normalizeContextGuardConfig(&AgentContextGuardConfig{})
+		strategy, value, err := agent.NormalizeContextGuardConfig(&agent.AgentContextGuardConfig{})
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(strategy).To(Equal("threshold"))
-		assert.Expect(value).To(Equal(defaultContextGuardMaxTokens))
+		assert.Expect(value).To(Equal(agent.DefaultContextGuardMaxTokens))
 	})
 
 	t.Run("invalid strategy returns an error", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		_, _, err := normalizeContextGuardConfig(&AgentContextGuardConfig{Strategy: "weird"})
+		_, _, err := agent.NormalizeContextGuardConfig(&agent.AgentContextGuardConfig{Strategy: "weird"})
 		assert.Expect(err).To(HaveOccurred())
 		assert.Expect(err.Error()).To(ContainSubstring("invalid context_guard strategy"))
 	})
@@ -449,8 +450,8 @@ func TestEffectiveLimits(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		turns, tokens := effectiveLimits(nil)
-		assert.Expect(turns).To(Equal(defaultLimitsMaxTurns))
+		turns, tokens := agent.EffectiveLimits(nil)
+		assert.Expect(turns).To(Equal(agent.DefaultLimitsMaxTurns))
 		assert.Expect(tokens).To(Equal(int32(0)))
 	})
 
@@ -458,7 +459,7 @@ func TestEffectiveLimits(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		turns, tokens := effectiveLimits(&AgentLimitsConfig{MaxTurns: 10})
+		turns, tokens := agent.EffectiveLimits(&agent.AgentLimitsConfig{MaxTurns: 10})
 		assert.Expect(turns).To(Equal(10))
 		assert.Expect(tokens).To(Equal(int32(0)))
 	})
@@ -467,15 +468,15 @@ func TestEffectiveLimits(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		turns, _ := effectiveLimits(&AgentLimitsConfig{MaxTurns: 0})
-		assert.Expect(turns).To(Equal(defaultLimitsMaxTurns))
+		turns, _ := agent.EffectiveLimits(&agent.AgentLimitsConfig{MaxTurns: 0})
+		assert.Expect(turns).To(Equal(agent.DefaultLimitsMaxTurns))
 	})
 
 	t.Run("explicit max total tokens is used", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		turns, tokens := effectiveLimits(&AgentLimitsConfig{MaxTurns: 5, MaxTotalTokens: 100000})
+		turns, tokens := agent.EffectiveLimits(&agent.AgentLimitsConfig{MaxTurns: 5, MaxTotalTokens: 100000})
 		assert.Expect(turns).To(Equal(5))
 		assert.Expect(tokens).To(Equal(int32(100000)))
 	})
@@ -484,8 +485,8 @@ func TestEffectiveLimits(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		turns, tokens := effectiveLimits(&AgentLimitsConfig{})
-		assert.Expect(turns).To(Equal(defaultLimitsMaxTurns))
+		turns, tokens := agent.EffectiveLimits(&agent.AgentLimitsConfig{})
+		assert.Expect(turns).To(Equal(agent.DefaultLimitsMaxTurns))
 		assert.Expect(tokens).To(Equal(int32(0)))
 	})
 }

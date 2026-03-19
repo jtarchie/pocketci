@@ -199,7 +199,7 @@ func (s *Sqlite) Set(ctx context.Context, prefix string, payload any) error {
 		return fmt.Errorf("failed to clear data_fts: %w", err)
 	}
 
-	text := stripANSI(extractTextFromJSON(contents))
+	text := StripANSI(extractTextFromJSON(contents))
 	_, err = s.writer.ExecContext(ctx, `INSERT INTO data_fts(path, content) VALUES (?, ?)`, path, path+" "+text)
 	if err != nil {
 		return fmt.Errorf("failed to index data_fts: %w", err)

@@ -1,4 +1,4 @@
-package agent
+package agent_test
 
 import (
 	"encoding/json"
@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	"github.com/jtarchie/pocketci/runtime/agent"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
 )
 
@@ -17,7 +18,7 @@ func TestAgentConfigJSONRoundTrip(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		config := AgentConfig{
+		config := agent.AgentConfig{
 			Name:   "test-agent",
 			Prompt: "do something",
 			Model:  "anthropic/claude-sonnet-4-20250514",
@@ -70,7 +71,7 @@ func TestAgentConfigJSONRoundTrip(t *testing.T) {
 			"TriggeredBy": "manual"
 		}`
 
-		var config AgentConfig
+		var config agent.AgentConfig
 		err := json.Unmarshal([]byte(input), &config)
 		assert.Expect(err).NotTo(HaveOccurred())
 

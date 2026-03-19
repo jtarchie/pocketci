@@ -1,4 +1,4 @@
-package agent
+package agent_test
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jtarchie/pocketci/orchestra/docker"
+	"github.com/jtarchie/pocketci/runtime/agent"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
 	"github.com/jtarchie/pocketci/storage"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
@@ -58,9 +59,9 @@ func newSequencedLLMServer(t *testing.T, responses []string) (*httptest.Server, 
 func configureFakeOpenAI(t *testing.T, baseURL string) {
 	t.Helper()
 
-	origBaseURL := defaultBaseURLs["openai"]
-	defaultBaseURLs["openai"] = baseURL + "/v1"
-	t.Cleanup(func() { defaultBaseURLs["openai"] = origBaseURL })
+	origBaseURL := agent.DefaultBaseURLs["openai"]
+	agent.DefaultBaseURLs["openai"] = baseURL + "/v1"
+	t.Cleanup(func() { agent.DefaultBaseURLs["openai"] = origBaseURL })
 	t.Setenv("OPENAI_API_KEY", "test-key")
 }
 
@@ -236,7 +237,7 @@ func TestRunAgent_FakeLLM_RealDocker(t *testing.T) {
 	outVol := mustCreateVolume(t, runner, "final-review")
 	seedDiffVolume(t, runner, diffVol)
 
-	result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+	result, err := agent.RunAgent(context.Background(), runner, nil, "", agent.AgentConfig{
 		Name:   "final-reviewer",
 		Prompt: "Use run_script to verify diff file via ls and cat, then summarize.",
 		Model:  "openai/fake-model",
@@ -339,7 +340,7 @@ func TestRunAgent_FakeLLM_RunScript_RealDocker(t *testing.T) {
 	outVol := mustCreateVolume(t, runner, "final-review")
 	seedDiffVolume(t, runner, diffVol)
 
-	result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+	result, err := agent.RunAgent(context.Background(), runner, nil, "", agent.AgentConfig{
 		Name:   "script-agent",
 		Prompt: "Use run_script to list and read diff/pr.diff in one call, then summarize.",
 		Model:  "openai/fake-model",
@@ -428,7 +429,7 @@ func TestRunAgent_FakeLLM_InvalidToolArgs_RealDocker(t *testing.T) {
 	runner := newDockerRunner(t, "agent-int-invalid")
 	outVol := mustCreateVolume(t, runner, "final-review")
 
-	result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+	result, err := agent.RunAgent(context.Background(), runner, nil, "", agent.AgentConfig{
 		Name:   "final-reviewer",
 		Prompt: "Try to run ls and summarize the result.",
 		Model:  "openai/fake-model",
@@ -484,7 +485,7 @@ func TestRunAgent_ContextFiles_RealDocker(t *testing.T) {
 		outVol := mustCreateVolume(t, runner, "out-pre")
 		seedDiffVolume(t, runner, diffVol)
 
-		result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+		result, err := agent.RunAgent(context.Background(), runner, nil, "", agent.AgentConfig{
 			Name:   "file-context-agent",
 			Prompt: "Summarize the diff content already injected in your context.",
 			Model:  "openai/fake-model",
@@ -494,8 +495,8 @@ func TestRunAgent_ContextFiles_RealDocker(t *testing.T) {
 				"out-pre":  outVol,
 			},
 			OutputVolumePath: outVol.Path,
-			Context: &AgentContext{
-				Files: []AgentContextFile{
+			Context: &agent.AgentContext{
+				Files: []agent.AgentContextFile{
 					{Path: "diff-pre/pr.diff"},
 				},
 			},
@@ -505,7 +506,7 @@ func TestRunAgent_ContextFiles_RealDocker(t *testing.T) {
 		assert.Expect(result.Text).To(ContainSubstring("added line"))
 		assert.Expect(atomic.LoadInt32(reqCount)).To(BeNumerically("==", 1))
 
-		var preContextEvent *AuditEvent
+		var preContextEvent *agent.AuditEvent
 		for i := range result.AuditLog {
 			if result.AuditLog[i].Type == "pre_context" && result.AuditLog[i].ToolName == "read_file" {
 				preContextEvent = &result.AuditLog[i]
@@ -550,7 +551,7 @@ func TestRunAgent_ContextFiles_RealDocker(t *testing.T) {
 		outVol := mustCreateVolume(t, runner, "out-llm")
 		seedDiffVolume(t, runner, diffVol)
 
-		_, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+		_, err := agent.RunAgent(context.Background(), runner, nil, "", agent.AgentConfig{
 			Name:   "cf-llm-agent",
 			Prompt: "Summarize the diff.",
 			Model:  "openai/fake-model",
@@ -560,8 +561,8 @@ func TestRunAgent_ContextFiles_RealDocker(t *testing.T) {
 				"out-llm":  outVol,
 			},
 			OutputVolumePath: outVol.Path,
-			Context: &AgentContext{
-				Files: []AgentContextFile{
+			Context: &agent.AgentContext{
+				Files: []agent.AgentContextFile{
 					{Path: "diff-llm/pr.diff"},
 				},
 			},
@@ -627,7 +628,7 @@ func TestRunAgent_ContextTasksPreInjection_RealDocker(t *testing.T) {
 		"stdout": "- maint issue",
 	})
 
-	result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+	result, err := agent.RunAgent(context.Background(), runner, nil, "", agent.AgentConfig{
 		Name:   "final-reviewer",
 		Prompt: "Summarize prior reviews.",
 		Model:  "openai/fake-model",
@@ -638,8 +639,8 @@ func TestRunAgent_ContextTasksPreInjection_RealDocker(t *testing.T) {
 		OutputVolumePath: outVol.Path,
 		Storage:          st,
 		RunID:            runID,
-		Context: &AgentContext{
-			Tasks: []AgentContextTask{
+		Context: &agent.AgentContext{
+			Tasks: []agent.AgentContextTask{
 				{Name: "code-quality-reviewer", Field: "stdout"},
 				{Name: "security-reviewer", Field: "stdout"},
 				{Name: "maintainability-reviewer", Field: "stdout"},
@@ -694,14 +695,14 @@ func TestRunAgent_Validation_RealDocker(t *testing.T) {
 
 		outVol := mustCreateVolume(t, runner, "val-pass")
 
-		result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+		result, err := agent.RunAgent(context.Background(), runner, nil, "", agent.AgentConfig{
 			Name:             "val-pass-agent",
 			Prompt:           "Output JSON.",
 			Model:            "openai/fake-model",
 			Image:            "busybox",
 			Mounts:           map[string]pipelinerunner.VolumeResult{"val-pass": outVol},
 			OutputVolumePath: outVol.Path,
-			Validation: &AgentValidationConfig{
+			Validation: &agent.AgentValidationConfig{
 				Expr: `text != "" && text contains "{"`,
 			},
 		})
@@ -738,14 +739,14 @@ func TestRunAgent_Validation_RealDocker(t *testing.T) {
 
 		outVol := mustCreateVolume(t, runner, "val-fail")
 
-		result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+		result, err := agent.RunAgent(context.Background(), runner, nil, "", agent.AgentConfig{
 			Name:             "val-fail-agent",
 			Prompt:           "Output JSON review.",
 			Model:            "openai/fake-model",
 			Image:            "busybox",
 			Mounts:           map[string]pipelinerunner.VolumeResult{"val-fail": outVol},
 			OutputVolumePath: outVol.Path,
-			Validation: &AgentValidationConfig{
+			Validation: &agent.AgentValidationConfig{
 				Expr: `text contains "{"`,
 			},
 		})
@@ -754,7 +755,7 @@ func TestRunAgent_Validation_RealDocker(t *testing.T) {
 		assert.Expect(result.Text).To(ContainSubstring(`"summary"`))
 		assert.Expect(atomic.LoadInt32(reqCount)).To(BeNumerically("==", 2))
 
-		var followUpEvent *AuditEvent
+		var followUpEvent *agent.AuditEvent
 		for i := range result.AuditLog {
 			if result.AuditLog[i].Type == "validation_followup" {
 				followUpEvent = &result.AuditLog[i]
@@ -792,14 +793,14 @@ func TestRunAgent_Validation_RealDocker(t *testing.T) {
 
 		outVol := mustCreateVolume(t, runner, "val-custom")
 
-		result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+		result, err := agent.RunAgent(context.Background(), runner, nil, "", agent.AgentConfig{
 			Name:             "val-custom-agent",
 			Prompt:           "Output JSON review.",
 			Model:            "openai/fake-model",
 			Image:            "busybox",
 			Mounts:           map[string]pipelinerunner.VolumeResult{"val-custom": outVol},
 			OutputVolumePath: outVol.Path,
-			Validation: &AgentValidationConfig{
+			Validation: &agent.AgentValidationConfig{
 				Expr:   `text contains "{"`,
 				Prompt: customPrompt,
 			},
@@ -807,7 +808,7 @@ func TestRunAgent_Validation_RealDocker(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(result).NotTo(BeNil())
 
-		var followUpEvent *AuditEvent
+		var followUpEvent *agent.AuditEvent
 		for i := range result.AuditLog {
 			if result.AuditLog[i].Type == "validation_followup" {
 				followUpEvent = &result.AuditLog[i]
@@ -840,14 +841,14 @@ func TestRunAgent_Validation_RealDocker(t *testing.T) {
 
 		outVol := mustCreateVolume(t, runner, "val-err")
 
-		result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+		result, err := agent.RunAgent(context.Background(), runner, nil, "", agent.AgentConfig{
 			Name:             "val-err-agent",
 			Prompt:           "Output something.",
 			Model:            "openai/fake-model",
 			Image:            "busybox",
 			Mounts:           map[string]pipelinerunner.VolumeResult{"val-err": outVol},
 			OutputVolumePath: outVol.Path,
-			Validation: &AgentValidationConfig{
+			Validation: &agent.AgentValidationConfig{
 				Expr: `undefinedFunction(text)`,
 			},
 		})
@@ -891,7 +892,7 @@ func TestRunAgent_Validation_RealDocker(t *testing.T) {
 
 		outVol := mustCreateVolume(t, runner, "def-followup")
 
-		result, err := RunAgent(context.Background(), runner, nil, "", AgentConfig{
+		result, err := agent.RunAgent(context.Background(), runner, nil, "", agent.AgentConfig{
 			Name:             "def-followup-agent",
 			Prompt:           "Produce a review.",
 			Model:            "openai/fake-model",

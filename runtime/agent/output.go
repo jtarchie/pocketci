@@ -10,19 +10,19 @@ import (
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
 )
 
-// resultJsonWriteCmd builds a shell command that creates mountName/ and writes
+// ResultJsonWriteCmd builds a shell command that creates mountName/ and writes
 // data to mountName/result.json without relying on stdin.
 // The data bytes are embedded directly in the command using POSIX single-quote
 // escaping so the command is safe at any shell-nesting depth (e.g. Fly's
 // nested sh -c chain where stdin is not piped through to the inner process).
-func resultJsonWriteCmd(mountName string, data []byte) string {
+func ResultJsonWriteCmd(mountName string, data []byte) string {
 	escaped := "'" + strings.ReplaceAll(string(data), "'", `'\''`) + "'"
 	return fmt.Sprintf("mkdir -p %s && printf '%%s' %s > %s/result.json",
 		strconv.Quote(mountName), escaped, strconv.Quote(mountName))
 }
 
-// resolveOutputMountPath maps host-path-like values back to mount names used in sandbox.
-func resolveOutputMountPath(config AgentConfig) string {
+// ResolveOutputMountPath maps host-path-like values back to mount names used in sandbox.
+func ResolveOutputMountPath(config AgentConfig) string {
 	value := strings.TrimSpace(config.OutputVolumePath)
 	if value == "" {
 		return ""
@@ -91,13 +91,15 @@ func buildSystemInstruction(config AgentConfig, maxTurns int) string {
 	return b.String()
 }
 
-func emitUsageSnapshot(onUsage func(AgentUsage), usage AgentUsage) {
+// EmitUsageSnapshot calls the usage callback if non-nil.
+func EmitUsageSnapshot(onUsage func(AgentUsage), usage AgentUsage) {
 	if onUsage != nil {
 		onUsage(usage)
 	}
 }
 
-func appendAuditEvent(auditEvents *[]AuditEvent, event AuditEvent, onAuditEvent func(AuditEvent)) {
+// AppendAuditEvent appends an event and calls the callback if non-nil.
+func AppendAuditEvent(auditEvents *[]AuditEvent, event AuditEvent, onAuditEvent func(AuditEvent)) {
 	*auditEvents = append(*auditEvents, event)
 	if onAuditEvent != nil {
 		onAuditEvent(event)
@@ -110,7 +112,7 @@ func accumulateUsage(usage *AgentUsage, meta *genai.GenerateContentResponseUsage
 	usage.CompletionTokens += meta.CandidatesTokenCount
 	usage.TotalTokens += meta.TotalTokenCount
 	usage.LLMRequests++
-	emitUsageSnapshot(onUsage, *usage)
+	EmitUsageSnapshot(onUsage, *usage)
 }
 
 // processTextOutput writes text to the builder, calls the output callback, and appends an audit event.
@@ -126,5 +128,5 @@ func processTextOutput(
 	if onOutput != nil {
 		onOutput("stdout", text)
 	}
-	appendAuditEvent(auditEvents, event, onAuditEvent)
+	AppendAuditEvent(auditEvents, event, onAuditEvent)
 }

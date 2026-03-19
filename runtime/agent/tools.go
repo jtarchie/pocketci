@@ -39,8 +39,8 @@ type readFileOutput struct {
 	Truncated bool   `json:"truncated,omitempty"`
 }
 
-// taskSummary is the list_tasks tool output element.
-type taskSummary struct {
+// TaskSummary is the list_tasks tool output element.
+type TaskSummary struct {
 	Name      string `json:"name"`
 	Index     int    `json:"index"`
 	Status    string `json:"status"`
@@ -51,7 +51,7 @@ type taskSummary struct {
 
 // listTasksOutput is the list_tasks tool result.
 type listTasksOutput struct {
-	Tasks []taskSummary `json:"tasks"`
+	Tasks []TaskSummary `json:"tasks"`
 }
 
 // getTaskResultInput is the get_task_result tool input schema.
@@ -73,8 +73,8 @@ type getTaskResultOutput struct {
 	Truncated bool   `json:"truncated"`
 }
 
-// parseTaskStepID splits a stepID of the form "{index}-{name}" into its parts.
-func parseTaskStepID(stepID string) (int, string) {
+// ParseTaskStepID splits a stepID of the form "{index}-{name}" into its parts.
+func ParseTaskStepID(stepID string) (int, string) {
 	idx := strings.IndexByte(stepID, '-')
 	if idx < 0 {
 		return -1, stepID
@@ -89,7 +89,7 @@ func parseTaskStepID(stepID string) (int, string) {
 }
 
 // loadTaskSummaries fetches all task summaries for the given run from storage.
-func loadTaskSummaries(ctx context.Context, st storage.Driver, runID string) ([]taskSummary, error) {
+func loadTaskSummaries(ctx context.Context, st storage.Driver, runID string) ([]TaskSummary, error) {
 	fields := []string{"status", "started_at", "elapsed"}
 
 	legacyResults, err := st.GetAll(ctx, "/pipeline/"+runID+"/tasks/", fields)
@@ -111,15 +111,15 @@ func loadTaskSummaries(ctx context.Context, st storage.Driver, runID string) ([]
 		Name  string
 	}
 
-	bestByKey := map[taskKey]taskSummary{}
+	bestByKey := map[taskKey]TaskSummary{}
 
 	for _, r := range results {
-		idx, name, ok := parseTaskSummaryPath(r.Path)
+		idx, name, ok := ParseTaskSummaryPath(r.Path)
 		if !ok {
 			continue
 		}
 
-		t := taskSummary{Name: name, Index: idx, Key: r.Path}
+		t := TaskSummary{Name: name, Index: idx, Key: r.Path}
 
 		if s, ok := r.Payload["status"].(string); ok {
 			t.Status = s
@@ -140,7 +140,7 @@ func loadTaskSummaries(ctx context.Context, st storage.Driver, runID string) ([]
 		}
 	}
 
-	tasks := make([]taskSummary, 0, len(bestByKey))
+	tasks := make([]TaskSummary, 0, len(bestByKey))
 	for _, t := range bestByKey {
 		tasks = append(tasks, t)
 	}
@@ -156,8 +156,8 @@ func loadTaskSummaries(ctx context.Context, st storage.Driver, runID string) ([]
 	return tasks, nil
 }
 
-// parseTaskSummaryPath supports both legacy task paths and backwards job paths.
-func parseTaskSummaryPath(p string) (int, string, bool) {
+// ParseTaskSummaryPath supports both legacy task paths and backwards job paths.
+func ParseTaskSummaryPath(p string) (int, string, bool) {
 	trimmed := strings.TrimSpace(strings.Trim(p, "/"))
 	if trimmed == "" {
 		return 0, "", false
@@ -169,7 +169,7 @@ func parseTaskSummaryPath(p string) (int, string, bool) {
 	}
 
 	if parts[2] == "tasks" {
-		idx, name := parseTaskStepID(parts[3])
+		idx, name := ParseTaskStepID(parts[3])
 
 		return idx, name, true
 	}
@@ -206,8 +206,8 @@ func parseTaskSummaryPath(p string) (int, string, bool) {
 	return 0, "", false
 }
 
-// levenshtein computes the edit distance between two strings (case-insensitive).
-func levenshtein(a, b string) int {
+// Levenshtein computes the edit distance between two strings (case-insensitive).
+func Levenshtein(a, b string) int {
 	a, b = strings.ToLower(a), strings.ToLower(b)
 
 	if len(a) == 0 {
@@ -243,11 +243,11 @@ func levenshtein(a, b string) int {
 	return prev[len(b)]
 }
 
-// fuzzyFindTask returns the task whose name best matches the given query.
+// FuzzyFindTask returns the task whose name best matches the given query.
 // Substring match is tried first; Levenshtein distance is used as a fallback.
-func fuzzyFindTask(tasks []taskSummary, name string) (taskSummary, bool) {
+func FuzzyFindTask(tasks []TaskSummary, name string) (TaskSummary, bool) {
 	if len(tasks) == 0 {
-		return taskSummary{}, false
+		return TaskSummary{}, false
 	}
 
 	lower := strings.ToLower(name)
@@ -260,10 +260,10 @@ func fuzzyFindTask(tasks []taskSummary, name string) (taskSummary, bool) {
 
 	// Levenshtein fallback.
 	best := tasks[0]
-	bestDist := levenshtein(tasks[0].Name, name)
+	bestDist := Levenshtein(tasks[0].Name, name)
 
 	for _, t := range tasks[1:] {
-		if d := levenshtein(t.Name, name); d < bestDist {
+		if d := Levenshtein(t.Name, name); d < bestDist {
 			bestDist = d
 			best = t
 		}
@@ -272,9 +272,9 @@ func fuzzyFindTask(tasks []taskSummary, name string) (taskSummary, bool) {
 	return best, true
 }
 
-// truncateStr shortens s to at most maxBytes bytes. Returns the (possibly
+// TruncateStr shortens s to at most maxBytes bytes. Returns the (possibly
 // truncated) string and a flag indicating whether truncation occurred.
-func truncateStr(s string, maxBytes int) (string, bool) {
+func TruncateStr(s string, maxBytes int) (string, bool) {
 	if maxBytes <= 0 || len(s) <= maxBytes {
 		return s, false
 	}
@@ -282,8 +282,8 @@ func truncateStr(s string, maxBytes int) (string, bool) {
 	return s[:maxBytes], true
 }
 
-// taskSummaryToMap converts a taskSummary to a map for use as a tool result.
-func taskSummaryToMap(t taskSummary) map[string]any {
+// TaskSummaryToMap converts a TaskSummary to a map for use as a tool result.
+func TaskSummaryToMap(t TaskSummary) map[string]any {
 	m := map[string]any{
 		"name":   t.Name,
 		"index":  t.Index,
@@ -355,7 +355,7 @@ func newReadFileTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerun
 				maxBytes = 4096
 			}
 
-			content, truncated := truncateStr(result.Stdout, maxBytes)
+			content, truncated := TruncateStr(result.Stdout, maxBytes)
 
 			return readFileOutput{
 				Path:      input.Path,
@@ -405,7 +405,7 @@ func newGetTaskResultTool(ctx context.Context, config AgentConfig) (adktool.Tool
 				return getTaskResultOutput{}, err
 			}
 
-			matched, ok := fuzzyFindTask(summaries, input.Name)
+			matched, ok := FuzzyFindTask(summaries, input.Name)
 			if !ok {
 				return getTaskResultOutput{}, fmt.Errorf("no tasks found in current run")
 			}
@@ -452,8 +452,8 @@ func newGetTaskResultTool(ctx context.Context, config AgentConfig) (adktool.Tool
 
 			var truncStdout, truncStderr bool
 
-			out.Stdout, truncStdout = truncateStr(stdout, maxBytes)
-			out.Stderr, truncStderr = truncateStr(stderr, maxBytes)
+			out.Stdout, truncStdout = TruncateStr(stdout, maxBytes)
+			out.Stderr, truncStderr = TruncateStr(stderr, maxBytes)
 			out.Truncated = truncStdout || truncStderr
 
 			return out, nil

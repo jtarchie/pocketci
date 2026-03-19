@@ -1,9 +1,11 @@
-package commands
+package commands_test
 
 import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
+	"github.com/jtarchie/pocketci/commands"
 )
 
 func TestRedactURL(t *testing.T) {
@@ -23,7 +25,7 @@ func TestRedactURL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			assert := NewGomegaWithT(t)
-			assert.Expect(redactURL(tc.input)).To(Equal(tc.expected))
+			assert.Expect(commands.RedactURL(tc.input)).To(Equal(tc.expected))
 		})
 	}
 }

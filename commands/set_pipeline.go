@@ -153,7 +153,7 @@ func (c *SetPipeline) Run(logger *slog.Logger) error {
 	serverURL := strings.TrimSuffix(c.ServerURL, "/")
 	endpoint := serverURL + "/api/pipelines/" + url.PathEscape(name)
 
-	logger.Info("pipeline.upload", "url", redactURL(endpoint))
+	logger.Info("pipeline.upload", "url", RedactURL(endpoint))
 
 	reqBody := pipelineRequest{
 		Content:       string(content),

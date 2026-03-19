@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	defaultContextGuardMaxTurns  = 30
-	defaultContextGuardMaxTokens = 128000
-	defaultLimitsMaxTurns        = 50
+	DefaultContextGuardMaxTurns  = 30
+	DefaultContextGuardMaxTokens = 128000
+	DefaultLimitsMaxTurns        = 50
 	limitWarningTurnsBefore      = 2
 )
 
@@ -29,7 +29,7 @@ type AgentLimitsConfig struct {
 
 // normalizeContextGuardConfig normalises context guard configuration so limits
 // are always applied deterministically when a context guard block is provided.
-func normalizeContextGuardConfig(cg *AgentContextGuardConfig) (string, int, error) {
+func NormalizeContextGuardConfig(cg *AgentContextGuardConfig) (string, int, error) {
 	if cg == nil {
 		return "", 0, nil
 	}
@@ -47,14 +47,14 @@ func normalizeContextGuardConfig(cg *AgentContextGuardConfig) (string, int, erro
 	case "sliding_window":
 		maxTurns := cg.MaxTurns
 		if maxTurns <= 0 {
-			maxTurns = defaultContextGuardMaxTurns
+			maxTurns = DefaultContextGuardMaxTurns
 		}
 
 		return strategy, maxTurns, nil
 	case "threshold":
 		maxTokens := cg.MaxTokens
 		if maxTokens <= 0 {
-			maxTokens = defaultContextGuardMaxTokens
+			maxTokens = DefaultContextGuardMaxTokens
 		}
 
 		return strategy, maxTokens, nil
@@ -64,7 +64,7 @@ func normalizeContextGuardConfig(cg *AgentContextGuardConfig) (string, int, erro
 }
 
 func resolveContextGuardOptions(cg *AgentContextGuardConfig) ([]contextguard.AgentOption, error) {
-	strategy, value, err := normalizeContextGuardConfig(cg)
+	strategy, value, err := NormalizeContextGuardConfig(cg)
 	if err != nil {
 		return nil, err
 	}
@@ -87,14 +87,14 @@ func resolveContextGuardOptions(cg *AgentContextGuardConfig) ([]contextguard.Age
 // effectiveLimits returns the hard turn and token limits that apply. If no
 // limits are configured, a sensible default max_turns is used to prevent
 // runaway agents.
-func effectiveLimits(cfg *AgentLimitsConfig) (maxTurns int, maxTotalTokens int32) {
+func EffectiveLimits(cfg *AgentLimitsConfig) (maxTurns int, maxTotalTokens int32) {
 	if cfg == nil {
-		return defaultLimitsMaxTurns, 0
+		return DefaultLimitsMaxTurns, 0
 	}
 
 	maxTurns = cfg.MaxTurns
 	if maxTurns <= 0 {
-		maxTurns = defaultLimitsMaxTurns
+		maxTurns = DefaultLimitsMaxTurns
 	}
 
 	return maxTurns, cfg.MaxTotalTokens

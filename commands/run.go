@@ -123,7 +123,7 @@ func (c *Run) Run(logger *slog.Logger) error {
 		return fmt.Errorf("could not rewind temp file: %w", err)
 	}
 
-	logger.Info("pipeline.run.trigger", "name", c.Name, "url", redactURL(endpoint), "args", c.Args, "upload_bytes", bodySize)
+	logger.Info("pipeline.run.trigger", "name", c.Name, "url", RedactURL(endpoint), "args", c.Args, "upload_bytes", bodySize)
 
 	bar := progressbar.NewOptions64(bodySize,
 		progressbar.OptionSetDescription("uploading"),

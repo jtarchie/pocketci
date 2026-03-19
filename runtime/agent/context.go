@@ -119,7 +119,7 @@ func injectListTasksContext(
 
 	taskMaps := make([]any, len(summaries))
 	for i, t := range summaries {
-		taskMaps[i] = taskSummaryToMap(t)
+		taskMaps[i] = TaskSummaryToMap(t)
 	}
 
 	listTasksResult := map[string]any{"tasks": taskMaps}
@@ -131,7 +131,7 @@ func injectListTasksContext(
 		listTasksResult,
 	)
 
-	appendAuditEvent(auditEvents, AuditEvent{
+	AppendAuditEvent(auditEvents, AuditEvent{
 		Timestamp:  now.Format(time.RFC3339),
 		Author:     config.Name,
 		Type:       "pre_context",
@@ -163,7 +163,7 @@ func injectTaskContexts(
 	summaries, _ := loadTaskSummaries(ctx, config.Storage, config.RunID)
 
 	for _, ct := range config.Context.Tasks {
-		matched, ok := fuzzyFindTask(summaries, ct.Name)
+		matched, ok := FuzzyFindTask(summaries, ct.Name)
 		if !ok {
 			continue
 		}
@@ -194,8 +194,8 @@ func injectTaskContexts(
 			stdout = ""
 		}
 
-		stdout, _ = truncateStr(stdout, maxBytes)
-		stderr, _ = truncateStr(stderr, maxBytes)
+		stdout, _ = TruncateStr(stdout, maxBytes)
+		stderr, _ = TruncateStr(stderr, maxBytes)
 
 		result := map[string]any{
 			"name":  matched.Name,
@@ -227,7 +227,7 @@ func injectTaskContexts(
 			result,
 		)
 
-		appendAuditEvent(auditEvents, AuditEvent{
+		AppendAuditEvent(auditEvents, AuditEvent{
 			Timestamp:  now.Format(time.RFC3339),
 			Author:     config.Name,
 			Type:       "pre_context",
@@ -272,7 +272,7 @@ func injectFileContexts(
 			maxBytes = 4096
 		}
 
-		content, truncated := truncateStr(execResult.Stdout, maxBytes)
+		content, truncated := TruncateStr(execResult.Stdout, maxBytes)
 
 		fileResult := map[string]any{
 			"path":    cf.Path,
@@ -292,7 +292,7 @@ func injectFileContexts(
 			fileResult,
 		)
 
-		appendAuditEvent(auditEvents, AuditEvent{
+		AppendAuditEvent(auditEvents, AuditEvent{
 			Timestamp:  now.Format(time.RFC3339),
 			Author:     config.Name,
 			Type:       "pre_context",
