@@ -53,10 +53,7 @@ async function getSharePath(
 test.describe("Share Feature", () => {
   test.setTimeout(60000);
 
-  test("Share button appears in the ... menu on the tasks page", async ({
-    page,
-    request,
-  }) => {
+  test("Share button appears in the ... menu on the tasks page", async ({ page, request }) => {
     const runID = await createAndRunPipeline(request, uniqueName("share-btn"));
     await page.goto(`/runs/${runID}/tasks`);
 
@@ -68,11 +65,7 @@ test.describe("Share Feature", () => {
     ).toBeVisible();
   });
 
-  test("Share button copies URL to clipboard and shows toast", async ({
-    page,
-    context,
-    request,
-  }) => {
+  test("Share button copies URL to clipboard and shows toast", async ({ page, context, request }) => {
     const runID = await createAndRunPipeline(
       request,
       uniqueName("share-copy"),
@@ -89,18 +82,12 @@ test.describe("Share Feature", () => {
     });
 
     // Clipboard should contain a share URL
-    const clipText = await page.evaluate(() =>
-      navigator.clipboard.readText()
-    );
+    const clipText = await page.evaluate(() => navigator.clipboard.readText());
     expect(clipText).toContain("/share/");
     expect(clipText).toContain("/tasks");
   });
 
-  test("Share URL preserves hash fragment", async ({
-    page,
-    context,
-    request,
-  }) => {
+  test("Share URL preserves hash fragment", async ({ page, context, request }) => {
     const runID = await createAndRunPipeline(
       request,
       uniqueName("share-hash"),
@@ -115,9 +102,7 @@ test.describe("Share Feature", () => {
       timeout: 5000,
     });
 
-    const clipText = await page.evaluate(() =>
-      navigator.clipboard.readText()
-    );
+    const clipText = await page.evaluate(() => navigator.clipboard.readText());
     expect(clipText).toContain("#someanchor");
   });
 
@@ -143,10 +128,7 @@ test.describe("Share Feature", () => {
     ).not.toBeVisible();
   });
 
-  test("shared view shows 'Shared Run' breadcrumb", async ({
-    page,
-    request,
-  }) => {
+  test("shared view shows 'Shared Run' breadcrumb", async ({ page, request }) => {
     const runID = await createAndRunPipeline(
       request,
       uniqueName("share-breadcrumb"),
@@ -157,10 +139,7 @@ test.describe("Share Feature", () => {
     await expect(page.getByText(/shared run/i)).toBeVisible();
   });
 
-  test("shared view has data-readonly attribute on tasks container", async ({
-    page,
-    request,
-  }) => {
+  test("shared view has data-readonly attribute on tasks container", async ({ page, request }) => {
     const runID = await createAndRunPipeline(
       request,
       uniqueName("share-data-attr"),
@@ -174,10 +153,7 @@ test.describe("Share Feature", () => {
     expect(readonly).toBe("true");
   });
 
-  test("normal tasks view does NOT have data-readonly", async ({
-    page,
-    request,
-  }) => {
+  test("normal tasks view does NOT have data-readonly", async ({ page, request }) => {
     const runID = await createAndRunPipeline(
       request,
       uniqueName("share-no-readonly"),
@@ -190,10 +166,7 @@ test.describe("Share Feature", () => {
     expect(readonly).toBeNull();
   });
 
-  test("shared view: .term-line-num has pointer-events none", async ({
-    page,
-    request,
-  }) => {
+  test("shared view: .term-line-num has pointer-events none", async ({ page, request }) => {
     const runID = await createAndRunPipeline(
       request,
       uniqueName("share-ptr-events"),
@@ -226,10 +199,7 @@ test.describe("Share Feature", () => {
     expect(stylePresent).toBe(true);
   });
 
-  test("shared view: clicking line number does not update URL hash", async ({
-    page,
-    request,
-  }) => {
+  test("shared view: clicking line number does not update URL hash", async ({ page, request }) => {
     const runID = await createAndRunPipeline(
       request,
       uniqueName("share-no-linesel"),
@@ -262,10 +232,7 @@ test.describe("Share Feature", () => {
     expect(hashBefore).toBe(hashBefore); // self-check; real assertion is above
   });
 
-  test("shared view with hash fragment highlights correct lines", async ({
-    page,
-    request,
-  }) => {
+  test("shared view with hash fragment highlights correct lines", async ({ page, request }) => {
     const runID = await createAndRunPipeline(
       request,
       uniqueName("share-hash-highlight"),
