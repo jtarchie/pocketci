@@ -124,7 +124,7 @@ func (s *FlySandbox) Cleanup(ctx context.Context) error {
 func (f *Fly) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.Sandbox, error) {
 	logger := f.logger.With("taskID", task.ID)
 
-	machineName := sanitizeAppName(fmt.Sprintf("%s-%s-sandbox", f.namespace, task.ID))
+	machineName := SanitizeAppName(fmt.Sprintf("%s-%s-sandbox", f.namespace, task.ID))
 
 	env := make(map[string]string)
 	maps.Copy(env, task.Env)

@@ -1,4 +1,4 @@
-package fly
+package fly_test
 
 import (
 	"context"
@@ -7,12 +7,12 @@ import (
 	"os"
 	"testing"
 
-	fly "github.com/superfly/fly-go"
-
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	. "github.com/onsi/gomega"
+	flygo "github.com/superfly/fly-go"
 
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/orchestra/fly"
 )
 
 // TestFlyCleanup_LaunchErrorRecoveryTracksExistingMachine verifies that when
@@ -34,23 +34,23 @@ func TestFlyCleanup_LaunchErrorRecoveryTracksExistingMachine(t *testing.T) {
 	namespace := "test-" + gonanoid.Must()
 	taskID := gonanoid.Must()
 
-	driver, err := New(Config{ServerConfig: ServerConfig{Token: token}, Namespace: namespace}, slog.Default())
+	driver, err := fly.New(fly.Config{ServerConfig: fly.ServerConfig{Token: token}, Namespace: namespace}, slog.Default())
 	assert.Expect(err).NotTo(HaveOccurred())
 
-	f := driver.(*Fly)
+	f := driver.(*fly.Fly)
 
 	defer func() { _ = driver.Close() }()
 
 	// Derive the exact machine name that RunContainer will use for this taskID.
-	machineName := sanitizeAppName(fmt.Sprintf("%s-%s", namespace, taskID))
+	machineName := fly.SanitizeAppName(fmt.Sprintf("%s-%s", namespace, taskID))
 
 	// Pre-create the machine directly via the low-level client, bypassing
 	// trackMachine. This simulates a machine that already exists from a prior
 	// partial or failed launch (e.g. "insufficient resources available" retry).
-	existingMachine, err := f.client.Launch(context.Background(), f.appName, fly.LaunchMachineInput{
-		Config: &fly.MachineConfig{
+	existingMachine, err := f.Client().Launch(context.Background(), f.AppName(), flygo.LaunchMachineInput{
+		Config: &flygo.MachineConfig{
 			Image: "alpine:latest",
-			Init:  fly.MachineInit{Exec: []string{"/bin/sleep", "60"}},
+			Init:  flygo.MachineInit{Exec: []string{"/bin/sleep", "60"}},
 			Metadata: map[string]string{
 				"orchestra.namespace": namespace,
 				"orchestra.task":      taskID,
@@ -64,9 +64,7 @@ func TestFlyCleanup_LaunchErrorRecoveryTracksExistingMachine(t *testing.T) {
 
 	// The machine was NOT registered through RunContainer so it must be absent
 	// from machineIDs at this point.
-	f.mu.Lock()
-	assert.Expect(f.machineIDs).NotTo(ContainElement(existingMachineID))
-	f.mu.Unlock()
+	assert.Expect(f.IsTrackedMachine(existingMachineID)).To(BeFalse())
 
 	// RunContainer with the same taskID triggers a second Launch attempt.
 	// Fly returns an error because the machine name is already taken; the
@@ -80,12 +78,10 @@ func TestFlyCleanup_LaunchErrorRecoveryTracksExistingMachine(t *testing.T) {
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	// The returned container must wrap the pre-existing machine, not a new one.
-	assert.Expect(container.(*Container).machineID).To(Equal(existingMachineID))
+	assert.Expect(container.ID()).To(Equal(existingMachineID))
 
 	// The recovered machine must now be tracked so that Close() cleans it up.
-	f.mu.Lock()
-	assert.Expect(f.machineIDs).To(ContainElement(existingMachineID))
-	f.mu.Unlock()
+	assert.Expect(f.IsTrackedMachine(existingMachineID)).To(BeTrue())
 }
 
 // TestFlyCleanup_SweepDestroysUntrackedNamespaceMachines verifies that Close()
@@ -105,19 +101,19 @@ func TestFlyCleanup_SweepDestroysUntrackedNamespaceMachines(t *testing.T) {
 
 	namespace := "test-" + gonanoid.Must()
 
-	driver, err := New(Config{ServerConfig: ServerConfig{Token: token}, Namespace: namespace}, slog.Default())
+	driver, err := fly.New(fly.Config{ServerConfig: fly.ServerConfig{Token: token}, Namespace: namespace}, slog.Default())
 	assert.Expect(err).NotTo(HaveOccurred())
 
-	f := driver.(*Fly)
+	f := driver.(*fly.Fly)
 
 	// Launch a machine directly without going through RunContainer, so
 	// trackMachine is never called. This is the "orphaned machine" scenario.
-	machineName := sanitizeAppName(fmt.Sprintf("%s-orphaned", namespace))
+	machineName := fly.SanitizeAppName(fmt.Sprintf("%s-orphaned", namespace))
 
-	orphan, err := f.client.Launch(context.Background(), f.appName, fly.LaunchMachineInput{
-		Config: &fly.MachineConfig{
+	orphan, err := f.Client().Launch(context.Background(), f.AppName(), flygo.LaunchMachineInput{
+		Config: &flygo.MachineConfig{
 			Image: "alpine:latest",
-			Init:  fly.MachineInit{Exec: []string{"/bin/sleep", "60"}},
+			Init:  flygo.MachineInit{Exec: []string{"/bin/sleep", "60"}},
 			Metadata: map[string]string{
 				"orchestra.namespace": namespace,
 			},
@@ -129,9 +125,7 @@ func TestFlyCleanup_SweepDestroysUntrackedNamespaceMachines(t *testing.T) {
 	orphanID := orphan.ID
 
 	// Confirm the machine is not tracked.
-	f.mu.Lock()
-	assert.Expect(f.machineIDs).NotTo(ContainElement(orphanID))
-	f.mu.Unlock()
+	assert.Expect(f.IsTrackedMachine(orphanID)).To(BeFalse())
 
 	// Close must not error even though the machine was never tracked.
 	// The namespace sweep in Close() locates and destroys it.

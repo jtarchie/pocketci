@@ -53,7 +53,7 @@ func (f *Fly) createTunnel(ctx context.Context) (*flyTunnel, error) {
 	}
 
 	// Peer name must be DNS-compatible: lowercase, letters/digits/hyphens only
-	peerName := sanitizeAppName(fmt.Sprintf("pocketci-cache-%s", f.namespace))
+	peerName := SanitizeAppName(fmt.Sprintf("pocketci-cache-%s", f.namespace))
 
 	// Create WireGuard peer via Fly API
 	peer, err := f.apiClient.CreateWireGuardPeer(

@@ -266,7 +266,7 @@ func (c *Container) Cleanup(ctx context.Context) error {
 func (f *Fly) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.Container, error) {
 	logger := f.logger.With("taskID", task.ID)
 
-	machineName := sanitizeAppName(fmt.Sprintf("%s-%s", f.namespace, task.ID))
+	machineName := SanitizeAppName(fmt.Sprintf("%s-%s", f.namespace, task.ID))
 
 	// Build environment variables
 	env := make(map[string]string)

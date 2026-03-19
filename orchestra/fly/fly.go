@@ -119,7 +119,7 @@ func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 
 	// If no app name provided, create an ephemeral one
 	if appName == "" {
-		appName = sanitizeAppName(fmt.Sprintf("pocketci-%s", cfg.Namespace))
+		appName = SanitizeAppName(fmt.Sprintf("pocketci-%s", cfg.Namespace))
 
 		logger.Info("fly.app.create", "app", appName, "org", org)
 
@@ -195,7 +195,7 @@ func (f *Fly) Close() error {
 	if err != nil {
 		f.logger.Warn("fly.machine.list.error", "app", f.appName, "err", err)
 	} else {
-		namespacePrefix := sanitizeAppName(f.namespace) + "-"
+		namespacePrefix := SanitizeAppName(f.namespace) + "-"
 
 		for _, machine := range machines {
 			if machine == nil {
@@ -264,9 +264,29 @@ func (f *Fly) trackVolume(volumeID string) {
 	f.volumeIDs = append(f.volumeIDs, volumeID)
 }
 
-// sanitizeAppName ensures a Fly app name conforms to Fly's requirements:
+// Client returns the underlying Flaps client for advanced operations.
+func (f *Fly) Client() *flaps.Client { return f.client }
+
+// AppName returns the Fly app name used by this driver instance.
+func (f *Fly) AppName() string { return f.appName }
+
+// IsTrackedMachine reports whether the given machine ID is in the driver's cleanup list.
+func (f *Fly) IsTrackedMachine(machineID string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for _, id := range f.machineIDs {
+		if id == machineID {
+			return true
+		}
+	}
+
+	return false
+}
+
+// SanitizeAppName ensures a Fly app name conforms to Fly's requirements:
 // under 63 chars, only lowercase letters, numbers, and dashes.
-func sanitizeAppName(name string) string {
+func SanitizeAppName(name string) string {
 	name = strings.ToLower(name)
 
 	var b strings.Builder
