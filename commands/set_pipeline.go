@@ -233,6 +233,7 @@ func (c *SetPipeline) Run(logger *slog.Logger) error {
 		displayURL = parsed.String()
 	}
 
+	fmt.Printf("  URL: %s/pipelines/%s/\n", displayURL, pipeline.ID)
 	fmt.Printf("  Server: %s\n", displayURL)
 
 	if c.Driver != "" {
