@@ -328,6 +328,15 @@ declare global {
     max_bytes?: number;
   }
 
+  // Minimal config for a sub-agent passed to runtime.agent().
+  interface SubAgentConfig {
+    name: string;
+    prompt?: string;
+    model?: string;
+    image?: string;
+    storageKeyPrefix?: string; // Parent storage key for nested path persistence
+  }
+
   // Input to runtime.agent().
   interface AgentRunConfig {
     name: string;
@@ -346,6 +355,7 @@ declare global {
     limits?: AgentLimitsConfig;
     context?: AgentContext;
     validation?: AgentValidationConfig;
+    sub_agents?: SubAgentConfig[]; // Sub-agents registered as callable tools
   }
 
   /**
@@ -782,6 +792,7 @@ declare global {
     limits?: AgentLimitsConfig;
     context?: AgentContext;
     validation?: AgentValidationConfig;
+    sub_agents?: AgentStep[]; // Sub-agents available as callable tools to the parent LLM
     attempts?: number;
     across?: AcrossVar[];
     fail_fast?: boolean;

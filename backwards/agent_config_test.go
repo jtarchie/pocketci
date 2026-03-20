@@ -345,4 +345,73 @@ jobs:
 			assert.Expect(config.Run.Path).NotTo(BeEmpty(), "file %s missing run.path", f)
 		}
 	})
+
+	t.Run("parses agent step with sub_agents field", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		var config backwards.Config
+		err := yaml.Unmarshal([]byte(`
+jobs:
+  - name: review
+    plan:
+      - agent: orchestrator
+        file: repo/agents/orchestrator.yml
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: alpine/git }
+          inputs:
+            - name: repo
+        sub_agents:
+          - agent: code-quality-reviewer
+            file: repo/agents/code-quality.yml
+          - agent: security-reviewer
+            prompt: Check for security issues
+            model: openrouter/google/gemini-3.1-flash-lite-preview
+`), &config)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		step := config.Jobs[0].Plan[0]
+		assert.Expect(step.Agent).To(Equal("orchestrator"))
+		assert.Expect(step.SubAgents).To(HaveLen(2))
+		assert.Expect(step.SubAgents[0].Agent).To(Equal("code-quality-reviewer"))
+		assert.Expect(step.SubAgents[0].File).To(Equal("repo/agents/code-quality.yml"))
+		assert.Expect(step.SubAgents[1].Agent).To(Equal("security-reviewer"))
+		assert.Expect(step.SubAgents[1].Prompt).To(Equal("Check for security issues"))
+	})
+
+	t.Run("transpiles agent step with sub_agents to JS", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		js, err := backwards.NewPipelineFromContent(`
+jobs:
+  - name: review
+    plan:
+      - agent: orchestrator
+        file: repo/agents/orchestrator.yml
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: alpine/git }
+          inputs:
+            - name: repo
+        sub_agents:
+          - agent: code-quality-reviewer
+            file: repo/agents/code-quality.yml
+          - agent: security-reviewer
+            prompt: Check for security issues
+            model: openrouter/google/gemini-3.1-flash-lite-preview
+`)
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(js).To(ContainSubstring("orchestrator"))
+		assert.Expect(js).To(ContainSubstring("sub_agents"))
+		assert.Expect(js).To(ContainSubstring("code-quality-reviewer"))
+		assert.Expect(js).To(ContainSubstring("security-reviewer"))
+	})
 }

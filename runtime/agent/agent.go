@@ -39,6 +39,17 @@ type AgentThinkingConfig struct {
 	Level  string `yaml:"level,omitempty" json:"level,omitempty"`
 }
 
+// SubAgentConfig describes a sub-agent that the parent LLM can call as a tool.
+// Sub-agents sharing the parent's container image use ADK's agenttool;
+// sub-agents with a different image spin up their own sandbox via a custom tool.
+type SubAgentConfig struct {
+	Name             string `json:"name"`
+	Prompt           string `json:"prompt"`
+	Model            string `json:"model"`
+	Image            string `json:"image"`
+	StorageKeyPrefix string `json:"storageKeyPrefix"` // parent storage key for nested path persistence
+}
+
 // AgentConfig is the configuration passed from JavaScript to runtime.agent().
 type AgentConfig struct {
 	Name             string                                 `json:"name"`
@@ -54,6 +65,7 @@ type AgentConfig struct {
 	Limits           *AgentLimitsConfig                     `json:"limits,omitempty"`
 	Context          *AgentContext                          `json:"context,omitempty"`
 	Validation       *AgentValidationConfig                 `json:"validation,omitempty"`
+	SubAgents        []SubAgentConfig                       `json:"sub_agents,omitempty"`
 	// OnOutput is called with streaming chunks. Not serialised from JS.
 	OnOutput pipelinerunner.OutputCallback `json:"-"`
 	// OnAuditEvent is called every time an audit event is appended.
@@ -175,6 +187,18 @@ func RunAgent(
 		return nil, fmt.Errorf("agent: failed to create get_task_result tool: %w", err)
 	}
 
+	// Build the full tool list, including any sub-agent tools.
+	tools := []adktool.Tool{runScript, readFileTool, listTasksTool, getTaskResultTool}
+
+	for _, subCfg := range config.SubAgents {
+		subTool, subErr := buildSubAgentTool(ctx, sandbox, sandboxRunner, sm, pipelineID, subCfg, config)
+		if subErr != nil {
+			return nil, fmt.Errorf("agent: sub-agent %q: %w", subCfg.Name, subErr)
+		}
+
+		tools = append(tools, subTool)
+	}
+
 	// Create the ADK agent.
 	genCfg := buildGenerateContentConfig(provider, config.LLM, config.Thinking, config.Safety)
 
@@ -183,7 +207,7 @@ func RunAgent(
 		Model:                 llmModel,
 		Description:           "An agent running in a CI/CD system with access to a containerized environment.",
 		Instruction:           instruction,
-		Tools:                 []adktool.Tool{runScript, readFileTool, listTasksTool, getTaskResultTool},
+		Tools:                 tools,
 		GenerateContentConfig: genCfg,
 	})
 	if err != nil {

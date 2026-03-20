@@ -32,11 +32,7 @@ context:
       max_bytes: 32768
 config:
   platform: linux
-  image_resource:
-    type: registry-image
-    source: { repository: alpine/git }
+  image: alpine/git
   inputs:
     - name: diff
     - name: repo
-  outputs:
-    - name: security-output

@@ -3,14 +3,18 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 
+	"google.golang.org/adk/agent/llmagent"
 	adktool "google.golang.org/adk/tool"
+	"google.golang.org/adk/tool/agenttool"
 	"google.golang.org/adk/tool/functiontool"
 
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
+	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
 )
 
@@ -384,6 +388,167 @@ func newListTasksTool(ctx context.Context, config AgentConfig) (adktool.Tool, er
 			}
 
 			return listTasksOutput{Tasks: tasks}, nil
+		},
+	)
+}
+
+// callAgentInput is the tool input schema for sub-agent tools (both modes).
+// The LLM passes a plain-text request to the sub-agent.
+type callAgentInput struct {
+	Request string `json:"request"`
+}
+
+// callAgentOutput is the tool result schema for own-container sub-agent calls.
+type callAgentOutput struct {
+	Result string `json:"result"`
+	Status string `json:"status"`
+}
+
+// buildSubAgentTool creates an ADK tool for the given sub-agent configuration.
+//
+// Shared-container mode (sub-agent image matches or is empty): wraps an ADK
+// llmagent as an agenttool so the parent LLM can call it directly.
+//
+// Own-container mode (sub-agent declares a different image): registers a
+// functiontool that spins up a separate sandbox, runs the sub-agent to
+// completion, persists results to a nested storage path, and returns the
+// final text to the parent.
+func buildSubAgentTool(
+	ctx context.Context,
+	sandbox *pipelinerunner.SandboxHandle,
+	sandboxRunner pipelinerunner.Runner,
+	sm secrets.Manager,
+	pipelineID string,
+	subCfg SubAgentConfig,
+	parentConfig AgentConfig,
+) (adktool.Tool, error) {
+	subImage := subCfg.Image
+	if subImage == "" {
+		subImage = parentConfig.Image
+	}
+
+	subModel := subCfg.Model
+	if subModel == "" {
+		subModel = parentConfig.Model
+	}
+
+	if subImage == parentConfig.Image {
+		// Shared-container: build a sub-llmagent and wrap with agenttool.
+		provider, modelName := splitModel(subModel)
+
+		apiKey := resolveSecret(ctx, sm, pipelineID, "agent/"+provider)
+		if apiKey == "" {
+			envKey := strings.ToUpper(strings.ReplaceAll(provider, "-", "_")) + "_API_KEY"
+			apiKey = os.Getenv(envKey)
+		}
+
+		subLLM, err := resolveModel(provider, modelName, apiKey, nil, nil)
+		if err != nil {
+			return nil, fmt.Errorf("resolve model: %w", err)
+		}
+
+		// Sub-agent reuses the same sandbox tools as the parent.
+		subRunScript, err := newRunScriptTool(sandbox, parentConfig.OnOutput)
+		if err != nil {
+			return nil, fmt.Errorf("run_script tool: %w", err)
+		}
+
+		subReadFile, err := newReadFileTool(sandbox, parentConfig.OnOutput)
+		if err != nil {
+			return nil, fmt.Errorf("read_file tool: %w", err)
+		}
+
+		subListTasks, err := newListTasksTool(ctx, parentConfig)
+		if err != nil {
+			return nil, fmt.Errorf("list_tasks tool: %w", err)
+		}
+
+		subGetTaskResult, err := newGetTaskResultTool(ctx, parentConfig)
+		if err != nil {
+			return nil, fmt.Errorf("get_task_result tool: %w", err)
+		}
+
+		subAgent, err := llmagent.New(llmagent.Config{
+			Name:        subCfg.Name,
+			Model:       subLLM,
+			Description: fmt.Sprintf("Specialist sub-agent: %s. Call this when you need its expertise.", subCfg.Name),
+			Instruction: subCfg.Prompt,
+			Tools:       []adktool.Tool{subRunScript, subReadFile, subListTasks, subGetTaskResult},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create sub-agent: %w", err)
+		}
+
+		return agenttool.New(subAgent, nil), nil
+	}
+
+	// Own-container: custom functiontool that spins up a separate sandbox.
+	return newCallAgentTool(ctx, sandboxRunner, sm, pipelineID, subCfg, subModel, parentConfig)
+}
+
+// newCallAgentTool builds a functiontool that runs a sub-agent in its own
+// sandbox container. Used when the sub-agent's image differs from the parent's.
+// Results are persisted at {storageKeyPrefix}/sub-agents/{name}/run so the
+// UI automatically shows them nested under the parent agent step.
+func newCallAgentTool(
+	ctx context.Context,
+	sandboxRunner pipelinerunner.Runner,
+	sm secrets.Manager,
+	pipelineID string,
+	subCfg SubAgentConfig,
+	subModel string,
+	parentConfig AgentConfig,
+) (adktool.Tool, error) {
+	return functiontool.New[callAgentInput, callAgentOutput](
+		functiontool.Config{
+			Name:        subCfg.Name,
+			Description: fmt.Sprintf("Specialist sub-agent: %s. Call this when you need its expertise.", subCfg.Name),
+		},
+		func(_ adktool.Context, input callAgentInput) (callAgentOutput, error) {
+			prompt := subCfg.Prompt
+			if input.Request != "" {
+				if prompt != "" {
+					prompt = prompt + "\n\nSpecific request: " + input.Request
+				} else {
+					prompt = input.Request
+				}
+			}
+
+			subAgentConfig := AgentConfig{
+				Name:        subCfg.Name,
+				Prompt:      prompt,
+				Model:       subModel,
+				Image:       subCfg.Image,
+				Mounts:      parentConfig.Mounts,
+				Storage:     parentConfig.Storage,
+				RunID:       parentConfig.RunID,
+				Namespace:   parentConfig.Namespace,
+				PipelineID:  parentConfig.PipelineID,
+				TriggeredBy: parentConfig.TriggeredBy,
+				OnOutput:    parentConfig.OnOutput,
+			}
+
+			result, err := RunAgent(ctx, sandboxRunner, sm, pipelineID, subAgentConfig)
+			if err != nil {
+				return callAgentOutput{}, err
+			}
+
+			// Persist to a nested storage path so the UI tree renders the
+			// sub-agent's result indented under the parent agent step.
+			if subCfg.StorageKeyPrefix != "" && parentConfig.Storage != nil {
+				storageKey := subCfg.StorageKeyPrefix + "/sub-agents/" + subCfg.Name + "/run"
+				_ = parentConfig.Storage.Set(ctx, storageKey, map[string]any{
+					"status":    result.Status,
+					"stdout":    result.Text,
+					"usage":     result.Usage,
+					"audit_log": result.AuditLog,
+				})
+			}
+
+			return callAgentOutput{
+				Result: result.Text,
+				Status: result.Status,
+			}, nil
 		},
 	)
 }

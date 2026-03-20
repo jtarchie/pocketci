@@ -23,15 +23,16 @@ const result = await runtime.agent(options);
 
 ### Optional
 
-| Field              | Type   | Description                                                          |
-| ------------------ | ------ | -------------------------------------------------------------------- |
-| `mounts`           | object | Volume mounts: `{ "name": volumeHandle }`                            |
-| `outputVolumePath` | string | Path inside the container to write `result.json`                     |
-| `llm`              | object | LLM generation overrides (see [LLM Config](#llm))                    |
-| `thinking`         | object | Extended thinking config (see [Thinking](#thinking))                 |
-| `safety`           | object | Safety filter overrides (see [Safety](#safety))                      |
-| `context_guard`    | object | Context window management (see [Context Guard](#context-guard))      |
-| `context`          | object | Pre-inject prior task outputs into session (see [Context](#context)) |
+| Field              | Type   | Description                                                             |
+| ------------------ | ------ | ----------------------------------------------------------------------- |
+| `mounts`           | object | Volume mounts: `{ "name": volumeHandle }`                               |
+| `outputVolumePath` | string | Path inside the container to write `result.json`                        |
+| `llm`              | object | LLM generation overrides (see [LLM Config](#llm))                       |
+| `thinking`         | object | Extended thinking config (see [Thinking](#thinking))                    |
+| `safety`           | object | Safety filter overrides (see [Safety](#safety))                         |
+| `context_guard`    | object | Context window management (see [Context Guard](#context-guard))         |
+| `context`          | object | Pre-inject prior task outputs into session (see [Context](#context))    |
+| `sub_agents`       | array  | Specialist sub-agents callable as tools (see [Sub-agents](#sub-agents)) |
 
 ## Providers
 
@@ -234,6 +235,158 @@ context?: {
 Each entry is injected as a synthetic `get_task_result` tool-call/response pair.
 The agent sees the output as if it had already called the tool, and the
 [audit log](#audit-log) records these under `type: "pre_context"`.
+
+## Concourse YAML — Agent Step Ergonomics {#yaml-ergonomics}
+
+When writing agent steps in Concourse-compatible YAML pipelines, two defaults
+reduce boilerplate.
+
+### Auto-output volume
+
+If you do not declare a `config.outputs` block, the runtime automatically
+creates an output volume named after the agent. This volume holds the
+`result.json` written at the end of the agent run and is registered in the job's
+known mounts so subsequent steps can reference it.
+
+```yaml
+# Before — explicit output declaration required
+- agent: code-reviewer
+  prompt: Review the code
+  model: openrouter/google/gemini-2.0-flash
+  config:
+    platform: linux
+    image: alpine
+    outputs:
+      - name: code-reviewer # redundant — same as agent name
+
+# After — outputs block can be omitted entirely
+- agent: code-reviewer
+  prompt: Review the code
+  model: openrouter/google/gemini-2.0-flash
+  config:
+    platform: linux
+    image: alpine
+```
+
+### Auto-inputs from `context.tasks`
+
+If `context.tasks` references a prior agent by name and that agent produced an
+auto-named output volume (see above), the volume is automatically mounted as an
+input. There is no need to list it in `config.inputs`.
+
+```yaml
+# Before — explicit inputs + context.tasks both required
+- agent: summarizer
+  prompt: Summarize the findings
+  model: openrouter/google/gemini-2.0-flash
+  config:
+    platform: linux
+    image: alpine
+    inputs:
+      - name: code-reviewer # duplicate: also listed in context.tasks
+  context:
+    tasks:
+      - name: code-reviewer
+
+# After — config.inputs can be omitted
+- agent: summarizer
+  prompt: Summarize the findings
+  model: openrouter/google/gemini-2.0-flash
+  config:
+    platform: linux
+    image: alpine
+  context:
+    tasks:
+      - name: code-reviewer
+```
+
+## Sub-agents {#sub-agents}
+
+An agent step can delegate to specialist sub-agents that the parent LLM calls as
+tools. The parent orchestrates when and how to call each sub-agent; their
+findings are returned as tool responses directly into the parent's context.
+
+```yaml
+- agent: orchestrator
+  file: repo/agents/orchestrator.yml
+  config:
+    platform: linux
+    image_resource:
+      type: registry-image
+      source: { repository: alpine/git }
+    inputs:
+      - name: repo
+      - name: diff
+  sub_agents:
+    - agent: code-quality-reviewer
+      file: repo/agents/code-quality.yml
+    - agent: security-reviewer
+      file: repo/agents/security.yml
+    - agent: maintainability-reviewer
+      file: repo/agents/maintainability.yml
+```
+
+Each entry in `sub_agents` is a full agent step definition. Fields can be
+provided inline or loaded from a `file:` path.
+
+### Sub-agent fields
+
+| Field    | Type   | Description                                                         |
+| -------- | ------ | ------------------------------------------------------------------- |
+| `agent`  | string | **Required.** Tool name the parent LLM uses to call this sub-agent  |
+| `file`   | string | Load prompt, model, and config from a YAML file in the repo volume  |
+| `prompt` | string | Sub-agent's instruction (overrides `file:` prompt if both provided) |
+| `model`  | string | Model specifier; defaults to the parent's model if omitted          |
+
+### Container modes
+
+**Shared-container** (sub-agent image matches the parent's): the sub-agent runs
+inside the parent's ADK session as an `agenttool`. It shares the same sandbox,
+mounts, and tool set. No extra container is started.
+
+**Own-container** (sub-agent declares a different image): a separate sandbox is
+spun up for the sub-agent's image. The sub-agent runs to completion and returns
+its final text to the parent as a tool response. Own-container sub-agents also
+persist their result at a nested storage path, so the UI displays them indented
+under the parent agent step:
+
+```
+jobs/{job}/N/agent/{orchestrator-name}/sub-agents/{sub-agent-name}/run
+```
+
+### YAML example — pr-review pipeline
+
+Below is a simplified version of the multi-reviewer PR analysis pipeline from
+[`examples/agent/pr-review.yml`](../../examples/agent/pr-review.yml):
+
+```yaml
+- agent: pr-reviewer
+  file: repo/examples/agent/agents/final-reviewer.yml
+  config:
+    platform: linux
+    image_resource:
+      type: registry-image
+      source: { repository: alpine/git }
+    inputs:
+      - name: diff
+      - name: repo
+  sub_agents:
+    - agent: code-quality-reviewer
+      file: repo/examples/agent/agents/code-quality.yml
+    - agent: security-reviewer
+      file: repo/examples/agent/agents/security.yml
+    - agent: maintainability-reviewer
+      file: repo/examples/agent/agents/maintainability.yml
+  validation:
+    expr: 'text != "" && text contains "summary"'
+    prompt: >-
+      Output valid JSON with a "summary" field and an "issues" array.
+```
+
+The orchestrator's prompt (in `final-reviewer.yml`) instructs it to call all
+three specialist sub-agents and synthesize their findings into JSON. The
+specialist prompts, models, and container images come from their own agent YAML
+files.
 
 ## Return Value
 

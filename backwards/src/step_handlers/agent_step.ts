@@ -57,6 +57,40 @@ export class AgentStepHandler implements StepHandler {
       agentStep.config?.image_resource?.source?.repository ??
       "busybox";
 
+    // Resolve sub-agent configs (loading from file if needed).
+    // Each sub-agent is passed to the Go runtime as a SubAgentConfig so the
+    // parent LLM can call them as tools.
+    const subAgents: SubAgentConfig[] = [];
+    for (const rawSub of (agentStep.sub_agents ?? [])) {
+      let subStep = rawSub;
+      if ("file" in rawSub && rawSub.file) {
+        const contents = await loadFileFromVolume(
+          ctx,
+          rawSub.file,
+          pathContext,
+        );
+        const fileConfig = YAML.parse(contents) as Partial<AgentStep>;
+        subStep = {
+          ...fileConfig,
+          ...rawSub,
+          agent: rawSub.agent,
+        } as AgentStep;
+        if (!rawSub.prompt && fileConfig.prompt) {
+          subStep.prompt = fileConfig.prompt;
+        }
+        if (!rawSub.model && fileConfig.model) subStep.model = fileConfig.model;
+      }
+      const subImage = subStep.config?.image ??
+        subStep.config?.image_resource?.source?.repository ?? "";
+      subAgents.push({
+        name: subStep.agent,
+        prompt: subStep.prompt ?? "",
+        model: subStep.model ?? "",
+        image: subImage,
+        storageKeyPrefix: storageKey.replace(/\/run$/, ""),
+      });
+    }
+
     // Collect input and output mounts from earlier get/put steps and volumes.
     const mounts: KnownMounts = {};
     for (const input of (agentStep.config?.inputs ?? [])) {
@@ -66,7 +100,23 @@ export class AgentStepHandler implements StepHandler {
       }
     }
 
-    const outputs = agentStep.config?.outputs ?? [];
+    // Auto-mount volumes for agents referenced in context.tasks.
+    // This removes the need to duplicate them in config.inputs when the
+    // prior agent's output volume was auto-named (Change 1 below).
+    for (const ct of (agentStep.context?.tasks ?? [])) {
+      const knownMount = ctx.taskRunner.getKnownMounts()[ct.name];
+      if (knownMount && !mounts[ct.name]) {
+        mounts[ct.name] = knownMount;
+      }
+    }
+
+    // If no outputs are declared, auto-create one named after the agent.
+    // This volume is registered in knownMounts so downstream steps can
+    // reference it by the agent's name without explicit wiring.
+    const declaredOutputs = agentStep.config?.outputs ?? [];
+    const outputs = declaredOutputs.length > 0
+      ? declaredOutputs
+      : [{ name: agentStep.agent }];
     for (const output of outputs) {
       ctx.taskRunner.getKnownMounts()[output.name] ||= await runtime
         .createVolume({ name: output.name });
@@ -122,6 +172,7 @@ export class AgentStepHandler implements StepHandler {
         limits: agentStep.limits,
         context: agentStep.context,
         validation: agentStep.validation,
+        sub_agents: subAgents.length > 0 ? subAgents : undefined,
         onUsage: (usage: AgentUsage) => {
           latestUsage = usage;
           persistRunningState();

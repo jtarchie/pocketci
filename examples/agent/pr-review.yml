@@ -60,45 +60,27 @@ jobs:
       - task: generate-diff
         file: repo/examples/agent/tasks/generate-diff.yml
 
-      # ── 2a. Code-quality review ───────────────────────────────────────────
-      - agent: code-quality-reviewer
-        file: repo/examples/agent/agents/code-quality.yml
-        validation:
-          expr: 'text != ""'
-          prompt: >-
-            You did not produce any output. List your findings as bullet points:
-            - path/file.ext:LINE — description
-
-      # ── 2b. Security review ───────────────────────────────────────────────
-      - agent: security-reviewer
-        file: repo/examples/agent/agents/security.yml
-        validation:
-          expr: 'text != ""'
-          prompt: >-
-            You did not produce any output. List your findings as bullet points:
-            - path/file.ext:LINE — description
-
-      # ── 2c. Maintainability review ────────────────────────────────────────
-      - agent: maintainability-reviewer
-        file: repo/examples/agent/agents/maintainability.yml
-        validation:
-          expr: 'text != ""'
-          prompt: >-
-            You did not produce any output. List your findings as bullet points:
-            - path/file.ext:LINE — description
-
-      # ── 3. Aggregate and synthesize ───────────────────────────────────────
+      # ── 2. Fan-out review + synthesize ────────────────────────────────────
       #
-      # The three prior agent outputs are available two ways:
-      #   a) context.tasks — each review text is pre-injected into this
-      #      agent's chat history as a synthetic get_task_result response,
-      #      so no tool call is needed to read them.
-      #   b) input volume mounts — result.json files are also mounted at
-      #      code-quality-output/result.json, security-output/result.json,
-      #      maintainability-output/result.json and can be cat'd via
-      #      run_script if the agent needs to re-read raw content.
-      - agent: final-reviewer
+      # A single orchestrator agent is given three specialist sub-agents as
+      # callable tools. The orchestrator calls them (in any order or in
+      # parallel if the model supports it), collects their findings, and
+      # synthesizes into the final JSON output.
+      #
+      # Sub-agents that share the parent's image run inside the same sandbox
+      # via ADK's agenttool. Their results flow back as tool responses
+      # directly into the orchestrator's context — no result.json wiring
+      # needed. Results are also persisted at nested storage paths so the UI
+      # shows them indented under this step.
+      - agent: pr-reviewer
         file: repo/examples/agent/agents/final-reviewer.yml
+        sub_agents:
+          - agent: code-quality-reviewer
+            file: repo/examples/agent/agents/code-quality.yml
+          - agent: security-reviewer
+            file: repo/examples/agent/agents/security.yml
+          - agent: maintainability-reviewer
+            file: repo/examples/agent/agents/maintainability.yml
         validation:
           expr: 'text != "" && text contains "summary"'
           prompt: >-
