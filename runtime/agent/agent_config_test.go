@@ -92,6 +92,37 @@ func TestSubAgentConfigJSON(t *testing.T) {
 		assert.Expect(found).To(BeFalse(), "sub_agents must be omitted when empty")
 	})
 
+	t.Run("SubAgentConfig image field roundtrips for own-container mode", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		config := agent.AgentConfig{
+			Name:  "orchestrator",
+			Image: "alpine/git",
+			SubAgents: []agent.SubAgentConfig{
+				{Name: "shared-reviewer", Prompt: "Uses parent container"},
+				{Name: "custom-reviewer", Prompt: "Uses own container", Image: "python:3.12"},
+			},
+		}
+
+		data, err := json.Marshal(config)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		var decoded agent.AgentConfig
+		assert.Expect(json.Unmarshal(data, &decoded)).To(Succeed())
+
+		assert.Expect(decoded.SubAgents).To(HaveLen(2))
+
+		// Shared: image empty, will default to parent at runtime.
+		assert.Expect(decoded.SubAgents[0].Name).To(Equal("shared-reviewer"))
+		assert.Expect(decoded.SubAgents[0].Image).To(BeEmpty())
+
+		// Own-container: image preserved through roundtrip.
+		assert.Expect(decoded.SubAgents[1].Name).To(Equal("custom-reviewer"))
+		assert.Expect(decoded.SubAgents[1].Image).To(Equal("python:3.12"))
+	})
+
 	t.Run("SubAgentConfig storageKeyPrefix roundtrips", func(t *testing.T) {
 		t.Parallel()
 

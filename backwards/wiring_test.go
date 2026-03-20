@@ -242,6 +242,83 @@ jobs:
 		assert.Expect(err).NotTo(HaveOccurred())
 	})
 
+	t.Run("agent with sub_agents passes validation", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		content := `---
+jobs:
+  - name: review
+    plan:
+      - task: checkout
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: alpine }
+          outputs:
+            - name: repo
+          run:
+            path: echo
+            args: ["checkout"]
+      - agent: orchestrator
+        prompt: Call your sub-agents
+        model: test-model
+        config:
+          platform: linux
+          image: alpine/git
+          inputs:
+            - name: repo
+        sub_agents:
+          - agent: code-quality
+            prompt: Review quality
+          - agent: security
+            prompt: Review security`
+
+		err := backwards.ValidatePipeline([]byte(content))
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("agent with sub_agents with own container passes validation", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		content := `---
+jobs:
+  - name: review
+    plan:
+      - task: checkout
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: alpine }
+          outputs:
+            - name: repo
+          run:
+            path: echo
+            args: ["checkout"]
+      - agent: orchestrator
+        prompt: Call your sub-agents
+        model: test-model
+        config:
+          platform: linux
+          image: alpine/git
+          inputs:
+            - name: repo
+        sub_agents:
+          - agent: shared-reviewer
+            prompt: Uses parent container
+          - agent: custom-reviewer
+            prompt: Uses own container
+            config:
+              platform: linux
+              image: python:3.12`
+
+		err := backwards.ValidatePipeline([]byte(content))
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
 	t.Run("put step output satisfies downstream input", func(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)

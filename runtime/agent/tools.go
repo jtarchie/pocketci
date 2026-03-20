@@ -7,11 +7,17 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
+	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
+	adkmodel "google.golang.org/adk/model"
+	"google.golang.org/adk/runner"
+	"google.golang.org/adk/session"
 	adktool "google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/agenttool"
 	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/genai"
 
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
 	"github.com/jtarchie/pocketci/secrets"
@@ -433,7 +439,9 @@ func buildSubAgentTool(
 	}
 
 	if subImage == parentConfig.Image {
-		// Shared-container: build a sub-llmagent and wrap with agenttool.
+		// Shared-container: build a functiontool that runs the sub-agent in
+		// its own ADK session (reusing the parent's sandbox), collects the
+		// full audit log + usage, persists to storage, and returns the result.
 		provider, modelName := splitModel(subModel)
 
 		apiKey := resolveSecret(ctx, sm, pipelineID, "agent/"+provider)
@@ -479,11 +487,178 @@ func buildSubAgentTool(
 			return nil, fmt.Errorf("create sub-agent: %w", err)
 		}
 
-		return agenttool.New(subAgent, nil), nil
+		return newSharedContainerSubAgentTool(ctx, subCfg, subAgent, parentConfig)
 	}
 
 	// Own-container: custom functiontool that spins up a separate sandbox.
 	return newCallAgentTool(ctx, sandboxRunner, sm, pipelineID, subCfg, subModel, parentConfig)
+}
+
+// newSharedContainerSubAgentTool builds a functiontool that runs a sub-agent
+// in its own ADK session while reusing the parent's sandbox container and tools.
+// It collects the full audit log, usage, and final text, then persists them to
+// {storageKeyPrefix}/sub-agents/{name}/run so the UI and MCP tools can access
+// each sub-agent's results individually.
+func newSharedContainerSubAgentTool(
+	ctx context.Context,
+	subCfg SubAgentConfig,
+	subAgent agent.Agent,
+	parentConfig AgentConfig,
+) (adktool.Tool, error) {
+	return functiontool.New[callAgentInput, callAgentOutput](
+		functiontool.Config{
+			Name:        subCfg.Name,
+			Description: fmt.Sprintf("Specialist sub-agent: %s. Call this when you need its expertise.", subCfg.Name),
+		},
+		func(_ adktool.Context, input callAgentInput) (callAgentOutput, error) {
+			prompt := subCfg.Prompt
+			if input.Request != "" {
+				if prompt != "" {
+					prompt = prompt + "\n\nSpecific request: " + input.Request
+				} else {
+					prompt = input.Request
+				}
+			}
+
+			// Create an in-memory session for the sub-agent.
+			sessionService := session.InMemoryService()
+
+			sessResp, err := sessionService.Create(ctx, &session.CreateRequest{
+				AppName: "ci-sub-agent",
+				UserID:  "pipeline",
+			})
+			if err != nil {
+				return callAgentOutput{}, fmt.Errorf("create session: %w", err)
+			}
+
+			// Append the user message to the session.
+			userInvID := uuid.NewString()
+			userEvent := session.NewEvent(userInvID)
+			userEvent.Author = "user"
+			userEvent.LLMResponse = adkmodel.LLMResponse{
+				Content: genai.NewContentFromText(prompt, genai.RoleUser),
+			}
+
+			_ = sessionService.AppendEvent(ctx, sessResp.Session, userEvent)
+
+			runnr, err := runner.New(runner.Config{
+				AppName:        "ci-sub-agent",
+				Agent:          subAgent,
+				SessionService: sessionService,
+			})
+			if err != nil {
+				return callAgentOutput{}, fmt.Errorf("create runner: %w", err)
+			}
+
+			// Run the sub-agent, collecting text, audit events, and usage.
+			var textBuilder strings.Builder
+			var auditEvents []AuditEvent
+			var usage AgentUsage
+			now := time.Now().UTC()
+
+			AppendAuditEvent(&auditEvents, AuditEvent{
+				Timestamp: now.Format(time.RFC3339),
+				Author:    "user",
+				Type:      "user_message",
+				Text:      prompt,
+			}, nil)
+
+			for event, err := range runnr.Run(ctx, "pipeline", sessResp.Session.ID(), nil, agent.RunConfig{}) {
+				if err != nil {
+					return callAgentOutput{}, fmt.Errorf("sub-agent run: %w", err)
+				}
+
+				if event.UsageMetadata != nil {
+					accumulateUsage(&usage, event.UsageMetadata, nil)
+				}
+
+				if event.Content == nil {
+					continue
+				}
+
+				ts := now.Format(time.RFC3339)
+				if !event.Timestamp.IsZero() {
+					ts = event.Timestamp.UTC().Format(time.RFC3339)
+				}
+
+				isFinal := event.IsFinalResponse()
+
+				for _, part := range event.Content.Parts {
+					if part.FunctionCall != nil {
+						fc := part.FunctionCall
+						usage.ToolCallCount++
+
+						AppendAuditEvent(&auditEvents, AuditEvent{
+							Timestamp:    ts,
+							InvocationID: event.InvocationID,
+							Author:       event.Author,
+							Type:         "tool_call",
+							ToolName:     fc.Name,
+							ToolCallID:   fc.ID,
+							ToolArgs:     fc.Args,
+						}, nil)
+					}
+
+					if part.FunctionResponse != nil {
+						fr := part.FunctionResponse
+
+						AppendAuditEvent(&auditEvents, AuditEvent{
+							Timestamp:    ts,
+							InvocationID: event.InvocationID,
+							Author:       event.Author,
+							Type:         "tool_response",
+							ToolName:     fr.Name,
+							ToolCallID:   fr.ID,
+							ToolResult:   fr.Response,
+						}, nil)
+					}
+
+					if part.Text != "" {
+						eventType := "model_text"
+						if isFinal {
+							eventType = "model_final"
+						}
+
+						AppendAuditEvent(&auditEvents, AuditEvent{
+							Timestamp:    ts,
+							InvocationID: event.InvocationID,
+							Author:       event.Author,
+							Type:         eventType,
+							Text:         part.Text,
+						}, nil)
+
+						if isFinal {
+							textBuilder.WriteString(part.Text)
+						}
+					}
+				}
+			}
+
+			finalText := textBuilder.String()
+			status := "success"
+
+			if finalText == "" {
+				status = "error"
+			}
+
+			// Persist to storage so the UI tree and MCP tools can show
+			// each sub-agent as a separate nested entry.
+			if subCfg.StorageKeyPrefix != "" && parentConfig.Storage != nil {
+				storageKey := subCfg.StorageKeyPrefix + "/sub-agents/" + subCfg.Name + "/run"
+				_ = parentConfig.Storage.Set(ctx, storageKey, map[string]any{
+					"status":    status,
+					"stdout":    finalText,
+					"usage":     usage,
+					"audit_log": auditEvents,
+				})
+			}
+
+			return callAgentOutput{
+				Result: finalText,
+				Status: status,
+			}, nil
+		},
+	)
 }
 
 // newCallAgentTool builds a functiontool that runs a sub-agent in its own

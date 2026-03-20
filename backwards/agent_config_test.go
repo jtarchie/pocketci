@@ -383,6 +383,76 @@ jobs:
 		assert.Expect(step.SubAgents[1].Prompt).To(Equal("Check for security issues"))
 	})
 
+	t.Run("parses sub_agent with own container image", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		var config backwards.Config
+		err := yaml.Unmarshal([]byte(`
+jobs:
+  - name: review
+    plan:
+      - agent: orchestrator
+        prompt: Call your sub-agents
+        model: anthropic/claude-sonnet-4-20250514
+        config:
+          platform: linux
+          image: alpine/git
+        sub_agents:
+          - agent: shared-reviewer
+            prompt: Uses parent container
+          - agent: custom-reviewer
+            prompt: Uses own container
+            config:
+              platform: linux
+              image: python:3.12
+`), &config)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		step := config.Jobs[0].Plan[0]
+		assert.Expect(step.SubAgents).To(HaveLen(2))
+
+		// Shared: no config block, will default to parent image at runtime.
+		assert.Expect(step.SubAgents[0].Agent).To(Equal("shared-reviewer"))
+		assert.Expect(step.SubAgents[0].TaskConfig).To(BeNil())
+
+		// Own container: has config.image set.
+		assert.Expect(step.SubAgents[1].Agent).To(Equal("custom-reviewer"))
+		assert.Expect(step.SubAgents[1].TaskConfig).NotTo(BeNil())
+		assert.Expect(step.SubAgents[1].TaskConfig.Image).To(Equal("python:3.12"))
+	})
+
+	t.Run("transpiles sub_agent with own container image to JS", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		js, err := backwards.NewPipelineFromContent(`
+jobs:
+  - name: review
+    plan:
+      - agent: orchestrator
+        prompt: Call your sub-agents
+        model: anthropic/claude-sonnet-4-20250514
+        config:
+          platform: linux
+          image: alpine/git
+        sub_agents:
+          - agent: shared-reviewer
+            prompt: Uses parent container
+          - agent: custom-reviewer
+            prompt: Uses own container
+            config:
+              platform: linux
+              image: python:3.12
+`)
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(js).To(ContainSubstring("shared-reviewer"))
+		assert.Expect(js).To(ContainSubstring("custom-reviewer"))
+		assert.Expect(js).To(ContainSubstring("python:3.12"))
+	})
+
 	t.Run("transpiles agent step with sub_agents to JS", func(t *testing.T) {
 		t.Parallel()
 
