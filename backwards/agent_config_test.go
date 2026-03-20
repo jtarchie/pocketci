@@ -27,7 +27,7 @@ func TestAgentStepConfig(t *testing.T) {
 
 		assert.Expect(config.Jobs).To(HaveLen(1))
 
-		step := config.Jobs[0].Plan[0]
+		step := config.Jobs[0].Plan[1]
 
 		assert.Expect(step.Agent).To(Equal("review-code-agent"))
 		assert.Expect(step.Model).To(ContainSubstring("gemini"))

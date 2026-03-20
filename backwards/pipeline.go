@@ -100,6 +100,10 @@ func NewPipelineFromContent(content string) (string, error) {
 		return "", err
 	}
 
+	if err := validateInputOutputWiring(config.Jobs); err != nil {
+		return "", err
+	}
+
 	jsonBytes, err := yaml.MarshalWithOptions(config, yaml.JSON())
 	if err != nil {
 		return "", fmt.Errorf("could not marshal pipeline: %w", err)
@@ -144,6 +148,10 @@ func ValidatePipeline(content []byte) error {
 	}
 
 	if err := validateConcurrency(&config); err != nil {
+		return err
+	}
+
+	if err := validateInputOutputWiring(config.Jobs); err != nil {
 		return err
 	}
 
@@ -227,6 +235,98 @@ func validateStepConcurrency(jobName string, stepIndex int, step Step) error {
 	}
 
 	return nil
+}
+
+// validateInputOutputWiring checks that every task or agent step's declared
+// inputs are satisfied by outputs from earlier steps in the same job. Steps
+// that load their config entirely from a file: are skipped because their
+// inputs are only known at runtime.
+func validateInputOutputWiring(jobs Jobs) error {
+	for _, job := range jobs {
+		available := make(map[string]bool)
+
+		for _, step := range job.Plan {
+			collectStepOutputs(step, available)
+
+			if errs := checkStepInputs(step, available, job.Name); len(errs) > 0 {
+				return errs[0]
+			}
+		}
+	}
+
+	return nil
+}
+
+// collectStepOutputs registers the outputs a step makes available for
+// subsequent steps in the same job.
+func collectStepOutputs(step Step, available map[string]bool) {
+	switch {
+	case step.Get != "":
+		available[step.Get] = true
+	case step.Put != "":
+		available[step.Put] = true
+	case step.Task != "":
+		if step.TaskConfig != nil {
+			for _, out := range step.TaskConfig.Outputs {
+				available[out.Name] = true
+			}
+		}
+	case step.Agent != "":
+		if step.TaskConfig != nil && len(step.TaskConfig.Outputs) > 0 {
+			for _, out := range step.TaskConfig.Outputs {
+				available[out.Name] = true
+			}
+		} else {
+			// Agent steps auto-create an output named after the agent.
+			available[step.Agent] = true
+		}
+	}
+
+	// Recurse into composite steps.
+	for _, nested := range step.Do {
+		collectStepOutputs(nested, available)
+	}
+
+	for _, nested := range step.InParallel.Steps {
+		collectStepOutputs(nested, available)
+	}
+}
+
+// checkStepInputs verifies that every declared input on a step exists in the
+// available outputs set. Steps using file: without inline config.inputs are
+// skipped (inputs unknown until runtime).
+func checkStepInputs(step Step, available map[string]bool, jobName string) []error {
+	var errs []error
+
+	stepName := step.Task
+	if stepName == "" {
+		stepName = step.Agent
+	}
+
+	// Only validate when we have inline inputs to check.
+	// Skip steps that use file: or prompt_file: — their inputs bootstrap
+	// volumes for runtime file loading, not prior-step output consumption.
+	if stepName != "" && step.TaskConfig != nil && step.File == "" && step.PromptFile == "" {
+		for _, in := range step.TaskConfig.Inputs {
+			if !available[in.Name] {
+				errs = append(errs, fmt.Errorf(
+					"step %q in job %q declares input %q, but no prior step produces it as an output",
+					stepName, jobName, in.Name,
+				))
+			}
+		}
+	}
+
+	// Recurse into composite steps.
+	for _, nested := range step.Do {
+		errs = append(errs, checkStepInputs(nested, available, jobName)...)
+	}
+
+	for _, nested := range step.InParallel.Steps {
+		errs = append(errs, checkStepInputs(nested, available, jobName)...)
+	}
+
+	return errs
 }
 
 // validateResourceTypes checks that every resource references a defined resource type.

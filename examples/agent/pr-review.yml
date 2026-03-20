@@ -72,7 +72,7 @@ jobs:
       # directly into the orchestrator's context — no result.json wiring
       # needed. Results are also persisted at nested storage paths so the UI
       # shows them indented under this step.
-      - agent: pr-reviewer
+      - agent: final-review
         file: repo/examples/agent/agents/final-reviewer.yml
         sub_agents:
           - agent: code-quality-reviewer
