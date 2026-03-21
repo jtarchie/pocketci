@@ -47,26 +47,57 @@
         </div>
         <div
           class="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
-          <button
-            id="trigger-btn"
-            class="trigger-btn w-full px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed sm:w-auto"
-            hx-post="/api/pipelines/{{ .Pipeline.ID }}/trigger"
-            hx-swap="none"
-            data-pipeline-name="{{ .Pipeline.Name }}"
-            aria-label="Trigger"
-            title="Trigger pipeline execution">
-            <span class="btn-text">Trigger</span>
-            <span class="htmx-indicator">
-              <svg class="animate-spin h-5 w-5 inline"
-                xmlns="http://www.w3.org/2000/svg" fill="none"
-                viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10"
-                  stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-            </span>
-          </button>
+          <!-- Split trigger button -->
+          <div class="flex w-full sm:w-auto" role="group" aria-label="Trigger actions">
+            <button
+              id="trigger-btn"
+              class="trigger-btn flex-1 sm:flex-initial px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-l-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              hx-post="/api/pipelines/{{ .Pipeline.ID }}/trigger"
+              hx-swap="none"
+              data-pipeline-name="{{ .Pipeline.Name }}"
+              aria-label="Trigger"
+              title="Trigger pipeline execution">
+              <span class="btn-text">Trigger</span>
+              <span class="htmx-indicator">
+                <svg class="animate-spin h-5 w-5 inline"
+                  xmlns="http://www.w3.org/2000/svg" fill="none"
+                  viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10"
+                    stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              </span>
+            </button>
+            <details class="relative" id="trigger-dropdown">
+              <summary
+                class="flex items-center justify-center h-full px-3 py-3 bg-green-700 hover:bg-green-800 text-white rounded-r-lg cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 list-none [&::-webkit-details-marker]:hidden border-l border-green-800"
+                aria-label="More trigger options"
+                aria-haspopup="true">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </summary>
+              <div
+                class="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 py-1"
+                role="menu">
+                <button
+                  type="button"
+                  onclick="document.getElementById('trigger-args-dialog').showModal(); this.closest('details').removeAttribute('open');"
+                  class="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:bg-gray-100 dark:focus:bg-gray-700"
+                  role="menuitem">
+                  Trigger with Args&hellip;
+                </button>
+                <button
+                  type="button"
+                  onclick="document.getElementById('trigger-webhook-dialog').showModal(); this.closest('details').removeAttribute('open');"
+                  class="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:bg-gray-100 dark:focus:bg-gray-700"
+                  role="menuitem">
+                  Trigger with Webhook&hellip;
+                </button>
+              </div>
+            </details>
+          </div>
           <details class="relative sm:w-auto">
             <summary
               class="flex items-center justify-center w-full sm:w-auto px-4 py-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 dark:focus:ring-offset-gray-800 list-none [&::-webkit-details-marker]:hidden"
@@ -105,4 +136,92 @@
 
 {{ template "footer" }}
 {{ template "toast-container" }}
+
+<!-- Trigger with Args dialog -->
+<dialog id="trigger-args-dialog"
+  class="trigger-dialog rounded-lg shadow-xl p-0 w-full max-w-lg backdrop:bg-black/50 dark:bg-gray-800 dark:text-white"
+  aria-labelledby="trigger-args-title">
+  <form method="dialog" class="p-6">
+    <h2 id="trigger-args-title" class="text-lg font-semibold mb-4">Trigger with Arguments</h2>
+    <label for="trigger-args-input" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+      Arguments (one per line)
+    </label>
+    <textarea
+      id="trigger-args-input"
+      rows="6"
+      placeholder="--env=staging&#10;--verbose&#10;my-target"
+      class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white"></textarea>
+    <div class="flex justify-end gap-3 mt-4">
+      <button type="button"
+        onclick="this.closest('dialog').close()"
+        class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors">
+        Cancel
+      </button>
+      <button type="button"
+        id="trigger-args-submit"
+        data-pipeline-id="{{ .Pipeline.ID }}"
+        data-pipeline-name="{{ .Pipeline.Name }}"
+        class="px-4 py-2 text-sm text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-green-500">
+        Trigger
+      </button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Trigger with Webhook dialog -->
+<dialog id="trigger-webhook-dialog"
+  class="trigger-dialog rounded-lg shadow-xl p-0 w-full max-w-lg backdrop:bg-black/50 dark:bg-gray-800 dark:text-white"
+  aria-labelledby="trigger-webhook-title">
+  <form method="dialog" class="p-6">
+    <h2 id="trigger-webhook-title" class="text-lg font-semibold mb-4">Trigger with Webhook Payload</h2>
+
+    <label for="trigger-webhook-method" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+      Method
+    </label>
+    <select id="trigger-webhook-method"
+      class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white mb-4">
+      <option value="POST" selected>POST</option>
+      <option value="GET">GET</option>
+      <option value="PUT">PUT</option>
+      <option value="PATCH">PATCH</option>
+      <option value="DELETE">DELETE</option>
+    </select>
+
+    <div class="mb-4">
+      <div class="flex items-center justify-between mb-1">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Headers</label>
+        <button type="button" id="trigger-webhook-add-header"
+          class="text-xs text-green-600 dark:text-green-400 hover:underline">+ Add header</button>
+      </div>
+      <div id="trigger-webhook-headers" class="space-y-2"></div>
+    </div>
+
+    <label for="trigger-webhook-body" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+      JSON Body
+    </label>
+    <textarea
+      id="trigger-webhook-body"
+      rows="10"
+      placeholder='{"action": "opened", "repository": {"full_name": "owner/repo"}}'
+      class="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-500 dark:text-white"></textarea>
+    <pre id="trigger-webhook-preview"
+      class="hidden mt-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 p-3 text-sm font-mono overflow-auto max-h-48"><code class="language-json"></code></pre>
+
+    <div class="flex justify-end gap-3 mt-4">
+      <button type="button"
+        onclick="this.closest('dialog').close()"
+        class="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors">
+        Cancel
+      </button>
+      <button type="button"
+        id="trigger-webhook-submit"
+        data-pipeline-id="{{ .Pipeline.ID }}"
+        data-pipeline-name="{{ .Pipeline.Name }}"
+        class="px-4 py-2 text-sm text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-green-500">
+        Trigger
+      </button>
+    </div>
+  </form>
+</dialog>
+
 {{ template "end" }}

@@ -107,8 +107,9 @@ func (s *ExecutionService) MaxInFlight() int {
 
 // TriggerPipeline starts a new pipeline execution asynchronously.
 // It creates a run record, starts a goroutine to execute the pipeline,
-// and returns the run ID immediately.
-func (s *ExecutionService) TriggerPipeline(ctx context.Context, pipeline *storage.Pipeline) (*storage.PipelineRun, error) {
+// and returns the run ID immediately. Optional args are passed through
+// to pipelineContext.args in the runtime.
+func (s *ExecutionService) TriggerPipeline(ctx context.Context, pipeline *storage.Pipeline, args []string) (*storage.PipelineRun, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -126,7 +127,7 @@ func (s *ExecutionService) TriggerPipeline(ctx context.Context, pipeline *storag
 	s.wg.Add(1)
 
 	// Launch execution goroutine
-	go s.executePipeline(pipeline, run, execOptions{requestID: requestID, authProvider: actor.Provider, user: actor.User})
+	go s.executePipeline(pipeline, run, execOptions{args: args, requestID: requestID, authProvider: actor.Provider, user: actor.User})
 
 	return run, nil
 }
@@ -241,6 +242,7 @@ type webhookExecData struct {
 // execOptions holds options for executePipeline.
 type execOptions struct {
 	webhook      *webhookExecData
+	args         []string
 	resume       bool
 	requestID    string
 	authProvider string
@@ -297,6 +299,7 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 		RequestID:    opts.requestID,
 		AuthProvider: opts.authProvider,
 		User:         opts.user,
+		Args:         opts.args,
 	}
 
 	// Only pass secrets manager if the secrets feature is enabled

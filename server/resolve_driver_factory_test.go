@@ -46,7 +46,7 @@ func TestResolveDriverFactory(t *testing.T) {
 		})
 
 		execService := router.ExecutionService()
-		run, err := execService.TriggerPipeline(context.Background(), pipeline)
+		run, err := execService.TriggerPipeline(context.Background(), pipeline, nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		execService.Wait()
 
@@ -80,7 +80,7 @@ func TestResolveDriverFactory(t *testing.T) {
 		})
 
 		execService := router.ExecutionService()
-		run, err := execService.TriggerPipeline(context.Background(), pipeline)
+		run, err := execService.TriggerPipeline(context.Background(), pipeline, nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		execService.Wait()
 
@@ -114,7 +114,7 @@ func TestResolveDriverFactory(t *testing.T) {
 		})
 
 		execService := router.ExecutionService()
-		run, err := execService.TriggerPipeline(context.Background(), pipeline)
+		run, err := execService.TriggerPipeline(context.Background(), pipeline, nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		execService.Wait()
 
@@ -160,7 +160,7 @@ func TestResolveDriverFactory(t *testing.T) {
 		})
 
 		execService := router.ExecutionService()
-		run, err := execService.TriggerPipeline(context.Background(), pipeline)
+		run, err := execService.TriggerPipeline(context.Background(), pipeline, nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		execService.Wait()
 
@@ -195,7 +195,7 @@ func TestResolveDriverFactory(t *testing.T) {
 		})
 
 		execService := router.ExecutionService()
-		run, err := execService.TriggerPipeline(context.Background(), pipelineA)
+		run, err := execService.TriggerPipeline(context.Background(), pipelineA, nil)
 		assert.Expect(err).NotTo(HaveOccurred())
 		execService.Wait()
 

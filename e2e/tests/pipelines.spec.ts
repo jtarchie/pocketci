@@ -249,6 +249,140 @@ test.describe("Pipeline Management UI", () => {
       });
     });
 
+    test("trigger with args dialog opens, submits, and shows toast", async ({ page, request }) => {
+      const pipelineName = uniqueName("trigger-args-test");
+      await createPipeline(
+        request,
+        pipelineName,
+        `export const pipeline = async () => { console.log("args test"); };`,
+      );
+
+      await page.goto("/pipelines/");
+      await page.getByRole("link", { name: pipelineName }).click();
+
+      // Open the split-button dropdown and click "Trigger with Args…"
+      await page.getByLabel("More trigger options").click();
+      await page.getByRole("menuitem", { name: /trigger with args/i }).click();
+
+      // Dialog should be visible and centered
+      const dialog = page.locator("#trigger-args-dialog");
+      await expect(dialog).toBeVisible();
+
+      // Fill in args (one per line)
+      await page.locator("#trigger-args-input").fill("--env=staging\n--verbose");
+
+      // Submit
+      await page.locator("#trigger-args-submit").click();
+
+      // Should show success toast
+      await expect(page.getByText(/triggered successfully/i)).toBeVisible({
+        timeout: 5000,
+      });
+
+      // Dialog should close
+      await expect(dialog).not.toBeVisible();
+    });
+
+    test("trigger with webhook dialog opens, submits, and shows toast", async ({ page, request }) => {
+      const pipelineName = uniqueName("trigger-webhook-test");
+      await createPipeline(
+        request,
+        pipelineName,
+        `export const pipeline = async () => { console.log("webhook test"); };`,
+      );
+
+      await page.goto("/pipelines/");
+      await page.getByRole("link", { name: pipelineName }).click();
+
+      // Open dropdown and click "Trigger with Webhook…"
+      await page.getByLabel("More trigger options").click();
+      await page.getByRole("menuitem", { name: /trigger with webhook/i }).click();
+
+      // Dialog should be visible
+      const dialog = page.locator("#trigger-webhook-dialog");
+      await expect(dialog).toBeVisible();
+
+      // Fill JSON body
+      await page.locator("#trigger-webhook-body").fill('{"action": "test"}');
+
+      // JSON preview should appear with syntax highlighting
+      const preview = page.locator("#trigger-webhook-preview");
+      await expect(preview).toBeVisible();
+      await expect(preview.locator("code.language-json")).toBeVisible();
+
+      // Submit
+      await page.locator("#trigger-webhook-submit").click();
+
+      // Should show success toast
+      await expect(page.getByText(/triggered successfully/i)).toBeVisible({
+        timeout: 5000,
+      });
+
+      // Dialog should close
+      await expect(dialog).not.toBeVisible();
+    });
+
+    test("trigger args dialog can be cancelled", async ({ page, request }) => {
+      const pipelineName = uniqueName("trigger-cancel-test");
+      await createPipeline(
+        request,
+        pipelineName,
+        `export const pipeline = async () => { console.log("cancel test"); };`,
+      );
+
+      await page.goto("/pipelines/");
+      await page.getByRole("link", { name: pipelineName }).click();
+
+      // Open args dialog
+      await page.getByLabel("More trigger options").click();
+      await page.getByRole("menuitem", { name: /trigger with args/i }).click();
+
+      const dialog = page.locator("#trigger-args-dialog");
+      await expect(dialog).toBeVisible();
+
+      // Click Cancel
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+
+      // Dialog should close
+      await expect(dialog).not.toBeVisible();
+    });
+
+    test("webhook dialog supports adding and removing headers", async ({ page, request }) => {
+      const pipelineName = uniqueName("trigger-headers-test");
+      await createPipeline(
+        request,
+        pipelineName,
+        `export const pipeline = async () => { console.log("headers test"); };`,
+      );
+
+      await page.goto("/pipelines/");
+      await page.getByRole("link", { name: pipelineName }).click();
+
+      // Open webhook dialog
+      await page.getByLabel("More trigger options").click();
+      await page.getByRole("menuitem", { name: /trigger with webhook/i }).click();
+
+      const dialog = page.locator("#trigger-webhook-dialog");
+      await expect(dialog).toBeVisible();
+
+      // Click "+ Add header"
+      await page.locator("#trigger-webhook-add-header").click();
+
+      // Header row should appear
+      const headerRow = page.locator("#trigger-webhook-headers > div").first();
+      await expect(headerRow).toBeVisible();
+
+      // Fill in header key/value
+      await headerRow.locator(".webhook-header-key").fill("X-Custom-Header");
+      await headerRow.locator(".webhook-header-val").fill("test-value");
+
+      // Remove header
+      await headerRow.locator("button").click();
+
+      // Header row should be gone
+      await expect(page.locator("#trigger-webhook-headers > div")).toHaveCount(0);
+    });
+
     test("clicking Tasks link navigates to /runs/:id/tasks", async ({ page, request }) => {
       const pipelineName = uniqueName("tasks-link-test");
       await createPipeline(

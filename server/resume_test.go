@@ -45,7 +45,7 @@ export const pipeline = async () => {
 
 			// Trigger the pipeline and wait for it to fail
 			execService := router.ExecutionService()
-			run, err := execService.TriggerPipeline(context.Background(), pipeline)
+			run, err := execService.TriggerPipeline(context.Background(), pipeline, nil)
 			assert.Expect(err).NotTo(HaveOccurred())
 			execService.Wait()
 
@@ -101,7 +101,7 @@ export const pipeline = async () => {
 			router := newStrictSecretRouter(t, client, server.RouterOptions{MaxInFlight: 5})
 
 			execService := router.ExecutionService()
-			run, err := execService.TriggerPipeline(context.Background(), pipeline)
+			run, err := execService.TriggerPipeline(context.Background(), pipeline, nil)
 			assert.Expect(err).NotTo(HaveOccurred())
 			execService.Wait()
 
@@ -406,7 +406,7 @@ export const pipeline = async () => {
 			router := newStrictSecretRouter(t, client, server.RouterOptions{MaxInFlight: 5})
 
 			execService := router.ExecutionService()
-			failRun, err := execService.TriggerPipeline(context.Background(), failPipeline)
+			failRun, err := execService.TriggerPipeline(context.Background(), failPipeline, nil)
 			assert.Expect(err).NotTo(HaveOccurred())
 			execService.Wait()
 

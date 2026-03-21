@@ -68,7 +68,7 @@ func TestStopRun(t *testing.T) {
 			router := newStrictSecretRouter(t, client, server.RouterOptions{MaxInFlight: 5})
 
 			execService := router.ExecutionService()
-			run, err := execService.TriggerPipeline(context.Background(), pipeline)
+			run, err := execService.TriggerPipeline(context.Background(), pipeline, nil)
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Wait for the pipeline to finish so the run is in a terminal state
@@ -114,7 +114,7 @@ export const pipeline = async () => {
 			router := newStrictSecretRouter(t, client, server.RouterOptions{MaxInFlight: 5})
 
 			execService := router.ExecutionService()
-			run, err := execService.TriggerPipeline(context.Background(), pipeline)
+			run, err := execService.TriggerPipeline(context.Background(), pipeline, nil)
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Poll until the run is in running state before stopping it

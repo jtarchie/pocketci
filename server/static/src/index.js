@@ -9,11 +9,13 @@ import hljs from "highlight.js/lib/core";
 import yaml from "highlight.js/lib/languages/yaml";
 import typescript from "highlight.js/lib/languages/typescript";
 import javascript from "highlight.js/lib/languages/javascript";
+import json from "highlight.js/lib/languages/json";
 
 // Register languages
 hljs.registerLanguage("yaml", yaml);
 hljs.registerLanguage("typescript", typescript);
 hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("json", json);
 
 // Import graph module
 import { initGraph } from "./graph.js";
@@ -137,6 +139,124 @@ document.body.addEventListener("htmx:afterSwap", function () {
   });
 });
 
+// ---- Trigger dialogs (args / webhook) ----
+
+function triggerPipeline(pipelineId, pipelineName, body) {
+  fetch("/api/pipelines/" + pipelineId + "/trigger", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "HX-Request": "true",
+    },
+    body: JSON.stringify(body),
+  })
+    .then(function (resp) {
+      if (!resp.ok) {
+        return resp.text().then(function (t) {
+          throw new Error(t || "Server error " + resp.status);
+        });
+      }
+      showToast(pipelineName + " triggered successfully", "success");
+    })
+    .catch(function (err) {
+      showToast(err.message, "error");
+    });
+}
+
+function initTriggerDialogs() {
+  // Args dialog
+  var argsSubmit = document.getElementById("trigger-args-submit");
+  if (argsSubmit) {
+    argsSubmit.addEventListener("click", function () {
+      var textarea = document.getElementById("trigger-args-input");
+      var args = textarea.value
+        .split("\n")
+        .map(function (l) { return l.trim(); })
+        .filter(function (l) { return l.length > 0; });
+
+      triggerPipeline(argsSubmit.dataset.pipelineId, argsSubmit.dataset.pipelineName, {
+        mode: "args",
+        args: args,
+      });
+
+      textarea.value = "";
+      document.getElementById("trigger-args-dialog").close();
+    });
+  }
+
+  // Webhook dialog - add header button
+  var addHeaderBtn = document.getElementById("trigger-webhook-add-header");
+  if (addHeaderBtn) {
+    addHeaderBtn.addEventListener("click", function () {
+      var container = document.getElementById("trigger-webhook-headers");
+      var row = document.createElement("div");
+      row.className = "flex gap-2 items-center";
+      row.innerHTML =
+        '<input type="text" placeholder="Header name" class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm dark:text-white webhook-header-key">' +
+        '<input type="text" placeholder="Value" class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm dark:text-white webhook-header-val">' +
+        '<button type="button" class="text-red-500 hover:text-red-700 text-sm" aria-label="Remove header">&times;</button>';
+      row.querySelector("button").addEventListener("click", function () {
+        row.remove();
+      });
+      container.appendChild(row);
+    });
+  }
+
+  // Webhook dialog - submit
+  var webhookSubmit = document.getElementById("trigger-webhook-submit");
+  if (webhookSubmit) {
+    webhookSubmit.addEventListener("click", function () {
+      var method = document.getElementById("trigger-webhook-method").value;
+      var body = document.getElementById("trigger-webhook-body").value;
+
+      var headers = {};
+      document.querySelectorAll("#trigger-webhook-headers > div").forEach(function (row) {
+        var key = row.querySelector(".webhook-header-key").value.trim();
+        var val = row.querySelector(".webhook-header-val").value.trim();
+        if (key) headers[key] = val;
+      });
+
+      triggerPipeline(webhookSubmit.dataset.pipelineId, webhookSubmit.dataset.pipelineName, {
+        mode: "webhook",
+        webhook: {
+          method: method,
+          body: body,
+          headers: Object.keys(headers).length > 0 ? headers : undefined,
+        },
+      });
+
+      document.getElementById("trigger-webhook-body").value = "";
+      document.getElementById("trigger-webhook-headers").innerHTML = "";
+      document.getElementById("trigger-webhook-dialog").close();
+    });
+  }
+
+  // Webhook body - live JSON syntax highlighting preview
+  var webhookBody = document.getElementById("trigger-webhook-body");
+  var webhookPreview = document.getElementById("trigger-webhook-preview");
+  if (webhookBody && webhookPreview) {
+    var codeEl = webhookPreview.querySelector("code");
+    webhookBody.addEventListener("input", function () {
+      var val = webhookBody.value.trim();
+      if (val) {
+        codeEl.textContent = val;
+        codeEl.removeAttribute("data-highlighted");
+        hljs.highlightElement(codeEl);
+        webhookPreview.classList.remove("hidden");
+      } else {
+        webhookPreview.classList.add("hidden");
+      }
+    });
+  }
+
+  // Close dialogs on backdrop click
+  document.querySelectorAll("dialog.trigger-dialog").forEach(function (dialog) {
+    dialog.addEventListener("click", function (e) {
+      if (e.target === dialog) dialog.close();
+    });
+  });
+}
+
 // Initialize when DOM is ready
 document.addEventListener("DOMContentLoaded", function () {
   // Initialize graph if we're on the graph page
@@ -163,4 +283,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Initialize syntax highlighting
   initSyntaxHighlighting();
+
+  // Initialize trigger dialogs if on pipeline detail page
+  initTriggerDialogs();
 });

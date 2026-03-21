@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
@@ -57,6 +58,124 @@ func TestExecutionAPI(t *testing.T) {
 			router.WaitForExecutions()
 			err = client.Close()
 			assert.Expect(err).NotTo(HaveOccurred())
+		})
+
+		t.Run("POST /api/pipelines/:id/trigger with args mode passes args to execution", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
+
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
+
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			pipeline, err := client.SavePipeline(context.Background(), "test-args-pipeline", "export const pipeline = async () => {};", "native", "")
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			router := newStrictSecretRouter(t, client, server.RouterOptions{MaxInFlight: 5})
+			persistPipelineDriverSecret(t, router.ExecutionService().SecretsManager, pipeline.ID, "native")
+
+			body, _ := json.Marshal(map[string]any{
+				"mode": "args",
+				"args": []string{"--env=staging", "--verbose"},
+			})
+			req := httptest.NewRequest(http.MethodPost, "/api/pipelines/"+pipeline.ID+"/trigger", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			assert.Expect(rec.Code).To(Equal(http.StatusAccepted))
+
+			var resp map[string]any
+			err = json.Unmarshal(rec.Body.Bytes(), &resp)
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(resp["run_id"]).NotTo(BeEmpty())
+			assert.Expect(resp["status"]).To(Equal("queued"))
+
+			router.WaitForExecutions()
+			err = client.Close()
+			assert.Expect(err).NotTo(HaveOccurred())
+		})
+
+		t.Run("POST /api/pipelines/:id/trigger with webhook mode triggers webhook execution", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
+
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
+
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			pipeline, err := client.SavePipeline(context.Background(), "test-webhook-pipeline", "export const pipeline = async () => {};", "native", "")
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			router := newStrictSecretRouter(t, client, server.RouterOptions{
+				MaxInFlight:     5,
+				AllowedFeatures: "webhooks",
+			})
+			persistPipelineDriverSecret(t, router.ExecutionService().SecretsManager, pipeline.ID, "native")
+
+			body, _ := json.Marshal(map[string]any{
+				"mode": "webhook",
+				"webhook": map[string]any{
+					"method": "POST",
+					"body":   `{"action":"opened"}`,
+				},
+			})
+			req := httptest.NewRequest(http.MethodPost, "/api/pipelines/"+pipeline.ID+"/trigger", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			assert.Expect(rec.Code).To(Equal(http.StatusAccepted))
+
+			var resp map[string]any
+			err = json.Unmarshal(rec.Body.Bytes(), &resp)
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(resp["run_id"]).NotTo(BeEmpty())
+
+			router.WaitForExecutions()
+			err = client.Close()
+			assert.Expect(err).NotTo(HaveOccurred())
+		})
+
+		t.Run("POST /api/pipelines/:id/trigger with webhook mode returns 403 when webhooks disabled", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
+
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
+
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = client.Close() }()
+
+			pipeline, err := client.SavePipeline(context.Background(), "test-no-webhook", "export const pipeline = async () => {};", "native", "")
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			router := newStrictSecretRouter(t, client, server.RouterOptions{
+				MaxInFlight:     5,
+				AllowedFeatures: "secrets",
+			})
+
+			body, _ := json.Marshal(map[string]any{
+				"mode": "webhook",
+				"webhook": map[string]any{
+					"method": "POST",
+					"body":   "{}",
+				},
+			})
+			req := httptest.NewRequest(http.MethodPost, "/api/pipelines/"+pipeline.ID+"/trigger", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			assert.Expect(rec.Code).To(Equal(http.StatusForbidden))
 		})
 
 		t.Run("POST /api/pipelines/:id/trigger returns 404 for non-existent pipeline", func(t *testing.T) {

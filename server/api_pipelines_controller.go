@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/server/auth"
 	"github.com/jtarchie/pocketci/storage"
@@ -421,7 +422,22 @@ func (c *APIPipelinesController) Destroy(ctx *echo.Context) error {
 	return ctx.NoContent(http.StatusNoContent)
 }
 
+// triggerRequest is the optional JSON body for POST /api/pipelines/:id/trigger.
+type triggerRequest struct {
+	Mode    string          `json:"mode"`    // "" or "manual" (default), "args", "webhook"
+	Args    []string        `json:"args"`    // for mode="args"
+	Webhook *webhookSimData `json:"webhook"` // for mode="webhook"
+}
+
+// webhookSimData holds simulated webhook payload fields from the UI.
+type webhookSimData struct {
+	Body    string            `json:"body"`
+	Headers map[string]string `json:"headers"`
+	Method  string            `json:"method"`
+}
+
 // Trigger handles POST /api/pipelines/:id/trigger - Trigger pipeline execution.
+// Accepts an optional JSON body to trigger with args or a simulated webhook payload.
 func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
 	id := ctx.Param("id")
 
@@ -456,7 +472,47 @@ func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
 		return err
 	}
 
-	run, err := c.execService.TriggerPipeline(ctx.Request().Context(), pipeline)
+	// Parse optional JSON body for trigger mode.
+	var req triggerRequest
+	if ctx.Request().ContentLength > 0 {
+		_ = json.NewDecoder(ctx.Request().Body).Decode(&req)
+	}
+
+	var run *storage.PipelineRun
+
+	switch req.Mode {
+	case "args":
+		run, err = c.execService.TriggerPipeline(ctx.Request().Context(), pipeline, req.Args)
+
+	case "webhook":
+		if !IsFeatureEnabled(FeatureWebhooks, c.allowedFeatures) {
+			return ctx.JSON(http.StatusForbidden, map[string]string{
+				"error": "webhooks feature is not enabled",
+			})
+		}
+
+		method := "POST"
+		if req.Webhook != nil && req.Webhook.Method != "" {
+			method = req.Webhook.Method
+		}
+
+		webhookData := &jsapi.WebhookData{
+			Provider: "manual",
+			Method:   method,
+		}
+		if req.Webhook != nil {
+			webhookData.Body = req.Webhook.Body
+			webhookData.Headers = req.Webhook.Headers
+		}
+
+		responseChan := make(chan *jsapi.HTTPResponse, 1)
+		run, err = c.execService.TriggerWebhookPipeline(ctx.Request().Context(), pipeline, webhookData, responseChan)
+
+	default:
+		// mode="" or "manual" — current behavior
+		run, err = c.execService.TriggerPipeline(ctx.Request().Context(), pipeline, nil)
+	}
+
 	if err != nil {
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to trigger pipeline: %v", err),

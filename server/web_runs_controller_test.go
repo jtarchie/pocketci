@@ -44,7 +44,7 @@ export const pipeline = async () => {
 	router := newStrictSecretRouter(t, client, server.RouterOptions{MaxInFlight: 5})
 	execService := router.ExecutionService()
 
-	run, err := execService.TriggerPipeline(context.Background(), pipeline)
+	run, err := execService.TriggerPipeline(context.Background(), pipeline, nil)
 	assert.Expect(err).NotTo(HaveOccurred())
 	execService.Wait()
 
