@@ -10,24 +10,9 @@ prompt: |
      diff/pr_description.md — pass these as context in your request to each
      sub-agent, or let them read the files directly via their own tools.
   3. Collect ALL findings from all three reviewers.
-  4. Synthesize into strict JSON only (no code fences, no prose outside JSON).
-
-  Output format:
-  {
-    "summary": "One sentence overall verdict",
-    "issues": [
-      {
-        "severity": "critical|high|medium|low",
-        "description": "Description of the issue",
-        "file": "path/from/repo/root.ext",
-        "line": 97,
-        "start_line": 36
-      }
-    ]
-  }
+  4. Synthesize into JSON matching the output_schema.
 
   Requirements:
-  - Return valid JSON and nothing else.
   - Include findings from ALL THREE reviewers. Do not silently omit any.
   - You may use GitHub-flavored Markdown in `summary` and each issue `description`.
   - `file` must be repo-relative (no "repo/" prefix).
