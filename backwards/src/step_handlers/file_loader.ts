@@ -1,6 +1,7 @@
 /// <reference path="../../../packages/pocketci/src/global.d.ts" />
 
 import type { StepContext } from "./step_context.ts";
+import { formatElapsed } from "../utils.ts";
 
 // loadFileFromVolume reads a file from a volume mount using the runtime's
 // direct volume access API. The file path must start with the mount name
@@ -25,39 +26,55 @@ export async function loadFileFromVolume(
 
   const storageKey =
     `${ctx.paths.getBaseStorageKey()}/${pathContext}/load-file`;
+  const startedAt = new Date().toISOString();
   storage.set(storageKey, {
     status: "pending",
     file,
     volume: mountName,
+    started_at: startedAt,
   });
 
   try {
     const result = await runtime.readFilesFromVolume(volume.name, relativePath);
     const content = result[relativePath];
     if (content === undefined) {
+      const errMsg =
+        `file "${relativePath}" not found in volume "${mountName}"`;
       storage.set(storageKey, {
         status: "failure",
         file,
         volume: mountName,
-        errorMessage:
-          `file "${relativePath}" not found in volume "${mountName}"`,
+        started_at: startedAt,
+        elapsed: formatElapsed(startedAt),
+        errorMessage: errMsg,
+        logs: [{ type: "stderr", content: errMsg }],
       });
-      throw new Error(
-        `file "${relativePath}" not found in volume "${mountName}"`,
-      );
+      throw new Error(errMsg);
     }
     storage.set(storageKey, {
       status: "success",
       file,
       volume: mountName,
+      started_at: startedAt,
+      elapsed: formatElapsed(startedAt),
+      logs: [
+        {
+          type: "stdout",
+          content: `loaded ${file} from volume ${mountName}`,
+        },
+      ],
     });
     return content;
   } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
     storage.set(storageKey, {
       status: "failure",
       file,
       volume: mountName,
-      errorMessage: error instanceof Error ? error.message : String(error),
+      started_at: startedAt,
+      elapsed: formatElapsed(startedAt),
+      errorMessage: errMsg,
+      logs: [{ type: "stderr", content: errMsg }],
     });
     throw error;
   }

@@ -9,10 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
-	adkmodel "google.golang.org/adk/model"
 	"google.golang.org/adk/runner"
 	"google.golang.org/adk/session"
 	adktool "google.golang.org/adk/tool"
@@ -23,6 +21,25 @@ import (
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
 )
+
+// FormatDuration formats a duration as "Xs", "Xm Ys", or "Xh Ym Zs",
+// matching the TS formatElapsed helper used by task and agent steps.
+func FormatDuration(d time.Duration) string {
+	totalSeconds := int(d.Seconds())
+	h := totalSeconds / 3600
+	m := (totalSeconds % 3600) / 60
+	s := totalSeconds % 60
+
+	if h > 0 {
+		return fmt.Sprintf("%dh %dm %ds", h, m, s)
+	}
+
+	if m > 0 {
+		return fmt.Sprintf("%dm %ds", m, s)
+	}
+
+	return fmt.Sprintf("%ds", s)
+}
 
 // runCommandOutput is the tool result schema for run_script.
 type runCommandOutput struct {
@@ -520,6 +537,8 @@ func newSharedContainerSubAgentTool(
 				}
 			}
 
+			startedAt := time.Now().UTC()
+
 			// Create an in-memory session for the sub-agent.
 			sessionService := session.InMemoryService()
 
@@ -531,16 +550,6 @@ func newSharedContainerSubAgentTool(
 				return callAgentOutput{}, fmt.Errorf("create session: %w", err)
 			}
 
-			// Append the user message to the session.
-			userInvID := uuid.NewString()
-			userEvent := session.NewEvent(userInvID)
-			userEvent.Author = "user"
-			userEvent.LLMResponse = adkmodel.LLMResponse{
-				Content: genai.NewContentFromText(prompt, genai.RoleUser),
-			}
-
-			_ = sessionService.AppendEvent(ctx, sessResp.Session, userEvent)
-
 			runnr, err := runner.New(runner.Config{
 				AppName:        "ci-sub-agent",
 				Agent:          subAgent,
@@ -551,19 +560,22 @@ func newSharedContainerSubAgentTool(
 			}
 
 			// Run the sub-agent, collecting text, audit events, and usage.
+			// Pass the user message directly so the ADK runner manages the
+			// full multi-turn conversation lifecycle.
 			var textBuilder strings.Builder
 			var auditEvents []AuditEvent
 			var usage AgentUsage
-			now := time.Now().UTC()
 
 			AppendAuditEvent(&auditEvents, AuditEvent{
-				Timestamp: now.Format(time.RFC3339),
+				Timestamp: startedAt.Format(time.RFC3339),
 				Author:    "user",
 				Type:      "user_message",
 				Text:      prompt,
 			}, nil)
 
-			for event, err := range runnr.Run(ctx, "pipeline", sessResp.Session.ID(), nil, agent.RunConfig{}) {
+			userMsg := genai.NewContentFromText(prompt, genai.RoleUser)
+
+			for event, err := range runnr.Run(ctx, "pipeline", sessResp.Session.ID(), userMsg, agent.RunConfig{}) {
 				if err != nil {
 					return callAgentOutput{}, fmt.Errorf("sub-agent run: %w", err)
 				}
@@ -576,7 +588,7 @@ func newSharedContainerSubAgentTool(
 					continue
 				}
 
-				ts := now.Format(time.RFC3339)
+				ts := startedAt.Format(time.RFC3339)
 				if !event.Timestamp.IsZero() {
 					ts = event.Timestamp.UTC().Format(time.RFC3339)
 				}
@@ -627,9 +639,7 @@ func newSharedContainerSubAgentTool(
 							Text:         part.Text,
 						}, nil)
 
-						if isFinal {
-							textBuilder.WriteString(part.Text)
-						}
+						textBuilder.WriteString(part.Text)
 					}
 				}
 			}
@@ -641,15 +651,19 @@ func newSharedContainerSubAgentTool(
 				status = "error"
 			}
 
+			elapsed := time.Since(startedAt)
+
 			// Persist to storage so the UI tree and MCP tools can show
 			// each sub-agent as a separate nested entry.
 			if subCfg.StorageKeyPrefix != "" && parentConfig.Storage != nil {
 				storageKey := subCfg.StorageKeyPrefix + "/sub-agents/" + subCfg.Name + "/run"
 				_ = parentConfig.Storage.Set(ctx, storageKey, map[string]any{
-					"status":    status,
-					"stdout":    finalText,
-					"usage":     usage,
-					"audit_log": auditEvents,
+					"status":     status,
+					"stdout":     finalText,
+					"usage":      usage,
+					"audit_log":  auditEvents,
+					"started_at": startedAt.Format(time.RFC3339),
+					"elapsed":    FormatDuration(elapsed),
 				})
 			}
 

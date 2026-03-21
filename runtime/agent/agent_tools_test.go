@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jtarchie/pocketci/runtime/agent"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
@@ -489,4 +490,18 @@ func TestEffectiveLimits(t *testing.T) {
 		assert.Expect(turns).To(Equal(agent.DefaultLimitsMaxTurns))
 		assert.Expect(tokens).To(Equal(int32(0)))
 	})
+}
+
+func TestFormatDuration(t *testing.T) {
+	t.Parallel()
+
+	assert := NewGomegaWithT(t)
+
+	assert.Expect(agent.FormatDuration(0)).To(Equal("0s"))
+	assert.Expect(agent.FormatDuration(5 * time.Second)).To(Equal("5s"))
+	assert.Expect(agent.FormatDuration(59 * time.Second)).To(Equal("59s"))
+	assert.Expect(agent.FormatDuration(60 * time.Second)).To(Equal("1m 0s"))
+	assert.Expect(agent.FormatDuration(90 * time.Second)).To(Equal("1m 30s"))
+	assert.Expect(agent.FormatDuration(3661 * time.Second)).To(Equal("1h 1m 1s"))
+	assert.Expect(agent.FormatDuration(7200 * time.Second)).To(Equal("2h 0m 0s"))
 }
