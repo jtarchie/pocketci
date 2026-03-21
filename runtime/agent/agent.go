@@ -66,6 +66,7 @@ type AgentConfig struct {
 	Context          *AgentContext                          `json:"context,omitempty"`
 	Validation       *AgentValidationConfig                 `json:"validation,omitempty"`
 	SubAgents        []SubAgentConfig                       `json:"sub_agents,omitempty"`
+	OutputSchema     *genai.Schema                          `json:"output_schema,omitempty"`
 	// OnOutput is called with streaming chunks. Not serialised from JS.
 	OnOutput pipelinerunner.OutputCallback `json:"-"`
 	// OnAuditEvent is called every time an audit event is appended.
@@ -209,6 +210,7 @@ func RunAgent(
 		Instruction:           instruction,
 		Tools:                 tools,
 		GenerateContentConfig: genCfg,
+		OutputSchema:          config.OutputSchema,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("agent: failed to create agent: %w", err)
@@ -292,7 +294,8 @@ func RunAgent(
 	// Run the agent. The user message was already appended to the session above
 	// so we pass nil here — runnr.Run early-returns from appendMessageToSession
 	// when msg is nil, avoiding a duplicate turn.
-	var textBuilder strings.Builder
+	var textBuilder strings.Builder   // ALL text — streaming + audit log
+	var resultBuilder strings.Builder // isFinal text only — result.json + AgentResult
 	var usage AgentUsage
 
 	// Wrap context so we can cancel on hard limit.
@@ -443,6 +446,10 @@ func RunAgent(
 			}
 
 			processTextOutput(part.Text, &textBuilder, config.OnOutput, &auditEvents, ae, config.OnAuditEvent)
+
+			if isFinal {
+				resultBuilder.WriteString(part.Text)
+			}
 		}
 	}
 
@@ -460,7 +467,7 @@ func RunAgent(
 
 		if config.Validation != nil && config.Validation.Expr != "" {
 			env := map[string]any{
-				"text":   textBuilder.String(),
+				"text":   resultBuilder.String(),
 				"status": "success",
 			}
 
@@ -483,7 +490,7 @@ func RunAgent(
 			}
 		} else {
 			// Default: follow up when the model produced no text at all.
-			needsFollowUp = textBuilder.Len() == 0
+			needsFollowUp = resultBuilder.Len() == 0
 		}
 
 		if needsFollowUp {
@@ -524,6 +531,8 @@ func RunAgent(
 						Type:      "model_final",
 						Text:      part.Text,
 					}, config.OnAuditEvent)
+
+					resultBuilder.WriteString(part.Text)
 				}
 			}
 
@@ -533,7 +542,7 @@ func RunAgent(
 		}
 	}
 
-	finalText := textBuilder.String()
+	finalText := resultBuilder.String()
 	status := "success"
 
 	if limitExceeded {

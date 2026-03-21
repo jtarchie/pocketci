@@ -562,7 +562,8 @@ func newSharedContainerSubAgentTool(
 			// Run the sub-agent, collecting text, audit events, and usage.
 			// Pass the user message directly so the ADK runner manages the
 			// full multi-turn conversation lifecycle.
-			var textBuilder strings.Builder
+			var textBuilder strings.Builder   // all text for audit log
+			var resultBuilder strings.Builder // isFinal text only for tool result
 			var auditEvents []AuditEvent
 			var usage AgentUsage
 
@@ -640,13 +641,65 @@ func newSharedContainerSubAgentTool(
 						}, nil)
 
 						textBuilder.WriteString(part.Text)
+
+						if isFinal {
+							resultBuilder.WriteString(part.Text)
+						}
 					}
 				}
 			}
 
-			finalText := textBuilder.String()
-			status := "success"
+			// If the sub-agent used tools but never produced a final text
+			// response, send a follow-up asking it to summarize.
+			finalText := resultBuilder.String()
+			if finalText == "" {
+				followUpMsg := genai.NewContentFromText(
+					"You have completed your tool calls. Now provide your complete "+
+						"response summarizing your findings.", genai.RoleUser)
 
+				for event, err := range runnr.Run(ctx, "pipeline", sessResp.Session.ID(), followUpMsg, agent.RunConfig{}) {
+					if err != nil {
+						break
+					}
+
+					if event.UsageMetadata != nil {
+						accumulateUsage(&usage, event.UsageMetadata, nil)
+					}
+
+					if event.Content == nil {
+						continue
+					}
+
+					ts := time.Now().UTC().Format(time.RFC3339)
+					if !event.Timestamp.IsZero() {
+						ts = event.Timestamp.UTC().Format(time.RFC3339)
+					}
+
+					for _, part := range event.Content.Parts {
+						if part.Text != "" {
+							AppendAuditEvent(&auditEvents, AuditEvent{
+								Timestamp:    ts,
+								InvocationID: event.InvocationID,
+								Author:       event.Author,
+								Type:         "model_final",
+								Text:         part.Text,
+							}, nil)
+
+							resultBuilder.WriteString(part.Text)
+							textBuilder.WriteString(part.Text)
+						}
+					}
+				}
+
+				finalText = resultBuilder.String()
+			}
+
+			// Last-resort fallback: use all accumulated text.
+			if finalText == "" {
+				finalText = textBuilder.String()
+			}
+
+			status := "success"
 			if finalText == "" {
 				status = "error"
 			}

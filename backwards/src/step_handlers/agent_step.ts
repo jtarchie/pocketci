@@ -172,6 +172,7 @@ export class AgentStepHandler implements StepHandler {
         limits: agentStep.limits,
         context: agentStep.context,
         validation: agentStep.validation,
+        output_schema: agentStep.output_schema,
         sub_agents: subAgents.length > 0 ? subAgents : undefined,
         onUsage: (usage: AgentUsage) => {
           latestUsage = usage;

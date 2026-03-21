@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+	"google.golang.org/genai"
 
 	"github.com/jtarchie/pocketci/runtime/agent"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
@@ -139,6 +140,69 @@ func TestSubAgentConfigJSON(t *testing.T) {
 		var decoded agent.SubAgentConfig
 		assert.Expect(json.Unmarshal(data, &decoded)).To(Succeed())
 		assert.Expect(decoded.StorageKeyPrefix).To(Equal(sub.StorageKeyPrefix))
+	})
+}
+
+func TestOutputSchemaRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	t.Run("output_schema roundtrips through JSON", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		config := agent.AgentConfig{
+			Name:  "review-agent",
+			Model: "openrouter/google/gemini-3",
+			Image: "alpine/git",
+			OutputSchema: &genai.Schema{
+				Type:        genai.TypeObject,
+				Description: "Code review results",
+				Properties: map[string]*genai.Schema{
+					"summary": {Type: genai.TypeString},
+					"issues": {
+						Type: genai.TypeArray,
+						Items: &genai.Schema{
+							Type: genai.TypeObject,
+							Properties: map[string]*genai.Schema{
+								"severity":    {Type: genai.TypeString},
+								"description": {Type: genai.TypeString},
+							},
+							Required: []string{"severity", "description"},
+						},
+					},
+				},
+				Required: []string{"summary", "issues"},
+			},
+		}
+
+		data, err := json.Marshal(config)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		var decoded agent.AgentConfig
+		assert.Expect(json.Unmarshal(data, &decoded)).To(Succeed())
+
+		assert.Expect(decoded.OutputSchema).NotTo(BeNil())
+		assert.Expect(decoded.OutputSchema.Type).To(Equal(genai.TypeObject))
+		assert.Expect(decoded.OutputSchema.Properties).To(HaveKey("summary"))
+		assert.Expect(decoded.OutputSchema.Properties).To(HaveKey("issues"))
+		assert.Expect(decoded.OutputSchema.Required).To(ConsistOf("summary", "issues"))
+	})
+
+	t.Run("output_schema omitted from JSON when nil", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		config := agent.AgentConfig{Name: "agent", Image: "alpine"}
+
+		data, err := json.Marshal(config)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		raw := make(map[string]json.RawMessage)
+		assert.Expect(json.Unmarshal(data, &raw)).To(Succeed())
+		_, found := raw["output_schema"]
+		assert.Expect(found).To(BeFalse(), "output_schema must be omitted when nil")
 	})
 }
 

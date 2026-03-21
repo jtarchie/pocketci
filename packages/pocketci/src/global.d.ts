@@ -355,6 +355,7 @@ declare global {
     limits?: AgentLimitsConfig;
     context?: AgentContext;
     validation?: AgentValidationConfig;
+    output_schema?: Record<string, unknown>;
     sub_agents?: SubAgentConfig[]; // Sub-agents registered as callable tools
   }
 
@@ -792,6 +793,7 @@ declare global {
     limits?: AgentLimitsConfig;
     context?: AgentContext;
     validation?: AgentValidationConfig;
+    output_schema?: Record<string, unknown>; // JSON Schema for structured output (OpenRouter/Gemini)
     sub_agents?: AgentStep[]; // Sub-agents available as callable tools to the parent LLM
     attempts?: number;
     across?: AcrossVar[];

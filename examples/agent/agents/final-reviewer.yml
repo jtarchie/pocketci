@@ -35,6 +35,31 @@ prompt: |
   - `start_line` is optional. Include it when a finding covers a line range; must be < `line`.
   - Include only findings you are reasonably confident about.
 model: openrouter/@preset/coding-agent
+output_schema:
+  type: OBJECT
+  description: Code review results
+  properties:
+    summary:
+      type: STRING
+      description: Brief summary of the review
+    issues:
+      type: ARRAY
+      items:
+        type: OBJECT
+        properties:
+          severity:
+            type: STRING
+            enum: ["critical", "high", "medium", "low"]
+          description:
+            type: STRING
+          file:
+            type: STRING
+          line:
+            type: INTEGER
+          start_line:
+            type: INTEGER
+        required: ["severity", "description"]
+  required: ["summary", "issues"]
 context:
   files:
     - path: diff/pr_description.md
