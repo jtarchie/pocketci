@@ -21,30 +21,13 @@ prompt: |
   - Include only findings you are reasonably confident about.
 model: openrouter/@preset/coding-agent
 output_schema:
-  type: OBJECT
-  description: Code review results
-  properties:
-    summary:
-      type: STRING
-      description: Brief summary of the review
-    issues:
-      type: ARRAY
-      items:
-        type: OBJECT
-        properties:
-          severity:
-            type: STRING
-            enum: ["critical", "high", "medium", "low"]
-          description:
-            type: STRING
-          file:
-            type: STRING
-          line:
-            type: INTEGER
-          start_line:
-            type: INTEGER
-        required: ["severity", "description"]
-  required: ["summary", "issues"]
+  summary: string
+  issues[]:
+    severity: critical|high|medium|low
+    description: string
+    file?: string
+    line?: int
+    start_line?: int
 context:
   files:
     - path: diff/pr_description.md

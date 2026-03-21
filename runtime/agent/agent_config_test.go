@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	"google.golang.org/genai"
 
 	"github.com/jtarchie/pocketci/runtime/agent"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
@@ -155,24 +154,12 @@ func TestOutputSchemaRoundTrip(t *testing.T) {
 			Name:  "review-agent",
 			Model: "openrouter/google/gemini-3",
 			Image: "alpine/git",
-			OutputSchema: &genai.Schema{
-				Type:        genai.TypeObject,
-				Description: "Code review results",
-				Properties: map[string]*genai.Schema{
-					"summary": {Type: genai.TypeString},
-					"issues": {
-						Type: genai.TypeArray,
-						Items: &genai.Schema{
-							Type: genai.TypeObject,
-							Properties: map[string]*genai.Schema{
-								"severity":    {Type: genai.TypeString},
-								"description": {Type: genai.TypeString},
-							},
-							Required: []string{"severity", "description"},
-						},
-					},
+			OutputSchema: map[string]interface{}{
+				"summary": "string",
+				"issues[]": map[string]interface{}{
+					"severity":    "critical|high|medium|low",
+					"description": "string",
 				},
-				Required: []string{"summary", "issues"},
 			},
 		}
 
@@ -183,10 +170,8 @@ func TestOutputSchemaRoundTrip(t *testing.T) {
 		assert.Expect(json.Unmarshal(data, &decoded)).To(Succeed())
 
 		assert.Expect(decoded.OutputSchema).NotTo(BeNil())
-		assert.Expect(decoded.OutputSchema.Type).To(Equal(genai.TypeObject))
-		assert.Expect(decoded.OutputSchema.Properties).To(HaveKey("summary"))
-		assert.Expect(decoded.OutputSchema.Properties).To(HaveKey("issues"))
-		assert.Expect(decoded.OutputSchema.Required).To(ConsistOf("summary", "issues"))
+		assert.Expect(decoded.OutputSchema).To(HaveKey("summary"))
+		assert.Expect(decoded.OutputSchema).To(HaveKey("issues[]"))
 	})
 
 	t.Run("output_schema omitted from JSON when nil", func(t *testing.T) {

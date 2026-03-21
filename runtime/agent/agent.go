@@ -66,7 +66,7 @@ type AgentConfig struct {
 	Context          *AgentContext                          `json:"context,omitempty"`
 	Validation       *AgentValidationConfig                 `json:"validation,omitempty"`
 	SubAgents        []SubAgentConfig                       `json:"sub_agents,omitempty"`
-	OutputSchema     *genai.Schema                          `json:"output_schema,omitempty"`
+	OutputSchema     map[string]interface{}                 `json:"output_schema,omitempty"`
 	// OnOutput is called with streaming chunks. Not serialised from JS.
 	OnOutput pipelinerunner.OutputCallback `json:"-"`
 	// OnAuditEvent is called every time an audit event is appended.
@@ -210,7 +210,7 @@ func RunAgent(
 		Instruction:           instruction,
 		Tools:                 tools,
 		GenerateContentConfig: genCfg,
-		OutputSchema:          config.OutputSchema,
+		OutputSchema:          ExpandOutputSchema(config.OutputSchema),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("agent: failed to create agent: %w", err)
