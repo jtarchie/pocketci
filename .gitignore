@@ -192,6 +192,7 @@ dist
 /pocketci*
 server/docs/site/
 site/docs/
+backwards/bundle.js
 
 # wrangler files
 .wrangler
