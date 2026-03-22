@@ -402,7 +402,28 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 	// Check if any jobs failed by querying job statuses
 	finalStatus, errMsg := s.determineRunStatus(dbCtx, run.ID, logger)
 
+	// Hold stopMu across the final stop check and the DB commit so that
+	// StopRun (which also acquires stopMu before setting the flag) cannot
+	// interleave between our check and our write. This eliminates the race
+	// window that previously allowed a "success" commit after a stop request.
+	s.stopMu.Lock()
+	if s.stopRequested[run.ID] || ctx.Err() != nil {
+		s.stopMu.Unlock()
+
+		if abortErr := s.store.UpdateStatusForPrefix(dbCtx, "/pipeline/"+run.ID+"/", []string{"pending", "running"}, "aborted"); abortErr != nil {
+			logger.Error("run.abort.tasks.failed", "error", abortErr)
+		}
+
+		if updateErr := s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusFailed, "Run stopped by user"); updateErr != nil {
+			logger.Error("run.update.failed.to_failed", "error", updateErr)
+		}
+
+		return
+	}
+
 	err = s.store.UpdateRunStatus(dbCtx, run.ID, finalStatus, errMsg)
+	s.stopMu.Unlock()
+
 	if err != nil {
 		logger.Error("run.update.failed.to_final", "error", err)
 		return
