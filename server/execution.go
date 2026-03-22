@@ -94,6 +94,15 @@ func (s *ExecutionService) StopRun(runID string) error {
 
 	cancel()
 
+	// Force the run to "failed" in the DB. If the execution goroutine already
+	// committed a terminal status (e.g. "success") before observing the stop
+	// request, this overwrites it. The goroutine may also write "failed" when
+	// it sees the flag — the double-write is harmless and idempotent.
+	dbCtx := context.Background()
+
+	_ = s.store.UpdateStatusForPrefix(dbCtx, "/pipeline/"+runID+"/", []string{"pending", "running"}, "aborted")
+	_ = s.store.UpdateRunStatus(dbCtx, runID, storage.RunStatusFailed, "Run stopped by user")
+
 	return nil
 }
 
@@ -402,30 +411,20 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 	// Check if any jobs failed by querying job statuses
 	finalStatus, errMsg := s.determineRunStatus(dbCtx, run.ID, logger)
 
-	// Hold stopMu across the final stop check and the DB commit so that
-	// StopRun (which also acquires stopMu before setting the flag) cannot
-	// interleave between our check and our write. This eliminates the race
-	// window that previously allowed a "success" commit after a stop request.
-	s.stopMu.Lock()
-	if s.stopRequested[run.ID] || ctx.Err() != nil {
-		s.stopMu.Unlock()
-
-		if abortErr := s.store.UpdateStatusForPrefix(dbCtx, "/pipeline/"+run.ID+"/", []string{"pending", "running"}, "aborted"); abortErr != nil {
-			logger.Error("run.abort.tasks.failed", "error", abortErr)
-		}
-
-		if updateErr := s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusFailed, "Run stopped by user"); updateErr != nil {
-			logger.Error("run.update.failed.to_failed", "error", updateErr)
-		}
-
+	err = s.store.UpdateRunStatus(dbCtx, run.ID, finalStatus, errMsg)
+	if err != nil {
+		logger.Error("run.update.failed.to_final", "error", err)
 		return
 	}
 
-	err = s.store.UpdateRunStatus(dbCtx, run.ID, finalStatus, errMsg)
-	s.stopMu.Unlock()
+	// Post-commit re-check: if a stop arrived while we were finalizing,
+	// overwrite whatever we just committed with "failed". StopRun also
+	// writes "failed" directly as a safety net, so between the two any
+	// ordering of goroutine-vs-StopRun results in "failed".
+	if s.wasStopRequested(run.ID) || ctx.Err() != nil {
+		_ = s.store.UpdateStatusForPrefix(dbCtx, "/pipeline/"+run.ID+"/", []string{"pending", "running"}, "aborted")
+		_ = s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusFailed, "Run stopped by user")
 
-	if err != nil {
-		logger.Error("run.update.failed.to_final", "error", err)
 		return
 	}
 
