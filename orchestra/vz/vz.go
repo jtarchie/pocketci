@@ -401,7 +401,7 @@ func (v *VZ) connectAgent(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline:
-				return errors.New("timeout waiting for guest agent")
+			return errors.New("timeout waiting for guest agent")
 		default:
 		}
 
