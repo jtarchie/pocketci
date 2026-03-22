@@ -1,10 +1,13 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
+	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
@@ -88,6 +91,19 @@ func buildSystemInstruction(config AgentConfig, maxTurns int) string {
 
 	fmt.Fprintf(&b, "\nYou have a budget of %d turns. Use run_script to combine steps and finish well within this limit.\n", maxTurns)
 
+	if config.OutputSchema != nil {
+		schema := ExpandOutputSchema(config.OutputSchema)
+		if schema != nil {
+			schemaJSON, err := json.Marshal(schema)
+			if err == nil {
+				b.WriteString("\nOutput format:\n")
+				b.WriteString("Your FINAL response must be valid JSON conforming to this schema:\n")
+				fmt.Fprintf(&b, "%s\n", schemaJSON)
+				b.WriteString("Do not include any text outside the JSON object in your final response.\n")
+			}
+		}
+	}
+
 	return b.String()
 }
 
@@ -129,4 +145,85 @@ func processTextOutput(
 		onOutput("stdout", text)
 	}
 	AppendAuditEvent(auditEvents, event, onAuditEvent)
+}
+
+// processEventParts handles FunctionCall, FunctionResponse, and Text parts
+// from an ADK event. Used by both the main run loop and the validation
+// follow-up loop so tool calls are always tracked.
+func processEventParts(
+	event *session.Event,
+	usage *AgentUsage,
+	auditEvents *[]AuditEvent,
+	textBuilder *strings.Builder,
+	resultBuilder *strings.Builder,
+	config AgentConfig,
+	eventUsage *AuditUsage,
+) {
+	ts := time.Now().UTC().Format(time.RFC3339)
+	if !event.Timestamp.IsZero() {
+		ts = event.Timestamp.UTC().Format(time.RFC3339)
+	}
+
+	isFinal := event.IsFinalResponse()
+	usageAttached := false
+
+	for _, part := range event.Content.Parts {
+		if part.FunctionCall != nil {
+			fc := part.FunctionCall
+			usage.ToolCallCount++
+
+			AppendAuditEvent(auditEvents, AuditEvent{
+				Timestamp:    ts,
+				InvocationID: event.InvocationID,
+				Author:       event.Author,
+				Type:         "tool_call",
+				ToolName:     fc.Name,
+				ToolCallID:   fc.ID,
+				ToolArgs:     fc.Args,
+			}, config.OnAuditEvent)
+			EmitUsageSnapshot(config.OnUsage, *usage)
+		}
+
+		if part.FunctionResponse != nil {
+			fr := part.FunctionResponse
+
+			AppendAuditEvent(auditEvents, AuditEvent{
+				Timestamp:    ts,
+				InvocationID: event.InvocationID,
+				Author:       event.Author,
+				Type:         "tool_response",
+				ToolName:     fr.Name,
+				ToolCallID:   fr.ID,
+				ToolResult:   fr.Response,
+			}, config.OnAuditEvent)
+		}
+
+		if part.Text == "" {
+			continue
+		}
+
+		eventType := "model_text"
+		if isFinal {
+			eventType = "model_final"
+		}
+
+		ae := AuditEvent{
+			Timestamp:    ts,
+			InvocationID: event.InvocationID,
+			Author:       event.Author,
+			Type:         eventType,
+			Text:         part.Text,
+		}
+
+		if !usageAttached {
+			ae.Usage = eventUsage
+			usageAttached = true
+		}
+
+		processTextOutput(part.Text, textBuilder, config.OnOutput, auditEvents, ae, config.OnAuditEvent)
+
+		if isFinal {
+			resultBuilder.WriteString(part.Text)
+		}
+	}
 }

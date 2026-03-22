@@ -918,4 +918,71 @@ func TestRunAgent_Validation_RealDocker(t *testing.T) {
 		assert.Expect(artifact["status"]).To(Equal("success"))
 		assert.Expect(artifact["text"]).To(ContainSubstring("complete response after follow-up"))
 	})
+
+	// Regression test: the validation follow-up loop must track tool calls, not
+	// just text. Before the fix, tool calls made during the follow-up run were
+	// invisible (no audit event, ToolCallCount not incremented).
+	t.Run("followup_tracks_tool_calls", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		responses := []string{
+			// Turn 1 (main loop): empty response → resultBuilder stays empty → follow-up triggers.
+			`{
+				"id":"chatcmpl-ftc-1","object":"chat.completion","created":1730000900,"model":"fake-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":""},"finish_reason":"stop"}],
+				"usage":{"prompt_tokens":20,"completion_tokens":1,"total_tokens":21}
+			}`,
+			// Turn 2 (follow-up loop): agent makes a tool call instead of answering directly.
+			`{
+				"id":"chatcmpl-ftc-2","object":"chat.completion","created":1730000901,"model":"fake-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{
+					"id":"call_followup","type":"function",
+					"function":{"name":"run_script","arguments":"{\"script\":\"echo hello-from-followup\"}"}
+				}]},"finish_reason":"tool_calls"}],
+				"usage":{"prompt_tokens":25,"completion_tokens":5,"total_tokens":30}
+			}`,
+			// Turn 3 (follow-up loop): agent summarises after receiving the tool result.
+			`{
+				"id":"chatcmpl-ftc-3","object":"chat.completion","created":1730000902,"model":"fake-model",
+				"choices":[{"index":0,"message":{"role":"assistant","content":"Tool output was: hello-from-followup"},"finish_reason":"stop"}],
+				"usage":{"prompt_tokens":35,"completion_tokens":8,"total_tokens":43}
+			}`,
+		}
+
+		llm, reqCount := newSequencedLLMServer(t, responses)
+		configureFakeOpenAI(t, llm.URL)
+
+		outVol := mustCreateVolume(t, runner, "ftc")
+
+		result, err := agent.RunAgent(context.Background(), runner, nil, "", agent.AgentConfig{
+			Name:             "ftc-agent",
+			Prompt:           "Produce a review.",
+			Model:            "openai/fake-model",
+			Image:            "busybox",
+			Mounts:           map[string]pipelinerunner.VolumeResult{"ftc": outVol},
+			OutputVolumePath: outVol.Path,
+		})
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(result).NotTo(BeNil())
+		assert.Expect(result.Text).To(ContainSubstring("hello-from-followup"))
+		assert.Expect(atomic.LoadInt32(reqCount)).To(BeNumerically("==", 3))
+
+		// The follow-up tool call must appear in the audit log.
+		var followUpToolCalls int
+		for _, event := range result.AuditLog {
+			if event.Type == "tool_call" && event.ToolName == "run_script" {
+				followUpToolCalls++
+			}
+		}
+		assert.Expect(followUpToolCalls).To(BeNumerically(">=", 1),
+			"expected at least one tool_call audit event from the follow-up loop")
+
+		// ToolCallCount in usage must reflect the follow-up tool call.
+		assert.Expect(result.Usage.ToolCallCount).To(BeNumerically(">=", 1),
+			"expected ToolCallCount > 0 because a tool was called during the follow-up")
+
+		artifact := readResultArtifact(t, runner, outVol, "read-ftc")
+		assert.Expect(artifact["status"]).To(Equal("success"))
+		assert.Expect(artifact["text"]).To(ContainSubstring("hello-from-followup"))
+	})
 }

@@ -647,6 +647,20 @@ func newSharedContainerSubAgentTool(
 						}
 					}
 				}
+
+				// Stream partial progress to storage so the UI can show
+				// sub-agent activity before it completes.
+				if event.UsageMetadata != nil && subCfg.StorageKeyPrefix != "" && parentConfig.Storage != nil {
+					storageKey := subCfg.StorageKeyPrefix + "/sub-agents/" + subCfg.Name + "/run"
+					_ = parentConfig.Storage.Set(ctx, storageKey, map[string]any{
+						"status":     "running",
+						"stdout":     textBuilder.String(),
+						"usage":      usage,
+						"audit_log":  auditEvents,
+						"started_at": startedAt.Format(time.RFC3339),
+						"elapsed":    FormatDuration(time.Since(startedAt)),
+					})
+				}
 			}
 
 			// If the sub-agent used tools but never produced a final text
@@ -675,19 +689,70 @@ func newSharedContainerSubAgentTool(
 						ts = event.Timestamp.UTC().Format(time.RFC3339)
 					}
 
+					isFinal := event.IsFinalResponse()
+
 					for _, part := range event.Content.Parts {
-						if part.Text != "" {
+						if part.FunctionCall != nil {
+							fc := part.FunctionCall
+							usage.ToolCallCount++
+
 							AppendAuditEvent(&auditEvents, AuditEvent{
 								Timestamp:    ts,
 								InvocationID: event.InvocationID,
 								Author:       event.Author,
-								Type:         "model_final",
+								Type:         "tool_call",
+								ToolName:     fc.Name,
+								ToolCallID:   fc.ID,
+								ToolArgs:     fc.Args,
+							}, nil)
+						}
+
+						if part.FunctionResponse != nil {
+							fr := part.FunctionResponse
+
+							AppendAuditEvent(&auditEvents, AuditEvent{
+								Timestamp:    ts,
+								InvocationID: event.InvocationID,
+								Author:       event.Author,
+								Type:         "tool_response",
+								ToolName:     fr.Name,
+								ToolCallID:   fr.ID,
+								ToolResult:   fr.Response,
+							}, nil)
+						}
+
+						if part.Text != "" {
+							eventType := "model_text"
+							if isFinal {
+								eventType = "model_final"
+							}
+
+							AppendAuditEvent(&auditEvents, AuditEvent{
+								Timestamp:    ts,
+								InvocationID: event.InvocationID,
+								Author:       event.Author,
+								Type:         eventType,
 								Text:         part.Text,
 							}, nil)
 
-							resultBuilder.WriteString(part.Text)
 							textBuilder.WriteString(part.Text)
+
+							if isFinal {
+								resultBuilder.WriteString(part.Text)
+							}
 						}
+					}
+
+					if event.UsageMetadata != nil && subCfg.StorageKeyPrefix != "" && parentConfig.Storage != nil {
+						storageKey := subCfg.StorageKeyPrefix + "/sub-agents/" + subCfg.Name + "/run"
+						_ = parentConfig.Storage.Set(ctx, storageKey, map[string]any{
+							"status":     "running",
+							"stdout":     textBuilder.String(),
+							"usage":      usage,
+							"audit_log":  auditEvents,
+							"started_at": startedAt.Format(time.RFC3339),
+							"elapsed":    FormatDuration(time.Since(startedAt)),
+						})
 					}
 				}
 
@@ -700,7 +765,7 @@ func newSharedContainerSubAgentTool(
 			}
 
 			status := "success"
-			if finalText == "" {
+			if finalText == "" && usage.ToolCallCount == 0 && usage.LLMRequests == 0 {
 				status = "error"
 			}
 

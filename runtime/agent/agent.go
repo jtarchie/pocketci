@@ -210,7 +210,11 @@ func RunAgent(
 		Instruction:           instruction,
 		Tools:                 tools,
 		GenerateContentConfig: genCfg,
-		OutputSchema:          ExpandOutputSchema(config.OutputSchema),
+		// OutputSchema is NOT passed to ADK. Setting it causes the ADK to add
+		// ResponseMIMEType="application/json" which forces the model to emit
+		// JSON immediately, preventing it from making tool calls first. Instead
+		// the schema is appended to the system instruction by
+		// buildSystemInstruction and enforced by the validation follow-up.
 	})
 	if err != nil {
 		return nil, fmt.Errorf("agent: failed to create agent: %w", err)
@@ -381,76 +385,7 @@ func RunAgent(
 			continue
 		}
 
-		// Compute timestamp and finality for audit events.
-		ts := now.Format(time.RFC3339)
-		if !event.Timestamp.IsZero() {
-			ts = event.Timestamp.UTC().Format(time.RFC3339)
-		}
-
-		isFinal := event.IsFinalResponse()
-		usageAttached := false
-
-		for _, part := range event.Content.Parts {
-			// Track function calls (tool invocations by the model).
-			if part.FunctionCall != nil {
-				fc := part.FunctionCall
-				usage.ToolCallCount++
-
-				AppendAuditEvent(&auditEvents, AuditEvent{
-					Timestamp:    ts,
-					InvocationID: event.InvocationID,
-					Author:       event.Author,
-					Type:         "tool_call",
-					ToolName:     fc.Name,
-					ToolCallID:   fc.ID,
-					ToolArgs:     fc.Args,
-				}, config.OnAuditEvent)
-				EmitUsageSnapshot(config.OnUsage, usage)
-			}
-
-			// Track function responses (tool results).
-			if part.FunctionResponse != nil {
-				fr := part.FunctionResponse
-
-				AppendAuditEvent(&auditEvents, AuditEvent{
-					Timestamp:    ts,
-					InvocationID: event.InvocationID,
-					Author:       event.Author,
-					Type:         "tool_response",
-					ToolName:     fr.Name,
-					ToolCallID:   fr.ID,
-					ToolResult:   fr.Response,
-				}, config.OnAuditEvent)
-			}
-
-			if part.Text == "" {
-				continue
-			}
-
-			eventType := "model_text"
-			if isFinal {
-				eventType = "model_final"
-			}
-
-			ae := AuditEvent{
-				Timestamp:    ts,
-				InvocationID: event.InvocationID,
-				Author:       event.Author,
-				Type:         eventType,
-				Text:         part.Text,
-			}
-
-			if !usageAttached {
-				ae.Usage = eventUsage
-				usageAttached = true
-			}
-
-			processTextOutput(part.Text, &textBuilder, config.OnOutput, &auditEvents, ae, config.OnAuditEvent)
-
-			if isFinal {
-				resultBuilder.WriteString(part.Text)
-			}
-		}
+		processEventParts(event, &usage, &auditEvents, &textBuilder, &resultBuilder, config, eventUsage)
 	}
 
 	if runErr != nil {
@@ -501,6 +436,9 @@ func RunAgent(
 				Text:      followUpText,
 			}, config.OnAuditEvent)
 
+			// Reset resultBuilder so the invalid output is not prepended to the retry.
+			resultBuilder.Reset()
+
 			followUpMsg := genai.NewContentFromText(followUpText, genai.RoleUser)
 
 			for event, err := range runnr.Run(runCtx, "pipeline", sessResp.Session.ID(), followUpMsg, agent.RunConfig{}) {
@@ -520,20 +458,7 @@ func RunAgent(
 					continue
 				}
 
-				for _, part := range event.Content.Parts {
-					if part.Text == "" {
-						continue
-					}
-
-					processTextOutput(part.Text, &textBuilder, config.OnOutput, &auditEvents, AuditEvent{
-						Timestamp: time.Now().UTC().Format(time.RFC3339),
-						Author:    event.Author,
-						Type:      "model_final",
-						Text:      part.Text,
-					}, config.OnAuditEvent)
-
-					resultBuilder.WriteString(part.Text)
-				}
+				processEventParts(event, &usage, &auditEvents, &textBuilder, &resultBuilder, config, nil)
 			}
 
 			if runErr != nil {
