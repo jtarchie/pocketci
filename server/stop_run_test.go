@@ -148,6 +148,61 @@ export const pipeline = async () => {
 			assert.Expect(finalRun.ErrorMessage).To(Equal("Run stopped by user"))
 		})
 
+		t.Run("POST /api/runs/:run_id/stop repeatedly keeps final status failed", func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
+
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = client.Close() }()
+
+			pipelineContent := `
+export const pipeline = async () => {
+	await runtime.run({
+		name: "long-task",
+		image: "busybox",
+		command: { path: "sh", args: ["-c", "sleep 15"] },
+	});
+};`
+			pipeline, err := client.SavePipeline(context.Background(), "stop-repeated-pipeline",
+				pipelineContent, "native", "")
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			router := newStrictSecretRouter(t, client, server.RouterOptions{MaxInFlight: 5})
+			execService := router.ExecutionService()
+
+			for i := range 5 {
+				run, triggerErr := execService.TriggerPipeline(context.Background(), pipeline, nil)
+				assert.Expect(triggerErr).NotTo(HaveOccurred(), "iteration %d trigger", i)
+
+				assert.Eventually(func() bool {
+					r, rErr := client.GetRun(context.Background(), run.ID)
+					return rErr == nil && r.Status == storage.RunStatusRunning
+				}, 10*time.Second, 100*time.Millisecond, "iteration %d wait running", i)
+
+				req := httptest.NewRequest(http.MethodPost, "/api/runs/"+run.ID+"/stop", nil)
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+
+				assert.Expect(rec.Code).To(Equal(http.StatusOK), "iteration %d stop response", i)
+
+				var resp map[string]string
+				unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp)
+				assert.Expect(unmarshalErr).NotTo(HaveOccurred(), "iteration %d stop payload", i)
+				assert.Expect(resp["status"]).To(Or(Equal("stopping"), Equal("stopped")), "iteration %d stop status", i)
+
+				execService.Wait()
+
+				finalRun, finalErr := client.GetRun(context.Background(), run.ID)
+				assert.Expect(finalErr).NotTo(HaveOccurred(), "iteration %d final run", i)
+				assert.Expect(finalRun.Status).To(Equal(storage.RunStatusFailed), "iteration %d final status", i)
+				assert.Expect(finalRun.ErrorMessage).To(Equal("Run stopped by user"), "iteration %d final message", i)
+			}
+		})
+
 		t.Run("StopRun returns ErrRunNotInFlight when run is not in registry", func(t *testing.T) {
 			t.Parallel()
 			assert := NewGomegaWithT(t)

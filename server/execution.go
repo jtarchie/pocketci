@@ -42,6 +42,7 @@ type ExecutionService struct {
 	FetchTimeout          time.Duration
 	FetchMaxResponseBytes int64
 	stopRegistry          map[string]context.CancelFunc
+	stopRequested         map[string]bool
 	stopMu                sync.Mutex
 }
 
@@ -65,6 +66,7 @@ func NewExecutionService(store storage.Driver, logger *slog.Logger, maxInFlight 
 		maxInFlight:   maxInFlight,
 		DefaultDriver: defaultDriver,
 		stopRegistry:  make(map[string]context.CancelFunc),
+		stopRequested: make(map[string]bool),
 	}
 }
 
@@ -79,15 +81,27 @@ func (s *ExecutionService) Wait() {
 func (s *ExecutionService) StopRun(runID string) error {
 	s.stopMu.Lock()
 	cancel, ok := s.stopRegistry[runID]
-	s.stopMu.Unlock()
-
 	if !ok {
+		s.stopMu.Unlock()
+
 		return ErrRunNotInFlight
 	}
+
+	// Persist explicit user stop intent so finalization remains deterministic
+	// even if cancellation races with runtime completion.
+	s.stopRequested[runID] = true
+	s.stopMu.Unlock()
 
 	cancel()
 
 	return nil
+}
+
+func (s *ExecutionService) wasStopRequested(runID string) bool {
+	s.stopMu.Lock()
+	defer s.stopMu.Unlock()
+
+	return s.stopRequested[runID]
 }
 
 // CanExecute returns true if a new pipeline can be started.
@@ -258,10 +272,12 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 
 	s.stopMu.Lock()
 	s.stopRegistry[run.ID] = cancel
+	delete(s.stopRequested, run.ID)
 	s.stopMu.Unlock()
 	defer func() {
 		s.stopMu.Lock()
 		delete(s.stopRegistry, run.ID)
+		delete(s.stopRequested, run.ID)
 		s.stopMu.Unlock()
 	}()
 
@@ -335,6 +351,20 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 
 	execOpts.DriverFactory = s.resolveDriverFactory(pipeline, logger)
 	err = runtime.ExecutePipeline(ctx, executableContent, s.store, logger, execOpts)
+
+	if s.wasStopRequested(run.ID) {
+		if abortErr := s.store.UpdateStatusForPrefix(dbCtx, "/pipeline/"+run.ID+"/", []string{"pending", "running"}, "aborted"); abortErr != nil {
+			logger.Error("run.abort.tasks.failed", "error", abortErr)
+		}
+
+		updateErr := s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusFailed, "Run stopped by user")
+		if updateErr != nil {
+			logger.Error("run.update.failed.to_failed", "error", updateErr)
+		}
+
+		return
+	}
+
 	if err != nil {
 		logger.Error("pipeline.execute.failed", "error", err)
 
