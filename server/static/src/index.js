@@ -165,19 +165,27 @@ function triggerPipeline(pipelineId, pipelineName, body) {
 
 function initTriggerDialogs() {
   // Args dialog
-  var argsSubmit = document.getElementById("trigger-args-submit");
+  const argsSubmit = document.getElementById("trigger-args-submit");
   if (argsSubmit) {
     argsSubmit.addEventListener("click", function () {
-      var textarea = document.getElementById("trigger-args-input");
-      var args = textarea.value
+      const textarea = document.getElementById("trigger-args-input");
+      const args = textarea.value
         .split("\n")
-        .map(function (l) { return l.trim(); })
-        .filter(function (l) { return l.length > 0; });
+        .map(function (l) {
+          return l.trim();
+        })
+        .filter(function (l) {
+          return l.length > 0;
+        });
 
-      triggerPipeline(argsSubmit.dataset.pipelineId, argsSubmit.dataset.pipelineName, {
-        mode: "args",
-        args: args,
-      });
+      triggerPipeline(
+        argsSubmit.dataset.pipelineId,
+        argsSubmit.dataset.pipelineName,
+        {
+          mode: "args",
+          args: args,
+        },
+      );
 
       textarea.value = "";
       document.getElementById("trigger-args-dialog").close();
@@ -185,11 +193,11 @@ function initTriggerDialogs() {
   }
 
   // Webhook dialog - add header button
-  var addHeaderBtn = document.getElementById("trigger-webhook-add-header");
+  const addHeaderBtn = document.getElementById("trigger-webhook-add-header");
   if (addHeaderBtn) {
     addHeaderBtn.addEventListener("click", function () {
-      var container = document.getElementById("trigger-webhook-headers");
-      var row = document.createElement("div");
+      const container = document.getElementById("trigger-webhook-headers");
+      const row = document.createElement("div");
       row.className = "flex gap-2 items-center";
       row.innerHTML =
         '<input type="text" placeholder="Header name" class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm dark:text-white webhook-header-key">' +
@@ -203,27 +211,33 @@ function initTriggerDialogs() {
   }
 
   // Webhook dialog - submit
-  var webhookSubmit = document.getElementById("trigger-webhook-submit");
+  const webhookSubmit = document.getElementById("trigger-webhook-submit");
   if (webhookSubmit) {
     webhookSubmit.addEventListener("click", function () {
-      var method = document.getElementById("trigger-webhook-method").value;
-      var body = document.getElementById("trigger-webhook-body").value;
+      const method = document.getElementById("trigger-webhook-method").value;
+      const body = document.getElementById("trigger-webhook-body").value;
 
-      var headers = {};
-      document.querySelectorAll("#trigger-webhook-headers > div").forEach(function (row) {
-        var key = row.querySelector(".webhook-header-key").value.trim();
-        var val = row.querySelector(".webhook-header-val").value.trim();
-        if (key) headers[key] = val;
-      });
-
-      triggerPipeline(webhookSubmit.dataset.pipelineId, webhookSubmit.dataset.pipelineName, {
-        mode: "webhook",
-        webhook: {
-          method: method,
-          body: body,
-          headers: Object.keys(headers).length > 0 ? headers : undefined,
+      const headers = {};
+      document.querySelectorAll("#trigger-webhook-headers > div").forEach(
+        function (row) {
+          const key = row.querySelector(".webhook-header-key").value.trim();
+          const val = row.querySelector(".webhook-header-val").value.trim();
+          if (key) headers[key] = val;
         },
-      });
+      );
+
+      triggerPipeline(
+        webhookSubmit.dataset.pipelineId,
+        webhookSubmit.dataset.pipelineName,
+        {
+          mode: "webhook",
+          webhook: {
+            method: method,
+            body: body,
+            headers: Object.keys(headers).length > 0 ? headers : undefined,
+          },
+        },
+      );
 
       document.getElementById("trigger-webhook-body").value = "";
       document.getElementById("trigger-webhook-headers").innerHTML = "";
@@ -232,12 +246,12 @@ function initTriggerDialogs() {
   }
 
   // Webhook body - live JSON syntax highlighting preview
-  var webhookBody = document.getElementById("trigger-webhook-body");
-  var webhookPreview = document.getElementById("trigger-webhook-preview");
+  const webhookBody = document.getElementById("trigger-webhook-body");
+  const webhookPreview = document.getElementById("trigger-webhook-preview");
   if (webhookBody && webhookPreview) {
-    var codeEl = webhookPreview.querySelector("code");
+    const codeEl = webhookPreview.querySelector("code");
     webhookBody.addEventListener("input", function () {
-      var val = webhookBody.value.trim();
+      const val = webhookBody.value.trim();
       if (val) {
         codeEl.textContent = val;
         codeEl.removeAttribute("data-highlighted");

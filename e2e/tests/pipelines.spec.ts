@@ -269,7 +269,9 @@ test.describe("Pipeline Management UI", () => {
       await expect(dialog).toBeVisible();
 
       // Fill in args (one per line)
-      await page.locator("#trigger-args-input").fill("--env=staging\n--verbose");
+      await page.locator("#trigger-args-input").fill(
+        "--env=staging\n--verbose",
+      );
 
       // Submit
       await page.locator("#trigger-args-submit").click();
@@ -296,7 +298,8 @@ test.describe("Pipeline Management UI", () => {
 
       // Open dropdown and click "Trigger with Webhook…"
       await page.getByLabel("More trigger options").click();
-      await page.getByRole("menuitem", { name: /trigger with webhook/i }).click();
+      await page.getByRole("menuitem", { name: /trigger with webhook/i })
+        .click();
 
       // Dialog should be visible
       const dialog = page.locator("#trigger-webhook-dialog");
@@ -360,7 +363,8 @@ test.describe("Pipeline Management UI", () => {
 
       // Open webhook dialog
       await page.getByLabel("More trigger options").click();
-      await page.getByRole("menuitem", { name: /trigger with webhook/i }).click();
+      await page.getByRole("menuitem", { name: /trigger with webhook/i })
+        .click();
 
       const dialog = page.locator("#trigger-webhook-dialog");
       await expect(dialog).toBeVisible();
@@ -380,7 +384,9 @@ test.describe("Pipeline Management UI", () => {
       await headerRow.locator("button").click();
 
       // Header row should be gone
-      await expect(page.locator("#trigger-webhook-headers > div")).toHaveCount(0);
+      await expect(page.locator("#trigger-webhook-headers > div")).toHaveCount(
+        0,
+      );
     });
 
     test("clicking Tasks link navigates to /runs/:id/tasks", async ({ page, request }) => {
