@@ -168,3 +168,63 @@ func BenchmarkStorage_SaveAndGetRun(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkStorage_UpdateRunStatus_Allowed(b *testing.B) {
+	driver := setupBenchDB(b)
+	ctx := context.Background()
+
+	pipeline, err := driver.SavePipeline(ctx, "bench-allowed", "content", "docker", "")
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		run, err := driver.SaveRun(ctx, pipeline.ID)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		// queued -> running (allowed)
+		if err := driver.UpdateRunStatus(ctx, run.ID, storage.RunStatusRunning, ""); err != nil {
+			b.Fatal(err)
+		}
+
+		// running -> success (allowed)
+		if err := driver.UpdateRunStatus(ctx, run.ID, storage.RunStatusSuccess, ""); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkStorage_UpdateRunStatus_Blocked(b *testing.B) {
+	driver := setupBenchDB(b)
+	ctx := context.Background()
+
+	pipeline, err := driver.SavePipeline(ctx, "bench-blocked", "content", "docker", "")
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Pre-create a run in terminal state
+	run, err := driver.SaveRun(ctx, pipeline.ID)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	if err := driver.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "stopped"); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		// failed -> success: blocked by state machine (silent no-op)
+		if err := driver.UpdateRunStatus(ctx, run.ID, storage.RunStatusSuccess, ""); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

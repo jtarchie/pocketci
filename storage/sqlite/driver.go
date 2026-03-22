@@ -747,18 +747,25 @@ func (s *Sqlite) SearchRunsByPipeline(ctx context.Context, pipelineID, query str
 func (s *Sqlite) UpdateRunStatus(ctx context.Context, runID string, status storage.RunStatus, errorMessage string) error {
 	now := time.Now().UTC()
 
+	// State machine: "failed" and "queued" can overwrite any state (stop/resume).
+	// All other targets only apply when the current status is non-terminal.
+	statusGuard := ""
+	if status != storage.RunStatusFailed && status != storage.RunStatusQueued {
+		statusGuard = ` AND status IN ('queued', 'running')`
+	}
+
 	var query string
 	var args []any
 
 	switch status {
 	case storage.RunStatusRunning:
-		query = `UPDATE pipeline_runs SET status = ?, started_at = ? WHERE id = ?`
+		query = `UPDATE pipeline_runs SET status = ?, started_at = ? WHERE id = ?` + statusGuard
 		args = []any{status, now.Unix(), runID}
 	case storage.RunStatusSuccess, storage.RunStatusFailed, storage.RunStatusSkipped:
-		query = `UPDATE pipeline_runs SET status = ?, completed_at = ?, error_message = ? WHERE id = ?`
+		query = `UPDATE pipeline_runs SET status = ?, completed_at = ?, error_message = ? WHERE id = ?` + statusGuard
 		args = []any{status, now.Unix(), errorMessage, runID}
 	default:
-		query = `UPDATE pipeline_runs SET status = ? WHERE id = ?`
+		query = `UPDATE pipeline_runs SET status = ? WHERE id = ?` + statusGuard
 		args = []any{status, runID}
 	}
 
@@ -773,6 +780,14 @@ func (s *Sqlite) UpdateRunStatus(ctx context.Context, runID string, status stora
 	}
 
 	if rowsAffected == 0 {
+		// Distinguish "run doesn't exist" from "transition blocked by state machine".
+		var exists int
+		_ = s.writer.QueryRowContext(ctx, `SELECT 1 FROM pipeline_runs WHERE id = ?`, runID).Scan(&exists)
+
+		if exists == 1 {
+			return nil // transition blocked — silent no-op
+		}
+
 		return storage.ErrNotFound
 	}
 

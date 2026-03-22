@@ -46,6 +46,12 @@ const (
 	RunStatusSkipped RunStatus = "skipped"
 )
 
+// IsTerminal returns true if the status represents a final state
+// (success, failed, or skipped).
+func (s RunStatus) IsTerminal() bool {
+	return s == RunStatusSuccess || s == RunStatusFailed || s == RunStatusSkipped
+}
+
 // PipelineRun represents an execution of a pipeline.
 type PipelineRun struct {
 	ID           string     `json:"id"`

@@ -253,6 +253,128 @@ func TestDrivers(t *testing.T) {
 				assert.Expect(ok).To(BeTrue())
 				assert.Expect(logs2).To(HaveLen(2))
 			})
+			t.Run("UpdateRunStatus enforces state machine transitions", func(t *testing.T) {
+				t.Run("terminal status blocks non-priority writes", func(t *testing.T) {
+					assert := NewGomegaWithT(t)
+					ctx := context.Background()
+					client := df.new(t, "namespace")
+
+					pipeline, err := client.SavePipeline(ctx, "sm-test", "content", "native", "")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					// Move run to "failed" (terminal).
+					run, err := client.SaveRun(ctx, pipeline.ID)
+					assert.Expect(err).NotTo(HaveOccurred())
+					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "stopped")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					// Attempt failed -> success: should be a no-op.
+					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusSuccess, "")
+					assert.Expect(err).NotTo(HaveOccurred())
+					got, err := client.GetRun(ctx, run.ID)
+					assert.Expect(err).NotTo(HaveOccurred())
+					assert.Expect(got.Status).To(Equal(storage.RunStatusFailed))
+
+					// Attempt failed -> running: should be a no-op.
+					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusRunning, "")
+					assert.Expect(err).NotTo(HaveOccurred())
+					got, err = client.GetRun(ctx, run.ID)
+					assert.Expect(err).NotTo(HaveOccurred())
+					assert.Expect(got.Status).To(Equal(storage.RunStatusFailed))
+				})
+
+				t.Run("success blocks further success or running writes", func(t *testing.T) {
+					assert := NewGomegaWithT(t)
+					ctx := context.Background()
+					client := df.new(t, "namespace")
+
+					pipeline, err := client.SavePipeline(ctx, "sm-success", "content", "native", "")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					run, err := client.SaveRun(ctx, pipeline.ID)
+					assert.Expect(err).NotTo(HaveOccurred())
+					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusRunning, "")
+					assert.Expect(err).NotTo(HaveOccurred())
+					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusSuccess, "")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					// success -> skipped: no-op
+					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusSkipped, "")
+					assert.Expect(err).NotTo(HaveOccurred())
+					got, err := client.GetRun(ctx, run.ID)
+					assert.Expect(err).NotTo(HaveOccurred())
+					assert.Expect(got.Status).To(Equal(storage.RunStatusSuccess))
+				})
+
+				t.Run("failed always overwrites any terminal status", func(t *testing.T) {
+					assert := NewGomegaWithT(t)
+					ctx := context.Background()
+					client := df.new(t, "namespace")
+
+					pipeline, err := client.SavePipeline(ctx, "sm-fail-wins", "content", "native", "")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					run, err := client.SaveRun(ctx, pipeline.ID)
+					assert.Expect(err).NotTo(HaveOccurred())
+					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusRunning, "")
+					assert.Expect(err).NotTo(HaveOccurred())
+					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusSuccess, "")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					// success -> failed: allowed (stop must win)
+					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "stopped by user")
+					assert.Expect(err).NotTo(HaveOccurred())
+					got, err := client.GetRun(ctx, run.ID)
+					assert.Expect(err).NotTo(HaveOccurred())
+					assert.Expect(got.Status).To(Equal(storage.RunStatusFailed))
+					assert.Expect(got.ErrorMessage).To(Equal("stopped by user"))
+				})
+
+				t.Run("queued always overwrites any terminal status", func(t *testing.T) {
+					assert := NewGomegaWithT(t)
+					ctx := context.Background()
+					client := df.new(t, "namespace")
+
+					pipeline, err := client.SavePipeline(ctx, "sm-resume", "content", "native", "")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					run, err := client.SaveRun(ctx, pipeline.ID)
+					assert.Expect(err).NotTo(HaveOccurred())
+					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "crash")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					// failed -> queued: allowed (resume must work)
+					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusQueued, "")
+					assert.Expect(err).NotTo(HaveOccurred())
+					got, err := client.GetRun(ctx, run.ID)
+					assert.Expect(err).NotTo(HaveOccurred())
+					assert.Expect(got.Status).To(Equal(storage.RunStatusQueued))
+				})
+
+				t.Run("non-terminal to terminal transitions work normally", func(t *testing.T) {
+					assert := NewGomegaWithT(t)
+					ctx := context.Background()
+					client := df.new(t, "namespace")
+
+					pipeline, err := client.SavePipeline(ctx, "sm-normal", "content", "native", "")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					run, err := client.SaveRun(ctx, pipeline.ID)
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					// queued -> running: allowed
+					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusRunning, "")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					// running -> success: allowed
+					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusSuccess, "")
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					got, err := client.GetRun(ctx, run.ID)
+					assert.Expect(err).NotTo(HaveOccurred())
+					assert.Expect(got.Status).To(Equal(storage.RunStatusSuccess))
+				})
+			})
 		})
 	}
 }

@@ -380,17 +380,6 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 		return
 	}
 
-	// Post-commit re-check: if a stop arrived while we were finalizing,
-	// overwrite whatever we just committed with "failed". StopRun also
-	// writes "failed" directly as a safety net, so between the two any
-	// ordering of goroutine-vs-StopRun results in "failed".
-	if ctx.Err() != nil {
-		_ = s.store.UpdateStatusForPrefix(dbCtx, "/pipeline/"+run.ID+"/", []string{"pending", "running"}, "aborted")
-		_ = s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusFailed, "Run stopped by user")
-
-		return
-	}
-
 	switch finalStatus {
 	case storage.RunStatusSuccess:
 		logger.Info("pipeline.execute.success")

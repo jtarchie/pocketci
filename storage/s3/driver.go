@@ -419,6 +419,12 @@ func (s *S3) UpdateRunStatus(ctx context.Context, runID string, status storage.R
 		return err
 	}
 
+	// State machine: "failed" and "queued" can overwrite any state (stop/resume).
+	// All other targets only apply when the current status is non-terminal.
+	if run.Status.IsTerminal() && status != storage.RunStatusFailed && status != storage.RunStatusQueued {
+		return nil // transition blocked — silent no-op
+	}
+
 	now := time.Now().UTC()
 	run.Status = status
 
