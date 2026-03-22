@@ -42,7 +42,6 @@ type ExecutionService struct {
 	FetchTimeout          time.Duration
 	FetchMaxResponseBytes int64
 	stopRegistry          map[string]context.CancelFunc
-	stopRequested         map[string]bool
 	stopMu                sync.Mutex
 }
 
@@ -66,7 +65,6 @@ func NewExecutionService(store storage.Driver, logger *slog.Logger, maxInFlight 
 		maxInFlight:   maxInFlight,
 		DefaultDriver: defaultDriver,
 		stopRegistry:  make(map[string]context.CancelFunc),
-		stopRequested: make(map[string]bool),
 	}
 }
 
@@ -87,30 +85,20 @@ func (s *ExecutionService) StopRun(runID string) error {
 		return ErrRunNotInFlight
 	}
 
-	// Persist explicit user stop intent so finalization remains deterministic
-	// even if cancellation races with runtime completion.
-	s.stopRequested[runID] = true
 	s.stopMu.Unlock()
 
 	cancel()
 
 	// Force the run to "failed" in the DB. If the execution goroutine already
-	// committed a terminal status (e.g. "success") before observing the stop
-	// request, this overwrites it. The goroutine may also write "failed" when
-	// it sees the flag — the double-write is harmless and idempotent.
+	// committed a terminal status (e.g. "success") before observing the
+	// cancellation, this overwrites it. The goroutine may also write "failed"
+	// when it sees ctx.Err() — the double-write is harmless and idempotent.
 	dbCtx := context.Background()
 
 	_ = s.store.UpdateStatusForPrefix(dbCtx, "/pipeline/"+runID+"/", []string{"pending", "running"}, "aborted")
 	_ = s.store.UpdateRunStatus(dbCtx, runID, storage.RunStatusFailed, "Run stopped by user")
 
 	return nil
-}
-
-func (s *ExecutionService) wasStopRequested(runID string) bool {
-	s.stopMu.Lock()
-	defer s.stopMu.Unlock()
-
-	return s.stopRequested[runID]
 }
 
 // CanExecute returns true if a new pipeline can be started.
@@ -281,12 +269,10 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 
 	s.stopMu.Lock()
 	s.stopRegistry[run.ID] = cancel
-	delete(s.stopRequested, run.ID)
 	s.stopMu.Unlock()
 	defer func() {
 		s.stopMu.Lock()
 		delete(s.stopRegistry, run.ID)
-		delete(s.stopRequested, run.ID)
 		s.stopMu.Unlock()
 	}()
 
@@ -361,10 +347,10 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 	execOpts.DriverFactory = s.resolveDriverFactory(pipeline, logger)
 	err = runtime.ExecutePipeline(ctx, executableContent, s.store, logger, execOpts)
 
-	if s.wasStopRequested(run.ID) {
-		if abortErr := s.store.UpdateStatusForPrefix(dbCtx, "/pipeline/"+run.ID+"/", []string{"pending", "running"}, "aborted"); abortErr != nil {
-			logger.Error("run.abort.tasks.failed", "error", abortErr)
-		}
+	// If the context was cancelled (user stop or otherwise), mark as failed
+	// regardless of what ExecutePipeline returned.
+	if ctx.Err() != nil {
+		_ = s.store.UpdateStatusForPrefix(dbCtx, "/pipeline/"+run.ID+"/", []string{"pending", "running"}, "aborted")
 
 		updateErr := s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusFailed, "Run stopped by user")
 		if updateErr != nil {
@@ -377,30 +363,7 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 	if err != nil {
 		logger.Error("pipeline.execute.failed", "error", err)
 
-		errMsg := err.Error()
-		if ctx.Err() != nil {
-			errMsg = "Run stopped by user"
-			if abortErr := s.store.UpdateStatusForPrefix(dbCtx, "/pipeline/"+run.ID+"/", []string{"pending", "running"}, "aborted"); abortErr != nil {
-				logger.Error("run.abort.tasks.failed", "error", abortErr)
-			}
-		}
-
-		updateErr := s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusFailed, errMsg)
-		if updateErr != nil {
-			logger.Error("run.update.failed.to_failed", "error", updateErr)
-		}
-
-		return
-	}
-
-	// If the context was cancelled (e.g. user stopped the run) but ExecutePipeline returned
-	// no error (because the abort was handled gracefully inside the runner), still mark as failed.
-	if ctx.Err() != nil {
-		if abortErr := s.store.UpdateStatusForPrefix(dbCtx, "/pipeline/"+run.ID+"/", []string{"pending", "running"}, "aborted"); abortErr != nil {
-			logger.Error("run.abort.tasks.failed", "error", abortErr)
-		}
-
-		updateErr := s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusFailed, "Run stopped by user")
+		updateErr := s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusFailed, err.Error())
 		if updateErr != nil {
 			logger.Error("run.update.failed.to_failed", "error", updateErr)
 		}
@@ -421,7 +384,7 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 	// overwrite whatever we just committed with "failed". StopRun also
 	// writes "failed" directly as a safety net, so between the two any
 	// ordering of goroutine-vs-StopRun results in "failed".
-	if s.wasStopRequested(run.ID) || ctx.Err() != nil {
+	if ctx.Err() != nil {
 		_ = s.store.UpdateStatusForPrefix(dbCtx, "/pipeline/"+run.ID+"/", []string{"pending", "running"}, "aborted")
 		_ = s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusFailed, "Run stopped by user")
 
