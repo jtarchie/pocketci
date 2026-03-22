@@ -59,7 +59,7 @@ func New(cfg Config, logger *slog.Logger) (secrets.Manager, error) {
 	logger = logger.WithGroup("secrets.s3")
 
 	if cfg.Key == "" {
-		return nil, fmt.Errorf("s3 secrets driver requires Key for application-layer encryption")
+		return nil, errors.New("s3 secrets driver requires Key for application-layer encryption")
 	}
 
 	key := secrets.DeriveKey(cfg.Key)

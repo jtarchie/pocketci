@@ -2,7 +2,6 @@ package runtime_test
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -66,7 +65,7 @@ func TestNotifierSecretResolutionInURL(t *testing.T) {
 	}))
 	defer server.Close()
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	notifier := jsapi.NewNotifier(logger)
 
 	mgr := newMapSecretsManager(map[string]string{
@@ -100,7 +99,7 @@ func TestNotifierSecretResolutionInHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	notifier := jsapi.NewNotifier(logger)
 
 	mgr := newMapSecretsManager(map[string]string{
@@ -131,7 +130,7 @@ func TestNotifierSecretMissingReturnsError(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	notifier := jsapi.NewNotifier(logger)
 
 	mgr := newMapSecretsManager(map[string]string{}) // empty — secret not stored
@@ -158,7 +157,7 @@ func TestResourceRunnerSecretResolutionRecursive(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	rr := runner.NewResourceRunner(context.Background(), logger)
 
 	mgr := newMapSecretsManager(map[string]string{
@@ -190,7 +189,7 @@ func TestResourceRunnerSecretMissingReturnsError(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	rr := runner.NewResourceRunner(context.Background(), logger)
 
 	mgr := newMapSecretsManager(map[string]string{}) // no secrets stored
@@ -210,7 +209,7 @@ func TestResourceRunnerFetchSecretMissing(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	rr := runner.NewResourceRunner(context.Background(), logger)
 
 	mgr := newMapSecretsManager(map[string]string{})
@@ -232,7 +231,7 @@ func TestResourceRunnerPushSecretMissing(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	rr := runner.NewResourceRunner(context.Background(), logger)
 
 	mgr := newMapSecretsManager(map[string]string{})

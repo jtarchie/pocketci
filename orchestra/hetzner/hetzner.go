@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -107,7 +108,7 @@ type Hetzner struct {
 // New creates a new Hetzner Cloud driver instance.
 func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	if cfg.Token == "" {
-		return nil, fmt.Errorf("hetzner: API token is required (set via CI_HETZNER_TOKEN)")
+		return nil, errors.New("hetzner: API token is required (set via CI_HETZNER_TOKEN)")
 	}
 
 	client := hcloud.NewClient(hcloud.WithToken(cfg.Token))
@@ -338,7 +339,7 @@ func (h *Hetzner) ensureServer(ctx context.Context, containerLimits orchestra.Co
 
 	serverType := h.determineServerType(containerLimits)
 
-	serverName := fmt.Sprintf("pocketci-%s", h.namespace)
+	serverName := "pocketci-" + h.namespace
 
 	// Look up the image
 	imageResult, _, err := h.client.Image.GetByNameAndArchitecture(ctx, image, hcloud.ArchitectureX86)
@@ -505,7 +506,7 @@ func (h *Hetzner) determineServerType(limits orchestra.ContainerLimits) string {
 
 // ensureSSHKey creates or retrieves an SSH key for server access.
 func (h *Hetzner) ensureSSHKey(ctx context.Context) (*hcloud.SSHKey, string, error) {
-	keyName := fmt.Sprintf("pocketci-%s", h.namespace)
+	keyName := "pocketci-" + h.namespace
 
 	// Check if SSH key already exists in Hetzner
 	existingKey, _, err := h.client.SSHKey.GetByName(ctx, keyName)
@@ -517,7 +518,7 @@ func (h *Hetzner) ensureSSHKey(ctx context.Context) (*hcloud.SSHKey, string, err
 		h.logger.Debug("hetzner.ssh_key.exists", "name", keyName, "id", existingKey.ID)
 
 		// Try to find the local key file
-		sshKeyPath := filepath.Join(os.TempDir(), fmt.Sprintf("pocketci-hetzner-%s", h.namespace))
+			sshKeyPath := filepath.Join(os.TempDir(), "pocketci-hetzner-"+h.namespace)
 		if _, err := os.Stat(sshKeyPath); err == nil {
 			return existingKey, sshKeyPath, nil
 		}
@@ -536,7 +537,7 @@ func (h *Hetzner) ensureSSHKey(ctx context.Context) (*hcloud.SSHKey, string, err
 	}
 
 	// Save private key to temp file
-	sshKeyPath := filepath.Join(os.TempDir(), fmt.Sprintf("pocketci-hetzner-%s", h.namespace))
+	sshKeyPath := filepath.Join(os.TempDir(), "pocketci-hetzner-"+h.namespace)
 	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
 		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
@@ -585,7 +586,7 @@ func (h *Hetzner) waitForServer(ctx context.Context, serverID int64) (*hcloud.Se
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-timeout:
-			return nil, fmt.Errorf("timeout waiting for server to become running")
+				return nil, errors.New("timeout waiting for server to become running")
 		case <-ticker.C:
 			server, _, err := h.client.Server.GetByID(ctx, serverID)
 			if err != nil {
@@ -673,7 +674,7 @@ func (h *Hetzner) waitForDocker(ctx context.Context) error {
 	}
 
 	if h.sshClient == nil {
-		return fmt.Errorf("SSH client not connected")
+		return errors.New("SSH client not connected")
 	}
 
 	deadline := time.Now().Add(dockerTimeout)

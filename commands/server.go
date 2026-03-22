@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -278,22 +279,22 @@ func (c *Server) Run(logger *slog.Logger) error {
 		basicAuthUsername = parts[0]
 		basicAuthPassword = parts[1]
 		if basicAuthUsername == "" || basicAuthPassword == "" {
-			return fmt.Errorf("basic auth username and password cannot be empty")
+			return errors.New("basic auth username and password cannot be empty")
 		}
 	}
 
 	// Validate mutual exclusion: basic auth and OAuth cannot coexist
 	if c.BasicAuth != "" && authConfig.HasOAuthProviders() {
-		return fmt.Errorf("basic auth and OAuth providers cannot be used together: choose one authentication method")
+		return errors.New("basic auth and OAuth providers cannot be used together: choose one authentication method")
 	}
 
 	// Validate OAuth config: session secret required when providers are configured
 	if authConfig.HasOAuthProviders() && authConfig.SessionSecret == "" {
-		return fmt.Errorf("CI_OAUTH_SESSION_SECRET is required when OAuth providers are configured")
+		return errors.New("CI_OAUTH_SESSION_SECRET is required when OAuth providers are configured")
 	}
 
 	if authConfig.HasOAuthProviders() && authConfig.CallbackURL == "" {
-		return fmt.Errorf("CI_OAUTH_CALLBACK_URL is required when OAuth providers are configured")
+		return errors.New("CI_OAUTH_CALLBACK_URL is required when OAuth providers are configured")
 	}
 
 	// Validate server RBAC expression compiles

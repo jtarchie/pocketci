@@ -4,6 +4,7 @@ package vz
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -195,7 +196,7 @@ func (v *VZ) bootVM(ctx context.Context) error {
 	}
 
 	if !valid {
-		return fmt.Errorf("VM configuration is not valid")
+		return errors.New("VM configuration is not valid")
 	}
 
 	vm, err := vz.NewVirtualMachine(config)
@@ -389,7 +390,7 @@ func (v *VZ) connectAgent(ctx context.Context) error {
 	// Get the vsock device from the VM
 	socketDevices := v.vm.SocketDevices()
 	if len(socketDevices) == 0 {
-		return fmt.Errorf("no vsock devices found on VM")
+		return errors.New("no vsock devices found on VM")
 	}
 
 	v.socketDevice = socketDevices[0]
@@ -400,7 +401,7 @@ func (v *VZ) connectAgent(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline:
-			return fmt.Errorf("timeout waiting for guest agent")
+				return errors.New("timeout waiting for guest agent")
 		default:
 		}
 
@@ -489,7 +490,7 @@ func (v *VZ) mountVolumes() error {
 		time.Sleep(time.Second)
 	}
 
-	return fmt.Errorf("timeout waiting for mount command")
+	return errors.New("timeout waiting for mount command")
 }
 
 // RunContainer executes a command inside the VZ guest via the vsock agent.
@@ -709,7 +710,7 @@ func (v *VZ) buildAgent() error {
 	}
 
 	if info.Size() == 0 {
-		return fmt.Errorf("agent binary is empty")
+		return errors.New("agent binary is empty")
 	}
 
 	v.logger.Info("vz.agent.built", "path", agentPath, "size", info.Size())

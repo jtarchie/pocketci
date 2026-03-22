@@ -82,7 +82,7 @@ func (c *PipelineRunner) SetAgentFunc(fn AgentFunc) {
 // RunAgent executes an LLM agent step via the injected AgentFunc.
 func (c *PipelineRunner) RunAgent(configJSON json.RawMessage) (json.RawMessage, error) {
 	if c.agentFunc == nil {
-		return nil, fmt.Errorf("agent execution not configured on this runner")
+		return nil, errors.New("agent execution not configured on this runner")
 	}
 
 	return c.agentFunc(configJSON)
@@ -401,7 +401,8 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 
 	logger.Debug("container.run.mounts", "mounts", mounts)
 
-	command := []string{input.Command.Path}
+	command := make([]string, 0, 1+len(input.Command.Args))
+	command = append(command, input.Command.Path)
 	command = append(command, input.Command.Args...)
 
 	// Only create stdin reader if there's actual content

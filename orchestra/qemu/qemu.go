@@ -2,6 +2,7 @@ package qemu
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -354,7 +355,7 @@ func (q *QEMU) connectQGA(ctx context.Context, addr string) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline:
-			return fmt.Errorf("timeout waiting for cloud-init to finish")
+				return errors.New("timeout waiting for cloud-init to finish")
 		default:
 		}
 
@@ -408,7 +409,7 @@ func (q *QEMU) connectQGA(ctx context.Context, addr string) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline:
-			return fmt.Errorf("timeout waiting for stable QGA connection")
+				return errors.New("timeout waiting for stable QGA connection")
 		default:
 		}
 
@@ -484,7 +485,7 @@ func (q *QEMU) mountVolumes() error {
 		time.Sleep(time.Second)
 	}
 
-	return fmt.Errorf("timeout waiting for mount command")
+	return errors.New("timeout waiting for mount command")
 }
 
 // RunContainer executes a command inside the QEMU guest via QGA.

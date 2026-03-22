@@ -35,7 +35,7 @@ func (s *QEMUSandbox) Exec(
 	stdin io.Reader,
 	stdout, stderr io.Writer,
 ) (orchestra.ContainerStatus, error) {
-	var envSlice []string
+	envSlice := make([]string, 0, len(env))
 	for k, v := range env {
 		envSlice = append(envSlice, fmt.Sprintf("%s=%s", k, v))
 	}

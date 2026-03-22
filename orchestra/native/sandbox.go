@@ -40,7 +40,7 @@ func (s *NativeSandbox) Exec(
 	stdout, stderr io.Writer,
 ) (orchestra.ContainerStatus, error) {
 	if len(cmd) == 0 {
-		return nil, fmt.Errorf("sandbox exec: command must not be empty")
+		return nil, errors.New("sandbox exec: command must not be empty")
 	}
 
 	mergedEnv := make([]string, len(s.baseEnv), len(s.baseEnv)+len(env))

@@ -126,7 +126,8 @@ func (h *SandboxHandle) Exec(input ExecInput) (*RunResult, error) {
 		}
 	}
 
-	cmd := []string{input.Command.Path}
+	cmd := make([]string, 0, 1+len(input.Command.Args))
+	cmd = append(cmd, input.Command.Path)
 	cmd = append(cmd, input.Command.Args...)
 
 	var stdinReader io.Reader

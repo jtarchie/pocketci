@@ -1,7 +1,6 @@
 package s3_test
 
 import (
-	"io"
 	"log/slog"
 	"testing"
 
@@ -13,7 +12,7 @@ import (
 func TestS3Secrets_RequiresKey(t *testing.T) {
 	t.Parallel()
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 
 	t.Run("missing key returns error", func(t *testing.T) {
 		t.Parallel()

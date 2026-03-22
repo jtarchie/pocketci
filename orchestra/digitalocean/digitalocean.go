@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -107,7 +108,7 @@ type DigitalOcean struct {
 // New creates a new DigitalOcean driver instance.
 func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	if cfg.Token == "" {
-		return nil, fmt.Errorf("digitalocean: API token is required (set via CI_DIGITALOCEAN_TOKEN)")
+		return nil, errors.New("digitalocean: API token is required (set via CI_DIGITALOCEAN_TOKEN)")
 	}
 
 	client := godo.NewFromToken(cfg.Token)
@@ -362,12 +363,12 @@ func (d *DigitalOcean) ensureDroplet(ctx context.Context, containerLimits orches
 
 	size := d.determineDropletSize(containerLimits)
 
-	dropletName := fmt.Sprintf("pocketci-%s", d.namespace)
+	dropletName := "pocketci-" + d.namespace
 
 	// Build tags list: always include pocketci, namespace, and worker pool tags
 	tags := []string{
 		"pocketci",
-		fmt.Sprintf("namespace-%s", d.namespace),
+		"namespace-" + d.namespace,
 		d.workerTag(),
 		d.busyTag(),
 	}
@@ -502,7 +503,7 @@ func (d *DigitalOcean) determineDropletSize(limits orchestra.ContainerLimits) st
 
 // ensureSSHKey creates or retrieves an SSH key for droplet access.
 func (d *DigitalOcean) ensureSSHKey(ctx context.Context) (int, string, error) {
-	keyName := fmt.Sprintf("pocketci-%s", d.namespace)
+	keyName := "pocketci-" + d.namespace
 
 	// Check if SSH key already exists in DO
 	keys, _, err := d.client.Keys.List(ctx, &godo.ListOptions{})
@@ -515,7 +516,7 @@ func (d *DigitalOcean) ensureSSHKey(ctx context.Context) (int, string, error) {
 			d.logger.Debug("digitalocean.ssh_key.exists", "name", keyName, "id", key.ID)
 
 			// Try to find the local key file
-			sshKeyPath := filepath.Join(os.TempDir(), fmt.Sprintf("pocketci-do-%s", d.namespace))
+				sshKeyPath := filepath.Join(os.TempDir(), "pocketci-do-"+d.namespace)
 			if _, err := os.Stat(sshKeyPath); err == nil {
 				return key.ID, sshKeyPath, nil
 			}
@@ -537,7 +538,7 @@ func (d *DigitalOcean) ensureSSHKey(ctx context.Context) (int, string, error) {
 	}
 
 	// Save private key to temp file
-	sshKeyPath := filepath.Join(os.TempDir(), fmt.Sprintf("pocketci-do-%s", d.namespace))
+	sshKeyPath := filepath.Join(os.TempDir(), "pocketci-do-"+d.namespace)
 	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
 		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
@@ -583,7 +584,7 @@ func (d *DigitalOcean) waitForDroplet(ctx context.Context, dropletID int) (*godo
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-timeout:
-			return nil, fmt.Errorf("timeout waiting for droplet to become active")
+				return nil, errors.New("timeout waiting for droplet to become active")
 		case <-ticker.C:
 			droplet, _, err := d.client.Droplets.Get(ctx, dropletID)
 			if err != nil {
@@ -671,7 +672,7 @@ func (d *DigitalOcean) waitForDocker(ctx context.Context) error {
 	}
 
 	if d.sshClient == nil {
-		return fmt.Errorf("SSH client not connected")
+		return errors.New("SSH client not connected")
 	}
 
 	deadline := time.Now().Add(dockerTimeout)

@@ -392,7 +392,7 @@ func RunAgent(
 		}
 
 		if execResult == nil {
-			return nil, fmt.Errorf("agent: write result.json: empty exec result")
+			return nil, errors.New("agent: write result.json: empty exec result")
 		}
 
 		if execResult.Code != 0 {

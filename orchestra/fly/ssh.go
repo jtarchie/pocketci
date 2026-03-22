@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -53,7 +54,7 @@ func (f *Fly) createTunnel(ctx context.Context) (*flyTunnel, error) {
 	}
 
 	// Peer name must be DNS-compatible: lowercase, letters/digits/hyphens only
-	peerName := SanitizeAppName(fmt.Sprintf("pocketci-cache-%s", f.namespace))
+	peerName := SanitizeAppName("pocketci-cache-" + f.namespace)
 
 	// Create WireGuard peer via Fly API
 	peer, err := f.apiClient.CreateWireGuardPeer(
@@ -195,7 +196,7 @@ func (f *Fly) dialSSH(ctx context.Context, tunnel *flyTunnel, machineIP string) 
 
 	sshCert, ok := parsedPubKey.(*ssh.Certificate)
 	if !ok {
-		return nil, fmt.Errorf("returned SSH key is not a certificate")
+		return nil, errors.New("returned SSH key is not a certificate")
 	}
 
 	// Create a certificate signer combining the cert and private key

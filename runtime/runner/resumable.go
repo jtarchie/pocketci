@@ -231,7 +231,8 @@ func (r *ResumableRunner) runStep(stepID string, input RunInput) (*RunResult, er
 	}
 
 	// Build command
-	command := []string{input.Command.Path}
+command := make([]string, 0, 1+len(input.Command.Args))
+		command = append(command, input.Command.Path)
 	command = append(command, input.Command.Args...)
 
 	// Only create stdin reader if there's actual content

@@ -81,7 +81,7 @@ func (f *Fly) CreateVolume(ctx context.Context, name string, size int) (orchestr
 
 	if sharedID == "" {
 		// No shared volume yet — create one.
-		volumeName := sanitizeVolumeName(fmt.Sprintf("%s_workspace", f.namespace))
+		volumeName := sanitizeVolumeName(f.namespace + "_workspace")
 
 		if size <= 0 {
 			size = 1 // Fly volumes must be at least 1 GB

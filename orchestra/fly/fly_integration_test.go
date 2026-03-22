@@ -108,7 +108,7 @@ func TestFlyCleanup_SweepDestroysUntrackedNamespaceMachines(t *testing.T) {
 
 	// Launch a machine directly without going through RunContainer, so
 	// trackMachine is never called. This is the "orphaned machine" scenario.
-	machineName := fly.SanitizeAppName(fmt.Sprintf("%s-orphaned", namespace))
+machineName := fly.SanitizeAppName(namespace + "-orphaned")
 
 	orphan, err := f.Client().Launch(context.Background(), f.AppName(), flygo.LaunchMachineInput{
 		Config: &flygo.MachineConfig{

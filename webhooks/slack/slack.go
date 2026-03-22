@@ -9,6 +9,7 @@ package slack
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -61,7 +62,7 @@ func validateSignature(body []byte, secret, timestamp, sigHeader string) bool {
 	base := fmt.Sprintf("v0:%s:%s", timestamp, string(body))
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(base))
-	expected := fmt.Sprintf("%x", mac.Sum(nil))
+	expected := hex.EncodeToString(mac.Sum(nil))
 
 	return hmac.Equal([]byte(received), []byte(expected))
 }

@@ -3,6 +3,7 @@ package slack_test
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -72,7 +73,7 @@ func TestSlack_InvalidSignature(t *testing.T) {
 	req.Header.Set("X-Slack-Request-Timestamp", "1609459200")
 
 	_, err := webhooks.Detect([]webhooks.Provider{slack.New()}, req, body, "signing_secret")
-	if err != webhooks.ErrUnauthorized {
+	if !errors.Is(err, webhooks.ErrUnauthorized) {
 		t.Errorf("expected ErrUnauthorized, got %v", err)
 	}
 }
@@ -86,7 +87,7 @@ func TestSlack_MissingHeaders(t *testing.T) {
 	// Missing X-Slack-Request-Timestamp
 
 	_, err := webhooks.Detect([]webhooks.Provider{slack.New()}, req, body, "signing_secret")
-	if err != webhooks.ErrUnauthorized {
+	if !errors.Is(err, webhooks.ErrUnauthorized) {
 		t.Errorf("expected ErrUnauthorized, got %v", err)
 	}
 }

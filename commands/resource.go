@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -59,7 +60,7 @@ func (r *Resource) Run(logger *slog.Logger) error {
 
 	case "in":
 		if r.Path == "" {
-			return fmt.Errorf("path is required for 'in' operation")
+			return errors.New("path is required for 'in' operation")
 		}
 
 		var req resources.InRequest
@@ -76,7 +77,7 @@ func (r *Resource) Run(logger *slog.Logger) error {
 
 	case "out":
 		if r.Path == "" {
-			return fmt.Errorf("path is required for 'out' operation")
+			return errors.New("path is required for 'out' operation")
 		}
 
 		var req resources.OutRequest

@@ -2,6 +2,7 @@ package digitalocean
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -18,7 +19,7 @@ func (d *DigitalOcean) CopyToVolume(ctx context.Context, volumeName string, read
 
 	accessor, ok := d.dockerDriver.(cache.VolumeDataAccessor)
 	if !ok {
-		return fmt.Errorf("inner docker driver does not support caching")
+		return errors.New("inner docker driver does not support caching")
 	}
 
 	return accessor.CopyToVolume(ctx, volumeName, reader)
@@ -33,7 +34,7 @@ func (d *DigitalOcean) CopyFromVolume(ctx context.Context, volumeName string) (i
 
 	accessor, ok := d.dockerDriver.(cache.VolumeDataAccessor)
 	if !ok {
-		return nil, fmt.Errorf("inner docker driver does not support caching")
+		return nil, errors.New("inner docker driver does not support caching")
 	}
 
 	return accessor.CopyFromVolume(ctx, volumeName)
@@ -48,7 +49,7 @@ func (d *DigitalOcean) ReadFilesFromVolume(ctx context.Context, volumeName strin
 
 	accessor, ok := d.dockerDriver.(cache.VolumeDataAccessor)
 	if !ok {
-		return nil, fmt.Errorf("inner docker driver does not support caching")
+		return nil, errors.New("inner docker driver does not support caching")
 	}
 
 	return accessor.ReadFilesFromVolume(ctx, volumeName, filePaths...)

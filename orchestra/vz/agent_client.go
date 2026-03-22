@@ -97,7 +97,7 @@ func (c *AgentClient) run(req agent.Request) (*agent.Response, error) {
 	time.Sleep(2 * time.Second)
 
 	if reconnErr := c.reconnect(); reconnErr != nil {
-		return nil, fmt.Errorf("original error: %w; reconnect failed: %v", err, reconnErr)
+		return nil, fmt.Errorf("original error: %w; reconnect failed: %w", err, reconnErr)
 	}
 
 	return c.runOnce(req)

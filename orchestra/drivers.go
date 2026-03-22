@@ -1,6 +1,7 @@
 package orchestra
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -18,7 +19,7 @@ type DriverConfig interface {
 // Returns an error if the driver is not allowed.
 func IsDriverAllowed(driver string, allowedList []string) error {
 	if driver == "" {
-		return fmt.Errorf("driver name is required")
+		return errors.New("driver name is required")
 	}
 
 	// Check if wildcard (all drivers allowed)

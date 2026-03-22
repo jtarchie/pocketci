@@ -1,7 +1,6 @@
 package sqlite_test
 
 import (
-	"io"
 	"log/slog"
 	"testing"
 
@@ -12,7 +11,7 @@ import (
 func TestSQLiteBackend(t *testing.T) {
 	t.Parallel()
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 
 	t.Run("invalid DSN errors when passphrase is empty", func(t *testing.T) {
 		t.Parallel()

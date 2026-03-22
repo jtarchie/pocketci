@@ -2,9 +2,11 @@ package mock
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync/atomic"
 
 	"github.com/jtarchie/pocketci/resources"
@@ -61,7 +63,7 @@ func (m *Mock) Check(_ context.Context, req resources.CheckRequest) (resources.C
 	}
 
 	version := resources.Version{
-		"version": fmt.Sprintf("%d", newVersion),
+		"version": strconv.FormatInt(int64(newVersion), 10),
 	}
 
 	// If a version was provided, include it and the new version
@@ -76,7 +78,7 @@ func (m *Mock) Check(_ context.Context, req resources.CheckRequest) (resources.C
 func (m *Mock) In(_ context.Context, destDir string, req resources.InRequest) (resources.InResponse, error) {
 	version := req.Version["version"]
 	if version == "" {
-		return resources.InResponse{}, fmt.Errorf("version is required")
+			return resources.InResponse{}, errors.New("version is required")
 	}
 
 	// Create version file
@@ -117,7 +119,7 @@ func (m *Mock) Out(_ context.Context, _ string, req resources.OutRequest) (resou
 	}
 
 	if version == "" {
-		version = fmt.Sprintf("%d", m.versionCounter.Add(1))
+		version = strconv.FormatInt(int64(m.versionCounter.Add(1)), 10)
 	}
 
 	return resources.OutResponse{

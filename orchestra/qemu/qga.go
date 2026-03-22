@@ -259,7 +259,7 @@ func (c *QGAClient) run(req qgaRequest) (json.RawMessage, error) {
 
 	// Try reconnecting once and retry
 	if reconnErr := c.reconnect(); reconnErr != nil {
-		return nil, fmt.Errorf("original error: %w; reconnect to %s/%s failed: %v", err, c.network, c.address, reconnErr)
+		return nil, fmt.Errorf("original error: %w; reconnect to %s/%s failed: %w", err, c.network, c.address, reconnErr)
 	}
 
 	return c.runOnce(req)

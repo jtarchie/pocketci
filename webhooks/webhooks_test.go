@@ -1,6 +1,7 @@
 package webhooks_test
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -53,7 +54,7 @@ func TestDetect_NoMatch(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 
 	_, err := webhooks.Detect(nil, req, nil, "")
-	if err != webhooks.ErrNoMatch {
+	if !errors.Is(err, webhooks.ErrNoMatch) {
 		t.Errorf("expected ErrNoMatch, got %v", err)
 	}
 }
@@ -66,7 +67,7 @@ func TestDetect_UnauthorizedPropagated(t *testing.T) {
 	req.Header.Set("X-Unauth", "yes")
 
 	_, err := webhooks.Detect(providers, req, nil, "secret")
-	if err != webhooks.ErrUnauthorized {
+	if !errors.Is(err, webhooks.ErrUnauthorized) {
 		t.Errorf("expected ErrUnauthorized, got %v", err)
 	}
 }

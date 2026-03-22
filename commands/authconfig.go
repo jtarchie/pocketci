@@ -111,9 +111,8 @@ func ResolveAuthToken(explicitToken, configPath, serverURL string) string {
 	return ""
 }
 
-// authRequiredError returns a user-friendly error when the server requires authentication.
+// authRequiredError returns a user-facing error when the server requires authentication.
 func authRequiredError(serverURL string) error {
-	//nolint:staticcheck // ST1005: intentionally multi-line user-facing error with instructions
 	return fmt.Errorf(
 		"authentication required: server %s returned 401 Unauthorized\n\n"+
 			"Please log in first:\n"+

@@ -38,7 +38,7 @@ func (s *Sandbox) Exec(
 	stdin io.Reader,
 	stdout, stderr io.Writer,
 ) (orchestra.ContainerStatus, error) {
-	envSlice := []string{}
+	envSlice := make([]string, 0, len(env))
 	for k, v := range env {
 		envSlice = append(envSlice, k+"="+v)
 	}

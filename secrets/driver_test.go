@@ -2,7 +2,6 @@ package secrets_test
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"os/exec"
 	"testing"
@@ -23,7 +22,7 @@ type driverFactory struct {
 func buildDriverFactories(t *testing.T) []driverFactory {
 	t.Helper()
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 
 	factories := []driverFactory{
 		{

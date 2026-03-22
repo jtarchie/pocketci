@@ -212,7 +212,7 @@ func (c *Run) Run(logger *slog.Logger) error {
 			// stdout/stderr data event
 			switch evt.Stream {
 			case "stderr":
-				fmt.Fprint(os.Stderr, evt.Data) //nolint:errcheck
+				fmt.Fprint(os.Stderr, evt.Data)
 			default:
 				fmt.Fprint(os.Stdout, evt.Data) //nolint:errcheck
 			}

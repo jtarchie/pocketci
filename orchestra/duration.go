@@ -9,6 +9,8 @@ import (
 // Duration wraps time.Duration with JSON marshal/unmarshal support.
 // It serializes as a human-readable string (e.g., "5m0s") and
 // deserializes from either a string ("5m", "10s") or a number (nanoseconds).
+//
+//nolint:recvcheck // MarshalJSON must be value receiver so json.Marshal(value) works; UnmarshalJSON is pointer receiver by necessity
 type Duration time.Duration
 
 func (d Duration) MarshalJSON() ([]byte, error) {

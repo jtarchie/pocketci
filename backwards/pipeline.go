@@ -3,6 +3,7 @@ package backwards
 import (
 	"bytes"
 	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -179,7 +180,7 @@ func validateSteps(jobs Jobs) error {
 
 func validateConcurrency(config *Config) error {
 	if config.MaxInFlight < 0 {
-		return fmt.Errorf("pipeline max_in_flight must be greater than 0 when set")
+		return errors.New("pipeline max_in_flight must be greater than 0 when set")
 	}
 
 	for _, job := range config.Jobs {

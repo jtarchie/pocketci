@@ -2,7 +2,6 @@ package storage_test
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -22,7 +21,7 @@ type driverFactory struct {
 }
 
 func allDrivers() []driverFactory {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 
 	return []driverFactory{
 		{

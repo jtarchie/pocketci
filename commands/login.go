@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -68,7 +69,7 @@ func (c *Login) Run(logger *slog.Logger) error {
 		select {
 		case <-timeout:
 			fmt.Println()
-			return fmt.Errorf("authentication timed out after 10 minutes")
+				return errors.New("authentication timed out after 10 minutes")
 		case <-ticker.C:
 			fmt.Print(".")
 
@@ -131,7 +132,7 @@ func (c *Login) Run(logger *slog.Logger) error {
 
 			if pollResp.StatusCode() == 410 {
 				fmt.Println()
-				return fmt.Errorf("authentication code expired, please try again")
+					return errors.New("authentication code expired, please try again")
 			}
 
 			fmt.Println()

@@ -1,7 +1,6 @@
 package posthog_test
 
 import (
-	"io"
 	"log/slog"
 	"testing"
 
@@ -14,7 +13,7 @@ func TestPosthogNewValidConfig(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 
 	p, err := posthog.New(posthog.Config{APIKey: "phc_test123"}, logger)
 	assert.Expect(err).NotTo(HaveOccurred())
@@ -28,7 +27,7 @@ func TestPosthogNewWithEndpoint(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 
 	p, err := posthog.New(posthog.Config{
 		APIKey:   "phc_test123",
@@ -45,7 +44,7 @@ func TestPosthogNewMissingAPIKey(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 
 	_, err := posthog.New(posthog.Config{}, logger)
 	assert.Expect(err).To(HaveOccurred())
@@ -57,14 +56,14 @@ func TestPosthogSlogHandler(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 
 	p, err := posthog.New(posthog.Config{APIKey: "phc_test123"}, logger)
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	defer func() { _ = p.Close() }()
 
-	handler := p.SlogHandler(slog.NewTextHandler(io.Discard, nil))
+	handler := p.SlogHandler(slog.DiscardHandler)
 	assert.Expect(handler).NotTo(BeNil())
 
 	wrapped := slog.New(handler)

@@ -3,6 +3,7 @@ package jsapi
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -192,7 +193,7 @@ func (n *Notifier) RenderTemplate(templateStr string) (string, error) {
 // Send sends a notification using the named configuration.
 func (n *Notifier) Send(ctx context.Context, name string, message string) error {
 	if n.Disabled {
-		return fmt.Errorf("notifications feature is not enabled")
+		return errors.New("notifications feature is not enabled")
 	}
 
 	n.mu.RLock()
@@ -265,7 +266,7 @@ func (n *Notifier) Send(ctx context.Context, name string, message string) error 
 
 func (n *Notifier) configureSlack(notifier *notify.Notify, config NotifyConfig) error {
 	if config.Token == "" {
-		return fmt.Errorf("slack token is required")
+		return errors.New("slack token is required")
 	}
 
 	slackService := slack.New(config.Token)
@@ -285,7 +286,7 @@ func (n *Notifier) configureSlack(notifier *notify.Notify, config NotifyConfig) 
 
 func (n *Notifier) configureTeams(notifier *notify.Notify, config NotifyConfig) error {
 	if config.Webhook == "" {
-		return fmt.Errorf("teams webhook URL is required")
+		return errors.New("teams webhook URL is required")
 	}
 
 	teamsService := msteams.New()
@@ -298,7 +299,7 @@ func (n *Notifier) configureTeams(notifier *notify.Notify, config NotifyConfig) 
 
 func (n *Notifier) configureHTTP(notifier *notify.Notify, config NotifyConfig) error {
 	if config.URL == "" {
-		return fmt.Errorf("HTTP URL is required")
+		return errors.New("HTTP URL is required")
 	}
 
 	method := config.Method

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -82,7 +83,7 @@ func buildMCPServer(store storage.Driver) *mcp.Server {
 		Description: "Get a single task payload for a run. Returns full stored payload fields (for example: logs, usage, audit_log).",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input GetRunTaskInput) (*mcp.CallToolResult, any, error) {
 		if input.Path == "" {
-			return nil, nil, fmt.Errorf("path is required")
+			return nil, nil, errors.New("path is required")
 		}
 
 		prefix := fmt.Sprintf("/pipeline/%s/", input.RunID)
@@ -92,7 +93,7 @@ func buildMCPServer(store storage.Driver) *mcp.Server {
 		}
 
 		if !strings.HasPrefix(lookupPath, prefix) {
-			return nil, nil, fmt.Errorf("task path must be scoped to the run")
+			return nil, nil, errors.New("task path must be scoped to the run")
 		}
 
 		payload, err := store.Get(ctx, lookupPath)
@@ -130,7 +131,7 @@ func buildMCPServer(store storage.Driver) *mcp.Server {
 			"(2) provide pipeline_id to search across all runs for that pipeline by run ID, status, or error message — mirrors the pipeline runs search in the web UI.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input SearchTasksInput) (*mcp.CallToolResult, any, error) {
 		if input.RunID == "" && input.PipelineID == "" {
-			return nil, nil, fmt.Errorf("either run_id or pipeline_id must be provided")
+			return nil, nil, errors.New("either run_id or pipeline_id must be provided")
 		}
 
 		// Mode 1: search task output within a specific run

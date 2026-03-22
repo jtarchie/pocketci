@@ -156,9 +156,9 @@ func (p *Payload) Scan(sqlValue any) error {
 }
 
 type Result struct {
-	ID      int     `db:"id"`
-	Path    string  `db:"path"`
-	Payload Payload `db:"payload"`
+	ID      int     `db:"id"      json:"id"`
+	Path    string  `db:"path"    json:"path"`
+	Payload Payload `db:"payload" json:"payload"`
 }
 
 type Results []Result

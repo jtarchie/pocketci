@@ -1,7 +1,6 @@
 package honeybadger_test
 
 import (
-	"io"
 	"log/slog"
 	"testing"
 
@@ -16,7 +15,7 @@ func TestHoneybadgerNewValidConfig(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 
 	p, err := honeybadger.New(honeybadger.Config{APIKey: "hbp_test123"}, logger)
 	assert.Expect(err).NotTo(HaveOccurred())
@@ -30,7 +29,7 @@ func TestHoneybadgerNewWithEnv(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 
 	p, err := honeybadger.New(honeybadger.Config{APIKey: "hbp_test123", Env: "staging"}, logger)
 	assert.Expect(err).NotTo(HaveOccurred())
@@ -44,7 +43,7 @@ func TestHoneybadgerNewMissingAPIKey(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 
 	_, err := honeybadger.New(honeybadger.Config{}, logger)
 	assert.Expect(err).To(HaveOccurred())
@@ -56,14 +55,14 @@ func TestHoneybadgerSlogHandler(t *testing.T) {
 
 	assert := NewGomegaWithT(t)
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 
 	p, err := honeybadger.New(honeybadger.Config{APIKey: "hbp_test123"}, logger)
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	defer func() { _ = p.Close() }()
 
-	handler := p.SlogHandler(slog.NewTextHandler(io.Discard, nil))
+	handler := p.SlogHandler(slog.DiscardHandler)
 	assert.Expect(handler).NotTo(BeNil())
 
 	_, isTee := handler.(*observability.TeeHandler)

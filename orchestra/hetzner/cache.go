@@ -2,6 +2,7 @@ package hetzner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -18,7 +19,7 @@ func (h *Hetzner) CopyToVolume(ctx context.Context, volumeName string, reader io
 
 	accessor, ok := h.dockerDriver.(cache.VolumeDataAccessor)
 	if !ok {
-		return fmt.Errorf("inner docker driver does not support caching")
+		return errors.New("inner docker driver does not support caching")
 	}
 
 	return accessor.CopyToVolume(ctx, volumeName, reader)
@@ -33,7 +34,7 @@ func (h *Hetzner) CopyFromVolume(ctx context.Context, volumeName string) (io.Rea
 
 	accessor, ok := h.dockerDriver.(cache.VolumeDataAccessor)
 	if !ok {
-		return nil, fmt.Errorf("inner docker driver does not support caching")
+		return nil, errors.New("inner docker driver does not support caching")
 	}
 
 	return accessor.CopyFromVolume(ctx, volumeName)
@@ -48,7 +49,7 @@ func (h *Hetzner) ReadFilesFromVolume(ctx context.Context, volumeName string, fi
 
 	accessor, ok := h.dockerDriver.(cache.VolumeDataAccessor)
 	if !ok {
-		return nil, fmt.Errorf("inner docker driver does not support caching")
+		return nil, errors.New("inner docker driver does not support caching")
 	}
 
 	return accessor.ReadFilesFromVolume(ctx, volumeName, filePaths...)

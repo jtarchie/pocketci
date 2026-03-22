@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jtarchie/pocketci/orchestra"
@@ -122,16 +123,7 @@ func (s *K8sSandbox) Cleanup(ctx context.Context) error {
 
 // joinArgs joins a command slice into a shell-quoted string for exec wrapping.
 func joinArgs(cmd []string) string {
-	if len(cmd) == 0 {
-		return ""
-	}
-
-	result := cmd[0]
-	for _, arg := range cmd[1:] {
-		result += " " + arg
-	}
-
-	return result
+	return strings.Join(cmd, " ")
 }
 
 // StartSandbox implements orchestra.SandboxDriver.

@@ -1,7 +1,7 @@
 package honeybadger
 
 import (
-	"fmt"
+	"errors"
 	"log/slog"
 
 	hb "github.com/honeybadger-io/honeybadger-go"
@@ -22,7 +22,7 @@ type provider struct {
 // New creates a Honeybadger observability provider from the given Config.
 func New(cfg Config, logger *slog.Logger) (observability.Provider, error) {
 	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("honeybadger Config must contain an API key")
+		return nil, errors.New("honeybadger Config must contain an API key")
 	}
 
 	config := hb.Configuration{

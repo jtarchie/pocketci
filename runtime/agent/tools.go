@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -229,7 +230,7 @@ func newGetTaskResultTool(ctx context.Context, config AgentConfig) (adktool.Tool
 		},
 		func(_ adktool.Context, input getTaskResultInput) (getTaskResultOutput, error) {
 			if config.Storage == nil || config.RunID == "" {
-				return getTaskResultOutput{}, fmt.Errorf("task storage not available")
+					return getTaskResultOutput{}, errors.New("task storage not available")
 			}
 
 			summaries, err := loadTaskSummaries(ctx, config.Storage, config.RunID)
@@ -239,7 +240,7 @@ func newGetTaskResultTool(ctx context.Context, config AgentConfig) (adktool.Tool
 
 			matched, ok := helpers.FuzzyFindTask(summaries, input.Name)
 			if !ok {
-				return getTaskResultOutput{}, fmt.Errorf("no tasks found in current run")
+					return getTaskResultOutput{}, errors.New("no tasks found in current run")
 			}
 
 			key := matched.Key

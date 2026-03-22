@@ -2,6 +2,7 @@ package jsapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -88,14 +89,14 @@ func (f *FetchRuntime) Fetch(call goja.FunctionCall) goja.Value {
 	promise, resolve, reject := f.jsVM.NewPromise()
 
 	if f.Disabled {
-		_ = reject(f.jsVM.NewGoError(fmt.Errorf("fetch feature is not enabled")))
+		_ = reject(f.jsVM.NewGoError(errors.New("fetch feature is not enabled")))
 
 		return f.jsVM.ToValue(promise)
 	}
 
 	// Parse arguments: fetch(url) or fetch(url, options)
 	if len(call.Arguments) == 0 {
-		_ = reject(f.jsVM.NewGoError(fmt.Errorf("fetch requires a URL argument")))
+		_ = reject(f.jsVM.NewGoError(errors.New("fetch requires a URL argument")))
 
 		return f.jsVM.ToValue(promise)
 	}

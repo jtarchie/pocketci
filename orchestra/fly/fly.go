@@ -2,6 +2,7 @@ package fly
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -66,7 +67,7 @@ type Fly struct {
 
 func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	if cfg.Token == "" {
-		return nil, fmt.Errorf("fly driver requires a token (set via CI_FLY_TOKEN)")
+		return nil, errors.New("fly driver requires a token (set via CI_FLY_TOKEN)")
 	}
 
 	org := cfg.Org
@@ -119,7 +120,7 @@ func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 
 	// If no app name provided, create an ephemeral one
 	if appName == "" {
-		appName = SanitizeAppName(fmt.Sprintf("pocketci-%s", cfg.Namespace))
+appName = SanitizeAppName("pocketci-" + cfg.Namespace)
 
 		logger.Info("fly.app.create", "app", appName, "org", org)
 

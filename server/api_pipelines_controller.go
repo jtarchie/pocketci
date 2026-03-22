@@ -183,11 +183,11 @@ func (c *APIPipelinesController) validateSecrets(ctx context.Context, name strin
 	}
 
 	if !IsFeatureEnabled(FeatureSecrets, c.allowedFeatures) {
-		return fmt.Errorf("secrets feature is not enabled")
+		return errors.New("secrets feature is not enabled")
 	}
 
 	if c.secretsMgr == nil {
-		return fmt.Errorf("secrets backend is not configured on the server")
+		return errors.New("secrets backend is not configured on the server")
 	}
 
 	for key := range req.Secrets {

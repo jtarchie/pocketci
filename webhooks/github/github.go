@@ -6,7 +6,7 @@ package github
 import (
 	"crypto/hmac"
 	"crypto/sha256"
-	"fmt"
+	"encoding/hex"
 	"net/http"
 	"strings"
 
@@ -54,7 +54,7 @@ func validateSignature(body []byte, secret, sigHeader string) bool {
 
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
-	expected := fmt.Sprintf("%x", mac.Sum(nil))
+	expected := hex.EncodeToString(mac.Sum(nil))
 
 	return hmac.Equal([]byte(received), []byte(expected))
 }

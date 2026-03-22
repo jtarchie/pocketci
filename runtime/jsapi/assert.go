@@ -133,7 +133,7 @@ func (a *Assert) EventuallyContainsString(
 
 	deadline := time.Now().Add(time.Duration(timeoutMs) * time.Millisecond)
 	interval := time.Duration(intervalMs) * time.Millisecond
-	last := ""
+	var last string
 
 	for {
 		value, callErr := getterFunc(goja.Undefined())

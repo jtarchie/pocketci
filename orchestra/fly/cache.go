@@ -3,6 +3,7 @@ package fly
 import (
 	"archive/tar"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -197,7 +198,7 @@ func (f *Fly) launchHelperMachine(ctx context.Context, vol *Volume) (*fly.Machin
 			Kill: true,
 		}, "")
 
-		return nil, fmt.Errorf("cache helper machine has no private IP")
+			return nil, errors.New("cache helper machine has no private IP")
 	}
 
 	f.logger.Debug("fly.cache.helper.started", "machine", machine.ID, "ip", machine.PrivateIP)

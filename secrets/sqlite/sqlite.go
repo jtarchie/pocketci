@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -43,7 +44,7 @@ func New(cfg Config, logger *slog.Logger) (secrets.Manager, error) {
 
 	passphrase := cfg.Passphrase
 	if passphrase == "" {
-		return nil, fmt.Errorf("sqlite secrets backend requires a non-empty Passphrase")
+		return nil, errors.New("sqlite secrets backend requires a non-empty Passphrase")
 	}
 
 	key := secrets.DeriveKey(passphrase)

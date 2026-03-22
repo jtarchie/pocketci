@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -58,7 +59,7 @@ func (r *Runtime) Run(call goja.FunctionCall) goja.Value {
 
 	// Extract input from the first argument
 	if len(call.Arguments) == 0 {
-		_ = reject(r.jsVM.NewGoError(fmt.Errorf("run requires an input object")))
+			_ = reject(r.jsVM.NewGoError(errors.New("run requires an input object")))
 		return r.jsVM.ToValue(promise)
 	}
 
@@ -78,7 +79,7 @@ func (r *Runtime) Run(call goja.FunctionCall) goja.Value {
 		var ok bool
 		onOutputFunc, ok = goja.AssertFunction(onOutputVal)
 		if !ok {
-			_ = reject(r.jsVM.NewGoError(fmt.Errorf("onOutput must be a function")))
+				_ = reject(r.jsVM.NewGoError(errors.New("onOutput must be a function")))
 			return r.jsVM.ToValue(promise)
 		}
 	}
@@ -194,7 +195,7 @@ func (r *Runtime) StartSandbox(call goja.FunctionCall) goja.Value {
 	promise, resolve, reject := r.jsVM.NewPromise()
 
 	if len(call.Arguments) == 0 {
-		_ = reject(r.jsVM.NewGoError(fmt.Errorf("startSandbox requires an input object")))
+		_ = reject(r.jsVM.NewGoError(errors.New("startSandbox requires an input object")))
 		return r.jsVM.ToValue(promise)
 	}
 
@@ -241,7 +242,7 @@ func (r *Runtime) StartSandbox(call goja.FunctionCall) goja.Value {
 				execPromise, execResolve, execReject := r.jsVM.NewPromise()
 
 				if len(call.Arguments) == 0 {
-					_ = execReject(r.jsVM.NewGoError(fmt.Errorf("exec requires an input object")))
+					_ = execReject(r.jsVM.NewGoError(errors.New("exec requires an input object")))
 					return r.jsVM.ToValue(execPromise)
 				}
 
@@ -369,7 +370,7 @@ func (r *Runtime) Agent(call goja.FunctionCall) goja.Value {
 	promise, resolve, reject := r.jsVM.NewPromise()
 
 	if len(call.Arguments) == 0 {
-		_ = reject(r.jsVM.NewGoError(fmt.Errorf("agent requires an input object")))
+		_ = reject(r.jsVM.NewGoError(errors.New("agent requires an input object")))
 		return r.jsVM.ToValue(promise)
 	}
 
@@ -528,7 +529,7 @@ func (r *Runtime) ReadFilesFromVolume(call goja.FunctionCall) goja.Value {
 	promise, resolve, reject := r.jsVM.NewPromise()
 
 	if len(call.Arguments) < 2 {
-		_ = reject(r.jsVM.NewGoError(fmt.Errorf("readFilesFromVolume requires volumeName and at least one filePath")))
+		_ = reject(r.jsVM.NewGoError(errors.New("readFilesFromVolume requires volumeName and at least one filePath")))
 		return r.jsVM.ToValue(promise)
 	}
 

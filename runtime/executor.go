@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -102,7 +103,7 @@ func ExecutePipeline(
 		logger = logger.With("driver", driver.Name())
 	} else {
 		if opts.DriverFactory == nil {
-			return fmt.Errorf("no driver factory configured")
+			return errors.New("no driver factory configured")
 		}
 
 		var err error

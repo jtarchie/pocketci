@@ -1,6 +1,7 @@
 package honeybadger_test
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -39,7 +40,7 @@ func TestHoneybadger_MissingTokenNoDetection(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 
 	_, err := webhooks.Detect([]webhooks.Provider{honeybadger.New()}, req, body, "my-secret")
-	if err != webhooks.ErrNoMatch {
+	if !errors.Is(err, webhooks.ErrNoMatch) {
 		t.Errorf("expected ErrNoMatch, got %v", err)
 	}
 }
@@ -52,7 +53,7 @@ func TestHoneybadger_InvalidToken(t *testing.T) {
 	req.Header.Set("Honeybadger-Token", "wrong-token")
 
 	_, err := webhooks.Detect([]webhooks.Provider{honeybadger.New()}, req, body, "my-secret")
-	if err != webhooks.ErrUnauthorized {
+	if !errors.Is(err, webhooks.ErrUnauthorized) {
 		t.Errorf("expected ErrUnauthorized, got %v", err)
 	}
 }
@@ -65,7 +66,7 @@ func TestHoneybadger_EmptySecretIsUnauthorized(t *testing.T) {
 	req.Header.Set("Honeybadger-Token", "some-token")
 
 	_, err := webhooks.Detect([]webhooks.Provider{honeybadger.New()}, req, body, "")
-	if err != webhooks.ErrUnauthorized {
+	if !errors.Is(err, webhooks.ErrUnauthorized) {
 		t.Errorf("expected ErrUnauthorized, got %v", err)
 	}
 }

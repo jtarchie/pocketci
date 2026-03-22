@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -129,7 +130,8 @@ func newSlogMiddleware(logger *slog.Logger) echo.MiddlewareFunc {
 				attrs = append(attrs, slog.String("error", err.Error()))
 
 				// Use the HTTP error code if Echo provides one.
-				if he, ok := err.(*echo.HTTPError); ok {
+				var he *echo.HTTPError
+				if errors.As(err, &he) {
 					attrs = append(attrs, slog.Int("status", he.Code))
 				} else {
 					attrs = append(attrs, slog.Int("status", http.StatusInternalServerError))

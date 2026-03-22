@@ -41,7 +41,7 @@ func (k *K8s) Close() error {
 	ctx := context.Background()
 
 	// Delete all jobs in the namespace with our label (pods will be cascade deleted)
-	labelSelector := fmt.Sprintf("orchestra.namespace=%s", sanitizeLabel(k.namespace))
+	labelSelector := "orchestra.namespace=" + sanitizeLabel(k.namespace)
 
 	deletePolicy := metav1.DeletePropagationForeground
 	err := k.clientset.BatchV1().Jobs(k.k8sNamespace).DeleteCollection(
@@ -132,7 +132,7 @@ func (k *K8s) GetContainer(ctx context.Context, containerID string) (orchestra.C
 	// Get pod name from job
 	podName := ""
 	pods, err := k.clientset.CoreV1().Pods(k.k8sNamespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("job-name=%s", job.Name),
+			LabelSelector: "job-name=" + job.Name,
 	})
 	if err == nil && len(pods.Items) > 0 {
 		podName = pods.Items[0].Name

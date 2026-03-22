@@ -3,6 +3,7 @@ package github_test
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -72,7 +73,7 @@ func TestGitHub_InvalidSignature(t *testing.T) {
 	req.Header.Set("X-Hub-Signature-256", "sha256=badhex")
 
 	_, err := webhooks.Detect([]webhooks.Provider{github.New()}, req, body, "mysecret")
-	if err != webhooks.ErrUnauthorized {
+	if !errors.Is(err, webhooks.ErrUnauthorized) {
 		t.Errorf("expected ErrUnauthorized, got %v", err)
 	}
 }
@@ -86,7 +87,7 @@ func TestGitHub_MissingSignatureWithSecret(t *testing.T) {
 	// No X-Hub-Signature-256
 
 	_, err := webhooks.Detect([]webhooks.Provider{github.New()}, req, body, "mysecret")
-	if err != webhooks.ErrUnauthorized {
+	if !errors.Is(err, webhooks.ErrUnauthorized) {
 		t.Errorf("expected ErrUnauthorized, got %v", err)
 	}
 }

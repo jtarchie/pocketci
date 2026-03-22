@@ -3,6 +3,7 @@ package runtime_test
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -72,10 +73,7 @@ func TestStreamLogsWithCallback(t *testing.T) {
 		// Verify callback was invoked
 		mu.Lock()
 		assert.Expect(callbackCount).To(BeNumerically(">", 0))
-		fullStdout := ""
-		for _, chunk := range stdoutChunks {
-			fullStdout += chunk
-		}
+		fullStdout := strings.Join(stdoutChunks, "")
 		mu.Unlock()
 
 		// Verify all lines were captured

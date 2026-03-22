@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,7 +14,7 @@ import (
 	"github.com/jtarchie/pocketci/orchestra"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
@@ -125,7 +126,7 @@ func (c *Container) Status(ctx context.Context) (orchestra.ContainerStatus, erro
 		if podName == "" {
 			// Find the pod created by this job
 			pods, err := c.clientset.CoreV1().Pods(c.k8sNamespace).List(ctx, metav1.ListOptions{
-				LabelSelector: fmt.Sprintf("job-name=%s", c.jobName),
+				LabelSelector: "job-name=" + c.jobName,
 			})
 			if err == nil && len(pods.Items) > 0 {
 				podName = pods.Items[0].Name
@@ -150,7 +151,7 @@ func (c *Container) Status(ctx context.Context) (orchestra.ContainerStatus, erro
 	if podName == "" {
 		// Find the pod created by this job
 		pods, err := c.clientset.CoreV1().Pods(c.k8sNamespace).List(ctx, metav1.ListOptions{
-			LabelSelector: fmt.Sprintf("job-name=%s", c.jobName),
+			LabelSelector: "job-name=" + c.jobName,
 		})
 		if err == nil && len(pods.Items) > 0 {
 			podName = pods.Items[0].Name
@@ -282,7 +283,7 @@ func (c *Container) Cleanup(ctx context.Context) error {
 	err := c.clientset.BatchV1().Jobs(c.k8sNamespace).Delete(ctx, c.jobName, metav1.DeleteOptions{
 		PropagationPolicy: &deletePolicy,
 	})
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete job: %w", err)
 	}
 
@@ -311,7 +312,7 @@ func (k *K8s) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 		// Find the pod created by this job
 		podName := ""
 		pods, err := k.clientset.CoreV1().Pods(k.k8sNamespace).List(ctx, metav1.ListOptions{
-			LabelSelector: fmt.Sprintf("job-name=%s", jobName),
+			LabelSelector: "job-name=" + jobName,
 		})
 		if err == nil && len(pods.Items) > 0 {
 			podName = pods.Items[0].Name
@@ -493,7 +494,7 @@ skipUser:
 		// Wait for pod to be created by the job
 		for {
 			pods, err := k.clientset.CoreV1().Pods(k.k8sNamespace).List(waitCtx, metav1.ListOptions{
-				LabelSelector: fmt.Sprintf("job-name=%s", jobName),
+				LabelSelector: "job-name=" + jobName,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to list pods for job: %w", err)
@@ -508,7 +509,7 @@ skipUser:
 			// Check if context was cancelled
 			select {
 			case <-waitCtx.Done():
-				return nil, fmt.Errorf("timeout waiting for job to create pod")
+				return nil, errors.New("timeout waiting for job to create pod")
 			case <-time.After(100 * time.Millisecond):
 				// Continue polling
 			}
@@ -518,7 +519,7 @@ skipUser:
 		logger.Debug("pod.stdin", "name", podName)
 
 		watcher, err := k.clientset.CoreV1().Pods(k.k8sNamespace).Watch(waitCtx, metav1.ListOptions{
-			FieldSelector: fmt.Sprintf("metadata.name=%s", podName),
+				FieldSelector: "metadata.name=" + podName,
 		})
 		if err != nil {
 			logger.Error("pod.watch.failed", "name", podName, "err", err)
@@ -568,13 +569,13 @@ skipUser:
 			// Check if context was cancelled
 			select {
 			case <-waitCtx.Done():
-				return nil, fmt.Errorf("timeout waiting for pod to reach running state")
+				return nil, errors.New("timeout waiting for pod to reach running state")
 			default:
 			}
 		}
 
 		if !podRunning {
-			return nil, fmt.Errorf("pod did not reach running state")
+				return nil, errors.New("pod did not reach running state")
 		}
 
 		logger.Debug("pod.running", "name", podName)
