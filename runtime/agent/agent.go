@@ -20,111 +20,10 @@ import (
 
 	"github.com/achetronic/adk-utils-go/plugin/contextguard"
 
+	agentmodel "github.com/jtarchie/pocketci/runtime/agent/model"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
 	"github.com/jtarchie/pocketci/secrets"
-	"github.com/jtarchie/pocketci/storage"
 )
-
-// AgentLLMConfig controls LLM generation parameters.
-type AgentLLMConfig struct {
-	Temperature *float32 `yaml:"temperature,omitempty" json:"temperature,omitempty"`
-	MaxTokens   int32    `yaml:"max_tokens,omitempty"   json:"max_tokens,omitempty"`
-}
-
-// AgentThinkingConfig enables extended thinking for supported models.
-// Budget sets the maximum thinking tokens (>= 1024).
-// Level is Gemini-specific: LOW | MEDIUM | HIGH | MINIMAL.
-type AgentThinkingConfig struct {
-	Budget int32  `yaml:"budget"          json:"budget"`
-	Level  string `yaml:"level,omitempty" json:"level,omitempty"`
-}
-
-// SubAgentConfig describes a sub-agent that the parent LLM can call as a tool.
-// Sub-agents sharing the parent's container image use ADK's agenttool;
-// sub-agents with a different image spin up their own sandbox via a custom tool.
-type SubAgentConfig struct {
-	Name             string `json:"name"`
-	Prompt           string `json:"prompt"`
-	Model            string `json:"model"`
-	Image            string `json:"image"`
-	StorageKeyPrefix string `json:"storageKeyPrefix"` // parent storage key for nested path persistence
-}
-
-// AgentConfig is the configuration passed from JavaScript to runtime.agent().
-type AgentConfig struct {
-	Name             string                                 `json:"name"`
-	Prompt           string                                 `json:"prompt"`
-	Model            string                                 `json:"model"`
-	Image            string                                 `json:"image"`
-	Mounts           map[string]pipelinerunner.VolumeResult `json:"mounts"`
-	OutputVolumePath string                                 `json:"outputVolumePath"`
-	LLM              *AgentLLMConfig                        `json:"llm,omitempty"`
-	Thinking         *AgentThinkingConfig                   `json:"thinking,omitempty"`
-	Safety           map[string]string                      `json:"safety,omitempty"`
-	ContextGuard     *AgentContextGuardConfig               `json:"context_guard,omitempty"`
-	Limits           *AgentLimitsConfig                     `json:"limits,omitempty"`
-	Context          *AgentContext                          `json:"context,omitempty"`
-	Validation       *AgentValidationConfig                 `json:"validation,omitempty"`
-	SubAgents        []SubAgentConfig                       `json:"sub_agents,omitempty"`
-	OutputSchema     map[string]interface{}                 `json:"output_schema,omitempty"`
-	// OnOutput is called with streaming chunks. Not serialised from JS.
-	OnOutput pipelinerunner.OutputCallback `json:"-"`
-	// OnAuditEvent is called every time an audit event is appended.
-	OnAuditEvent func(AuditEvent) `json:"-"`
-	// OnUsage is called whenever cumulative usage changes.
-	OnUsage func(AgentUsage) `json:"-"`
-	// Internal fields populated by Runtime.Agent() — not exposed to JS.
-	Storage     storage.Driver `json:"-"`
-	Namespace   string         `json:"-"`
-	RunID       string         `json:"-"`
-	PipelineID  string         `json:"-"`
-	TriggeredBy string         `json:"-"`
-}
-
-// AgentResult is returned to JavaScript after the agent completes.
-type AgentResult struct {
-	Text     string       `json:"text"`
-	Status   string       `json:"status"` // "success", "failure", or "limit_exceeded"
-	Usage    AgentUsage   `json:"usage"`
-	AuditLog []AuditEvent `json:"auditLog"`
-}
-
-// AgentUsage tracks cumulative token counts and request stats.
-type AgentUsage struct {
-	PromptTokens     int32 `json:"promptTokens"`
-	CompletionTokens int32 `json:"completionTokens"`
-	TotalTokens      int32 `json:"totalTokens"`
-	LLMRequests      int   `json:"llmRequests"`
-	ToolCallCount    int   `json:"toolCallCount"`
-}
-
-// AuditUsage holds per-event token counts reported by the LLM.
-type AuditUsage struct {
-	PromptTokens     int32 `json:"promptTokens"`
-	CompletionTokens int32 `json:"completionTokens"`
-	TotalTokens      int32 `json:"totalTokens"`
-}
-
-// AuditEvent is a single entry in the agent audit log.
-// Type values:
-//   - "pre_context"   — synthetic tool call injected before the first turn
-//   - "user_message"  — the initial user prompt
-//   - "tool_call"     — a function call made by the model
-//   - "tool_response" — the result returned to the model
-//   - "model_text"    — an intermediate model text chunk
-//   - "model_final"   — the final model response
-type AuditEvent struct {
-	Timestamp    string         `json:"timestamp,omitempty"`
-	InvocationID string         `json:"invocationId,omitempty"`
-	Author       string         `json:"author,omitempty"`
-	Type         string         `json:"type"`
-	Text         string         `json:"text,omitempty"`
-	ToolName     string         `json:"toolName,omitempty"`
-	ToolCallID   string         `json:"toolCallId,omitempty"`
-	ToolArgs     map[string]any `json:"toolArgs,omitempty"`
-	ToolResult   map[string]any `json:"toolResult,omitempty"`
-	Usage        *AuditUsage    `json:"usage,omitempty"`
-}
 
 // RunAgent executes an LLM agent with tools backed by a sandbox container.
 // It writes a result.json to outputVolumePath when the agent finishes.
@@ -135,10 +34,10 @@ func RunAgent(
 	pipelineID string,
 	config AgentConfig,
 ) (*AgentResult, error) {
-	provider, modelName := splitModel(config.Model)
+	provider, modelName := agentmodel.SplitModel(config.Model)
 
 	// Resolve API key: secrets (pipeline → global) then env var fallback.
-	apiKey := resolveSecret(ctx, sm, pipelineID, "agent/"+provider)
+	apiKey := agentmodel.ResolveSecret(ctx, sm, pipelineID, "agent/"+provider)
 	if apiKey == "" {
 		envKey := strings.ToUpper(strings.ReplaceAll(provider, "-", "_")) + "_API_KEY"
 		apiKey = os.Getenv(envKey)
@@ -168,7 +67,7 @@ func RunAgent(
 	}
 
 	// Resolve the LLM model.
-	llmModel, err := resolveModel(provider, modelName, apiKey, config.LLM, config.Thinking)
+	llmModel, err := agentmodel.Resolve(provider, modelName, apiKey, config.LLM, config.Thinking)
 	if err != nil {
 		return nil, fmt.Errorf("agent: %w", err)
 	}
@@ -201,7 +100,7 @@ func RunAgent(
 	}
 
 	// Create the ADK agent.
-	genCfg := buildGenerateContentConfig(provider, config.LLM, config.Thinking, config.Safety)
+	genCfg := agentmodel.BuildGenerateContentConfig(provider, config.LLM, config.Thinking, config.Safety)
 
 	myAgent, err := llmagent.New(llmagent.Config{
 		Name:                  config.Name,
@@ -242,7 +141,7 @@ func RunAgent(
 
 	// Wire context guard plugin when requested.
 	if config.ContextGuard != nil {
-		guard := contextguard.New(simpleRegistry{})
+		guard := contextguard.New(agentmodel.SimpleRegistry{})
 
 		opts, optionsErr := resolveContextGuardOptions(config.ContextGuard)
 		if optionsErr != nil {

@@ -10,6 +10,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"github.com/jtarchie/pocketci/runtime/agent/internal/helpers"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
 )
 
@@ -119,7 +120,7 @@ func injectListTasksContext(
 
 	taskMaps := make([]any, len(summaries))
 	for i, t := range summaries {
-		taskMaps[i] = TaskSummaryToMap(t)
+		taskMaps[i] = helpers.TaskSummaryToMap(t)
 	}
 
 	listTasksResult := map[string]any{"tasks": taskMaps}
@@ -163,7 +164,7 @@ func injectTaskContexts(
 	summaries, _ := loadTaskSummaries(ctx, config.Storage, config.RunID)
 
 	for _, ct := range config.Context.Tasks {
-		matched, ok := FuzzyFindTask(summaries, ct.Name)
+		matched, ok := helpers.FuzzyFindTask(summaries, ct.Name)
 		if !ok {
 			continue
 		}
@@ -194,8 +195,8 @@ func injectTaskContexts(
 			stdout = ""
 		}
 
-		stdout, _ = TruncateStr(stdout, maxBytes)
-		stderr, _ = TruncateStr(stderr, maxBytes)
+		stdout, _ = helpers.TruncateStr(stdout, maxBytes)
+		stderr, _ = helpers.TruncateStr(stderr, maxBytes)
 
 		result := map[string]any{
 			"name":  matched.Name,
@@ -272,7 +273,7 @@ func injectFileContexts(
 			maxBytes = 4096
 		}
 
-		content, truncated := TruncateStr(execResult.Stdout, maxBytes)
+		content, truncated := helpers.TruncateStr(execResult.Stdout, maxBytes)
 
 		fileResult := map[string]any{
 			"path":    cf.Path,

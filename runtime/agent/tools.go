@@ -3,43 +3,15 @@ package agent
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
-	"strconv"
-	"strings"
-	"time"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/agent/llmagent"
-	"google.golang.org/adk/runner"
-	"google.golang.org/adk/session"
 	adktool "google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
-	"google.golang.org/genai"
 
+	"github.com/jtarchie/pocketci/runtime/agent/internal/helpers"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
-	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
 )
-
-// FormatDuration formats a duration as "Xs", "Xm Ys", or "Xh Ym Zs",
-// matching the TS formatElapsed helper used by task and agent steps.
-func FormatDuration(d time.Duration) string {
-	totalSeconds := int(d.Seconds())
-	h := totalSeconds / 3600
-	m := (totalSeconds % 3600) / 60
-	s := totalSeconds % 60
-
-	if h > 0 {
-		return fmt.Sprintf("%dh %dm %ds", h, m, s)
-	}
-
-	if m > 0 {
-		return fmt.Sprintf("%dm %ds", m, s)
-	}
-
-	return fmt.Sprintf("%ds", s)
-}
 
 // runCommandOutput is the tool result schema for run_script.
 type runCommandOutput struct {
@@ -66,15 +38,8 @@ type readFileOutput struct {
 	Truncated bool   `json:"truncated,omitempty"`
 }
 
-// TaskSummary is the list_tasks tool output element.
-type TaskSummary struct {
-	Name      string `json:"name"`
-	Index     int    `json:"index"`
-	Status    string `json:"status"`
-	StartedAt string `json:"started_at,omitempty"`
-	Elapsed   string `json:"elapsed,omitempty"`
-	Key       string `json:"-"`
-}
+// TaskSummary is an alias for the helpers.TaskSummary type.
+type TaskSummary = helpers.TaskSummary
 
 // listTasksOutput is the list_tasks tool result.
 type listTasksOutput struct {
@@ -98,21 +63,6 @@ type getTaskResultOutput struct {
 	StartedAt string `json:"started_at,omitempty"`
 	Elapsed   string `json:"elapsed,omitempty"`
 	Truncated bool   `json:"truncated"`
-}
-
-// ParseTaskStepID splits a stepID of the form "{index}-{name}" into its parts.
-func ParseTaskStepID(stepID string) (int, string) {
-	idx := strings.IndexByte(stepID, '-')
-	if idx < 0 {
-		return -1, stepID
-	}
-
-	n, err := strconv.Atoi(stepID[:idx])
-	if err != nil {
-		return -1, stepID
-	}
-
-	return n, stepID[idx+1:]
 }
 
 // loadTaskSummaries fetches all task summaries for the given run from storage.
@@ -141,7 +91,7 @@ func loadTaskSummaries(ctx context.Context, st storage.Driver, runID string) ([]
 	bestByKey := map[taskKey]TaskSummary{}
 
 	for _, r := range results {
-		idx, name, ok := ParseTaskSummaryPath(r.Path)
+		idx, name, ok := helpers.ParseTaskSummaryPath(r.Path)
 		if !ok {
 			continue
 		}
@@ -181,151 +131,6 @@ func loadTaskSummaries(ctx context.Context, st storage.Driver, runID string) ([]
 	})
 
 	return tasks, nil
-}
-
-// ParseTaskSummaryPath supports both legacy task paths and backwards job paths.
-func ParseTaskSummaryPath(p string) (int, string, bool) {
-	trimmed := strings.TrimSpace(strings.Trim(p, "/"))
-	if trimmed == "" {
-		return 0, "", false
-	}
-
-	parts := strings.Split(trimmed, "/")
-	if len(parts) < 4 || parts[0] != "pipeline" {
-		return 0, "", false
-	}
-
-	if parts[2] == "tasks" {
-		idx, name := ParseTaskStepID(parts[3])
-
-		return idx, name, true
-	}
-
-	if parts[2] != "jobs" || len(parts) < 7 {
-		return 0, "", false
-	}
-
-	kindIndex := -1
-	for i, part := range parts {
-		if part == "tasks" || part == "agent" {
-			kindIndex = i
-
-			break
-		}
-	}
-
-	if kindIndex < 0 || kindIndex+1 >= len(parts) {
-		return 0, "", false
-	}
-
-	name := parts[kindIndex+1]
-	if name == "" {
-		return 0, "", false
-	}
-
-	for _, part := range parts[4:kindIndex] {
-		idx, convErr := strconv.Atoi(part)
-		if convErr == nil {
-			return idx, name, true
-		}
-	}
-
-	return 0, "", false
-}
-
-// Levenshtein computes the edit distance between two strings (case-insensitive).
-func Levenshtein(a, b string) int {
-	a, b = strings.ToLower(a), strings.ToLower(b)
-
-	if len(a) == 0 {
-		return len(b)
-	}
-
-	if len(b) == 0 {
-		return len(a)
-	}
-
-	prev := make([]int, len(b)+1)
-	curr := make([]int, len(b)+1)
-
-	for j := range prev {
-		prev[j] = j
-	}
-
-	for i, ca := range a {
-		curr[0] = i + 1
-
-		for j, cb := range b {
-			cost := 1
-			if ca == cb {
-				cost = 0
-			}
-
-			curr[j+1] = min(curr[j]+1, min(prev[j+1]+1, prev[j]+cost))
-		}
-
-		prev, curr = curr, prev
-	}
-
-	return prev[len(b)]
-}
-
-// FuzzyFindTask returns the task whose name best matches the given query.
-// Substring match is tried first; Levenshtein distance is used as a fallback.
-func FuzzyFindTask(tasks []TaskSummary, name string) (TaskSummary, bool) {
-	if len(tasks) == 0 {
-		return TaskSummary{}, false
-	}
-
-	lower := strings.ToLower(name)
-
-	for _, t := range tasks {
-		if strings.Contains(strings.ToLower(t.Name), lower) {
-			return t, true
-		}
-	}
-
-	// Levenshtein fallback.
-	best := tasks[0]
-	bestDist := Levenshtein(tasks[0].Name, name)
-
-	for _, t := range tasks[1:] {
-		if d := Levenshtein(t.Name, name); d < bestDist {
-			bestDist = d
-			best = t
-		}
-	}
-
-	return best, true
-}
-
-// TruncateStr shortens s to at most maxBytes bytes. Returns the (possibly
-// truncated) string and a flag indicating whether truncation occurred.
-func TruncateStr(s string, maxBytes int) (string, bool) {
-	if maxBytes <= 0 || len(s) <= maxBytes {
-		return s, false
-	}
-
-	return s[:maxBytes], true
-}
-
-// TaskSummaryToMap converts a TaskSummary to a map for use as a tool result.
-func TaskSummaryToMap(t TaskSummary) map[string]any {
-	m := map[string]any{
-		"name":   t.Name,
-		"index":  t.Index,
-		"status": t.Status,
-	}
-
-	if t.StartedAt != "" {
-		m["started_at"] = t.StartedAt
-	}
-
-	if t.Elapsed != "" {
-		m["elapsed"] = t.Elapsed
-	}
-
-	return m
 }
 
 // newRunScriptTool creates the run_script tool backed by a sandbox.
@@ -382,7 +187,7 @@ func newReadFileTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerun
 				maxBytes = 4096
 			}
 
-			content, truncated := TruncateStr(result.Stdout, maxBytes)
+			content, truncated := helpers.TruncateStr(result.Stdout, maxBytes)
 
 			return readFileOutput{
 				Path:      input.Path,
@@ -415,451 +220,6 @@ func newListTasksTool(ctx context.Context, config AgentConfig) (adktool.Tool, er
 	)
 }
 
-// callAgentInput is the tool input schema for sub-agent tools (both modes).
-// The LLM passes a plain-text request to the sub-agent.
-type callAgentInput struct {
-	Request string `json:"request"`
-}
-
-// callAgentOutput is the tool result schema for own-container sub-agent calls.
-type callAgentOutput struct {
-	Result string `json:"result"`
-	Status string `json:"status"`
-}
-
-// buildSubAgentTool creates an ADK tool for the given sub-agent configuration.
-//
-// Shared-container mode (sub-agent image matches or is empty): wraps an ADK
-// llmagent as an agenttool so the parent LLM can call it directly.
-//
-// Own-container mode (sub-agent declares a different image): registers a
-// functiontool that spins up a separate sandbox, runs the sub-agent to
-// completion, persists results to a nested storage path, and returns the
-// final text to the parent.
-func buildSubAgentTool(
-	ctx context.Context,
-	sandbox *pipelinerunner.SandboxHandle,
-	sandboxRunner pipelinerunner.Runner,
-	sm secrets.Manager,
-	pipelineID string,
-	subCfg SubAgentConfig,
-	parentConfig AgentConfig,
-) (adktool.Tool, error) {
-	subImage := subCfg.Image
-	if subImage == "" {
-		subImage = parentConfig.Image
-	}
-
-	subModel := subCfg.Model
-	if subModel == "" {
-		subModel = parentConfig.Model
-	}
-
-	if subImage == parentConfig.Image {
-		// Shared-container: build a functiontool that runs the sub-agent in
-		// its own ADK session (reusing the parent's sandbox), collects the
-		// full audit log + usage, persists to storage, and returns the result.
-		provider, modelName := splitModel(subModel)
-
-		apiKey := resolveSecret(ctx, sm, pipelineID, "agent/"+provider)
-		if apiKey == "" {
-			envKey := strings.ToUpper(strings.ReplaceAll(provider, "-", "_")) + "_API_KEY"
-			apiKey = os.Getenv(envKey)
-		}
-
-		subLLM, err := resolveModel(provider, modelName, apiKey, nil, nil)
-		if err != nil {
-			return nil, fmt.Errorf("resolve model: %w", err)
-		}
-
-		// Sub-agent reuses the same sandbox tools as the parent.
-		subRunScript, err := newRunScriptTool(sandbox, parentConfig.OnOutput)
-		if err != nil {
-			return nil, fmt.Errorf("run_script tool: %w", err)
-		}
-
-		subReadFile, err := newReadFileTool(sandbox, parentConfig.OnOutput)
-		if err != nil {
-			return nil, fmt.Errorf("read_file tool: %w", err)
-		}
-
-		subListTasks, err := newListTasksTool(ctx, parentConfig)
-		if err != nil {
-			return nil, fmt.Errorf("list_tasks tool: %w", err)
-		}
-
-		subGetTaskResult, err := newGetTaskResultTool(ctx, parentConfig)
-		if err != nil {
-			return nil, fmt.Errorf("get_task_result tool: %w", err)
-		}
-
-		subAgent, err := llmagent.New(llmagent.Config{
-			Name:        subCfg.Name,
-			Model:       subLLM,
-			Description: fmt.Sprintf("Specialist sub-agent: %s. Call this when you need its expertise.", subCfg.Name),
-			Instruction: subCfg.Prompt,
-			Tools:       []adktool.Tool{subRunScript, subReadFile, subListTasks, subGetTaskResult},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("create sub-agent: %w", err)
-		}
-
-		return newSharedContainerSubAgentTool(ctx, subCfg, subAgent, parentConfig)
-	}
-
-	// Own-container: custom functiontool that spins up a separate sandbox.
-	return newCallAgentTool(ctx, sandboxRunner, sm, pipelineID, subCfg, subModel, parentConfig)
-}
-
-// newSharedContainerSubAgentTool builds a functiontool that runs a sub-agent
-// in its own ADK session while reusing the parent's sandbox container and tools.
-// It collects the full audit log, usage, and final text, then persists them to
-// {storageKeyPrefix}/sub-agents/{name}/run so the UI and MCP tools can access
-// each sub-agent's results individually.
-func newSharedContainerSubAgentTool(
-	ctx context.Context,
-	subCfg SubAgentConfig,
-	subAgent agent.Agent,
-	parentConfig AgentConfig,
-) (adktool.Tool, error) {
-	return functiontool.New[callAgentInput, callAgentOutput](
-		functiontool.Config{
-			Name:        subCfg.Name,
-			Description: fmt.Sprintf("Specialist sub-agent: %s. Call this when you need its expertise.", subCfg.Name),
-		},
-		func(_ adktool.Context, input callAgentInput) (callAgentOutput, error) {
-			prompt := subCfg.Prompt
-			if input.Request != "" {
-				if prompt != "" {
-					prompt = prompt + "\n\nSpecific request: " + input.Request
-				} else {
-					prompt = input.Request
-				}
-			}
-
-			startedAt := time.Now().UTC()
-
-			// Create an in-memory session for the sub-agent.
-			sessionService := session.InMemoryService()
-
-			sessResp, err := sessionService.Create(ctx, &session.CreateRequest{
-				AppName: "ci-sub-agent",
-				UserID:  "pipeline",
-			})
-			if err != nil {
-				return callAgentOutput{}, fmt.Errorf("create session: %w", err)
-			}
-
-			runnr, err := runner.New(runner.Config{
-				AppName:        "ci-sub-agent",
-				Agent:          subAgent,
-				SessionService: sessionService,
-			})
-			if err != nil {
-				return callAgentOutput{}, fmt.Errorf("create runner: %w", err)
-			}
-
-			// Run the sub-agent, collecting text, audit events, and usage.
-			// Pass the user message directly so the ADK runner manages the
-			// full multi-turn conversation lifecycle.
-			var textBuilder strings.Builder   // all text for audit log
-			var resultBuilder strings.Builder // isFinal text only for tool result
-			var auditEvents []AuditEvent
-			var usage AgentUsage
-
-			AppendAuditEvent(&auditEvents, AuditEvent{
-				Timestamp: startedAt.Format(time.RFC3339),
-				Author:    "user",
-				Type:      "user_message",
-				Text:      prompt,
-			}, nil)
-
-			userMsg := genai.NewContentFromText(prompt, genai.RoleUser)
-
-			for event, err := range runnr.Run(ctx, "pipeline", sessResp.Session.ID(), userMsg, agent.RunConfig{}) {
-				if err != nil {
-					return callAgentOutput{}, fmt.Errorf("sub-agent run: %w", err)
-				}
-
-				if event.UsageMetadata != nil {
-					accumulateUsage(&usage, event.UsageMetadata, nil)
-				}
-
-				if event.Content == nil {
-					continue
-				}
-
-				ts := startedAt.Format(time.RFC3339)
-				if !event.Timestamp.IsZero() {
-					ts = event.Timestamp.UTC().Format(time.RFC3339)
-				}
-
-				isFinal := event.IsFinalResponse()
-
-				for _, part := range event.Content.Parts {
-					if part.FunctionCall != nil {
-						fc := part.FunctionCall
-						usage.ToolCallCount++
-
-						AppendAuditEvent(&auditEvents, AuditEvent{
-							Timestamp:    ts,
-							InvocationID: event.InvocationID,
-							Author:       event.Author,
-							Type:         "tool_call",
-							ToolName:     fc.Name,
-							ToolCallID:   fc.ID,
-							ToolArgs:     fc.Args,
-						}, nil)
-					}
-
-					if part.FunctionResponse != nil {
-						fr := part.FunctionResponse
-
-						AppendAuditEvent(&auditEvents, AuditEvent{
-							Timestamp:    ts,
-							InvocationID: event.InvocationID,
-							Author:       event.Author,
-							Type:         "tool_response",
-							ToolName:     fr.Name,
-							ToolCallID:   fr.ID,
-							ToolResult:   fr.Response,
-						}, nil)
-					}
-
-					if part.Text != "" {
-						eventType := "model_text"
-						if isFinal {
-							eventType = "model_final"
-						}
-
-						AppendAuditEvent(&auditEvents, AuditEvent{
-							Timestamp:    ts,
-							InvocationID: event.InvocationID,
-							Author:       event.Author,
-							Type:         eventType,
-							Text:         part.Text,
-						}, nil)
-
-						textBuilder.WriteString(part.Text)
-
-						if isFinal {
-							resultBuilder.WriteString(part.Text)
-						}
-					}
-				}
-
-				// Stream partial progress to storage so the UI can show
-				// sub-agent activity before it completes.
-				if event.UsageMetadata != nil && subCfg.StorageKeyPrefix != "" && parentConfig.Storage != nil {
-					storageKey := subCfg.StorageKeyPrefix + "/sub-agents/" + subCfg.Name + "/run"
-					_ = parentConfig.Storage.Set(ctx, storageKey, map[string]any{
-						"status":     "running",
-						"stdout":     textBuilder.String(),
-						"usage":      usage,
-						"audit_log":  auditEvents,
-						"started_at": startedAt.Format(time.RFC3339),
-						"elapsed":    FormatDuration(time.Since(startedAt)),
-					})
-				}
-			}
-
-			// If the sub-agent used tools but never produced a final text
-			// response, send a follow-up asking it to summarize.
-			finalText := resultBuilder.String()
-			if finalText == "" {
-				followUpMsg := genai.NewContentFromText(
-					"You have completed your tool calls. Now provide your complete "+
-						"response summarizing your findings.", genai.RoleUser)
-
-				for event, err := range runnr.Run(ctx, "pipeline", sessResp.Session.ID(), followUpMsg, agent.RunConfig{}) {
-					if err != nil {
-						break
-					}
-
-					if event.UsageMetadata != nil {
-						accumulateUsage(&usage, event.UsageMetadata, nil)
-					}
-
-					if event.Content == nil {
-						continue
-					}
-
-					ts := time.Now().UTC().Format(time.RFC3339)
-					if !event.Timestamp.IsZero() {
-						ts = event.Timestamp.UTC().Format(time.RFC3339)
-					}
-
-					isFinal := event.IsFinalResponse()
-
-					for _, part := range event.Content.Parts {
-						if part.FunctionCall != nil {
-							fc := part.FunctionCall
-							usage.ToolCallCount++
-
-							AppendAuditEvent(&auditEvents, AuditEvent{
-								Timestamp:    ts,
-								InvocationID: event.InvocationID,
-								Author:       event.Author,
-								Type:         "tool_call",
-								ToolName:     fc.Name,
-								ToolCallID:   fc.ID,
-								ToolArgs:     fc.Args,
-							}, nil)
-						}
-
-						if part.FunctionResponse != nil {
-							fr := part.FunctionResponse
-
-							AppendAuditEvent(&auditEvents, AuditEvent{
-								Timestamp:    ts,
-								InvocationID: event.InvocationID,
-								Author:       event.Author,
-								Type:         "tool_response",
-								ToolName:     fr.Name,
-								ToolCallID:   fr.ID,
-								ToolResult:   fr.Response,
-							}, nil)
-						}
-
-						if part.Text != "" {
-							eventType := "model_text"
-							if isFinal {
-								eventType = "model_final"
-							}
-
-							AppendAuditEvent(&auditEvents, AuditEvent{
-								Timestamp:    ts,
-								InvocationID: event.InvocationID,
-								Author:       event.Author,
-								Type:         eventType,
-								Text:         part.Text,
-							}, nil)
-
-							textBuilder.WriteString(part.Text)
-
-							if isFinal {
-								resultBuilder.WriteString(part.Text)
-							}
-						}
-					}
-
-					if event.UsageMetadata != nil && subCfg.StorageKeyPrefix != "" && parentConfig.Storage != nil {
-						storageKey := subCfg.StorageKeyPrefix + "/sub-agents/" + subCfg.Name + "/run"
-						_ = parentConfig.Storage.Set(ctx, storageKey, map[string]any{
-							"status":     "running",
-							"stdout":     textBuilder.String(),
-							"usage":      usage,
-							"audit_log":  auditEvents,
-							"started_at": startedAt.Format(time.RFC3339),
-							"elapsed":    FormatDuration(time.Since(startedAt)),
-						})
-					}
-				}
-
-				finalText = resultBuilder.String()
-			}
-
-			// Last-resort fallback: use all accumulated text.
-			if finalText == "" {
-				finalText = textBuilder.String()
-			}
-
-			status := "success"
-			if finalText == "" && usage.ToolCallCount == 0 && usage.LLMRequests == 0 {
-				status = "error"
-			}
-
-			elapsed := time.Since(startedAt)
-
-			// Persist to storage so the UI tree and MCP tools can show
-			// each sub-agent as a separate nested entry.
-			if subCfg.StorageKeyPrefix != "" && parentConfig.Storage != nil {
-				storageKey := subCfg.StorageKeyPrefix + "/sub-agents/" + subCfg.Name + "/run"
-				_ = parentConfig.Storage.Set(ctx, storageKey, map[string]any{
-					"status":     status,
-					"stdout":     finalText,
-					"usage":      usage,
-					"audit_log":  auditEvents,
-					"started_at": startedAt.Format(time.RFC3339),
-					"elapsed":    FormatDuration(elapsed),
-				})
-			}
-
-			return callAgentOutput{
-				Result: finalText,
-				Status: status,
-			}, nil
-		},
-	)
-}
-
-// newCallAgentTool builds a functiontool that runs a sub-agent in its own
-// sandbox container. Used when the sub-agent's image differs from the parent's.
-// Results are persisted at {storageKeyPrefix}/sub-agents/{name}/run so the
-// UI automatically shows them nested under the parent agent step.
-func newCallAgentTool(
-	ctx context.Context,
-	sandboxRunner pipelinerunner.Runner,
-	sm secrets.Manager,
-	pipelineID string,
-	subCfg SubAgentConfig,
-	subModel string,
-	parentConfig AgentConfig,
-) (adktool.Tool, error) {
-	return functiontool.New[callAgentInput, callAgentOutput](
-		functiontool.Config{
-			Name:        subCfg.Name,
-			Description: fmt.Sprintf("Specialist sub-agent: %s. Call this when you need its expertise.", subCfg.Name),
-		},
-		func(_ adktool.Context, input callAgentInput) (callAgentOutput, error) {
-			prompt := subCfg.Prompt
-			if input.Request != "" {
-				if prompt != "" {
-					prompt = prompt + "\n\nSpecific request: " + input.Request
-				} else {
-					prompt = input.Request
-				}
-			}
-
-			subAgentConfig := AgentConfig{
-				Name:        subCfg.Name,
-				Prompt:      prompt,
-				Model:       subModel,
-				Image:       subCfg.Image,
-				Mounts:      parentConfig.Mounts,
-				Storage:     parentConfig.Storage,
-				RunID:       parentConfig.RunID,
-				Namespace:   parentConfig.Namespace,
-				PipelineID:  parentConfig.PipelineID,
-				TriggeredBy: parentConfig.TriggeredBy,
-				OnOutput:    parentConfig.OnOutput,
-			}
-
-			result, err := RunAgent(ctx, sandboxRunner, sm, pipelineID, subAgentConfig)
-			if err != nil {
-				return callAgentOutput{}, err
-			}
-
-			// Persist to a nested storage path so the UI tree renders the
-			// sub-agent's result indented under the parent agent step.
-			if subCfg.StorageKeyPrefix != "" && parentConfig.Storage != nil {
-				storageKey := subCfg.StorageKeyPrefix + "/sub-agents/" + subCfg.Name + "/run"
-				_ = parentConfig.Storage.Set(ctx, storageKey, map[string]any{
-					"status":    result.Status,
-					"stdout":    result.Text,
-					"usage":     result.Usage,
-					"audit_log": result.AuditLog,
-				})
-			}
-
-			return callAgentOutput{
-				Result: result.Text,
-				Status: result.Status,
-			}, nil
-		},
-	)
-}
-
 // newGetTaskResultTool creates the get_task_result tool that queries storage.
 func newGetTaskResultTool(ctx context.Context, config AgentConfig) (adktool.Tool, error) {
 	return functiontool.New[getTaskResultInput, getTaskResultOutput](
@@ -877,7 +237,7 @@ func newGetTaskResultTool(ctx context.Context, config AgentConfig) (adktool.Tool
 				return getTaskResultOutput{}, err
 			}
 
-			matched, ok := FuzzyFindTask(summaries, input.Name)
+			matched, ok := helpers.FuzzyFindTask(summaries, input.Name)
 			if !ok {
 				return getTaskResultOutput{}, fmt.Errorf("no tasks found in current run")
 			}
@@ -924,8 +284,8 @@ func newGetTaskResultTool(ctx context.Context, config AgentConfig) (adktool.Tool
 
 			var truncStdout, truncStderr bool
 
-			out.Stdout, truncStdout = TruncateStr(stdout, maxBytes)
-			out.Stderr, truncStderr = TruncateStr(stderr, maxBytes)
+			out.Stdout, truncStdout = helpers.TruncateStr(stdout, maxBytes)
+			out.Stderr, truncStderr = helpers.TruncateStr(stderr, maxBytes)
 			out.Truncated = truncStdout || truncStderr
 
 			return out, nil

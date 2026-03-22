@@ -1,4 +1,4 @@
-package agent_test
+package schema_test
 
 import (
 	"sort"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 	"google.golang.org/genai"
 
-	"github.com/jtarchie/pocketci/runtime/agent"
+	"github.com/jtarchie/pocketci/runtime/agent/schema"
 )
 
 func TestExpandOutputSchema(t *testing.T) {
@@ -17,7 +17,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		assert.Expect(agent.ExpandOutputSchema(nil)).To(BeNil())
+		assert.Expect(schema.ExpandOutputSchema(nil)).To(BeNil())
 	})
 
 	t.Run("passthrough full genai.Schema OBJECT unchanged", func(t *testing.T) {
@@ -32,7 +32,7 @@ func TestExpandOutputSchema(t *testing.T) {
 			"required": []interface{}{"name"},
 		}
 
-		result := agent.ExpandOutputSchema(input)
+		result := schema.ExpandOutputSchema(input)
 		assert.Expect(result.Type).To(Equal(genai.TypeObject))
 		assert.Expect(result.Properties).To(HaveKey("name"))
 		assert.Expect(result.Properties["name"].Type).To(Equal(genai.TypeString))
@@ -48,7 +48,7 @@ func TestExpandOutputSchema(t *testing.T) {
 			"items": map[string]interface{}{"type": "STRING"},
 		}
 
-		result := agent.ExpandOutputSchema(input)
+		result := schema.ExpandOutputSchema(input)
 		assert.Expect(result.Type).To(Equal(genai.TypeArray))
 		assert.Expect(result.Items).NotTo(BeNil())
 		assert.Expect(result.Items.Type).To(Equal(genai.TypeString))
@@ -58,7 +58,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{
+		result := schema.ExpandOutputSchema(map[string]interface{}{
 			"name": "string",
 		})
 
@@ -72,7 +72,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{
+		result := schema.ExpandOutputSchema(map[string]interface{}{
 			"name?": "string",
 		})
 
@@ -85,7 +85,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{
+		result := schema.ExpandOutputSchema(map[string]interface{}{
 			"count": "int",
 		})
 
@@ -97,7 +97,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{
+		result := schema.ExpandOutputSchema(map[string]interface{}{
 			"count": "integer",
 		})
 
@@ -108,7 +108,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{
+		result := schema.ExpandOutputSchema(map[string]interface{}{
 			"score": "number",
 		})
 
@@ -120,7 +120,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{
+		result := schema.ExpandOutputSchema(map[string]interface{}{
 			"active": "bool",
 		})
 
@@ -131,7 +131,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{
+		result := schema.ExpandOutputSchema(map[string]interface{}{
 			"active": "boolean",
 		})
 
@@ -142,7 +142,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{
+		result := schema.ExpandOutputSchema(map[string]interface{}{
 			"severity": "critical|high|medium|low",
 		})
 
@@ -155,7 +155,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{
+		result := schema.ExpandOutputSchema(map[string]interface{}{
 			"tags[]": "string",
 		})
 
@@ -168,7 +168,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{
+		result := schema.ExpandOutputSchema(map[string]interface{}{
 			"issues[]": map[string]interface{}{
 				"desc": "string",
 			},
@@ -185,7 +185,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{
+		result := schema.ExpandOutputSchema(map[string]interface{}{
 			"tags[]?": "string",
 		})
 
@@ -198,7 +198,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{
+		result := schema.ExpandOutputSchema(map[string]interface{}{
 			"meta": map[string]interface{}{
 				"author": "string",
 				"year?":  "int",
@@ -217,7 +217,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{
+		result := schema.ExpandOutputSchema(map[string]interface{}{
 			"name": "string",
 			"bio?": "string",
 			"age":  "int",
@@ -236,7 +236,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{
+		result := schema.ExpandOutputSchema(map[string]interface{}{
 			"a?": "string",
 			"b?": "int",
 		})
@@ -248,7 +248,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{})
+		result := schema.ExpandOutputSchema(map[string]interface{}{})
 
 		assert.Expect(result.Type).To(Equal(genai.TypeObject))
 		assert.Expect(result.Properties).To(BeEmpty())
@@ -270,7 +270,7 @@ func TestExpandOutputSchema(t *testing.T) {
 			},
 		}
 
-		result := agent.ExpandOutputSchema(compact)
+		result := schema.ExpandOutputSchema(compact)
 
 		assert.Expect(result.Type).To(Equal(genai.TypeObject))
 		assert.Expect(result.Properties["summary"].Type).To(Equal(genai.TypeString))
@@ -307,7 +307,7 @@ func TestExpandOutputSchema(t *testing.T) {
 			},
 		}
 
-		result := agent.ExpandOutputSchema(input)
+		result := schema.ExpandOutputSchema(input)
 		assert.Expect(result.Description).To(Equal("Code review results"))
 	})
 
@@ -320,7 +320,7 @@ func TestExpandOutputSchema(t *testing.T) {
 			"enum": []interface{}{"a", "b", "c"},
 		}
 
-		result := agent.ExpandOutputSchema(input)
+		result := schema.ExpandOutputSchema(input)
 		assert.Expect(result.Type).To(Equal(genai.TypeString))
 		assert.Expect(result.Enum).To(Equal([]string{"a", "b", "c"}))
 	})
@@ -329,7 +329,7 @@ func TestExpandOutputSchema(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
-		result := agent.ExpandOutputSchema(map[string]interface{}{
+		result := schema.ExpandOutputSchema(map[string]interface{}{
 			"data": "unknowntype",
 		})
 

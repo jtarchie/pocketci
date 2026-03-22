@@ -1,4 +1,4 @@
-package agent
+package model
 
 import (
 	"context"
@@ -14,6 +14,20 @@ import (
 	"github.com/jtarchie/pocketci/secrets"
 )
 
+// LLMConfig controls LLM generation parameters.
+type LLMConfig struct {
+	Temperature *float32 `yaml:"temperature,omitempty" json:"temperature,omitempty"`
+	MaxTokens   int32    `yaml:"max_tokens,omitempty"   json:"max_tokens,omitempty"`
+}
+
+// ThinkingConfig enables extended thinking for supported models.
+// Budget sets the maximum thinking tokens (>= 1024).
+// Level is Gemini-specific: LOW | MEDIUM | HIGH | MINIMAL.
+type ThinkingConfig struct {
+	Budget int32  `yaml:"budget"          json:"budget"`
+	Level  string `yaml:"level,omitempty" json:"level,omitempty"`
+}
+
 // DefaultBaseURLs maps providers (that use the OpenAI-compatible API) to their base URLs.
 var DefaultBaseURLs = map[string]string{
 	"openrouter": "https://openrouter.ai/api/v1",
@@ -21,9 +35,9 @@ var DefaultBaseURLs = map[string]string{
 	"openai":     "https://api.openai.com/v1",
 }
 
-// splitModel splits "provider/model-name" into ("provider", "model-name").
+// SplitModel splits "provider/model-name" into ("provider", "model-name").
 // For example: "openrouter/google/gemini-3" → ("openrouter", "google/gemini-3").
-func splitModel(model string) (provider, modelName string) {
+func SplitModel(model string) (provider, modelName string) {
 	idx := strings.Index(model, "/")
 	if idx < 0 {
 		return model, model
@@ -32,9 +46,9 @@ func splitModel(model string) (provider, modelName string) {
 	return model[:idx], model[idx+1:]
 }
 
-// resolveSecret looks up a secret key in pipeline → global scope order.
+// ResolveSecret looks up a secret key in pipeline → global scope order.
 // Falls back to the corresponding environment variable (PROVIDER_API_KEY) if not found.
-func resolveSecret(ctx context.Context, sm secrets.Manager, pipelineID, key string) string {
+func ResolveSecret(ctx context.Context, sm secrets.Manager, pipelineID, key string) string {
 	if sm != nil {
 		if pipelineID != "" {
 			val, err := sm.Get(ctx, secrets.PipelineScope(pipelineID), key)
@@ -52,10 +66,10 @@ func resolveSecret(ctx context.Context, sm secrets.Manager, pipelineID, key stri
 	return ""
 }
 
-// resolveModel builds an adk-compatible LLM model from provider + name + key.
+// Resolve builds an adk-compatible LLM model from provider + name + key.
 // llmCfg sets temperature and output token limit for all providers.
 // thinkingCfg provides Anthropic-specific extended thinking budget.
-func resolveModel(provider, modelName, apiKey string, llmCfg *AgentLLMConfig, thinkingCfg *AgentThinkingConfig) (adkmodel.LLM, error) {
+func Resolve(provider, modelName, apiKey string, llmCfg *LLMConfig, thinkingCfg *ThinkingConfig) (adkmodel.LLM, error) {
 	switch provider {
 	case "anthropic":
 		cfg := genaianthropic.Config{
@@ -92,20 +106,20 @@ func resolveModel(provider, modelName, apiKey string, llmCfg *AgentLLMConfig, th
 	}
 }
 
-// simpleRegistry is a fallback ModelRegistry for contextguard that returns
+// SimpleRegistry is a fallback ModelRegistry for contextguard that returns
 // conservative defaults when the model is not in a curated database.
-type simpleRegistry struct{}
+type SimpleRegistry struct{}
 
-func (simpleRegistry) ContextWindow(_ string) int    { return 128000 }
-func (simpleRegistry) DefaultMaxTokens(_ string) int { return 4096 }
+func (SimpleRegistry) ContextWindow(_ string) int    { return 128000 }
+func (SimpleRegistry) DefaultMaxTokens(_ string) int { return 4096 }
 
-// harmCategoryFromString maps a YAML harm category key to a genai.HarmCategory.
-func harmCategoryFromString(s string) genai.HarmCategory {
+// HarmCategoryFromString maps a YAML harm category key to a genai.HarmCategory.
+func HarmCategoryFromString(s string) genai.HarmCategory {
 	return genai.HarmCategory("HARM_CATEGORY_" + strings.ToUpper(s))
 }
 
-// harmThresholdFromString maps a YAML threshold value to a genai.HarmBlockThreshold.
-func harmThresholdFromString(s string) genai.HarmBlockThreshold {
+// HarmThresholdFromString maps a YAML threshold value to a genai.HarmBlockThreshold.
+func HarmThresholdFromString(s string) genai.HarmBlockThreshold {
 	upper := strings.ToUpper(s)
 	// "off" → "OFF"; everything else needs the BLOCK_ prefix already present
 	// in the canonical names (e.g. "block_none" → "BLOCK_NONE").
@@ -117,9 +131,9 @@ func harmThresholdFromString(s string) genai.HarmBlockThreshold {
 	}
 }
 
-// buildGenerateContentConfig constructs a genai.GenerateContentConfig from the
+// BuildGenerateContentConfig constructs a genai.GenerateContentConfig from the
 // agent config fields. Returns nil when no tuning is requested.
-func buildGenerateContentConfig(provider string, llmCfg *AgentLLMConfig, thinkingCfg *AgentThinkingConfig, safety map[string]string) *genai.GenerateContentConfig {
+func BuildGenerateContentConfig(provider string, llmCfg *LLMConfig, thinkingCfg *ThinkingConfig, safety map[string]string) *genai.GenerateContentConfig {
 	var gcc genai.GenerateContentConfig
 	has := false
 
@@ -151,8 +165,8 @@ func buildGenerateContentConfig(provider string, llmCfg *AgentLLMConfig, thinkin
 	if len(safety) > 0 {
 		for category, threshold := range safety {
 			gcc.SafetySettings = append(gcc.SafetySettings, &genai.SafetySetting{
-				Category:  harmCategoryFromString(category),
-				Threshold: harmThresholdFromString(threshold),
+				Category:  HarmCategoryFromString(category),
+				Threshold: HarmThresholdFromString(threshold),
 			})
 		}
 
