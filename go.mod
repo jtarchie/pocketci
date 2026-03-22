@@ -36,7 +36,7 @@ require (
 	github.com/honeybadger-io/honeybadger-go v0.9.0
 	github.com/jtarchie/lqs v0.0.0-20241231214705-8a34e6c2a6fc
 	github.com/kdomanski/iso9660 v0.4.0
-	github.com/klauspost/compress v1.18.4
+	github.com/klauspost/compress v1.18.5
 	github.com/labstack/echo/v5 v5.0.4
 	github.com/lmittmann/tint v1.1.3
 	github.com/markbates/goth v1.82.0
