@@ -42,7 +42,7 @@ func TestTaskStatusPersistence(t *testing.T) {
 		ctx := context.Background()
 		logger := slog.Default()
 
-		driver, err := docker.New(docker.Config{Namespace: "task-status-ns"}, logger)
+		driver, err := docker.New(context.Background(), docker.Config{Namespace: "task-status-ns"}, logger)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = driver.Close() }()
 
@@ -107,7 +107,7 @@ func TestTaskStatusPersistence(t *testing.T) {
 		ctx := context.Background()
 		logger := slog.Default()
 
-		driver, err := docker.New(docker.Config{Namespace: "task-streamed-ns"}, logger)
+		driver, err := docker.New(context.Background(), docker.Config{Namespace: "task-streamed-ns"}, logger)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = driver.Close() }()
 
@@ -170,7 +170,7 @@ func TestTaskStatusPersistence(t *testing.T) {
 		ctx := context.Background()
 		logger := slog.Default()
 
-		driver, err := docker.New(docker.Config{Namespace: "task-fail-ns"}, logger)
+		driver, err := docker.New(context.Background(), docker.Config{Namespace: "task-fail-ns"}, logger)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = driver.Close() }()
 
@@ -230,7 +230,7 @@ func TestTaskStatusPersistence(t *testing.T) {
 		ctx := context.Background()
 		logger := slog.Default()
 
-		driver, err := docker.New(docker.Config{Namespace: "task-multi-ns"}, logger)
+		driver, err := docker.New(context.Background(), docker.Config{Namespace: "task-multi-ns"}, logger)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = driver.Close() }()
 
@@ -311,7 +311,7 @@ func TestTaskStatusPersistence(t *testing.T) {
 		ctx := context.Background()
 		logger := slog.Default()
 
-		driver, err := docker.New(docker.Config{Namespace: "task-ui-ns"}, logger)
+		driver, err := docker.New(context.Background(), docker.Config{Namespace: "task-ui-ns"}, logger)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = driver.Close() }()
 
@@ -362,7 +362,7 @@ func TestTaskStatusPersistence(t *testing.T) {
 		ctx := context.Background()
 		logger := slog.Default()
 
-		driver, err := docker.New(docker.Config{Namespace: "task-noid-ns"}, logger)
+		driver, err := docker.New(context.Background(), docker.Config{Namespace: "task-noid-ns"}, logger)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = driver.Close() }()
 
@@ -398,7 +398,7 @@ func TestTaskStatusPersistence(t *testing.T) {
 		ctx := context.Background()
 		logger := slog.Default()
 
-		driver, err := docker.New(docker.Config{Namespace: "task-nostorage-ns"}, logger)
+		driver, err := docker.New(context.Background(), docker.Config{Namespace: "task-nostorage-ns"}, logger)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = driver.Close() }()
 
@@ -439,7 +439,7 @@ func TestTaskStatusPersistence(t *testing.T) {
 
 		// Use unique namespace to avoid container name conflicts from previous runs
 		uniqueNS := "task-timeout-ns-" + time.Now().Format("150405")
-		driver, err := docker.New(docker.Config{Namespace: uniqueNS}, logger)
+		driver, err := docker.New(context.Background(), docker.Config{Namespace: uniqueNS}, logger)
 		assert.Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = driver.Close() }()
 

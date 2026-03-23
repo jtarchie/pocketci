@@ -13,8 +13,21 @@ linters:
     # Performance
     - perfsprint     # Replace fmt.Sprintf/Errorf with faster alternatives
     - prealloc       # Pre-allocate slices where capacity is known
+    # Complexity
+    - cyclop         # Cyclomatic complexity per function
+    - gocognit       # Cognitive complexity (deeply nested / hard-to-read logic)
+    - nestif         # Deeply nested if blocks
+    # Concurrency / context safety
+    - contextcheck   # context.Context must be propagated, not ignored
+    - containedctx   # context.Context must not be stored in structs
 
-linters-settings:
-  sloglint:
-    # Enforce slog.DiscardHandler over slog.NewTextHandler(io.Discard, nil)
-    no-raw-keys: false
+  settings:
+    sloglint:
+      # Enforce slog.DiscardHandler over slog.NewTextHandler(io.Discard, nil)
+      no-raw-keys: false
+    cyclop:
+      max-complexity: 15
+    gocognit:
+      min-complexity: 30
+    nestif:
+      min-complexity: 7

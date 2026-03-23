@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"strings"
 	"sync"
@@ -13,6 +14,12 @@ import (
 
 	"github.com/jtarchie/pocketci/orchestra"
 )
+
+// mountMapping tracks the relationship between a volume subdirectory and its mount path.
+type mountMapping struct {
+	volumeName string // subdirectory on the shared volume (volume's userFacingName)
+	mountPath  string // path the task script sees (mount key)
+}
 
 type Container struct {
 	machineID  string
@@ -111,17 +118,7 @@ func (c *Container) Logs(ctx context.Context, stdout, stderr io.Writer, follow b
 			return fmt.Errorf("failed to fetch logs: %w", err)
 		}
 
-		for _, entry := range entries {
-			writer := stdout
-			if entry.Level == "error" || entry.Level == "warning" {
-				writer = stderr
-			}
-
-			// Only include app-level logs (skip runner/infrastructure messages)
-			if entry.Provider == "app" {
-				_, _ = fmt.Fprintln(writer, entry.Message)
-			}
-		}
+		writeLogEntries(entries, stdout, stderr)
 
 		// Only advance the token when the API returned a non-empty one.
 		// An empty token means "no new logs yet" — preserving the last valid
@@ -141,30 +138,7 @@ func (c *Container) Logs(ctx context.Context, stdout, stderr io.Writer, follow b
 
 		if done {
 			// Drain any remaining logs that arrived after the last poll.
-			// Continue advancing the token so we don't replay already-seen entries.
-			for {
-				finalEntries, finalToken, err := c.fetchLogs(ctx, nextToken)
-				if err != nil || len(finalEntries) == 0 {
-					break
-				}
-
-				for _, entry := range finalEntries {
-					writer := stdout
-					if entry.Level == "error" || entry.Level == "warning" {
-						writer = stderr
-					}
-
-					if entry.Provider == "app" {
-						_, _ = fmt.Fprintln(writer, entry.Message)
-					}
-				}
-
-				if finalToken != "" {
-					nextToken = finalToken
-				} else {
-					break
-				}
-			}
+			c.drainLogs(ctx, nextToken, stdout, stderr)
 
 			return nil
 		}
@@ -177,33 +151,44 @@ func (c *Container) Logs(ctx context.Context, stdout, stderr io.Writer, follow b
 			drainCtx, drainCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer drainCancel()
 
-			for {
-				finalEntries, finalToken, err := c.fetchLogs(drainCtx, nextToken)
-				if err != nil || len(finalEntries) == 0 {
-					break
-				}
-
-				for _, entry := range finalEntries {
-					writer := stdout
-					if entry.Level == "error" || entry.Level == "warning" {
-						writer = stderr
-					}
-
-					if entry.Provider == "app" {
-						_, _ = fmt.Fprintln(writer, entry.Message)
-					}
-				}
-
-				if finalToken != "" {
-					nextToken = finalToken
-				} else {
-					break
-				}
-			}
+			c.drainLogs(drainCtx, nextToken, stdout, stderr) //nolint:contextcheck // deliberate: drain after parent ctx cancelled
 
 			return nil
 		case <-time.After(500 * time.Millisecond):
 			continue
+		}
+	}
+}
+
+// writeLogEntries writes log entries to the appropriate writer based on level.
+// Only app-level logs are included.
+func writeLogEntries(entries []logEntry, stdout, stderr io.Writer) {
+	for _, entry := range entries {
+		writer := stdout
+		if entry.Level == "error" || entry.Level == "warning" {
+			writer = stderr
+		}
+
+		if entry.Provider == "app" {
+			_, _ = fmt.Fprintln(writer, entry.Message)
+		}
+	}
+}
+
+// drainLogs fetches and writes all remaining log entries starting from nextToken.
+func (c *Container) drainLogs(ctx context.Context, nextToken string, stdout, stderr io.Writer) {
+	for {
+		entries, token, err := c.fetchLogs(ctx, nextToken)
+		if err != nil || len(entries) == 0 {
+			break
+		}
+
+		writeLogEntries(entries, stdout, stderr)
+
+		if token != "" {
+			nextToken = token
+		} else {
+			break
 		}
 	}
 }
@@ -275,10 +260,6 @@ func (f *Fly) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 	// Build machine mounts — all logical mounts share a single physical volume
 	// mounted at /workspace, with each mount as a subdirectory.
 	var mounts []fly.MachineMount
-	type mountMapping struct {
-		volumeName string // subdirectory on the shared volume (volume's userFacingName)
-		mountPath  string // path the task script sees (mount key)
-	}
 
 	var mountMappings []mountMapping
 
@@ -345,26 +326,7 @@ func (f *Fly) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 		guest.MemoryMB = int(task.ContainerLimits.Memory / (1024 * 1024)) // Convert bytes to MB
 	}
 
-	initExec := task.Command
-	if task.WorkDir != "" {
-		// Fly SDK's MachineInit doesn't support WorkDir, so wrap with shell cd
-		initExec = []string{"/bin/sh", "-c", "cd " + shellescape(task.WorkDir) + " && exec " + shelljoin(task.Command)}
-	} else if len(mountMappings) > 0 {
-		// When using the shared workspace volume, create subdirectories named
-		// after the volume (so ReadFilesFromVolume can find them) and symlink
-		// the mount path so task scripts see the expected directory names.
-		var initParts []string
-		for _, m := range mountMappings {
-			initParts = append(initParts, "mkdir -p /workspace/"+m.volumeName)
-			if m.mountPath != m.volumeName {
-				initParts = append(initParts, "ln -sfn /workspace/"+m.volumeName+" /workspace/"+m.mountPath)
-			}
-		}
-		initExec = []string{"/bin/sh", "-c",
-			strings.Join(initParts, " && ") +
-				" && cd /workspace && exec " + shelljoin(task.Command),
-		}
-	}
+	initExec := buildInitExec(task.Command, task.WorkDir, mountMappings)
 
 	config := &fly.MachineConfig{
 		Image: task.Image,
@@ -394,60 +356,14 @@ func (f *Fly) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 
 	machine, err := f.client.Launch(ctx, f.appName, input)
 	if err != nil {
-		// Check if a machine with this name already exists (idempotency)
-		if list, listErr := f.client.List(ctx, f.appName, ""); listErr == nil {
-			for _, m := range list {
-				if m.Name != machineName {
-					continue
-				}
-
-				logger.Info("fly.machine.existing", "machine", m.ID, "name", machineName, "state", m.State)
-				f.trackMachine(m.ID)
-
-				if sharedVolumeID != "" {
-					f.mu.Lock()
-					f.volumeAttachments[sharedVolumeID] = m.ID
-					f.mu.Unlock()
-				}
-
-				container := &Container{
-					machineID:  m.ID,
-					instanceID: m.InstanceID,
-					driver:     f,
-				}
-
-				// If already stopped/destroyed, populate cached state
-				if m.State == "stopped" || m.State == "destroyed" {
-					exitCode := 0
-
-					for i := len(m.Events) - 1; i >= 0; i-- {
-						event := m.Events[i]
-
-						if event.Type == "exit" && event.Request != nil && event.Request.ExitEvent != nil {
-							exitCode = event.Request.ExitEvent.ExitCode
-							break
-						}
-					}
-
-					container.done = true
-					container.exitCode = exitCode
-				} else {
-					go container.waitForStop()
-				}
-
-				return container, nil
-			}
+		container, recoverErr := f.recoverExistingMachine(ctx, machineName, sharedVolumeID, logger)
+		if recoverErr == nil {
+			return container, nil
 		}
 
 		// Clean up the shared volume so it doesn't get stranded when the
 		// caller cannot use it (e.g. insufficient Fly resources).
-		if sharedVolumeID != "" {
-			if vol, ok := f.findVolumeByID(sharedVolumeID); ok {
-				if cleanupErr := vol.Cleanup(ctx); cleanupErr != nil {
-					logger.Warn("fly.machine.launch.volume.cleanup.error", "volume", sharedVolumeID, "err", cleanupErr)
-				}
-			}
-		}
+		f.cleanupStrandedVolume(ctx, sharedVolumeID, logger)
 
 		logger.Error("fly.machine.launch.error", "name", machineName, "err", err)
 
@@ -474,9 +390,105 @@ func (f *Fly) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 	// Start background goroutine to wait for the machine to stop.
 	// This uses the Fly Wait endpoint (long-poll) instead of repeated GETs,
 	// avoiding rate limiting and providing immediate status updates.
-	go container.waitForStop()
+	go container.waitForStop() //nolint:contextcheck // deliberate: background goroutine outlives parent context
 
 	return container, nil
+}
+
+// recoverExistingMachine attempts to find and reuse an existing machine by name
+// when a Launch call fails (idempotency). Returns the container or an error if
+// no matching machine was found.
+func (f *Fly) recoverExistingMachine(ctx context.Context, machineName, sharedVolumeID string, logger *slog.Logger) (*Container, error) {
+	list, listErr := f.client.List(ctx, f.appName, "")
+	if listErr != nil {
+		return nil, listErr
+	}
+
+	for _, m := range list {
+		if m.Name != machineName {
+			continue
+		}
+
+		logger.Info("fly.machine.existing", "machine", m.ID, "name", machineName, "state", m.State)
+		f.trackMachine(m.ID)
+
+		if sharedVolumeID != "" {
+			f.mu.Lock()
+			f.volumeAttachments[sharedVolumeID] = m.ID
+			f.mu.Unlock()
+		}
+
+		container := &Container{
+			machineID:  m.ID,
+			instanceID: m.InstanceID,
+			driver:     f,
+		}
+
+		if m.State == "stopped" || m.State == "destroyed" {
+			container.exitCode = f.extractExitCode(m)
+			container.done = true
+		} else {
+			go container.waitForStop() //nolint:contextcheck // deliberate: background goroutine outlives parent context
+		}
+
+		return container, nil
+	}
+
+	return nil, fmt.Errorf("no existing machine named %s", machineName)
+}
+
+// buildInitExec constructs the init exec command for a Fly machine,
+// handling workdir and workspace volume mount mappings.
+func buildInitExec(command []string, workDir string, mappings []mountMapping) []string {
+	if workDir != "" {
+		return []string{"/bin/sh", "-c", "cd " + shellescape(workDir) + " && exec " + shelljoin(command)}
+	}
+
+	if len(mappings) > 0 {
+		var initParts []string
+		for _, m := range mappings {
+			initParts = append(initParts, "mkdir -p /workspace/"+m.volumeName)
+			if m.mountPath != m.volumeName {
+				initParts = append(initParts, "ln -sfn /workspace/"+m.volumeName+" /workspace/"+m.mountPath)
+			}
+		}
+
+		return []string{"/bin/sh", "-c",
+			strings.Join(initParts, " && ") +
+				" && cd /workspace && exec " + shelljoin(command),
+		}
+	}
+
+	return command
+}
+
+// extractExitCode scans machine events in reverse to find the exit code.
+func (f *Fly) extractExitCode(m *fly.Machine) int {
+	for i := len(m.Events) - 1; i >= 0; i-- {
+		event := m.Events[i]
+		if event.Type == "exit" && event.Request != nil && event.Request.ExitEvent != nil {
+			return event.Request.ExitEvent.ExitCode
+		}
+	}
+
+	return 0
+}
+
+// cleanupStrandedVolume removes a shared volume that can't be used because the
+// machine launch failed and no existing machine could be recovered.
+func (f *Fly) cleanupStrandedVolume(ctx context.Context, sharedVolumeID string, logger *slog.Logger) {
+	if sharedVolumeID == "" {
+		return
+	}
+
+	vol, ok := f.findVolumeByID(sharedVolumeID)
+	if !ok {
+		return
+	}
+
+	if cleanupErr := vol.Cleanup(ctx); cleanupErr != nil {
+		logger.Warn("fly.machine.launch.volume.cleanup.error", "volume", sharedVolumeID, "err", cleanupErr)
+	}
 }
 
 // GetContainer finds and returns an existing machine by its ID.

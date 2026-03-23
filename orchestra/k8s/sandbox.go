@@ -126,28 +126,15 @@ func joinArgs(cmd []string) string {
 	return strings.Join(cmd, " ")
 }
 
-// StartSandbox implements orchestra.SandboxDriver.
-// It creates a Pod running "tail -f /dev/null", waits for it to be Running,
-// then returns a K8sSandbox handle backed by the pod /exec subresource.
-func (k *K8s) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.Sandbox, error) {
-	logger := k.logger.With("taskID", task.ID)
-
-	podName := sanitizeName(fmt.Sprintf("%s-%s-sandbox", k.namespace, task.ID))
-
-	labels := map[string]string{
-		"orchestra.namespace": sanitizeLabel(k.namespace),
-		"orchestra.task":      sanitizeLabel(task.ID),
-		"orchestra.sandbox":   "true",
-	}
-
-	// Build volumes and mounts.
+// buildSandboxVolumes creates PVCs and returns the volume + mount specs for a sandbox pod.
+func (k *K8s) buildSandboxVolumes(ctx context.Context, podName string, mounts []orchestra.Mount) ([]corev1.Volume, []corev1.VolumeMount, error) {
 	volumes := []corev1.Volume{}
 	volumeMounts := []corev1.VolumeMount{}
 
-	for _, taskMount := range task.Mounts {
+	for _, taskMount := range mounts {
 		vol, err := k.CreateVolume(ctx, taskMount.Name, 0)
 		if err != nil {
-			return nil, fmt.Errorf("sandbox: failed to create volume: %w", err)
+			return nil, nil, fmt.Errorf("sandbox: failed to create volume: %w", err)
 		}
 
 		k8sVol, _ := vol.(*Volume)
@@ -166,6 +153,29 @@ func (k *K8s) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 			Name:      sanitizedName,
 			MountPath: filepath.Join("/tmp", podName, taskMount.Path),
 		})
+	}
+
+	return volumes, volumeMounts, nil
+}
+
+// StartSandbox implements orchestra.SandboxDriver.
+// It creates a Pod running "tail -f /dev/null", waits for it to be Running,
+// then returns a K8sSandbox handle backed by the pod /exec subresource.
+func (k *K8s) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.Sandbox, error) {
+	logger := k.logger.With("taskID", task.ID)
+
+	podName := sanitizeName(fmt.Sprintf("%s-%s-sandbox", k.namespace, task.ID))
+
+	labels := map[string]string{
+		"orchestra.namespace": sanitizeLabel(k.namespace),
+		"orchestra.task":      sanitizeLabel(task.ID),
+		"orchestra.sandbox":   "true",
+	}
+
+	// Build volumes and mounts.
+	volumes, volumeMounts, err := k.buildSandboxVolumes(ctx, podName, task.Mounts)
+	if err != nil {
+		return nil, err
 	}
 
 	env := []corev1.EnvVar{}
@@ -215,7 +225,7 @@ func (k *K8s) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 		}
 	}
 
-	_, err := k.clientset.CoreV1().Pods(k.k8sNamespace).Create(ctx, pod, metav1.CreateOptions{})
+	_, err = k.clientset.CoreV1().Pods(k.k8sNamespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("sandbox: failed to create pod: %w", err)
 	}

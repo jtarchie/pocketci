@@ -51,20 +51,77 @@ func (c *Run) Run(logger *slog.Logger) error {
 	serverURL := strings.TrimSuffix(c.ServerURL, "/")
 	endpoint := serverURL + "/api/pipelines/" + c.Name + "/run"
 
-	// Build the multipart body into a temp file so we know Content-Length.
-	// This avoids HTTP chunked transfer encoding, which flushes every small
-	// write to the TCP connection and is extremely slow over high-latency links.
-	tmpFile, err := os.CreateTemp("", "ci-upload-*.bin")
+	tmpFile, contentType, err := c.buildMultipartBody(logger)
 	if err != nil {
-		return fmt.Errorf("could not create temp file: %w", err)
+		return err
 	}
 
 	defer func() { _ = os.Remove(tmpFile.Name()) }()
 	defer func() { _ = tmpFile.Close() }()
 
+	bodySize, err := tmpFile.Seek(0, io.SeekEnd)
+	if err != nil {
+		return fmt.Errorf("could not determine upload size: %w", err)
+	}
+
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("could not rewind temp file: %w", err)
+	}
+
+	logger.Info("pipeline.run.trigger", "name", c.Name, "url", RedactURL(endpoint), "args", c.Args, "upload_bytes", bodySize)
+
+	client, endpoint := c.configureClient(endpoint)
+
+	resp, err := c.sendRequest(client, endpoint, tmpFile, contentType, bodySize)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.RawBody().Close() }()
+
+	if err := checkResponseStatus(resp, serverURL); err != nil {
+		return err
+	}
+
+	logger.Info("pipeline.run.streaming")
+
+	return streamSSEEvents(resp.RawBody(), logger)
+}
+
+func (c *Run) buildMultipartBody(logger *slog.Logger) (*os.File, string, error) {
+	tmpFile, err := os.CreateTemp("", "ci-upload-*.bin")
+	if err != nil {
+		return nil, "", fmt.Errorf("could not create temp file: %w", err)
+	}
+
 	mw := multipart.NewWriter(tmpFile)
 
-	// Field: args — JSON-encoded array of strings.
+	if err := c.writeArgsField(mw); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+
+		return nil, "", err
+	}
+
+	if !c.NoWorkdir {
+		if err := c.writeWorkdirField(mw, logger); err != nil {
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpFile.Name())
+
+			return nil, "", err
+		}
+	}
+
+	if err := mw.Close(); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+
+		return nil, "", fmt.Errorf("could not close multipart writer: %w", err)
+	}
+
+	return tmpFile, mw.FormDataContentType(), nil
+}
+
+func (c *Run) writeArgsField(mw *multipart.Writer) error {
 	argsData, err := json.Marshal(c.Args)
 	if err != nil {
 		return fmt.Errorf("could not encode args: %w", err)
@@ -79,63 +136,41 @@ func (c *Run) Run(logger *slog.Logger) error {
 		return fmt.Errorf("could not write args: %w", err)
 	}
 
-	// File: workdir — zstd-compressed tar archive of the current working directory.
-	if !c.NoWorkdir {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("could not determine working directory: %w", err)
-		}
+	return nil
+}
 
-		logger.Info("pipeline.run.workdir", "path", cwd, "ignore", c.Ignore)
-
-		ff, err := mw.CreateFormFile("workdir", "workdir.tar.zst")
-		if err != nil {
-			return fmt.Errorf("could not create workdir part: %w", err)
-		}
-
-		zw, err := zstd.NewWriter(ff, zstd.WithEncoderLevel(zstd.SpeedFastest))
-		if err != nil {
-			return fmt.Errorf("could not create zstd writer: %w", err)
-		}
-
-		if err := tarDirectory(cwd, zw, c.Ignore); err != nil {
-			return fmt.Errorf("could not tar working directory: %w", err)
-		}
-
-		if err := zw.Close(); err != nil {
-			return fmt.Errorf("could not flush zstd stream: %w", err)
-		}
-	}
-
-	if err := mw.Close(); err != nil {
-		return fmt.Errorf("could not close multipart writer: %w", err)
-	}
-
-	contentType := mw.FormDataContentType()
-
-	// Determine body size and rewind to the beginning.
-	bodySize, err := tmpFile.Seek(0, io.SeekEnd)
+func (c *Run) writeWorkdirField(mw *multipart.Writer, logger *slog.Logger) error {
+	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("could not determine upload size: %w", err)
+		return fmt.Errorf("could not determine working directory: %w", err)
 	}
 
-	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("could not rewind temp file: %w", err)
+	logger.Info("pipeline.run.workdir", "path", cwd, "ignore", c.Ignore)
+
+	ff, err := mw.CreateFormFile("workdir", "workdir.tar.zst")
+	if err != nil {
+		return fmt.Errorf("could not create workdir part: %w", err)
 	}
 
-	logger.Info("pipeline.run.trigger", "name", c.Name, "url", RedactURL(endpoint), "args", c.Args, "upload_bytes", bodySize)
+	zw, err := zstd.NewWriter(ff, zstd.WithEncoderLevel(zstd.SpeedFastest))
+	if err != nil {
+		return fmt.Errorf("could not create zstd writer: %w", err)
+	}
 
-	bar := progressbar.NewOptions64(bodySize,
-		progressbar.OptionSetDescription("uploading"),
-		progressbar.OptionSetWriter(os.Stderr),
-		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetVisibility(!c.NoWorkdir),
-		progressbar.OptionOnCompletion(func() { fmt.Fprintln(os.Stderr) }),
-	)
+	if err := tarDirectory(cwd, zw, c.Ignore); err != nil {
+		return fmt.Errorf("could not tar working directory: %w", err)
+	}
 
+	if err := zw.Close(); err != nil {
+		return fmt.Errorf("could not flush zstd stream: %w", err)
+	}
+
+	return nil
+}
+
+func (c *Run) configureClient(endpoint string) (*resty.Client, string) {
 	client := resty.New()
 
-	// Extract basic auth from URL if present and strip it from the endpoint.
 	if parsed, err := url.Parse(endpoint); err == nil && parsed.User != nil {
 		password, _ := parsed.User.Password()
 		client.SetBasicAuth(parsed.User.Username(), password)
@@ -143,7 +178,6 @@ func (c *Run) Run(logger *slog.Logger) error {
 		endpoint = parsed.String()
 	}
 
-	// Resolve auth token: explicit flag > config file lookup.
 	token := ResolveAuthToken(c.AuthToken, c.ConfigFile, c.ServerURL)
 	if token != "" {
 		client.SetAuthToken(token)
@@ -153,18 +187,35 @@ func (c *Run) Run(logger *slog.Logger) error {
 		client.SetTimeout(c.Timeout)
 	}
 
+	return client, endpoint
+}
+
+func (c *Run) sendRequest(client *resty.Client, endpoint string, body *os.File, contentType string, bodySize int64) (*resty.Response, error) {
+	bar := progressbar.NewOptions64(bodySize,
+		progressbar.OptionSetDescription("uploading"),
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSetVisibility(!c.NoWorkdir),
+		progressbar.OptionOnCompletion(func() { fmt.Fprintln(os.Stderr) }),
+	)
+
 	resp, err := client.R().
 		SetHeader("Content-Type", contentType).
 		SetHeader("Content-Length", strconv.FormatInt(bodySize, 10)).
 		SetHeader("Accept", "text/event-stream").
-		SetBody(io.TeeReader(tmpFile, bar)).
+		SetBody(io.TeeReader(body, bar)).
 		SetDoNotParseResponse(true).
 		Post(endpoint)
 	if err != nil {
-		return fmt.Errorf("could not connect to server: %w", err)
+		return nil, fmt.Errorf("could not connect to server: %w", err)
 	}
-	defer func() { _ = resp.RawBody().Close() }()
 
+	_ = bar.Finish()
+
+	return resp, nil
+}
+
+func checkResponseStatus(resp *resty.Response, serverURL string) error {
 	if resp.StatusCode() == 401 {
 		return authRequiredError(serverURL)
 	}
@@ -178,12 +229,11 @@ func (c *Run) Run(logger *slog.Logger) error {
 		return fmt.Errorf("server returned %d: %s", resp.StatusCode(), string(body))
 	}
 
-	_ = bar.Finish()
+	return nil
+}
 
-	logger.Info("pipeline.run.streaming")
-
-	// Read SSE stream line-by-line.
-	scanner := bufio.NewScanner(resp.RawBody())
+func streamSSEEvents(body io.Reader, logger *slog.Logger) error {
+	scanner := bufio.NewScanner(body)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -191,6 +241,7 @@ func (c *Run) Run(logger *slog.Logger) error {
 		}
 
 		payload := strings.TrimPrefix(line, "data: ")
+
 		var evt sseEvent
 		if err := json.Unmarshal([]byte(payload), &evt); err != nil {
 			logger.Debug("run.sse.unparseable", "line", payload)
@@ -209,11 +260,9 @@ func (c *Run) Run(logger *slog.Logger) error {
 			fmt.Fprintln(os.Stderr, "error:", evt.Message)
 			os.Exit(1) //nolint:gocritic
 		case "":
-			// stdout/stderr data event
-			switch evt.Stream {
-			case "stderr":
+			if evt.Stream == "stderr" {
 				fmt.Fprint(os.Stderr, evt.Data)
-			default:
+			} else {
 				fmt.Fprint(os.Stdout, evt.Data) //nolint:errcheck
 			}
 		}

@@ -23,8 +23,8 @@ type S3Store struct {
 }
 
 // New creates a new S3-backed cache store from the given Config.
-func New(cfg Config) (*S3Store, error) {
-	client, err := s3config.NewClient(context.Background(), &cfg.Config)
+func New(ctx context.Context, cfg Config) (*S3Store, error) {
+	client, err := s3config.NewClient(ctx, &cfg.Config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create S3 client: %w", err)
 	}

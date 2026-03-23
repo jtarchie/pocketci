@@ -60,7 +60,7 @@ type ExecutorOptions struct {
 	OutputCallback func(stream string, data string)
 	// DriverFactory, if set, is called to create a new driver for this execution.
 	// Required if Driver is not set.
-	DriverFactory func(namespace string) (orchestra.Driver, error)
+	DriverFactory func(ctx context.Context, namespace string) (orchestra.Driver, error)
 	// Driver, if set, is used for pipeline execution instead of creating
 	// one from the DriverFactory. The caller owns the driver lifecycle.
 	Driver orchestra.Driver
@@ -108,7 +108,7 @@ func ExecutePipeline(
 
 		var err error
 
-		driver, err = opts.DriverFactory(namespace)
+		driver, err = opts.DriverFactory(ctx, namespace)
 		if err != nil {
 			return fmt.Errorf("could not create orchestrator: %w", err)
 		}

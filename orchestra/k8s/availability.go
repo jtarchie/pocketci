@@ -12,7 +12,7 @@ import (
 // This is a lightweight check that only verifies API server connectivity.
 func IsAvailable() bool {
 	// Try to create a client
-	client, err := New(Config{Namespace: "availability-check"}, slog.Default())
+	client, err := New(context.Background(), Config{Namespace: "availability-check"}, slog.Default())
 	if err != nil {
 		return false
 	}

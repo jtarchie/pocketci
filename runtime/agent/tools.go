@@ -141,13 +141,13 @@ func newRunScriptTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelineru
 			Name:        "run_script",
 			Description: "Run a multi-line shell script via /bin/sh. Add 'set -e' at the top to abort on the first failure. Volume paths are accessible as relative paths from the working directory.",
 		},
-		func(_ adktool.Context, input runScriptInput) (runCommandOutput, error) {
+		func(ctx adktool.Context, input runScriptInput) (runCommandOutput, error) {
 			var execInput pipelinerunner.ExecInput
 			execInput.Command.Path = "/bin/sh"
 			execInput.Command.Args = []string{"-c", input.Script}
 			execInput.OnOutput = onOutput
 
-			result, execErr := sandbox.Exec(execInput)
+			result, execErr := sandbox.Exec(ctx, execInput)
 			if execErr != nil {
 				return runCommandOutput{}, execErr
 			}
@@ -168,13 +168,13 @@ func newReadFileTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerun
 			Name:        "read_file",
 			Description: "Read the contents of a file from a mounted volume. Path format: \"mountname/relative/path\" (e.g. \"diff/pr.diff\"). Prefer this over run_script 'cat' when you only need to read a single file — it avoids a shell subprocess.",
 		},
-		func(_ adktool.Context, input readFileInput) (readFileOutput, error) {
+		func(ctx adktool.Context, input readFileInput) (readFileOutput, error) {
 			var execInput pipelinerunner.ExecInput
 			execInput.Command.Path = "/bin/sh"
 			execInput.Command.Args = []string{"-c", "cat " + input.Path}
 			execInput.OnOutput = onOutput
 
-			result, execErr := sandbox.Exec(execInput)
+			result, execErr := sandbox.Exec(ctx, execInput)
 			if execErr != nil {
 				return readFileOutput{}, execErr
 			}

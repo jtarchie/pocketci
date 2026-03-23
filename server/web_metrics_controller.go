@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -159,43 +160,7 @@ func (c *WebMetricsController) buildData(ctx *echo.Context) (MetricsDashboardDat
 	}
 	data.PipelineMetrics = make([]PipelineMetrics, 0, len(allPipelines.Items))
 	for _, pipeline := range allPipelines.Items {
-		pm := PipelineMetrics{Pipeline: pipeline}
-
-		// Fetch up to 100 most-recent runs to compute stats
-		runs, runsErr := c.store.SearchRunsByPipeline(reqCtx, pipeline.ID, "", 1, 100)
-		if runsErr != nil || runs == nil {
-			data.PipelineMetrics = append(data.PipelineMetrics, pm)
-			continue
-		}
-
-		pm.TotalRuns = runs.TotalItems
-
-		var durationSum time.Duration
-		var durationCount int
-
-		for i := range runs.Items {
-			run := &runs.Items[i]
-			switch run.Status {
-			case storage.RunStatusSuccess:
-				pm.SuccessRuns++
-			case storage.RunStatusFailed:
-				pm.FailedRuns++
-			case storage.RunStatusSkipped:
-				pm.SkippedRuns++
-			}
-			if run.StartedAt != nil && run.CompletedAt != nil {
-				durationSum += run.CompletedAt.Sub(*run.StartedAt)
-				durationCount++
-			}
-			if pm.LastRun == nil {
-				pm.LastRun = run
-			}
-		}
-
-		if durationCount > 0 {
-			pm.AvgDuration = durationSum / time.Duration(durationCount)
-		}
-
+		pm := computePipelineMetrics(reqCtx, c.store, pipeline)
 		data.PipelineMetrics = append(data.PipelineMetrics, pm)
 	}
 
@@ -241,4 +206,45 @@ func pct(part, total int) int {
 		return 0
 	}
 	return (part * 100) / total
+}
+
+// computePipelineMetrics fetches recent runs for a pipeline and computes
+// success/failure counts, average duration, and last run.
+func computePipelineMetrics(ctx context.Context, store storage.Driver, pipeline storage.Pipeline) PipelineMetrics {
+	pm := PipelineMetrics{Pipeline: pipeline}
+
+	runs, err := store.SearchRunsByPipeline(ctx, pipeline.ID, "", 1, 100)
+	if err != nil || runs == nil {
+		return pm
+	}
+
+	pm.TotalRuns = runs.TotalItems
+
+	var durationSum time.Duration
+	var durationCount int
+
+	for i := range runs.Items {
+		run := &runs.Items[i]
+		switch run.Status {
+		case storage.RunStatusSuccess:
+			pm.SuccessRuns++
+		case storage.RunStatusFailed:
+			pm.FailedRuns++
+		case storage.RunStatusSkipped:
+			pm.SkippedRuns++
+		}
+		if run.StartedAt != nil && run.CompletedAt != nil {
+			durationSum += run.CompletedAt.Sub(*run.StartedAt)
+			durationCount++
+		}
+		if pm.LastRun == nil {
+			pm.LastRun = run
+		}
+	}
+
+	if durationCount > 0 {
+		pm.AvgDuration = durationSum / time.Duration(durationCount)
+	}
+
+	return pm
 }

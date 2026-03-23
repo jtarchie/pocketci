@@ -106,9 +106,9 @@ type DigitalOcean struct {
 }
 
 // New creates a new DigitalOcean driver instance.
-func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
+func New(_ context.Context, cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	if cfg.Token == "" {
-		return nil, errors.New("digitalocean: API token is required (set via CI_DIGITALOCEAN_TOKEN)")
+		return nil, errors.New("digitalocean: token is required")
 	}
 
 	client := godo.NewFromToken(cfg.Token)
@@ -351,57 +351,7 @@ func (d *DigitalOcean) ensureDroplet(ctx context.Context, containerLimits orches
 
 	d.logger.Info("digitalocean.droplet.create")
 
-	image := d.cfg.Image
-	if image == "" {
-		image = DefaultImage
-	}
-
-	region := d.cfg.Region
-	if region == "" {
-		region = DefaultRegion
-	}
-
-	size := d.determineDropletSize(containerLimits)
-
-	dropletName := "pocketci-" + d.namespace
-
-	// Build tags list: always include pocketci, namespace, and worker pool tags
-	tags := []string{
-		"pocketci",
-		"namespace-" + d.namespace,
-		d.workerTag(),
-		d.busyTag(),
-	}
-
-	// Add custom tags from config
-	if d.cfg.Tags != "" {
-		for tag := range strings.SplitSeq(d.cfg.Tags, ",") {
-			tag = strings.TrimSpace(tag)
-			if tag != "" {
-				tags = append(tags, sanitizeHostname(tag))
-			}
-		}
-	}
-
-	createRequest := &godo.DropletCreateRequest{
-		Name:   dropletName,
-		Region: region,
-		Size:   size,
-		Image: godo.DropletCreateImage{
-			Slug: image,
-		},
-		SSHKeys: []godo.DropletCreateSSHKey{
-			{ID: sshKeyID},
-		},
-		Tags: tags,
-	}
-
-	d.logger.Debug("digitalocean.droplet.create_request",
-		"name", dropletName,
-		"region", region,
-		"size", size,
-		"image", image,
-	)
+	createRequest := d.buildDropletCreateRequest(containerLimits, sshKeyID)
 
 	droplet, _, err := d.client.Droplets.Create(ctx, createRequest)
 	if err != nil {
@@ -411,7 +361,7 @@ func (d *DigitalOcean) ensureDroplet(ctx context.Context, containerLimits orches
 	// Store droplet immediately so Close() can clean it up even if subsequent steps fail
 	d.droplet = droplet
 
-	d.logger.Info("droplet.create.success", "id", droplet.ID, "name", dropletName)
+	d.logger.Info("droplet.create.success", "id", droplet.ID, "name", createRequest.Name)
 
 	// Wait for droplet to become active and get its public IP
 	droplet, err = d.waitForDroplet(ctx, droplet.ID)
@@ -451,6 +401,59 @@ func (d *DigitalOcean) ensureDroplet(ctx context.Context, containerLimits orches
 	d.logger.Info("digitalocean.docker.connected.success")
 
 	return nil
+}
+
+// buildDropletCreateRequest constructs the DropletCreateRequest with defaults and tags.
+func (d *DigitalOcean) buildDropletCreateRequest(containerLimits orchestra.ContainerLimits, sshKeyID int) *godo.DropletCreateRequest {
+	image := d.cfg.Image
+	if image == "" {
+		image = DefaultImage
+	}
+
+	region := d.cfg.Region
+	if region == "" {
+		region = DefaultRegion
+	}
+
+	size := d.determineDropletSize(containerLimits)
+
+	dropletName := "pocketci-" + d.namespace
+
+	tags := []string{
+		"pocketci",
+		"namespace-" + d.namespace,
+		d.workerTag(),
+		d.busyTag(),
+	}
+
+	if d.cfg.Tags != "" {
+		for tag := range strings.SplitSeq(d.cfg.Tags, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag != "" {
+				tags = append(tags, sanitizeHostname(tag))
+			}
+		}
+	}
+
+	d.logger.Debug("digitalocean.droplet.create_request",
+		"name", dropletName,
+		"region", region,
+		"size", size,
+		"image", image,
+	)
+
+	return &godo.DropletCreateRequest{
+		Name:   dropletName,
+		Region: region,
+		Size:   size,
+		Image: godo.DropletCreateImage{
+			Slug: image,
+		},
+		SSHKeys: []godo.DropletCreateSSHKey{
+			{ID: sshKeyID},
+		},
+		Tags: tags,
+	}
 }
 
 // determineDropletSize selects an appropriate droplet size based on container limits.

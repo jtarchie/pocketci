@@ -46,6 +46,38 @@ type WebPipelinesController struct {
 	BaseController
 }
 
+// filterRowsByRBAC removes pipeline rows the current user is not allowed to see.
+func filterRowsByRBAC(ctx *echo.Context, rows []PipelineRow) []PipelineRow {
+	user := auth.GetUser(ctx)
+	if user == nil {
+		return rows
+	}
+
+	filtered := rows[:0]
+	for _, row := range rows {
+		if row.Pipeline.RBACExpression != "" {
+			allowed, err := auth.EvaluateAccess(row.Pipeline.RBACExpression, *user)
+			if err != nil || !allowed {
+				continue
+			}
+		}
+		filtered = append(filtered, row)
+	}
+
+	return filtered
+}
+
+// hasActiveRunInRows returns true if any row has a running or queued latest run.
+func hasActiveRunInRows(rows []PipelineRow) bool {
+	for _, row := range rows {
+		if row.LatestRun != nil && (row.LatestRun.Status == storage.RunStatusRunning || row.LatestRun.Status == storage.RunStatusQueued) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // Index handles GET /pipelines/ - Pipeline listing page.
 // Returns full HTML page for normal requests, or just the _pipelines_content
 // partial for HTMX requests (search, pagination, polling).
@@ -79,38 +111,13 @@ func (c *WebPipelinesController) Index(ctx *echo.Context) error {
 	}
 
 	rows := buildPipelineRows(ctx.Request().Context(), c.store, result.Items, c.execService.DefaultDriver)
-
-	// Filter by pipeline-level RBAC if a user is present.
-	user := auth.GetUser(ctx)
-	if user != nil {
-		filtered := rows[:0]
-		for _, row := range rows {
-			if row.Pipeline.RBACExpression != "" {
-				allowed, err := auth.EvaluateAccess(row.Pipeline.RBACExpression, *user)
-				if err != nil || !allowed {
-					continue
-				}
-			}
-			filtered = append(filtered, row)
-		}
-		rows = filtered
-	}
-
-	// Check if any pipeline has an active (running/queued) latest run.
-	hasActiveRuns := false
-	for _, row := range rows {
-		if row.LatestRun != nil && (row.LatestRun.Status == storage.RunStatusRunning || row.LatestRun.Status == storage.RunStatusQueued) {
-			hasActiveRuns = true
-
-			break
-		}
-	}
+	rows = filterRowsByRBAC(ctx, rows)
 
 	data := map[string]any{
 		"PipelineRows":  rows,
 		"Pagination":    result,
 		"Query":         q,
-		"HasActiveRuns": hasActiveRuns,
+		"HasActiveRuns": hasActiveRunInRows(rows),
 	}
 
 	if isHtmxRequest(ctx) {

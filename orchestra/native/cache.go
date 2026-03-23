@@ -93,63 +93,7 @@ func (n *Native) CopyFromVolume(_ context.Context, volumeName string) (io.ReadCl
 	go func() {
 		tw := tar.NewWriter(pw)
 
-		err := filepath.Walk(volumePath, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-
-			// Get relative path within volume
-			relPath, err := filepath.Rel(volumePath, path)
-			if err != nil {
-				return fmt.Errorf("failed to get relative path: %w", err)
-			}
-
-			// Skip the root directory itself
-			if relPath == "." {
-				return nil
-			}
-
-			// Create tar header
-			header, err := tar.FileInfoHeader(info, "")
-			if err != nil {
-				return fmt.Errorf("failed to create tar header: %w", err)
-			}
-
-			header.Name = relPath
-
-			// Handle symlinks
-			if info.Mode()&os.ModeSymlink != 0 {
-				linkTarget, err := os.Readlink(path)
-				if err != nil {
-					return fmt.Errorf("failed to read symlink: %w", err)
-				}
-
-				header.Linkname = linkTarget
-			}
-
-			if err := tw.WriteHeader(header); err != nil {
-				return fmt.Errorf("failed to write tar header: %w", err)
-			}
-
-			// Write file content for regular files
-			if info.Mode().IsRegular() {
-				file, err := os.Open(path)
-				if err != nil {
-					return fmt.Errorf("failed to open file: %w", err)
-				}
-
-				defer func() {
-					_ = file.Close()
-				}()
-
-				if _, err := io.Copy(tw, file); err != nil {
-					return fmt.Errorf("failed to write file to tar: %w", err)
-				}
-			}
-
-			return nil
-		})
-
+		err := filepath.Walk(volumePath, tarWalkFunc(volumePath, tw))
 		if err != nil {
 			_ = tw.Close()
 			pw.CloseWithError(err)
@@ -186,116 +130,9 @@ func (n *Native) ReadFilesFromVolume(_ context.Context, volumeName string, fileP
 		var walkErr error
 
 		for _, fp := range filePaths {
-			target := filepath.Join(volumePath, fp)
-
-			// Security: prevent path traversal
-			if !strings.HasPrefix(target, volumePath) {
-				walkErr = fmt.Errorf("invalid path: %s", fp)
-
+			walkErr = tarPath(tw, volumePath, fp)
+			if walkErr != nil {
 				break
-			}
-
-			info, err := os.Lstat(target)
-			if err != nil {
-				walkErr = fmt.Errorf("failed to stat %s: %w", fp, err)
-
-				break
-			}
-
-			if info.IsDir() {
-				walkErr = filepath.Walk(target, func(path string, fi os.FileInfo, err error) error {
-					if err != nil {
-						return err
-					}
-
-					relPath, err := filepath.Rel(volumePath, path)
-					if err != nil {
-						return fmt.Errorf("failed to get relative path: %w", err)
-					}
-
-					header, err := tar.FileInfoHeader(fi, "")
-					if err != nil {
-						return fmt.Errorf("failed to create tar header: %w", err)
-					}
-
-					header.Name = relPath
-
-					if fi.Mode()&os.ModeSymlink != 0 {
-						linkTarget, err := os.Readlink(path)
-						if err != nil {
-							return fmt.Errorf("failed to read symlink: %w", err)
-						}
-
-						header.Linkname = linkTarget
-					}
-
-					if err := tw.WriteHeader(header); err != nil {
-						return fmt.Errorf("failed to write tar header: %w", err)
-					}
-
-					if fi.Mode().IsRegular() {
-						file, err := os.Open(path)
-						if err != nil {
-							return fmt.Errorf("failed to open file: %w", err)
-						}
-
-						defer func() { _ = file.Close() }()
-
-						if _, err := io.Copy(tw, file); err != nil {
-							return fmt.Errorf("failed to write file to tar: %w", err)
-						}
-					}
-
-					return nil
-				})
-
-				if walkErr != nil {
-					break
-				}
-			} else {
-				header, err := tar.FileInfoHeader(info, "")
-				if err != nil {
-					walkErr = fmt.Errorf("failed to create tar header for %s: %w", fp, err)
-
-					break
-				}
-
-				header.Name = fp
-
-				if info.Mode()&os.ModeSymlink != 0 {
-					linkTarget, err := os.Readlink(target)
-					if err != nil {
-						walkErr = fmt.Errorf("failed to read symlink: %w", err)
-
-						break
-					}
-
-					header.Linkname = linkTarget
-				}
-
-				if err := tw.WriteHeader(header); err != nil {
-					walkErr = fmt.Errorf("failed to write tar header: %w", err)
-
-					break
-				}
-
-				if info.Mode().IsRegular() {
-					file, err := os.Open(target)
-					if err != nil {
-						walkErr = fmt.Errorf("failed to open file %s: %w", fp, err)
-
-						break
-					}
-
-					if _, err := io.Copy(tw, file); err != nil {
-						_ = file.Close()
-						walkErr = fmt.Errorf("failed to write file to tar: %w", err)
-
-						break
-					}
-
-					_ = file.Close()
-				}
 			}
 		}
 
@@ -318,4 +155,86 @@ func (n *Native) ReadFilesFromVolume(_ context.Context, volumeName string, fileP
 	return pr, nil
 }
 
+// tarFileEntry writes a single file entry to the tar writer.
+func tarFileEntry(tw *tar.Writer, name, target string, info os.FileInfo) error {
+	header, err := tar.FileInfoHeader(info, "")
+	if err != nil {
+		return fmt.Errorf("failed to create tar header for %s: %w", name, err)
+	}
+
+	header.Name = name
+
+	if info.Mode()&os.ModeSymlink != 0 {
+		linkTarget, err := os.Readlink(target)
+		if err != nil {
+			return fmt.Errorf("failed to read symlink: %w", err)
+		}
+
+		header.Linkname = linkTarget
+	}
+
+	if err := tw.WriteHeader(header); err != nil {
+		return fmt.Errorf("failed to write tar header: %w", err)
+	}
+
+	if !info.Mode().IsRegular() {
+		return nil
+	}
+
+	file, err := os.Open(target)
+	if err != nil {
+		return fmt.Errorf("failed to open file %s: %w", name, err)
+	}
+
+	defer func() { _ = file.Close() }()
+
+	if _, err := io.Copy(tw, file); err != nil {
+		return fmt.Errorf("failed to write file to tar: %w", err)
+	}
+
+	return nil
+}
+
+// tarPath writes a single path (file or directory) to the tar writer.
+func tarPath(tw *tar.Writer, volumePath, fp string) error {
+	target := filepath.Join(volumePath, fp)
+
+	// Security: prevent path traversal
+	if !strings.HasPrefix(target, volumePath) {
+		return fmt.Errorf("invalid path: %s", fp)
+	}
+
+	info, err := os.Lstat(target)
+	if err != nil {
+		return fmt.Errorf("failed to stat %s: %w", fp, err)
+	}
+
+	if info.IsDir() {
+		return filepath.Walk(target, tarWalkFunc(volumePath, tw))
+	}
+
+	return tarFileEntry(tw, fp, target, info)
+}
+
 var _ cache.VolumeDataAccessor = (*Native)(nil)
+
+// tarWalkFunc returns a filepath.WalkFunc that writes each entry to the tar writer
+// with paths relative to volumePath.
+func tarWalkFunc(volumePath string, tw *tar.Writer) filepath.WalkFunc {
+	return func(path string, fi os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(volumePath, path)
+		if err != nil {
+			return fmt.Errorf("failed to get relative path: %w", err)
+		}
+
+		if relPath == "." {
+			return nil
+		}
+
+		return tarFileEntry(tw, relPath, path, fi)
+	}
+}

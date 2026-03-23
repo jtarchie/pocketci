@@ -72,8 +72,7 @@ func (h *SandboxHandle) ID() string {
 
 // Exec runs a single command inside the sandbox.
 // env and workDir apply only to this invocation; they do not persist.
-func (h *SandboxHandle) Exec(input ExecInput) (*RunResult, error) {
-	ctx := h.runner.ctx
+func (h *SandboxHandle) Exec(ctx context.Context, input ExecInput) (*RunResult, error) {
 
 	if input.Timeout != "" {
 		timeout, err := time.ParseDuration(input.Timeout)
@@ -92,38 +91,7 @@ func (h *SandboxHandle) Exec(input ExecInput) (*RunResult, error) {
 	// Resolve secret references in env (matching PipelineRunner.Run behaviour).
 	env := input.Env
 	if h.runner.secretsManager != nil && len(env) > 0 {
-		var secretKeys []string
-
-		for _, val := range env {
-			if strings.HasPrefix(val, "secret:") {
-				secretKeys = append(secretKeys, strings.TrimPrefix(val, "secret:"))
-			}
-		}
-
-		if len(secretKeys) > 0 {
-			secretMap, err := h.runner.loadSecrets(ctx, secretKeys)
-			if err != nil {
-				return nil, fmt.Errorf("sandbox exec: failed to load secrets: %w", err)
-			}
-
-			resolved := make(map[string]string, len(env))
-
-			for k, v := range env {
-				if strings.HasPrefix(v, "secret:") {
-					secretKey := strings.TrimPrefix(v, "secret:")
-					if secretVal, ok := secretMap[secretKey]; ok {
-						resolved[k] = secretVal
-						h.runner.secretValues = append(h.runner.secretValues, secretVal)
-
-						continue
-					}
-				}
-
-				resolved[k] = v
-			}
-
-			env = resolved
-		}
+		env = h.resolveSecretEnv(ctx, env)
 	}
 
 	cmd := make([]string, 0, 1+len(input.Command.Args))
@@ -169,6 +137,48 @@ func (h *SandboxHandle) Exec(input ExecInput) (*RunResult, error) {
 // Close shuts down the sandbox container.
 func (h *SandboxHandle) Close() error {
 	return h.sandbox.Cleanup(h.runner.ctx)
+}
+
+// resolveSecretEnv resolves "secret:..." references in env to actual values.
+func (h *SandboxHandle) resolveSecretEnv(ctx context.Context, env map[string]string) map[string]string {
+	var secretKeys []string
+
+	for _, val := range env {
+		if strings.HasPrefix(val, "secret:") {
+			secretKeys = append(secretKeys, strings.TrimPrefix(val, "secret:"))
+		}
+	}
+
+	if len(secretKeys) == 0 {
+		return env
+	}
+
+	secretMap, err := h.runner.loadSecrets(ctx, secretKeys)
+	if err != nil {
+		return env
+	}
+
+	resolved := make(map[string]string, len(env))
+
+	for k, v := range env {
+		if !strings.HasPrefix(v, "secret:") {
+			resolved[k] = v
+
+			continue
+		}
+
+		secretKey := strings.TrimPrefix(v, "secret:")
+		if secretVal, ok := secretMap[secretKey]; ok {
+			resolved[k] = secretVal
+			h.runner.secretValues = append(h.runner.secretValues, secretVal)
+
+			continue
+		}
+
+		resolved[k] = v
+	}
+
+	return resolved
 }
 
 // StartSandbox creates and starts a long-lived sandbox container.

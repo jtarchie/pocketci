@@ -69,7 +69,7 @@ func (v *VZ) Name() string {
 }
 
 // New creates a new Apple Virtualization framework driver.
-func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
+func New(_ context.Context, cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	homeDir, _ := os.UserHomeDir()
 	defaultCacheDir := filepath.Join(homeDir, ".cache", "pocketci", "vz")
 
@@ -132,6 +132,29 @@ func (v *VZ) ensureVM(ctx context.Context) error {
 	return v.bootErr
 }
 
+// prepareDiskImage resolves and prepares the VM boot image, returning its path.
+func (v *VZ) prepareDiskImage() (string, error) {
+	imagePath := v.image
+	if imagePath == "" {
+		imagePath = os.Getenv("VZ_IMAGE")
+	}
+
+	if imagePath == "" {
+		v.logger.Info("vz.image.downloading", "cache_dir", v.cacheDir)
+
+		var err error
+
+		imagePath, err = downloadImage(v.cacheDir)
+		if err != nil {
+			return "", fmt.Errorf("failed to download image: %w", err)
+		}
+
+		v.logger.Info("vz.image.ready", "path", imagePath)
+	}
+
+	return imagePath, nil
+}
+
 // bootVM performs the actual VM boot. Called once by ensureVM.
 func (v *VZ) bootVM(ctx context.Context) error {
 	v.logger.Info("vz.vm.starting", "namespace", v.namespace)
@@ -151,20 +174,9 @@ func (v *VZ) bootVM(ctx context.Context) error {
 	}
 
 	// Prepare the disk image
-	imagePath := v.image
-	if imagePath == "" {
-		imagePath = os.Getenv("VZ_IMAGE")
-	}
-
-	if imagePath == "" {
-		v.logger.Info("vz.image.downloading", "cache_dir", v.cacheDir)
-
-		imagePath, err = downloadImage(v.cacheDir)
-		if err != nil {
-			return fmt.Errorf("failed to download image: %w", err)
-		}
-
-		v.logger.Info("vz.image.ready", "path", imagePath)
+	imagePath, err := v.prepareDiskImage()
+	if err != nil {
+		return err
 	}
 
 	// Create a writable copy of the base image
@@ -237,6 +249,36 @@ func (v *VZ) bootVM(ctx context.Context) error {
 	return nil
 }
 
+// configureStorageDevices creates and attaches disk and seed storage to the VM config.
+func configureStorageDevices(config *vz.VirtualMachineConfiguration, diskPath, seedPath string) error {
+	diskAttachment, err := vz.NewDiskImageStorageDeviceAttachment(diskPath, false)
+	if err != nil {
+		return fmt.Errorf("failed to create disk attachment: %w", err)
+	}
+
+	blockDevice, err := vz.NewVirtioBlockDeviceConfiguration(diskAttachment)
+	if err != nil {
+		return fmt.Errorf("failed to create block device: %w", err)
+	}
+
+	seedAttachment, err := vz.NewDiskImageStorageDeviceAttachment(seedPath, true)
+	if err != nil {
+		return fmt.Errorf("failed to create seed attachment: %w", err)
+	}
+
+	seedDevice, err := vz.NewVirtioBlockDeviceConfiguration(seedAttachment)
+	if err != nil {
+		return fmt.Errorf("failed to create seed device: %w", err)
+	}
+
+	config.SetStorageDevicesVirtualMachineConfiguration([]vz.StorageDeviceConfiguration{
+		blockDevice,
+		seedDevice,
+	})
+
+	return nil
+}
+
 // buildVMConfig creates the VirtualMachineConfiguration for the VM.
 func (v *VZ) buildVMConfig(diskPath, seedPath string) (*vz.VirtualMachineConfiguration, *vz.VirtioSocketDevice, error) {
 	// Use EFI boot loader (requires macOS 13+)
@@ -257,32 +299,9 @@ func (v *VZ) buildVMConfig(diskPath, seedPath string) (*vz.VirtualMachineConfigu
 		return nil, nil, fmt.Errorf("failed to create VM configuration: %w", err)
 	}
 
-	// Root disk
-	diskAttachment, err := vz.NewDiskImageStorageDeviceAttachment(diskPath, false)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create disk attachment: %w", err)
+	if err := configureStorageDevices(config, diskPath, seedPath); err != nil {
+		return nil, nil, err
 	}
-
-	blockDevice, err := vz.NewVirtioBlockDeviceConfiguration(diskAttachment)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create block device: %w", err)
-	}
-
-	// Cloud-init seed ISO (read-only)
-	seedAttachment, err := vz.NewDiskImageStorageDeviceAttachment(seedPath, true)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create seed attachment: %w", err)
-	}
-
-	seedDevice, err := vz.NewVirtioBlockDeviceConfiguration(seedAttachment)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create seed device: %w", err)
-	}
-
-	config.SetStorageDevicesVirtualMachineConfiguration([]vz.StorageDeviceConfiguration{
-		blockDevice,
-		seedDevice,
-	})
 
 	// NAT networking
 	natAttachment, err := vz.NewNATNetworkDeviceAttachment()
@@ -493,6 +512,46 @@ func (v *VZ) mountVolumes() error {
 	return errors.New("timeout waiting for mount command")
 }
 
+// bindMountVolumes creates host dirs and bind-mounts them inside the VZ guest.
+func (v *VZ) bindMountVolumes(mounts []orchestra.Mount) error {
+	for _, mount := range mounts {
+		hostPath := filepath.Join(v.volumesDir, mount.Name)
+
+		if err := os.MkdirAll(hostPath, 0o755); err != nil {
+			return fmt.Errorf("failed to create volume dir: %w", err)
+		}
+
+		mountCmd := fmt.Sprintf(
+			"mkdir -p %s && (mountpoint -q %s || mount --bind /mnt/volumes/%s %s)",
+			mount.Path, mount.Path, mount.Name, mount.Path,
+		)
+
+		pid, err := v.agent.Exec("/bin/sh", []string{"-c", mountCmd}, nil, nil)
+		if err != nil {
+			return fmt.Errorf("failed to mount volume: %w", err)
+		}
+
+		for range 15 {
+			result, err := v.agent.ExecStatus(pid)
+			if err != nil {
+				return fmt.Errorf("failed to check mount status: %w", err)
+			}
+
+			if result.Exited {
+				if result.ExitCode != 0 {
+					v.logger.Warn("vz.mount.failed", "name", mount.Name, "exit_code", result.ExitCode)
+				}
+
+				break
+			}
+
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+
+	return nil
+}
+
 // RunContainer executes a command inside the VZ guest via the vsock agent.
 func (v *VZ) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.Container, error) {
 	if err := v.ensureVM(ctx); err != nil {
@@ -511,41 +570,8 @@ func (v *VZ) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.C
 	v.mu.Unlock()
 
 	// Handle mounts: create directories on host and bind-mount inside guest
-	for _, mount := range task.Mounts {
-		hostPath := filepath.Join(v.volumesDir, mount.Name)
-
-		if err := os.MkdirAll(hostPath, 0o755); err != nil {
-			return nil, fmt.Errorf("failed to create volume dir: %w", err)
-		}
-
-		// Create the mount path inside guest and bind-mount from virtiofs share
-		mountCmd := fmt.Sprintf(
-			"mkdir -p %s && (mountpoint -q %s || mount --bind /mnt/volumes/%s %s)",
-			mount.Path, mount.Path, mount.Name, mount.Path,
-		)
-
-		pid, err := v.agent.Exec("/bin/sh", []string{"-c", mountCmd}, nil, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to mount volume: %w", err)
-		}
-
-		// Wait for mount to complete
-		for range 15 {
-			result, err := v.agent.ExecStatus(pid)
-			if err != nil {
-				return nil, fmt.Errorf("failed to check mount status: %w", err)
-			}
-
-			if result.Exited {
-				if result.ExitCode != 0 {
-					v.logger.Warn("vz.mount.failed", "name", mount.Name, "exit_code", result.ExitCode)
-				}
-
-				break
-			}
-
-			time.Sleep(500 * time.Millisecond)
-		}
+	if err := v.bindMountVolumes(task.Mounts); err != nil {
+		return nil, err
 	}
 
 	// Build environment variables
@@ -634,20 +660,16 @@ func (v *VZ) Close() error {
 
 	// Stop the VM
 	if v.vm != nil {
-		canStop := v.vm.CanRequestStop()
-		if canStop {
+		gracefullyStopped := false
+
+		if v.vm.CanRequestStop() {
 			stopped, err := v.vm.RequestStop()
-			if err != nil || !stopped {
-				// Force stop if graceful stop fails
-				if err := v.vm.Stop(); err != nil {
-					errs = append(errs, fmt.Errorf("failed to stop VM: %w", err))
-				}
-			} else {
+			if err == nil && stopped {
+				gracefullyStopped = true
 				// Wait for VM to stop
 				deadline := time.After(10 * time.Second)
 			stopLoop:
 				for v.vm.State() != vz.VirtualMachineStateStopped {
-
 					select {
 					case <-deadline:
 						// Force stop on timeout
@@ -659,7 +681,9 @@ func (v *VZ) Close() error {
 					}
 				}
 			}
-		} else {
+		}
+
+		if !gracefullyStopped {
 			if err := v.vm.Stop(); err != nil {
 				errs = append(errs, fmt.Errorf("failed to stop VM: %w", err))
 			}

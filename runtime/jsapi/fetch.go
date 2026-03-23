@@ -111,29 +111,13 @@ func (f *FetchRuntime) Fetch(call goja.FunctionCall) goja.Value {
 	if len(call.Arguments) > 1 {
 		optsVal := call.Arguments[1]
 		if optsVal != nil && !goja.IsUndefined(optsVal) && !goja.IsNull(optsVal) {
-			optsObj := optsVal.ToObject(f.jsVM)
+			var parseErr error
 
-			if m := optsObj.Get("method"); m != nil && !goja.IsUndefined(m) {
-				method = strings.ToUpper(m.String())
-			}
+			method, headers, body, perCallTimeout, parseErr = f.parseOpts(optsVal, method, headers, body, perCallTimeout)
+			if parseErr != nil {
+				_ = reject(f.jsVM.NewGoError(parseErr))
 
-			if h := optsObj.Get("headers"); h != nil && !goja.IsUndefined(h) {
-				if err := f.jsVM.ExportTo(h, &headers); err != nil {
-					_ = reject(f.jsVM.NewGoError(fmt.Errorf("invalid headers: %w", err)))
-
-					return f.jsVM.ToValue(promise)
-				}
-			}
-
-			if b := optsObj.Get("body"); b != nil && !goja.IsUndefined(b) {
-				body = b.String()
-			}
-
-			if t := optsObj.Get("timeout"); t != nil && !goja.IsUndefined(t) {
-				ms := t.ToInteger()
-				if ms > 0 {
-					perCallTimeout = time.Duration(ms) * time.Millisecond
-				}
+				return f.jsVM.ToValue(promise)
 			}
 		}
 	}
@@ -220,4 +204,38 @@ func (f *FetchRuntime) doFetch(url, method string, headers map[string]string, bo
 		Headers:    respHeaders,
 		bodyText:   string(bodyBytes),
 	}, nil
+}
+
+// parseOpts extracts method, headers, body, and timeout from a JS options object.
+func (f *FetchRuntime) parseOpts(
+	optsVal goja.Value,
+	method string,
+	headers map[string]string,
+	body string,
+	timeout time.Duration,
+) (string, map[string]string, string, time.Duration, error) {
+	optsObj := optsVal.ToObject(f.jsVM)
+
+	if m := optsObj.Get("method"); m != nil && !goja.IsUndefined(m) {
+		method = strings.ToUpper(m.String())
+	}
+
+	if h := optsObj.Get("headers"); h != nil && !goja.IsUndefined(h) {
+		if err := f.jsVM.ExportTo(h, &headers); err != nil {
+			return "", nil, "", 0, fmt.Errorf("invalid headers: %w", err)
+		}
+	}
+
+	if b := optsObj.Get("body"); b != nil && !goja.IsUndefined(b) {
+		body = b.String()
+	}
+
+	if t := optsObj.Get("timeout"); t != nil && !goja.IsUndefined(t) {
+		ms := t.ToInteger()
+		if ms > 0 {
+			timeout = time.Duration(ms) * time.Millisecond
+		}
+	}
+
+	return method, headers, body, timeout, nil
 }

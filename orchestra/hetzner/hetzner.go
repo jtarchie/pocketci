@@ -106,9 +106,9 @@ type Hetzner struct {
 }
 
 // New creates a new Hetzner Cloud driver instance.
-func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
+func New(_ context.Context, cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	if cfg.Token == "" {
-		return nil, errors.New("hetzner: API token is required (set via CI_HETZNER_TOKEN)")
+		return nil, errors.New("hetzner: token is required")
 	}
 
 	client := hcloud.NewClient(hcloud.WithToken(cfg.Token))
@@ -341,57 +341,12 @@ func (h *Hetzner) ensureServer(ctx context.Context, containerLimits orchestra.Co
 
 	serverName := "pocketci-" + h.namespace
 
-	// Look up the image
-	imageResult, _, err := h.client.Image.GetByNameAndArchitecture(ctx, image, hcloud.ArchitectureX86)
+	imageResult, serverTypeResult, locationResult, err := h.lookupResources(ctx, image, serverType, location)
 	if err != nil {
-		return fmt.Errorf("failed to get image %s: %w", image, err)
+		return err
 	}
 
-	if imageResult == nil {
-		return fmt.Errorf("image %s not found", image)
-	}
-
-	// Look up the server type
-	serverTypeResult, _, err := h.client.ServerType.GetByName(ctx, serverType)
-	if err != nil {
-		return fmt.Errorf("failed to get server type %s: %w", serverType, err)
-	}
-
-	if serverTypeResult == nil {
-		return fmt.Errorf("server type %s not found", serverType)
-	}
-
-	// Look up the location
-	locationResult, _, err := h.client.Location.GetByName(ctx, location)
-	if err != nil {
-		return fmt.Errorf("failed to get location %s: %w", location, err)
-	}
-
-	if locationResult == nil {
-		return fmt.Errorf("location %s not found", location)
-	}
-
-	// Build labels map: always include pocketci, namespace, and worker pool labels
-	labels := map[string]string{
-		"pocketci":               "true",
-		"namespace":              h.namespace,
-		"pocketci-worker":        h.namespace,
-		"pocketci-worker-status": "busy",
-	}
-
-	// Add custom labels from config (format: key1=value1,key2=value2)
-	if h.cfg.Labels != "" {
-		for label := range strings.SplitSeq(h.cfg.Labels, ",") {
-			label = strings.TrimSpace(label)
-			if parts := strings.SplitN(label, "=", 2); len(parts) == 2 {
-				key := sanitizeHostname(strings.TrimSpace(parts[0]))
-				value := sanitizeHostname(strings.TrimSpace(parts[1]))
-				if key != "" {
-					labels[key] = value
-				}
-			}
-		}
-	}
+	labels := h.buildServerLabels()
 
 	createOpts := hcloud.ServerCreateOpts{
 		Name:       serverName,
@@ -454,6 +409,66 @@ func (h *Hetzner) ensureServer(ctx context.Context, containerLimits orchestra.Co
 	h.logger.Info("hetzner.docker.connected")
 
 	return nil
+}
+
+// lookupResources looks up the Hetzner image, server type, and location by name.
+func (h *Hetzner) lookupResources(
+	ctx context.Context,
+	image, serverType, location string,
+) (*hcloud.Image, *hcloud.ServerType, *hcloud.Location, error) {
+	imageResult, _, err := h.client.Image.GetByNameAndArchitecture(ctx, image, hcloud.ArchitectureX86)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to get image %s: %w", image, err)
+	}
+
+	if imageResult == nil {
+		return nil, nil, nil, fmt.Errorf("image %s not found", image)
+	}
+
+	serverTypeResult, _, err := h.client.ServerType.GetByName(ctx, serverType)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to get server type %s: %w", serverType, err)
+	}
+
+	if serverTypeResult == nil {
+		return nil, nil, nil, fmt.Errorf("server type %s not found", serverType)
+	}
+
+	locationResult, _, err := h.client.Location.GetByName(ctx, location)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to get location %s: %w", location, err)
+	}
+
+	if locationResult == nil {
+		return nil, nil, nil, fmt.Errorf("location %s not found", location)
+	}
+
+	return imageResult, serverTypeResult, locationResult, nil
+}
+
+// buildServerLabels constructs the labels map for a new server.
+func (h *Hetzner) buildServerLabels() map[string]string {
+	labels := map[string]string{
+		"pocketci":               "true",
+		"namespace":              h.namespace,
+		"pocketci-worker":        h.namespace,
+		"pocketci-worker-status": "busy",
+	}
+
+	if h.cfg.Labels != "" {
+		for label := range strings.SplitSeq(h.cfg.Labels, ",") {
+			label = strings.TrimSpace(label)
+			if parts := strings.SplitN(label, "=", 2); len(parts) == 2 {
+				key := sanitizeHostname(strings.TrimSpace(parts[0]))
+				value := sanitizeHostname(strings.TrimSpace(parts[1]))
+				if key != "" {
+					labels[key] = value
+				}
+			}
+		}
+	}
+
+	return labels
 }
 
 // determineServerType selects an appropriate server type based on container limits.

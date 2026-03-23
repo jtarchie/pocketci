@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -19,70 +20,52 @@ import (
 // createDriver creates a driver instance from a driver name, namespace,
 // typed server config (or nil), and logger. When serverCfg is nil an
 // empty ServerConfig for the requested driver is used.
-func createDriver(driverName, namespace string, serverCfg orchestra.DriverConfig, logger *slog.Logger) (orchestra.Driver, error) {
+func createDriver(ctx context.Context, driverName, namespace string, serverCfg orchestra.DriverConfig, logger *slog.Logger) (orchestra.Driver, error) {
 	switch driverName {
 	case "docker":
-		cfg, err := asServerConfig[docker.ServerConfig](serverCfg)
-		if err != nil {
-			return nil, err
-		}
-
-		return docker.New(docker.Config{ServerConfig: cfg, Namespace: namespace}, logger)
-
+		return createTypedDriver[docker.ServerConfig](ctx, serverCfg, func(cfg docker.ServerConfig) (orchestra.Driver, error) {
+			return docker.New(ctx, docker.Config{ServerConfig: cfg, Namespace: namespace}, logger)
+		})
 	case "native":
-		return native.New(native.Config{Namespace: namespace}, logger)
-
+		return native.New(ctx, native.Config{Namespace: namespace}, logger)
 	case "fly":
-		cfg, err := asServerConfig[fly.ServerConfig](serverCfg)
-		if err != nil {
-			return nil, err
-		}
-
-		return fly.New(fly.Config{ServerConfig: cfg, Namespace: namespace}, logger)
-
+		return createTypedDriver[fly.ServerConfig](ctx, serverCfg, func(cfg fly.ServerConfig) (orchestra.Driver, error) {
+			return fly.New(ctx, fly.Config{ServerConfig: cfg, Namespace: namespace}, logger)
+		})
 	case "hetzner":
-		cfg, err := asServerConfig[hetzner.ServerConfig](serverCfg)
-		if err != nil {
-			return nil, err
-		}
-
-		return hetzner.New(hetzner.Config{ServerConfig: cfg, Namespace: namespace}, logger)
-
+		return createTypedDriver[hetzner.ServerConfig](ctx, serverCfg, func(cfg hetzner.ServerConfig) (orchestra.Driver, error) {
+			return hetzner.New(ctx, hetzner.Config{ServerConfig: cfg, Namespace: namespace}, logger)
+		})
 	case "digitalocean":
-		cfg, err := asServerConfig[digitalocean.ServerConfig](serverCfg)
-		if err != nil {
-			return nil, err
-		}
-
-		return digitalocean.New(digitalocean.Config{ServerConfig: cfg, Namespace: namespace}, logger)
-
+		return createTypedDriver[digitalocean.ServerConfig](ctx, serverCfg, func(cfg digitalocean.ServerConfig) (orchestra.Driver, error) {
+			return digitalocean.New(ctx, digitalocean.Config{ServerConfig: cfg, Namespace: namespace}, logger)
+		})
 	case "k8s":
-		cfg, err := asServerConfig[k8s.ServerConfig](serverCfg)
-		if err != nil {
-			return nil, err
-		}
-
-		return k8s.New(k8s.Config{ServerConfig: cfg, Namespace: namespace}, logger)
-
+		return createTypedDriver[k8s.ServerConfig](ctx, serverCfg, func(cfg k8s.ServerConfig) (orchestra.Driver, error) {
+			return k8s.New(ctx, k8s.Config{ServerConfig: cfg, Namespace: namespace}, logger)
+		})
 	case "qemu":
-		cfg, err := asServerConfig[qemu.ServerConfig](serverCfg)
-		if err != nil {
-			return nil, err
-		}
-
-		return qemu.New(qemu.Config{ServerConfig: cfg, Namespace: namespace}, logger)
-
+		return createTypedDriver[qemu.ServerConfig](ctx, serverCfg, func(cfg qemu.ServerConfig) (orchestra.Driver, error) {
+			return qemu.New(ctx, qemu.Config{ServerConfig: cfg, Namespace: namespace}, logger)
+		})
 	case "vz":
-		cfg, err := asServerConfig[vz.ServerConfig](serverCfg)
-		if err != nil {
-			return nil, err
-		}
-
-		return vz.New(vz.Config{ServerConfig: cfg, Namespace: namespace}, logger)
-
+		return createTypedDriver[vz.ServerConfig](ctx, serverCfg, func(cfg vz.ServerConfig) (orchestra.Driver, error) {
+			return vz.New(ctx, vz.Config{ServerConfig: cfg, Namespace: namespace}, logger)
+		})
 	default:
 		return nil, fmt.Errorf("unknown driver %q", driverName)
 	}
+}
+
+// createTypedDriver converts a generic DriverConfig to a concrete type T and
+// passes it to the provided constructor function.
+func createTypedDriver[T orchestra.DriverConfig](_ context.Context, serverCfg orchestra.DriverConfig, newFn func(T) (orchestra.Driver, error)) (orchestra.Driver, error) {
+	cfg, err := asServerConfig[T](serverCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return newFn(cfg)
 }
 
 // asServerConfig converts an orchestra.DriverConfig to the concrete type T.
@@ -106,65 +89,32 @@ func asServerConfig[T orchestra.DriverConfig](serverCfg orchestra.DriverConfig) 
 func unmarshalDriverConfig(driverName string, raw json.RawMessage) (orchestra.DriverConfig, error) {
 	switch driverName {
 	case "docker":
-		var cfg docker.ServerConfig
-		if err := json.Unmarshal(raw, &cfg); err != nil {
-			return nil, fmt.Errorf("invalid docker config: %w", err)
-		}
-
-		return cfg, nil
-
+		return unmarshalTypedConfig[docker.ServerConfig](raw, "docker")
 	case "native":
 		return native.ServerConfig{}, nil
-
 	case "fly":
-		var cfg fly.ServerConfig
-		if err := json.Unmarshal(raw, &cfg); err != nil {
-			return nil, fmt.Errorf("invalid fly config: %w", err)
-		}
-
-		return cfg, nil
-
+		return unmarshalTypedConfig[fly.ServerConfig](raw, "fly")
 	case "hetzner":
-		var cfg hetzner.ServerConfig
-		if err := json.Unmarshal(raw, &cfg); err != nil {
-			return nil, fmt.Errorf("invalid hetzner config: %w", err)
-		}
-
-		return cfg, nil
-
+		return unmarshalTypedConfig[hetzner.ServerConfig](raw, "hetzner")
 	case "digitalocean":
-		var cfg digitalocean.ServerConfig
-		if err := json.Unmarshal(raw, &cfg); err != nil {
-			return nil, fmt.Errorf("invalid digitalocean config: %w", err)
-		}
-
-		return cfg, nil
-
+		return unmarshalTypedConfig[digitalocean.ServerConfig](raw, "digitalocean")
 	case "k8s":
-		var cfg k8s.ServerConfig
-		if err := json.Unmarshal(raw, &cfg); err != nil {
-			return nil, fmt.Errorf("invalid k8s config: %w", err)
-		}
-
-		return cfg, nil
-
+		return unmarshalTypedConfig[k8s.ServerConfig](raw, "k8s")
 	case "qemu":
-		var cfg qemu.ServerConfig
-		if err := json.Unmarshal(raw, &cfg); err != nil {
-			return nil, fmt.Errorf("invalid qemu config: %w", err)
-		}
-
-		return cfg, nil
-
+		return unmarshalTypedConfig[qemu.ServerConfig](raw, "qemu")
 	case "vz":
-		var cfg vz.ServerConfig
-		if err := json.Unmarshal(raw, &cfg); err != nil {
-			return nil, fmt.Errorf("invalid vz config: %w", err)
-		}
-
-		return cfg, nil
-
+		return unmarshalTypedConfig[vz.ServerConfig](raw, "vz")
 	default:
 		return nil, fmt.Errorf("unknown driver %q", driverName)
 	}
+}
+
+// unmarshalTypedConfig unmarshals raw JSON into the concrete config type T.
+func unmarshalTypedConfig[T orchestra.DriverConfig](raw json.RawMessage, name string) (orchestra.DriverConfig, error) {
+	var cfg T
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return nil, fmt.Errorf("invalid %s config: %w", name, err)
+	}
+
+	return cfg, nil
 }

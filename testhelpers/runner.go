@@ -112,30 +112,9 @@ func (c *Runner) Run(logger *slog.Logger) error {
 		cancel() // Cancel the context when signal is received
 	}()
 
-	var pipeline string
-
-	extension := filepath.Ext(pipelinePath)
-	if extension == ".yml" || extension == ".yaml" {
-		var err error
-
-		pipeline, err = backwards.NewPipeline(pipelinePath)
-		if err != nil {
-			return fmt.Errorf("could not create pipeline from YAML: %w", err)
-		}
-	} else {
-		result := api.Build(api.BuildOptions{
-			EntryPoints:      []string{pipelinePath},
-			Bundle:           true,
-			Sourcemap:        api.SourceMapInline,
-			Platform:         api.PlatformNeutral,
-			PreserveSymlinks: true,
-			AbsWorkingDir:    filepath.Dir(pipelinePath),
-		})
-		if len(result.Errors) > 0 {
-			return fmt.Errorf("%w: %s", ErrCouldNotBundle, result.Errors[0].Text)
-		}
-
-		pipeline = string(result.OutputFiles[0].Contents)
+	pipeline, err := loadPipeline(pipelinePath)
+	if err != nil {
+		return err
 	}
 
 	// Use a unique namespace per invocation to avoid container name collisions
@@ -144,25 +123,15 @@ func (c *Runner) Run(logger *slog.Logger) error {
 	_, _ = rand.Read(nonce[:])
 	namespace := "ci-" + runtimeID + "-" + hex.EncodeToString(nonce[:])
 
-	var driver orchestra.Driver
-
-	switch c.Driver {
-	case "docker":
-		driver, err = docker.New(docker.Config{ServerConfig: docker.ServerConfig{Host: c.DockerHost}, Namespace: namespace}, logger)
-	case "k8s":
-		driver, err = k8s.New(k8s.Config{ServerConfig: k8s.ServerConfig{Kubeconfig: c.K8sKubeconfig, K8sNamespace: c.K8sNamespace}, Namespace: namespace}, logger)
-	default: // native
-		driver, err = native.New(native.Config{Namespace: namespace}, logger)
-	}
-
+	driver, err := createDriver(c, namespace, logger)
 	if err != nil {
-		return fmt.Errorf("could not create orchestrator client (%q): %w", c.Driver, err)
+		return err
 	}
 
 	defer func() { _ = driver.Close() }()
 
 	if c.CacheS3Bucket != "" {
-		store, err := cacheplugins3.New(cacheplugins3.Config{Config: s3config.Config{
+		store, err := cacheplugins3.New(context.Background(), cacheplugins3.Config{Config: s3config.Config{
 			Bucket:          c.CacheS3Bucket,
 			Prefix:          c.CacheS3Prefix,
 			Endpoint:        c.CacheS3Endpoint,
@@ -186,49 +155,13 @@ func (c *Runner) Run(logger *slog.Logger) error {
 	}
 	defer func() { _ = storage.Close() }()
 
-	// Initialize secrets manager if configured
-	var secretsManager secrets.Manager
+	secretsManager, err := initSecretsManager(ctx, c, runtimeID, logger)
+	if err != nil {
+		return err
+	}
 
-	if c.SecretsSQLitePassphrase != "" {
-		path := c.SecretsSQLitePath
-		if path == "" {
-			path = ":memory:"
-		}
-
-		secretsManager, err = secretssqlite.New(secretssqlite.Config{
-			Path:       path,
-			Passphrase: c.SecretsSQLitePassphrase,
-		}, logger)
-		if err != nil {
-			return fmt.Errorf("could not create secrets manager: %w", err)
-		}
+	if secretsManager != nil {
 		defer func() { _ = secretsManager.Close() }()
-
-		// Store any secrets provided via --secret flags (pipeline scope)
-		for _, s := range c.Secret {
-			key, value, found := parseSecretFlag(s)
-			if !found {
-				return fmt.Errorf("invalid --secret flag %q: expected KEY=VALUE format", s)
-			}
-
-			err = secretsManager.Set(ctx, secrets.PipelineScope(runtimeID), key, value)
-			if err != nil {
-				return fmt.Errorf("could not set secret %q: %w", key, err)
-			}
-		}
-
-		// Store any secrets provided via --global-secret flags (global scope)
-		for _, s := range c.GlobalSecret {
-			key, value, found := parseSecretFlag(s)
-			if !found {
-				return fmt.Errorf("invalid --global-secret flag %q: expected KEY=VALUE format", s)
-			}
-
-			err = secretsManager.Set(ctx, secrets.GlobalScope, key, value)
-			if err != nil {
-				return fmt.Errorf("could not set global secret %q: %w", key, err)
-			}
-		}
 	}
 
 	js := runtime.NewJS(logger)
@@ -273,3 +206,96 @@ var (
 	ErrCouldNotBundle       = errors.New("could not bundle pipeline")
 	ErrOrchestratorNotFound = errors.New("orchestrator not found")
 )
+
+// loadPipeline reads and bundles a pipeline from disk, supporting both
+// YAML (Concourse compat) and JS/TS formats.
+func loadPipeline(pipelinePath string) (string, error) {
+	extension := filepath.Ext(pipelinePath)
+	if extension == ".yml" || extension == ".yaml" {
+		pipeline, err := backwards.NewPipeline(pipelinePath)
+		if err != nil {
+			return "", fmt.Errorf("could not create pipeline from YAML: %w", err)
+		}
+
+		return pipeline, nil
+	}
+
+	result := api.Build(api.BuildOptions{
+		EntryPoints:      []string{pipelinePath},
+		Bundle:           true,
+		Sourcemap:        api.SourceMapInline,
+		Platform:         api.PlatformNeutral,
+		PreserveSymlinks: true,
+		AbsWorkingDir:    filepath.Dir(pipelinePath),
+	})
+	if len(result.Errors) > 0 {
+		return "", fmt.Errorf("%w: %s", ErrCouldNotBundle, result.Errors[0].Text)
+	}
+
+	return string(result.OutputFiles[0].Contents), nil
+}
+
+// createDriver initializes the appropriate orchestrator driver based on config.
+func createDriver(c *Runner, namespace string, logger *slog.Logger) (orchestra.Driver, error) {
+	var driver orchestra.Driver
+	var err error
+
+	switch c.Driver {
+	case "docker":
+		driver, err = docker.New(context.Background(), docker.Config{ServerConfig: docker.ServerConfig{Host: c.DockerHost}, Namespace: namespace}, logger)
+	case "k8s":
+		driver, err = k8s.New(context.Background(), k8s.Config{ServerConfig: k8s.ServerConfig{Kubeconfig: c.K8sKubeconfig, K8sNamespace: c.K8sNamespace}, Namespace: namespace}, logger)
+	default: // native
+		driver, err = native.New(context.Background(), native.Config{Namespace: namespace}, logger)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("could not create orchestrator client (%q): %w", c.Driver, err)
+	}
+
+	return driver, nil
+}
+
+// initSecretsManager creates and seeds the secrets manager if configured.
+func initSecretsManager(ctx context.Context, c *Runner, runtimeID string, logger *slog.Logger) (secrets.Manager, error) {
+	if c.SecretsSQLitePassphrase == "" {
+		return nil, nil //nolint:nilnil
+	}
+
+	path := c.SecretsSQLitePath
+	if path == "" {
+		path = ":memory:"
+	}
+
+	secretsManager, err := secretssqlite.New(secretssqlite.Config{
+		Path:       path,
+		Passphrase: c.SecretsSQLitePassphrase,
+	}, logger)
+	if err != nil {
+		return nil, fmt.Errorf("could not create secrets manager: %w", err)
+	}
+
+	for _, s := range c.Secret {
+		key, value, found := parseSecretFlag(s)
+		if !found {
+			return nil, fmt.Errorf("invalid --secret flag %q: expected KEY=VALUE format", s)
+		}
+
+		if err := secretsManager.Set(ctx, secrets.PipelineScope(runtimeID), key, value); err != nil {
+			return nil, fmt.Errorf("could not set secret %q: %w", key, err)
+		}
+	}
+
+	for _, s := range c.GlobalSecret {
+		key, value, found := parseSecretFlag(s)
+		if !found {
+			return nil, fmt.Errorf("invalid --global-secret flag %q: expected KEY=VALUE format", s)
+		}
+
+		if err := secretsManager.Set(ctx, secrets.GlobalScope, key, value); err != nil {
+			return nil, fmt.Errorf("could not set global secret %q: %w", key, err)
+		}
+	}
+
+	return secretsManager, nil
+}

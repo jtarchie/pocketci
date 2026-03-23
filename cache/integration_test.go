@@ -39,7 +39,7 @@ func getAvailableDrivers() []driverEntry {
 	entries = append(entries, driverEntry{
 		name: "native",
 		factory: func(ns string, logger *slog.Logger) (orchestra.Driver, error) {
-			return native.New(native.Config{Namespace: ns}, logger)
+			return native.New(context.Background(), native.Config{Namespace: ns}, logger)
 		},
 	})
 
@@ -48,7 +48,7 @@ func getAvailableDrivers() []driverEntry {
 		entries = append(entries, driverEntry{
 			name: "docker",
 			factory: func(ns string, logger *slog.Logger) (orchestra.Driver, error) {
-				return docker.New(docker.Config{Namespace: ns}, logger)
+				return docker.New(context.Background(), docker.Config{Namespace: ns}, logger)
 			},
 		})
 	}
@@ -58,7 +58,7 @@ func getAvailableDrivers() []driverEntry {
 		entries = append(entries, driverEntry{
 			name: "digitalocean",
 			factory: func(ns string, logger *slog.Logger) (orchestra.Driver, error) {
-				return digitalocean.New(digitalocean.Config{ServerConfig: digitalocean.ServerConfig{Token: token}, Namespace: ns}, logger)
+				return digitalocean.New(context.Background(), digitalocean.Config{ServerConfig: digitalocean.ServerConfig{Token: token}, Namespace: ns}, logger)
 			},
 		})
 	}
@@ -68,7 +68,7 @@ func getAvailableDrivers() []driverEntry {
 		entries = append(entries, driverEntry{
 			name: "hetzner",
 			factory: func(ns string, logger *slog.Logger) (orchestra.Driver, error) {
-				return hetzner.New(hetzner.Config{ServerConfig: hetzner.ServerConfig{Token: token}, Namespace: ns}, logger)
+				return hetzner.New(context.Background(), hetzner.Config{ServerConfig: hetzner.ServerConfig{Token: token}, Namespace: ns}, logger)
 			},
 		})
 	}
@@ -78,7 +78,7 @@ func getAvailableDrivers() []driverEntry {
 		entries = append(entries, driverEntry{
 			name: "fly",
 			factory: func(ns string, logger *slog.Logger) (orchestra.Driver, error) {
-				return fly.New(fly.Config{ServerConfig: fly.ServerConfig{Token: token}, Namespace: ns}, logger)
+				return fly.New(context.Background(), fly.Config{ServerConfig: fly.ServerConfig{Token: token}, Namespace: ns}, logger)
 			},
 		})
 	}
@@ -111,7 +111,7 @@ func TestCacheIntegration(t *testing.T) {
 				mountPath := "/cachevol"
 				testData := "cached-data-" + gonanoid.Must()
 
-				store, err := s3cache.New(s3cache.Config{Config: s3config.Config{
+				store, err := s3cache.New(ctx, s3cache.Config{Config: s3config.Config{
 					Bucket:          minio.Bucket(),
 					Endpoint:        minio.Endpoint(),
 					Region:          "us-east-1",
@@ -208,7 +208,7 @@ func TestCacheIntegration(t *testing.T) {
 				assert.Expect(err).NotTo(gomega.HaveOccurred())
 				defer func() { _ = driver.Close() }()
 
-				missStore, err := s3cache.New(s3cache.Config{Config: s3config.Config{
+				missStore, err := s3cache.New(ctx, s3cache.Config{Config: s3config.Config{
 					Bucket:          minio.Bucket(),
 					Endpoint:        minio.Endpoint(),
 					Region:          "us-east-1",
@@ -263,7 +263,7 @@ func TestCacheWithoutCachingEnabled(t *testing.T) {
 	logger := slog.Default()
 
 	namespace := "no-cache-" + gonanoid.Must()
-	driver, err := native.New(native.Config{Namespace: namespace}, logger)
+	driver, err := native.New(context.Background(), native.Config{Namespace: namespace}, logger)
 	assert.Expect(err).NotTo(gomega.HaveOccurred())
 	defer func() { _ = driver.Close() }()
 

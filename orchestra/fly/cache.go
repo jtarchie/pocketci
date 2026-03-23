@@ -62,45 +62,29 @@ func (f *Fly) launchHelperMachine(ctx context.Context, vol *Volume) (*fly.Machin
 	if existingID != "" {
 		f.logger.Debug("fly.cache.helper.resume", "volume", vol.name, "machine", existingID)
 
-		_, err := f.client.Start(ctx, f.appName, existingID, "")
-		if err != nil {
-			// Resume failed – fall through to destroy and re-create below.
-			f.logger.Warn("fly.cache.helper.resume.failed", "machine", existingID, "err", err)
-
+		cleanupHelper := func() {
 			_ = f.client.Destroy(ctx, f.appName, fly.RemoveMachineInput{ID: existingID, Kill: true}, "")
 
 			f.mu.Lock()
 			delete(f.helperMachines, vol.id)
 			delete(f.volumeAttachments, vol.id)
 			f.mu.Unlock()
+		}
+
+		_, startErr := f.client.Start(ctx, f.appName, existingID, "")
+		if startErr != nil {
+			// Resume failed – fall through to destroy and re-create below.
+			f.logger.Warn("fly.cache.helper.resume.failed", "machine", existingID, "err", startErr)
+			cleanupHelper()
+		} else if waitErr := f.client.Wait(ctx, f.appName, &fly.Machine{ID: existingID}, "started", 2*time.Minute); waitErr != nil {
+			f.logger.Warn("fly.cache.helper.resume.timeout", "machine", existingID, "err", waitErr)
+			cleanupHelper()
+		} else if machine, getErr := f.client.Get(ctx, f.appName, existingID); getErr != nil || machine.PrivateIP == "" {
+			// No IP – destroy and fall through
+			cleanupHelper()
 		} else {
-			machine := &fly.Machine{ID: existingID}
-			if err := f.client.Wait(ctx, f.appName, machine, "started", 2*time.Minute); err != nil {
-				f.logger.Warn("fly.cache.helper.resume.timeout", "machine", existingID, "err", err)
-
-				_ = f.client.Destroy(ctx, f.appName, fly.RemoveMachineInput{ID: existingID, Kill: true}, "")
-
-				f.mu.Lock()
-				delete(f.helperMachines, vol.id)
-				delete(f.volumeAttachments, vol.id)
-				f.mu.Unlock()
-			} else {
-				// Refresh to get PrivateIP
-				machine, err = f.client.Get(ctx, f.appName, existingID)
-				if err == nil && machine.PrivateIP != "" {
-					f.logger.Debug("fly.cache.helper.resumed", "machine", machine.ID, "ip", machine.PrivateIP)
-
-					return machine, nil
-				}
-
-				// No IP – destroy and fall through
-				_ = f.client.Destroy(ctx, f.appName, fly.RemoveMachineInput{ID: existingID, Kill: true}, "")
-
-				f.mu.Lock()
-				delete(f.helperMachines, vol.id)
-				delete(f.volumeAttachments, vol.id)
-				f.mu.Unlock()
-			}
+			f.logger.Debug("fly.cache.helper.resumed", "machine", machine.ID, "ip", machine.PrivateIP)
+			return machine, nil
 		}
 	}
 
@@ -288,45 +272,8 @@ func (f *Fly) CopyToVolume(ctx context.Context, volumeName string, reader io.Rea
 
 	f.logger.Debug("fly.cache.copytov.start", "volume", volumeName)
 
-	// Walk the tar stream and upload each entry via SFTP.
-	tr := tar.NewReader(reader)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("failed to read tar entry: %w", err)
-		}
-
-		remotePath := path.Join("/volume", hdr.Name)
-
-		switch hdr.Typeflag {
-		case tar.TypeDir:
-			if mkErr := sftpClient.MkdirAll(remotePath); mkErr != nil {
-				return fmt.Errorf("failed to create remote directory %q: %w", remotePath, mkErr)
-			}
-
-		case tar.TypeReg:
-			// Ensure parent directory exists.
-			if mkErr := sftpClient.MkdirAll(path.Dir(remotePath)); mkErr != nil {
-				return fmt.Errorf("failed to create parent dir for %q: %w", remotePath, mkErr)
-			}
-
-			rf, err := sftpClient.OpenFile(remotePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
-			if err != nil {
-				return fmt.Errorf("failed to open remote file %q: %w", remotePath, err)
-			}
-
-			if _, cpErr := io.Copy(rf, tr); cpErr != nil {
-				_ = rf.Close()
-				return fmt.Errorf("failed to write remote file %q: %w", remotePath, cpErr)
-			}
-
-			if closeErr := rf.Close(); closeErr != nil {
-				return fmt.Errorf("failed to close remote file %q: %w", remotePath, closeErr)
-			}
-		}
+	if err := uploadTarEntries(sftpClient, reader); err != nil {
+		return err
 	}
 
 	f.logger.Info("fly.cache.copytov.done", "volume", volumeName)
@@ -343,6 +290,51 @@ func (f *Fly) CopyToVolume(ctx context.Context, volumeName string, reader io.Rea
 	}
 
 	return nil
+}
+
+// uploadTarEntries walks a tar stream and uploads each entry to /volume via SFTP.
+func uploadTarEntries(sftpClient *sftp.Client, reader io.Reader) error {
+	tr := tar.NewReader(reader)
+
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return nil
+		}
+
+		if err != nil {
+			return fmt.Errorf("failed to read tar entry: %w", err)
+		}
+
+		remotePath := path.Join("/volume", hdr.Name)
+
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if mkErr := sftpClient.MkdirAll(remotePath); mkErr != nil {
+				return fmt.Errorf("failed to create remote directory %q: %w", remotePath, mkErr)
+			}
+
+		case tar.TypeReg:
+			if mkErr := sftpClient.MkdirAll(path.Dir(remotePath)); mkErr != nil {
+				return fmt.Errorf("failed to create parent dir for %q: %w", remotePath, mkErr)
+			}
+
+			rf, err := sftpClient.OpenFile(remotePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+			if err != nil {
+				return fmt.Errorf("failed to open remote file %q: %w", remotePath, err)
+			}
+
+			if _, cpErr := io.Copy(rf, tr); cpErr != nil {
+				_ = rf.Close()
+
+				return fmt.Errorf("failed to write remote file %q: %w", remotePath, cpErr)
+			}
+
+			if closeErr := rf.Close(); closeErr != nil {
+				return fmt.Errorf("failed to close remote file %q: %w", remotePath, closeErr)
+			}
+		}
+	}
 }
 
 // CopyFromVolume implements cache.VolumeDataAccessor.

@@ -99,6 +99,23 @@ type ContainerStatus struct {
 	terminated bool
 }
 
+// resolvePodName returns the pod name for this job, looking it up and caching
+// the result if not already known.
+func (c *Container) resolvePodName(ctx context.Context) string {
+	if c.podName != "" {
+		return c.podName
+	}
+
+	pods, err := c.clientset.CoreV1().Pods(c.k8sNamespace).List(ctx, metav1.ListOptions{
+		LabelSelector: "job-name=" + c.jobName,
+	})
+	if err == nil && len(pods.Items) > 0 {
+		c.podName = pods.Items[0].Name
+	}
+
+	return c.podName
+}
+
 func (c *Container) Status(ctx context.Context) (orchestra.ContainerStatus, error) {
 	// Get job status for completion tracking
 	job, err := c.clientset.BatchV1().Jobs(c.k8sNamespace).Get(ctx, c.jobName, metav1.GetOptions{})
@@ -122,42 +139,27 @@ func (c *Container) Status(ctx context.Context) (orchestra.ContainerStatus, erro
 		status.exitCode = 1 // Default failure code
 
 		// Try to get actual exit code from pod
-		podName := c.podName
+		podName := c.resolvePodName(ctx)
+
 		if podName == "" {
-			// Find the pod created by this job
-			pods, err := c.clientset.CoreV1().Pods(c.k8sNamespace).List(ctx, metav1.ListOptions{
-				LabelSelector: "job-name=" + c.jobName,
-			})
-			if err == nil && len(pods.Items) > 0 {
-				podName = pods.Items[0].Name
-			}
+			return status, nil
 		}
 
-		if podName != "" {
-			pod, err := c.clientset.CoreV1().Pods(c.k8sNamespace).Get(ctx, podName, metav1.GetOptions{})
-			if err == nil && len(pod.Status.ContainerStatuses) > 0 {
-				containerStatus := pod.Status.ContainerStatuses[0]
-				if containerStatus.State.Terminated != nil {
-					status.exitCode = containerStatus.State.Terminated.ExitCode
-				}
-			}
+		pod, err := c.clientset.CoreV1().Pods(c.k8sNamespace).Get(ctx, podName, metav1.GetOptions{})
+		if err != nil || len(pod.Status.ContainerStatuses) == 0 {
+			return status, nil
+		}
+
+		containerStatus := pod.Status.ContainerStatuses[0]
+		if containerStatus.State.Terminated != nil {
+			status.exitCode = containerStatus.State.Terminated.ExitCode
 		}
 
 		return status, nil
 	}
 
 	// Job still running, get pod status for phase
-	podName := c.podName
-	if podName == "" {
-		// Find the pod created by this job
-		pods, err := c.clientset.CoreV1().Pods(c.k8sNamespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "job-name=" + c.jobName,
-		})
-		if err == nil && len(pods.Items) > 0 {
-			podName = pods.Items[0].Name
-			c.podName = podName // Cache for future calls
-		}
-	}
+	podName := c.resolvePodName(ctx)
 
 	if podName != "" {
 		pod, err := c.clientset.CoreV1().Pods(c.k8sNamespace).Get(ctx, podName, metav1.GetOptions{})
@@ -329,71 +331,13 @@ func (k *K8s) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 		}, nil
 	}
 
-	// Create volumes for the pod
-	volumes := []corev1.Volume{}
-	volumeMounts := []corev1.VolumeMount{}
-
-	for _, taskMount := range task.Mounts {
-		volume, err := k.CreateVolume(ctx, taskMount.Name, 0)
-		if err != nil {
-			logger.Error("volume.create.k8s.error", "name", taskMount.Name, "err", err)
-			return nil, fmt.Errorf("failed to create volume: %w", err)
-		}
-
-		k8sVolume, _ := volume.(*Volume)
-
-		// Sanitize volume name to comply with k8s naming requirements
-		sanitizedVolumeName := sanitizeName(taskMount.Name)
-
-		volumes = append(volumes, corev1.Volume{
-			Name: sanitizedVolumeName,
-			VolumeSource: corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: k8sVolume.pvcName,
-				},
-			},
-		})
-
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      sanitizedVolumeName,
-			MountPath: filepath.Join("/tmp", jobName, taskMount.Path),
-		})
+	volumes, volumeMounts, err := k.buildK8sVolumes(ctx, task, jobName, logger)
+	if err != nil {
+		return nil, err
 	}
 
-	// Convert environment variables
-	env := []corev1.EnvVar{}
-	for k, v := range task.Env {
-		env = append(env, corev1.EnvVar{
-			Name:  k,
-			Value: v,
-		})
-	}
-
-	// Set up resource requirements
-	// Always set requests for cluster autoscaler to function properly
-	resources := corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{
-			corev1.ResourceCPU:    *resource.NewMilliQuantity(100, resource.DecimalSI),     // 0.1 CPU
-			corev1.ResourceMemory: *resource.NewQuantity(128*1024*1024, resource.BinarySI), // 128Mi
-		},
-	}
-
-	if task.ContainerLimits.CPU > 0 || task.ContainerLimits.Memory > 0 {
-		resources.Limits = corev1.ResourceList{}
-
-		if task.ContainerLimits.CPU > 0 {
-			// Convert CPU shares to millicores (rough approximation)
-			// Docker CPU shares default is 1024, k8s uses millicores
-			millicores := (task.ContainerLimits.CPU * 1000) / 1024
-			resources.Limits[corev1.ResourceCPU] = *resource.NewMilliQuantity(millicores, resource.DecimalSI)
-			resources.Requests[corev1.ResourceCPU] = *resource.NewMilliQuantity(millicores/2, resource.DecimalSI)
-		}
-
-		if task.ContainerLimits.Memory > 0 {
-			resources.Limits[corev1.ResourceMemory] = *resource.NewQuantity(task.ContainerLimits.Memory, resource.BinarySI)
-			resources.Requests[corev1.ResourceMemory] = *resource.NewQuantity(task.ContainerLimits.Memory/2, resource.BinarySI)
-		}
-	}
+	env := buildK8sEnvVars(task)
+	resources := buildResourceRequirements(task)
 
 	// Build the pod template spec
 	enabledStdin := task.Stdin != nil
@@ -431,38 +375,7 @@ func (k *K8s) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 		},
 	}
 
-	// Set security context if user is specified
-	if task.User != "" {
-		// Parse user as UID (k8s requires numeric UID)
-		var uid int64
-
-		// Handle common username to UID mappings
-		switch task.User {
-		case "root":
-			uid = 0
-		default:
-			_, err := fmt.Sscanf(task.User, "%d", &uid)
-			if err != nil {
-				logger.Warn("user.parse", "user", task.User, "err", err, "msg", "using default user")
-				// Skip setting user if we can't parse it
-				goto skipUser
-			}
-		}
-
-		podTemplateSpec.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{
-			RunAsUser: &uid,
-		}
-	}
-skipUser:
-
-	// Set privileged mode if needed
-	if task.Privileged {
-		if podTemplateSpec.Spec.Containers[0].SecurityContext == nil {
-			podTemplateSpec.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{}
-		}
-		privileged := true
-		podTemplateSpec.Spec.Containers[0].SecurityContext.Privileged = &privileged
-	}
+	applySecurityContext(&podTemplateSpec, task, logger)
 
 	// Create the Job (wraps the pod)
 	job := &batchv1.Job{
@@ -484,129 +397,33 @@ skipUser:
 
 	// Wait for the job to create its pod and get the pod name
 	var podName string
-	if enabledStdin && task.Stdin != nil {
-		// We need the pod name for stdin attachment
-		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
+	if !enabledStdin || task.Stdin == nil {
+		return &Container{
+			clientset:    k.clientset,
+			config:       k.config,
+			jobName:      jobName,
+			podName:      podName,
+			k8sNamespace: k.k8sNamespace,
+			task:         task,
+			logger:       logger,
+		}, nil
+	}
 
-		logger.Debug("job.waiting.for.pod", "name", jobName)
+	// Attach stdin to the running pod
+	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 
-		// Wait for pod to be created by the job
-		for {
-			pods, err := k.clientset.CoreV1().Pods(k.k8sNamespace).List(waitCtx, metav1.ListOptions{
-				LabelSelector: "job-name=" + jobName,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to list pods for job: %w", err)
-			}
+	podName, err = k.waitForPodCreation(waitCtx, jobName, logger)
+	if err != nil {
+		return nil, err
+	}
 
-			if len(pods.Items) > 0 {
-				podName = pods.Items[0].Name
-				logger.Debug("job.pod.found", "job", jobName, "pod", podName)
-				break
-			}
+	if err := k.watchPodUntilRunning(waitCtx, podName, logger); err != nil {
+		return nil, err
+	}
 
-			// Check if context was cancelled
-			select {
-			case <-waitCtx.Done():
-				return nil, errors.New("timeout waiting for job to create pod")
-			case <-time.After(100 * time.Millisecond):
-				// Continue polling
-			}
-		}
-
-		// Wait for pod to be in Running state
-		logger.Debug("pod.stdin", "name", podName)
-
-		watcher, err := k.clientset.CoreV1().Pods(k.k8sNamespace).Watch(waitCtx, metav1.ListOptions{
-				FieldSelector: "metadata.name=" + podName,
-		})
-		if err != nil {
-			logger.Error("pod.watch.failed", "name", podName, "err", err)
-			return nil, fmt.Errorf("failed to watch pod: %w", err)
-		}
-		defer watcher.Stop()
-
-		// Wait for the pod to reach Running state and have containers ready
-		podRunning := false
-		for event := range watcher.ResultChan() {
-			if event.Type == watch.Modified || event.Type == watch.Added {
-				p, ok := event.Object.(*corev1.Pod)
-				if !ok {
-					continue
-				}
-
-				logger.Debug("pod.status.update", "name", podName, "phase", p.Status.Phase, "containers", len(p.Status.ContainerStatuses))
-
-				// Check if pod is running and at least one container is ready
-				if p.Status.Phase == corev1.PodRunning {
-					// Check if any container is running (not just created)
-					for _, cs := range p.Status.ContainerStatuses {
-						if cs.State.Running != nil {
-							podRunning = true
-							break
-						}
-					}
-					if podRunning {
-						break
-					}
-				}
-
-				// If the pod completed very quickly (before we could see it running),
-				// that's okay - we can still attach (though stdin may not work)
-				if p.Status.Phase == corev1.PodSucceeded {
-					logger.Debug("pod.completed", "name", podName, "state", "quickly")
-					podRunning = true
-					break
-				}
-
-				// Also check for failed states
-				if p.Status.Phase == corev1.PodFailed {
-					return nil, fmt.Errorf("pod failed to start: %s", p.Status.Message)
-				}
-			}
-
-			// Check if context was cancelled
-			select {
-			case <-waitCtx.Done():
-				return nil, errors.New("timeout waiting for pod to reach running state")
-			default:
-			}
-		}
-
-		if !podRunning {
-				return nil, errors.New("pod did not reach running state")
-		}
-
-		logger.Debug("pod.running", "name", podName)
-
-		// Now attach stdin to the running pod
-		req := k.clientset.CoreV1().RESTClient().Post().
-			Resource("pods").
-			Name(podName).
-			Namespace(k.k8sNamespace).
-			SubResource("attach").
-			VersionedParams(&corev1.PodAttachOptions{
-				Stdin:     true,
-				Container: "task",
-			}, scheme.ParameterCodec)
-
-		exec, err := remotecommand.NewSPDYExecutor(k.config, "POST", req.URL())
-		if err != nil {
-			logger.Error("pod.attach.executor.errored", "name", podName, "err", err)
-			return nil, fmt.Errorf("failed to create attach executor: %w", err)
-		}
-
-		// Stream stdin to the pod
-		err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
-			Stdin: task.Stdin,
-		})
-		if err != nil {
-			logger.Error("pod.attach.stream.errored", "name", podName, "err", err)
-			return nil, fmt.Errorf("failed to stream stdin: %w", err)
-		}
-
-		logger.Debug("pod.stdin.complete", "name", podName)
+	if err := k.attachStdinToPod(ctx, podName, task, logger); err != nil {
+		return nil, err
 	}
 
 	return &Container{
@@ -618,4 +435,243 @@ skipUser:
 		task:         task,
 		logger:       logger,
 	}, nil
+}
+
+func (k *K8s) buildK8sVolumes(ctx context.Context, task orchestra.Task, jobName string, logger *slog.Logger) ([]corev1.Volume, []corev1.VolumeMount, error) {
+	var volumes []corev1.Volume
+	var volumeMounts []corev1.VolumeMount
+
+	for _, taskMount := range task.Mounts {
+		volume, err := k.CreateVolume(ctx, taskMount.Name, 0)
+		if err != nil {
+			logger.Error("volume.create.k8s.error", "name", taskMount.Name, "err", err)
+			return nil, nil, fmt.Errorf("failed to create volume: %w", err)
+		}
+
+		k8sVolume, _ := volume.(*Volume)
+		sanitizedVolumeName := sanitizeName(taskMount.Name)
+
+		volumes = append(volumes, corev1.Volume{
+			Name: sanitizedVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: k8sVolume.pvcName,
+				},
+			},
+		})
+
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      sanitizedVolumeName,
+			MountPath: filepath.Join("/tmp", jobName, taskMount.Path),
+		})
+	}
+
+	return volumes, volumeMounts, nil
+}
+
+func buildK8sEnvVars(task orchestra.Task) []corev1.EnvVar {
+	env := make([]corev1.EnvVar, 0, len(task.Env))
+	for k, v := range task.Env {
+		env = append(env, corev1.EnvVar{
+			Name:  k,
+			Value: v,
+		})
+	}
+
+	return env
+}
+
+func buildResourceRequirements(task orchestra.Task) corev1.ResourceRequirements {
+	resources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    *resource.NewMilliQuantity(100, resource.DecimalSI),     // 0.1 CPU
+			corev1.ResourceMemory: *resource.NewQuantity(128*1024*1024, resource.BinarySI), // 128Mi
+		},
+	}
+
+	if task.ContainerLimits.CPU > 0 || task.ContainerLimits.Memory > 0 {
+		resources.Limits = corev1.ResourceList{}
+
+		if task.ContainerLimits.CPU > 0 {
+			millicores := (task.ContainerLimits.CPU * 1000) / 1024
+			resources.Limits[corev1.ResourceCPU] = *resource.NewMilliQuantity(millicores, resource.DecimalSI)
+			resources.Requests[corev1.ResourceCPU] = *resource.NewMilliQuantity(millicores/2, resource.DecimalSI)
+		}
+
+		if task.ContainerLimits.Memory > 0 {
+			resources.Limits[corev1.ResourceMemory] = *resource.NewQuantity(task.ContainerLimits.Memory, resource.BinarySI)
+			resources.Requests[corev1.ResourceMemory] = *resource.NewQuantity(task.ContainerLimits.Memory/2, resource.BinarySI)
+		}
+	}
+
+	return resources
+}
+
+func parseUserUID(user string) (*int64, error) {
+	if user == "" {
+		return nil, nil
+	}
+
+	var uid int64
+
+	switch user {
+	case "root":
+		uid = 0
+	default:
+		_, err := fmt.Sscanf(user, "%d", &uid)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse user %q as UID: %w", user, err)
+		}
+	}
+
+	return &uid, nil
+}
+
+func applySecurityContext(podTemplateSpec *corev1.PodTemplateSpec, task orchestra.Task, logger *slog.Logger) {
+	uid, err := parseUserUID(task.User)
+	if err != nil {
+		logger.Warn("user.parse", "user", task.User, "err", err, "msg", "using default user")
+	}
+
+	if uid != nil {
+		podTemplateSpec.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{
+			RunAsUser: uid,
+		}
+	}
+
+	if task.Privileged {
+		if podTemplateSpec.Spec.Containers[0].SecurityContext == nil {
+			podTemplateSpec.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{}
+		}
+
+		privileged := true
+		podTemplateSpec.Spec.Containers[0].SecurityContext.Privileged = &privileged
+	}
+}
+
+func isPodContainerRunning(p *corev1.Pod) bool {
+	if p.Status.Phase != corev1.PodRunning {
+		return false
+	}
+
+	for _, cs := range p.Status.ContainerStatuses {
+		if cs.State.Running != nil {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (k *K8s) waitForPodCreation(ctx context.Context, jobName string, logger *slog.Logger) (string, error) {
+	logger.Debug("job.waiting.for.pod", "name", jobName)
+
+	for {
+		pods, err := k.clientset.CoreV1().Pods(k.k8sNamespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "job-name=" + jobName,
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to list pods for job: %w", err)
+		}
+
+		if len(pods.Items) > 0 {
+			podName := pods.Items[0].Name
+			logger.Debug("job.pod.found", "job", jobName, "pod", podName)
+
+			return podName, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return "", errors.New("timeout waiting for job to create pod")
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+func (k *K8s) watchPodUntilRunning(ctx context.Context, podName string, logger *slog.Logger) error {
+	logger.Debug("pod.stdin", "name", podName)
+
+	watcher, err := k.clientset.CoreV1().Pods(k.k8sNamespace).Watch(ctx, metav1.ListOptions{
+		FieldSelector: "metadata.name=" + podName,
+	})
+	if err != nil {
+		logger.Error("pod.watch.failed", "name", podName, "err", err)
+
+		return fmt.Errorf("failed to watch pod: %w", err)
+	}
+	defer watcher.Stop()
+
+	for event := range watcher.ResultChan() {
+		if event.Type != watch.Modified && event.Type != watch.Added {
+			select {
+			case <-ctx.Done():
+				return errors.New("timeout waiting for pod to reach running state")
+			default:
+			}
+
+			continue
+		}
+
+		p, ok := event.Object.(*corev1.Pod)
+		if !ok {
+			continue
+		}
+
+		logger.Debug("pod.status.update", "name", podName, "phase", p.Status.Phase, "containers", len(p.Status.ContainerStatuses))
+
+		if isPodContainerRunning(p) || p.Status.Phase == corev1.PodSucceeded {
+			if p.Status.Phase == corev1.PodSucceeded {
+				logger.Debug("pod.completed", "name", podName, "state", "quickly")
+			}
+
+			return nil
+		}
+
+		if p.Status.Phase == corev1.PodFailed {
+			return fmt.Errorf("pod failed to start: %s", p.Status.Message)
+		}
+
+		select {
+		case <-ctx.Done():
+			return errors.New("timeout waiting for pod to reach running state")
+		default:
+		}
+	}
+
+	return errors.New("pod did not reach running state")
+}
+
+func (k *K8s) attachStdinToPod(ctx context.Context, podName string, task orchestra.Task, logger *slog.Logger) error {
+	logger.Debug("pod.running", "name", podName)
+
+	req := k.clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(podName).
+		Namespace(k.k8sNamespace).
+		SubResource("attach").
+		VersionedParams(&corev1.PodAttachOptions{
+			Stdin:     true,
+			Container: "task",
+		}, scheme.ParameterCodec)
+
+	exec, err := remotecommand.NewSPDYExecutor(k.config, "POST", req.URL())
+	if err != nil {
+		logger.Error("pod.attach.executor.errored", "name", podName, "err", err)
+
+		return fmt.Errorf("failed to create attach executor: %w", err)
+	}
+
+	err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdin: task.Stdin,
+	})
+	if err != nil {
+		logger.Error("pod.attach.stream.errored", "name", podName, "err", err)
+
+		return fmt.Errorf("failed to stream stdin: %w", err)
+	}
+
+	logger.Debug("pod.stdin.complete", "name", podName)
+
+	return nil
 }

@@ -301,7 +301,6 @@ const (
 
 func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 	ctx := c.ctx
-	logger := c.logger
 
 	if input.Timeout != "" {
 		timeout, err := time.ParseDuration(input.Timeout)
@@ -317,81 +316,98 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 		}
 	}
 
-	// Create deterministic task ID for consistent container naming
-	// Use callIndex to ensure uniqueness even when task names are reused
 	c.mu.Lock()
 	stepID := fmt.Sprintf("%d-%s", c.callIndex, input.Name)
 	c.callIndex++
 	c.mu.Unlock()
 	taskID := support.DeterministicTaskID(c.namespace, c.runID, stepID, input.Name)
 
-	logger = c.logger.With("task.id", taskID, "task.name", input.Name, "task.privileged", input.Privileged)
+	logger := c.logger.With("task.id", taskID, "task.name", input.Name, "task.privileged", input.Privileged)
 
-	// Resolve the effective storage key early so both the secrets error path and
-	// the main status-tracking path use the same key.
 	effectiveStorageKey := c.taskStorageKey(stepID)
 	if input.StorageKey != "" {
 		effectiveStorageKey = input.StorageKey
 	}
 
-	// Inject secrets into the task environment.
-	// Secrets are loaded on demand from env keys prefixed with "secret:" or
-	// from all stored secrets for this pipeline.
-	if c.secretsManager != nil && input.Env != nil {
-		// Find env vars that reference secrets (prefixed with "secret:")
-		var secretKeys []string
-
-		for key, val := range input.Env {
-			if strings.HasPrefix(val, "secret:") {
-				secretKeys = append(secretKeys, strings.TrimPrefix(val, "secret:"))
-
-				// Store the env key so we know to replace it after loading
-				_ = key
-			}
-		}
-
-		if len(secretKeys) > 0 {
-			secretMap, err := c.loadSecrets(ctx, secretKeys)
-			if err != nil {
-				c.setTaskStatus(effectiveStorageKey, map[string]any{
-					"status": "error",
-					"logs": []TaskLogEntry{{
-						Type:    "stderr",
-						Content: err.Error(),
-					}},
-				})
-
-				return nil, fmt.Errorf("failed to load secrets for task %q: %w", input.Name, err)
-			}
-
-			// Replace "secret:KEY" references with actual secret values
-			for envKey, envVal := range input.Env {
-				if strings.HasPrefix(envVal, "secret:") {
-					secretKey := strings.TrimPrefix(envVal, "secret:")
-					if secretVal, ok := secretMap[secretKey]; ok {
-						input.Env[envKey] = secretVal
-
-						// Track for redaction
-						c.secretValues = append(c.secretValues, secretVal)
-					}
-				}
-			}
-		}
+	if err := c.injectSecrets(ctx, &input, effectiveStorageKey); err != nil {
+		return nil, err
 	}
 
-	// Apply global output callback if no per-task callback is set.
 	if input.OnOutput == nil && c.outputCallback != nil {
 		input.OnOutput = c.outputCallback
 	}
 
 	logger.Info("container.run.start", "image", input.Image, "command", append([]string{input.Command.Path}, input.Command.Args...))
 
-	// Persist task status to storage so the UI can display progress.
-	// effectiveStorageKey was resolved above (honouring input.StorageKey).
 	storageKey := effectiveStorageKey
 	c.setTaskStatus(storageKey, map[string]any{"status": "pending"})
 
-	var mounts orchestra.Mounts
+	container, err := c.createRunContainer(ctx, taskID, input)
+	if err != nil {
+		logger.Error("container.run.create_error", "err", err)
+
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			c.setTaskStatus(storageKey, map[string]any{"status": "abort"})
+
+			return &RunResult{Status: RunAbort}, nil
+		}
+
+		c.setTaskStatus(storageKey, map[string]any{"status": "error"})
+
+		return nil, fmt.Errorf("could not run container: %w", err)
+	}
+
+	return c.waitAndFinalizeRun(ctx, container, input, logger, storageKey)
+}
+
+// injectSecrets resolves "secret:KEY" references in input.Env with actual
+// secret values and tracks them for redaction.
+func (c *PipelineRunner) injectSecrets(ctx context.Context, input *RunInput, storageKey string) error {
+	if c.secretsManager == nil || input.Env == nil {
+		return nil
+	}
+
+	var secretKeys []string
+
+	for _, val := range input.Env {
+		if strings.HasPrefix(val, "secret:") {
+			secretKeys = append(secretKeys, strings.TrimPrefix(val, "secret:"))
+		}
+	}
+
+	if len(secretKeys) == 0 {
+		return nil
+	}
+
+	secretMap, err := c.loadSecrets(ctx, secretKeys)
+	if err != nil {
+		c.setTaskStatus(storageKey, map[string]any{
+			"status": "error",
+			"logs": []TaskLogEntry{{
+				Type:    "stderr",
+				Content: err.Error(),
+			}},
+		})
+
+		return fmt.Errorf("failed to load secrets for task %q: %w", input.Name, err)
+	}
+
+	for envKey, envVal := range input.Env {
+		if strings.HasPrefix(envVal, "secret:") {
+			secretKey := strings.TrimPrefix(envVal, "secret:")
+			if secretVal, ok := secretMap[secretKey]; ok {
+				input.Env[envKey] = secretVal
+				c.secretValues = append(c.secretValues, secretVal)
+			}
+		}
+	}
+
+	return nil
+}
+
+// createRunContainer builds mounts/command from input and runs the container.
+func (c *PipelineRunner) createRunContainer(ctx context.Context, taskID string, input RunInput) (orchestra.Container, error) {
+	mounts := make(orchestra.Mounts, 0, len(input.Mounts))
 	for path, volume := range input.Mounts {
 		mounts = append(mounts, orchestra.Mount{
 			Name: volume.Name,
@@ -399,19 +415,18 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 		})
 	}
 
-	logger.Debug("container.run.mounts", "mounts", mounts)
+	c.logger.Debug("container.run.mounts", "mounts", mounts)
 
 	command := make([]string, 0, 1+len(input.Command.Args))
 	command = append(command, input.Command.Path)
 	command = append(command, input.Command.Args...)
 
-	// Only create stdin reader if there's actual content
 	var stdinReader io.Reader
 	if input.Stdin != "" {
 		stdinReader = strings.NewReader(input.Stdin)
 	}
 
-	container, err := c.client.RunContainer(
+	return c.client.RunContainer(
 		ctx,
 		orchestra.Task{
 			Command: command,
@@ -429,27 +444,23 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 			WorkDir:    input.WorkDir,
 		},
 	)
-	if err != nil {
-		logger.Error("container.run.create_error", "err", err)
+}
 
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			c.setTaskStatus(storageKey, map[string]any{"status": "abort"})
-
-			return &RunResult{Status: RunAbort}, nil
-		}
-
-		c.setTaskStatus(storageKey, map[string]any{"status": "error"})
-
-		return nil, fmt.Errorf("could not run container: %w", err)
-	}
-
+// waitAndFinalizeRun waits for the container to finish, collects logs, redacts
+// secrets, and persists the final task status.
+func (c *PipelineRunner) waitAndFinalizeRun(
+	ctx context.Context,
+	container orchestra.Container,
+	input RunInput,
+	logger *slog.Logger,
+	storageKey string,
+) (*RunResult, error) {
 	taskStartedAt := time.Now()
 	c.setTaskStatus(storageKey, map[string]any{
 		"status":     "running",
 		"started_at": taskStartedAt.UTC().Format(time.RFC3339),
 	})
 
-	var containerStatus orchestra.ContainerStatus
 	logs := make([]TaskLogEntry, 0, 32)
 	var logsMu sync.Mutex
 
@@ -467,57 +478,26 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 		}
 	})
 
-	// Create a streaming writer that calls the callback
 	streamCtx, cancelStream := context.WithCancel(ctx)
 	defer cancelStream()
 
 	stdout, stderr := &strings.Builder{}, &strings.Builder{}
 	var streamWg sync.WaitGroup
 
-	// Start streaming logs if callback is provided
 	if input.OnOutput != nil {
-
 		streamWg.Go(func() {
 			c.streamLogsWithCallback(streamCtx, container, streamCallback, stdout, stderr)
 		})
 	}
 
-	// Wait for container to complete
-	for {
-		var err error
-
-		containerStatus, err = container.Status(ctx)
-		if err != nil {
-			cancelStream()
-
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				c.setTaskStatus(storageKey, map[string]any{
-					"status":     "abort",
-					"started_at": taskStartedAt.UTC().Format(time.RFC3339),
-					"elapsed":    formatElapsed(time.Since(taskStartedAt)),
-				})
-
-				return &RunResult{Status: RunAbort}, nil
-			}
-
-			c.setTaskStatus(storageKey, map[string]any{
-				"status":     "error",
-				"started_at": taskStartedAt.UTC().Format(time.RFC3339),
-				"elapsed":    formatElapsed(time.Since(taskStartedAt)),
-			})
-
-			return nil, fmt.Errorf("could not get container status: %w", err)
-		}
-
-		if containerStatus.IsDone() {
-			break
-		}
-
-		// Small sleep to avoid busy loop
-		time.Sleep(100 * time.Millisecond)
+	containerStatus, err := c.pollContainerStatus(ctx, container, storageKey, taskStartedAt, cancelStream)
+	if err != nil {
+		return nil, err
+	}
+	if containerStatus == nil {
+		return &RunResult{Status: RunAbort}, nil
 	}
 
-	// Cancel streaming and wait for it to finish
 	cancelStream()
 	streamWg.Wait()
 
@@ -561,6 +541,60 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 		}
 	}()
 
+	return c.buildFinalResult(containerStatus, stdout, stderr, finalStdout, finalStderr, logs, storageKey, taskStartedAt, logger)
+}
+
+// pollContainerStatus polls the container until it finishes. Returns nil status
+// (with nil error) on abort.
+func (c *PipelineRunner) pollContainerStatus(
+	ctx context.Context,
+	container orchestra.Container,
+	storageKey string,
+	taskStartedAt time.Time,
+	cancelStream context.CancelFunc,
+) (orchestra.ContainerStatus, error) {
+	for {
+		containerStatus, err := container.Status(ctx)
+		if err != nil {
+			cancelStream()
+
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				c.setTaskStatus(storageKey, map[string]any{
+					"status":     "abort",
+					"started_at": taskStartedAt.UTC().Format(time.RFC3339),
+					"elapsed":    formatElapsed(time.Since(taskStartedAt)),
+				})
+
+				return nil, nil
+			}
+
+			c.setTaskStatus(storageKey, map[string]any{
+				"status":     "error",
+				"started_at": taskStartedAt.UTC().Format(time.RFC3339),
+				"elapsed":    formatElapsed(time.Since(taskStartedAt)),
+			})
+
+			return nil, fmt.Errorf("could not get container status: %w", err)
+		}
+
+		if containerStatus.IsDone() {
+			return containerStatus, nil
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// buildFinalResult applies redaction, reconciles logs, and persists the
+// completed task status.
+func (c *PipelineRunner) buildFinalResult(
+	containerStatus orchestra.ContainerStatus,
+	stdout, stderr, finalStdout, finalStderr *strings.Builder,
+	logs []TaskLogEntry,
+	storageKey string,
+	taskStartedAt time.Time,
+	logger *slog.Logger,
+) (*RunResult, error) {
 	stdoutStr := preferCompleteOutput(stdout.String(), finalStdout.String())
 	stderrStr := preferCompleteOutput(stderr.String(), finalStderr.String())
 

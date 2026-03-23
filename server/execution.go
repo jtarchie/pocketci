@@ -138,7 +138,7 @@ func (s *ExecutionService) TriggerPipeline(ctx context.Context, pipeline *storag
 	s.wg.Add(1)
 
 	// Launch execution goroutine
-	go s.executePipeline(pipeline, run, execOptions{args: args, requestID: requestID, authProvider: actor.Provider, user: actor.User})
+	go s.executePipeline(pipeline, run, execOptions{args: args, requestID: requestID, authProvider: actor.Provider, user: actor.User}) //nolint:contextcheck // deliberate: goroutine outlives HTTP request context
 
 	return run, nil
 }
@@ -168,7 +168,7 @@ func (s *ExecutionService) TriggerWebhookPipeline(
 	s.wg.Add(1)
 
 	// Launch execution goroutine with webhook data
-	go s.executePipeline(pipeline, run, execOptions{
+	go s.executePipeline(pipeline, run, execOptions{ //nolint:contextcheck // deliberate: goroutine outlives HTTP request context
 		webhook: &webhookExecData{
 			webhookData:  webhookData,
 			responseChan: responseChan,
@@ -199,7 +199,7 @@ func (s *ExecutionService) ResumePipeline(ctx context.Context, pipeline *storage
 	s.inFlight.Add(1)
 	s.wg.Add(1)
 
-	go s.executePipeline(pipeline, run, execOptions{resume: true, requestID: requestID, authProvider: actor.Provider, user: actor.User})
+	go s.executePipeline(pipeline, run, execOptions{resume: true, requestID: requestID, authProvider: actor.Provider, user: actor.User}) //nolint:contextcheck // deliberate: goroutine outlives HTTP request context
 
 	return nil
 }
@@ -260,51 +260,10 @@ type execOptions struct {
 	user         string
 }
 
-func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *storage.PipelineRun, opts execOptions) {
-	defer s.inFlight.Add(-1)
-	defer s.wg.Done()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	s.stopMu.Lock()
-	s.stopRegistry[run.ID] = cancel
-	s.stopMu.Unlock()
-	defer func() {
-		s.stopMu.Lock()
-		delete(s.stopRegistry, run.ID)
-		s.stopMu.Unlock()
-	}()
-
-	// dbCtx is a separate context for storage operations that must succeed
-	// even when the pipeline context has been cancelled (e.g. user-initiated stop).
-	dbCtx := context.Background()
-
-	logger := s.logger.With(
-		"event", "pipeline.execute",
-		"run_id", run.ID,
-		"pipeline_id", pipeline.ID,
-		"pipeline_name", pipeline.Name,
-	)
-	if opts.requestID != "" {
-		logger = logger.With("request_id", opts.requestID)
-	}
-	if opts.authProvider != "" && opts.user != "" {
-		logger = logger.With("auth_provider", opts.authProvider, "user", opts.user)
-	}
-
-	// Update status to running
-	err := s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusRunning, "")
-	if err != nil {
-		logger.Error("run.update.failed.to_running", "error", err)
-		return
-	}
-
-	logger.Info("pipeline.execute.start")
-
-	// Execute the pipeline
+// buildExecutorOptions builds the runtime.ExecutorOptions for async pipeline execution.
+func (s *ExecutionService) buildExecutorOptions(pipeline *storage.Pipeline, opts execOptions) runtime.ExecutorOptions {
 	execOpts := runtime.ExecutorOptions{
-		RunID:        run.ID,
+		RunID:        opts.requestID, // overwritten below
 		PipelineID:   pipeline.ID,
 		Resume:       IsFeatureEnabled(FeatureResume, s.AllowedFeatures) && (opts.resume || pipeline.ResumeEnabled),
 		RequestID:    opts.requestID,
@@ -313,42 +272,25 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 		Args:         opts.args,
 	}
 
-	// Only pass secrets manager if the secrets feature is enabled
 	if IsFeatureEnabled(FeatureSecrets, s.AllowedFeatures) {
 		execOpts.SecretsManager = s.SecretsManager
 	}
 
-	// Only pass webhook data if the webhooks feature is enabled
 	if opts.webhook != nil && IsFeatureEnabled(FeatureWebhooks, s.AllowedFeatures) {
 		execOpts.WebhookData = opts.webhook.webhookData
 		execOpts.ResponseChan = opts.webhook.responseChan
 	}
 
-	// Disable notifications if the feature is not enabled
 	execOpts.DisableNotifications = !IsFeatureEnabled(FeatureNotifications, s.AllowedFeatures)
-
-	// Disable fetch if the feature is not enabled
 	execOpts.DisableFetch = !IsFeatureEnabled(FeatureFetch, s.AllowedFeatures)
 	execOpts.FetchTimeout = s.FetchTimeout
 	execOpts.FetchMaxResponseBytes = s.FetchMaxResponseBytes
 
-	executableContent, err := resolveExecutableContent(pipeline)
-	if err != nil {
-		logger.Error("pipeline.transpile.failed", "error", err)
+	return execOpts
+}
 
-		updateErr := s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusFailed, err.Error())
-		if updateErr != nil {
-			logger.Error("run.update.failed.to_failed", "error", updateErr)
-		}
-
-		return
-	}
-
-	execOpts.DriverFactory = s.resolveDriverFactory(pipeline, logger)
-	err = runtime.ExecutePipeline(ctx, executableContent, s.store, logger, execOpts)
-
-	// If the context was cancelled (user stop or otherwise), mark as failed
-	// regardless of what ExecutePipeline returned.
+// finalizeExecRun handles post-execution status updates for executePipeline.
+func (s *ExecutionService) finalizeExecRun(ctx, dbCtx context.Context, run *storage.PipelineRun, pipeline *storage.Pipeline, execErr error, logger *slog.Logger) {
 	if ctx.Err() != nil {
 		_ = s.store.UpdateStatusForPrefix(dbCtx, "/pipeline/"+run.ID+"/", []string{"pending", "running"}, "aborted")
 
@@ -360,10 +302,10 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 		return
 	}
 
-	if err != nil {
-		logger.Error("pipeline.execute.failed", "error", err)
+	if execErr != nil {
+		logger.Error("pipeline.execute.failed", "error", execErr)
 
-		updateErr := s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusFailed, err.Error())
+		updateErr := s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusFailed, execErr.Error())
 		if updateErr != nil {
 			logger.Error("run.update.failed.to_failed", "error", updateErr)
 		}
@@ -371,10 +313,9 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 		return
 	}
 
-	// Check if any jobs failed by querying job statuses
 	finalStatus, errMsg := s.determineRunStatus(dbCtx, run.ID, logger)
 
-	err = s.store.UpdateRunStatus(dbCtx, run.ID, finalStatus, errMsg)
+	err := s.store.UpdateRunStatus(dbCtx, run.ID, finalStatus, errMsg)
 	if err != nil {
 		logger.Error("run.update.failed.to_final", "error", err)
 		return
@@ -392,6 +333,66 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 	s.pruneOldRuns(dbCtx, pipeline, logger)
 }
 
+func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *storage.PipelineRun, opts execOptions) {
+	defer s.inFlight.Add(-1)
+	defer s.wg.Done()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s.stopMu.Lock()
+	s.stopRegistry[run.ID] = cancel
+	s.stopMu.Unlock()
+	defer func() {
+		s.stopMu.Lock()
+		delete(s.stopRegistry, run.ID)
+		s.stopMu.Unlock()
+	}()
+
+	dbCtx := context.Background()
+
+	logger := s.logger.With(
+		"event", "pipeline.execute",
+		"run_id", run.ID,
+		"pipeline_id", pipeline.ID,
+		"pipeline_name", pipeline.Name,
+	)
+	if opts.requestID != "" {
+		logger = logger.With("request_id", opts.requestID)
+	}
+	if opts.authProvider != "" && opts.user != "" {
+		logger = logger.With("auth_provider", opts.authProvider, "user", opts.user)
+	}
+
+	err := s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusRunning, "")
+	if err != nil {
+		logger.Error("run.update.failed.to_running", "error", err)
+		return
+	}
+
+	logger.Info("pipeline.execute.start")
+
+	execOpts := s.buildExecutorOptions(pipeline, opts)
+	execOpts.RunID = run.ID
+
+	executableContent, err := resolveExecutableContent(pipeline)
+	if err != nil {
+		logger.Error("pipeline.transpile.failed", "error", err)
+
+		updateErr := s.store.UpdateRunStatus(dbCtx, run.ID, storage.RunStatusFailed, err.Error())
+		if updateErr != nil {
+			logger.Error("run.update.failed.to_failed", "error", updateErr)
+		}
+
+		return
+	}
+
+	execOpts.DriverFactory = s.resolveDriverFactory(ctx, pipeline, logger)
+	execErr := runtime.ExecutePipeline(ctx, executableContent, s.store, logger, execOpts)
+
+	s.finalizeExecRun(ctx, dbCtx, run, pipeline, execErr, logger)
+}
+
 // RunByNameSync executes a stored pipeline by name, synchronously.
 // It writes SSE events (stdout, stderr lines as data events; an exit event at completion)
 // to the provided http.ResponseWriter.
@@ -403,6 +404,79 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 // tar stream *before* the SSE response starts. This ensures the HTTP request
 // body is fully consumed while the connection is still in request mode, which
 // is required for correct behaviour through reverse proxies.
+// preseedWorkdir creates a driver, volume, and seeds it from a tar stream.
+// Returns the preseeded volumes map, the driver (caller must close), and any error.
+func (s *ExecutionService) preseedWorkdir(ctx context.Context, factory func(context.Context, string) (orchestra.Driver, error), runID string, workdirTar io.Reader) (map[string]orchestra.Volume, orchestra.Driver, error) {
+	namespace := "ci-" + runID
+
+	driver, dErr := factory(ctx, namespace)
+	if dErr != nil {
+		return nil, nil, fmt.Errorf("could not create driver: %w", dErr)
+	}
+
+	vol, vErr := driver.CreateVolume(ctx, "workdir", 0)
+	if vErr != nil {
+		_ = driver.Close()
+		return nil, nil, fmt.Errorf("could not create workdir volume: %w", vErr)
+	}
+
+	accessor, ok := driver.(cache.VolumeDataAccessor)
+	if !ok {
+		_ = vol.Cleanup(ctx)
+		_ = driver.Close()
+		return nil, nil, fmt.Errorf("driver %q does not support volume data access", driver.Name())
+	}
+
+	s.logger.Info("workdir.preseed.start")
+
+	if cErr := accessor.CopyToVolume(ctx, vol.Name(), workdirTar); cErr != nil {
+		_ = vol.Cleanup(ctx)
+		_ = driver.Close()
+		return nil, nil, fmt.Errorf("could not seed workdir volume: %w", cErr)
+	}
+
+	s.logger.Info("workdir.preseed.done")
+
+	return map[string]orchestra.Volume{"workdir": vol}, driver, nil
+}
+
+// finalizeSyncRun determines final status, updates the run, prunes old runs, and writes the SSE exit event.
+func (s *ExecutionService) finalizeSyncRun(ctx context.Context, run *storage.PipelineRun, pipeline *storage.Pipeline, execErr error, w http.ResponseWriter) {
+	exitCode := 0
+	var finalStatus storage.RunStatus
+	errMsg := ""
+
+	if execErr != nil {
+		exitCode = 1
+		finalStatus = storage.RunStatusFailed
+		errMsg = execErr.Error()
+	} else {
+		var jobErrMsg string
+		finalStatus, jobErrMsg = s.determineRunStatus(ctx, run.ID, s.logger)
+		if finalStatus == storage.RunStatusFailed {
+			exitCode = 1
+			errMsg = jobErrMsg
+		}
+	}
+
+	if err := s.store.UpdateRunStatus(ctx, run.ID, finalStatus, errMsg); err != nil {
+		s.logger.Error("run.update.failed.to_final", "error", err)
+	}
+
+	s.pruneOldRuns(ctx, pipeline, s.logger)
+
+	exitEvent := map[string]any{"event": "exit", "code": exitCode, "run_id": run.ID}
+	if errMsg != "" {
+		exitEvent["message"] = errMsg
+	}
+
+	exitData, _ := json.Marshal(exitEvent)
+	fmt.Fprintf(w, "data: %s\n\n", exitData) //nolint:errcheck
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func (s *ExecutionService) RunByNameSync(
 	ctx context.Context,
 	name string,
@@ -424,49 +498,19 @@ func (s *ExecutionService) RunByNameSync(
 		s.logger.Error("run.update.failed.to_running", "error", err)
 	}
 
-	// --- Pre-seed workdir volume (consumes HTTP body before SSE starts) ---
 	var preseededVolumes map[string]orchestra.Volume
 	var driver orchestra.Driver
 
-	factory := s.resolveDriverFactory(pipeline, s.logger)
+	factory := s.resolveDriverFactory(ctx, pipeline, s.logger)
 
 	if workdirTar != nil {
-		namespace := "ci-" + run.ID
+		var pErr error
 
-		var dErr error
-
-		driver, dErr = factory(namespace)
-		if dErr != nil {
-			return fmt.Errorf("could not create driver: %w", dErr)
+		preseededVolumes, driver, pErr = s.preseedWorkdir(ctx, factory, run.ID, workdirTar)
+		if pErr != nil {
+			return pErr
 		}
 
-		vol, vErr := driver.CreateVolume(ctx, "workdir", 0)
-		if vErr != nil {
-			_ = driver.Close()
-			return fmt.Errorf("could not create workdir volume: %w", vErr)
-		}
-
-		accessor, ok := driver.(cache.VolumeDataAccessor)
-		if !ok {
-			_ = vol.Cleanup(ctx)
-			_ = driver.Close()
-			return fmt.Errorf("driver %q does not support volume data access", driver.Name())
-		}
-
-		s.logger.Info("workdir.preseed.start")
-
-		if cErr := accessor.CopyToVolume(ctx, vol.Name(), workdirTar); cErr != nil {
-			_ = vol.Cleanup(ctx)
-			_ = driver.Close()
-			return fmt.Errorf("could not seed workdir volume: %w", cErr)
-		}
-
-		s.logger.Info("workdir.preseed.done")
-
-		preseededVolumes = map[string]orchestra.Volume{"workdir": vol}
-		// Close the driver after RunByNameSync returns (after ExecutePipeline
-		// completes). ExecutePipeline reuses this driver instance via opts.Driver
-		// and skips creating/closing its own.
 		defer func() { _ = driver.Close() }()
 	}
 
@@ -518,41 +562,7 @@ func (s *ExecutionService) RunByNameSync(
 	}
 	execErr := runtime.ExecutePipeline(ctx, executableContent, s.store, s.logger, opts)
 
-	exitCode := 0
-	var finalStatus storage.RunStatus
-	errMsg := ""
-
-	if execErr != nil {
-		exitCode = 1
-		finalStatus = storage.RunStatusFailed
-		// TODO: we never display this error message anywhere in the UI - consider surfacing it in the run details page or similar
-		errMsg = execErr.Error()
-	} else {
-		var jobErrMsg string
-		finalStatus, jobErrMsg = s.determineRunStatus(ctx, run.ID, s.logger)
-		if finalStatus == storage.RunStatusFailed {
-			exitCode = 1
-			errMsg = jobErrMsg
-		}
-	}
-
-	if err = s.store.UpdateRunStatus(ctx, run.ID, finalStatus, errMsg); err != nil {
-		s.logger.Error("run.update.failed.to_final", "error", err)
-	}
-
-	s.pruneOldRuns(ctx, pipeline, s.logger)
-
-	// Write SSE exit event.
-	exitEvent := map[string]any{"event": "exit", "code": exitCode, "run_id": run.ID}
-	if errMsg != "" {
-		exitEvent["message"] = errMsg
-	}
-
-	exitData, _ := json.Marshal(exitEvent)
-	fmt.Fprintf(w, "data: %s\n\n", exitData) //nolint:errcheck
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
+	s.finalizeSyncRun(ctx, run, pipeline, execErr, w)
 
 	return nil
 }
@@ -612,9 +622,29 @@ func (s *ExecutionService) pruneOldRuns(ctx context.Context, pipeline *storage.P
 		return
 	}
 
+	keepBuilds, keepDays := minRetentionLimits(cfg.Jobs)
+
+	if keepBuilds == 0 && keepDays == 0 {
+		return
+	}
+
+	var cutoff *time.Time
+	if keepDays > 0 {
+		t := time.Now().UTC().AddDate(0, 0, -keepDays)
+		cutoff = &t
+	}
+
+	if err := s.store.PruneRunsByPipeline(ctx, pipeline.ID, keepBuilds, cutoff); err != nil {
+		logger.Warn("pipeline.retention.prune_failed", "error", err)
+	}
+}
+
+// minRetentionLimits returns the most restrictive (smallest non-zero) builds
+// and days retention values across all jobs.
+func minRetentionLimits(jobs backwards.Jobs) (int, int) {
 	keepBuilds, keepDays := 0, 0
 
-	for _, job := range cfg.Jobs {
+	for _, job := range jobs {
 		if job.BuildLogRetention == nil {
 			continue
 		}
@@ -632,26 +662,14 @@ func (s *ExecutionService) pruneOldRuns(ctx context.Context, pipeline *storage.P
 		}
 	}
 
-	if keepBuilds == 0 && keepDays == 0 {
-		return
-	}
-
-	var cutoff *time.Time
-	if keepDays > 0 {
-		t := time.Now().UTC().AddDate(0, 0, -keepDays)
-		cutoff = &t
-	}
-
-	if err := s.store.PruneRunsByPipeline(ctx, pipeline.ID, keepBuilds, cutoff); err != nil {
-		logger.Warn("pipeline.retention.prune_failed", "error", err)
-	}
+	return keepBuilds, keepDays
 }
 
 // resolveDriverFactory returns a driver factory for the given pipeline.
 // It reads the pipeline's driver name and any driver config from secrets.
 // Fallback: if the pipeline has no pipeline-specific config, the server's
 // default config is used.
-func (s *ExecutionService) resolveDriverFactory(pipeline *storage.Pipeline, logger *slog.Logger) func(namespace string) (orchestra.Driver, error) {
+func (s *ExecutionService) resolveDriverFactory(ctx context.Context, pipeline *storage.Pipeline, logger *slog.Logger) func(ctx context.Context, namespace string) (orchestra.Driver, error) {
 	driverName := pipeline.Driver
 	if driverName == "" {
 		driverName = s.DefaultDriver
@@ -662,7 +680,7 @@ func (s *ExecutionService) resolveDriverFactory(pipeline *storage.Pipeline, logg
 	if s.SecretsManager != nil {
 		scope := secrets.PipelineScope(pipeline.ID)
 
-		raw, err := s.SecretsManager.Get(context.Background(), scope, "driver_config")
+		raw, err := s.SecretsManager.Get(ctx, scope, "driver_config")
 		if err == nil && raw != "" {
 			cfg, unmarshalErr := unmarshalDriverConfig(driverName, json.RawMessage(raw))
 			if unmarshalErr == nil {
@@ -680,8 +698,8 @@ func (s *ExecutionService) resolveDriverFactory(pipeline *storage.Pipeline, logg
 
 	logger.Info("driver.resolve", "driver", driverName)
 
-	return func(ns string) (orchestra.Driver, error) {
-		d, err := createDriver(driverName, ns, serverCfg, logger)
+	return func(ctx context.Context, ns string) (orchestra.Driver, error) {
+		d, err := createDriver(ctx, driverName, ns, serverCfg, logger)
 		if err != nil {
 			return nil, err
 		}

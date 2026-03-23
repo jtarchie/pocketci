@@ -142,6 +142,73 @@ func injectListTasksContext(
 	}, config.OnAuditEvent)
 }
 
+// buildTaskContextResult loads a single task's payload and builds the result map
+// for injection. Returns the result, tool args, and whether the task was found.
+func buildTaskContextResult(
+	ctx context.Context,
+	config AgentConfig,
+	summaries []helpers.TaskSummary,
+	ct AgentContextTask,
+	maxBytes int,
+) (map[string]any, map[string]any, bool) {
+	matched, ok := helpers.FuzzyFindTask(summaries, ct.Name)
+	if !ok {
+		return nil, nil, false
+	}
+
+	taskKey := matched.Key
+	if taskKey == "" {
+		stepID := fmt.Sprintf("%d-%s", matched.Index, matched.Name)
+		taskKey = "/pipeline/" + config.RunID + "/tasks/" + stepID
+	}
+
+	payload, err := config.Storage.Get(ctx, taskKey)
+	if err != nil {
+		return nil, nil, false
+	}
+
+	stdout, _ := payload["stdout"].(string)
+	stderr, _ := payload["stderr"].(string)
+
+	field := ct.Field
+	if field == "" {
+		field = "both"
+	}
+
+	switch field {
+	case "stdout":
+		stderr = ""
+	case "stderr":
+		stdout = ""
+	}
+
+	stdout, _ = helpers.TruncateStr(stdout, maxBytes)
+	stderr, _ = helpers.TruncateStr(stderr, maxBytes)
+
+	result := map[string]any{
+		"name":  matched.Name,
+		"index": matched.Index,
+	}
+
+	if s, ok := payload["status"].(string); ok {
+		result["status"] = s
+	}
+
+	if v, ok := payload["code"].(float64); ok {
+		result["exit_code"] = int(v)
+	}
+
+	if stdout != "" {
+		result["stdout"] = stdout
+	}
+
+	if stderr != "" {
+		result["stderr"] = stderr
+	}
+
+	return result, map[string]any{"name": ct.Name}, true
+}
+
 // injectTaskContexts pre-injects declared context tasks as synthetic
 // get_task_result results into the session.
 func injectTaskContexts(
@@ -164,62 +231,10 @@ func injectTaskContexts(
 	summaries, _ := loadTaskSummaries(ctx, config.Storage, config.RunID)
 
 	for _, ct := range config.Context.Tasks {
-		matched, ok := helpers.FuzzyFindTask(summaries, ct.Name)
+		result, getTaskArgs, ok := buildTaskContextResult(ctx, config, summaries, ct, maxBytes)
 		if !ok {
 			continue
 		}
-
-		taskKey := matched.Key
-		if taskKey == "" {
-			stepID := fmt.Sprintf("%d-%s", matched.Index, matched.Name)
-			taskKey = "/pipeline/" + config.RunID + "/tasks/" + stepID
-		}
-
-		payload, err := config.Storage.Get(ctx, taskKey)
-		if err != nil {
-			continue
-		}
-
-		stdout, _ := payload["stdout"].(string)
-		stderr, _ := payload["stderr"].(string)
-
-		field := ct.Field
-		if field == "" {
-			field = "both"
-		}
-
-		switch field {
-		case "stdout":
-			stderr = ""
-		case "stderr":
-			stdout = ""
-		}
-
-		stdout, _ = helpers.TruncateStr(stdout, maxBytes)
-		stderr, _ = helpers.TruncateStr(stderr, maxBytes)
-
-		result := map[string]any{
-			"name":  matched.Name,
-			"index": matched.Index,
-		}
-
-		if s, ok := payload["status"].(string); ok {
-			result["status"] = s
-		}
-
-		if v, ok := payload["code"].(float64); ok {
-			result["exit_code"] = int(v)
-		}
-
-		if stdout != "" {
-			result["stdout"] = stdout
-		}
-
-		if stderr != "" {
-			result["stderr"] = stderr
-		}
-
-		getTaskArgs := map[string]any{"name": ct.Name}
 
 		_ = injectSyntheticToolCall(
 			ctx, svc, sess,
@@ -259,7 +274,7 @@ func injectFileContexts(
 		execInput.Command.Path = "/bin/sh"
 		execInput.Command.Args = []string{"-c", "cat " + cf.Path}
 
-		execResult, execErr := sandbox.Exec(execInput)
+		execResult, execErr := sandbox.Exec(ctx, execInput)
 		if execErr != nil || execResult.Code != 0 {
 			continue // file not yet written or path wrong — skip silently
 		}

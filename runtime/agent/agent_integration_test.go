@@ -72,7 +72,7 @@ func newDockerRunner(t *testing.T, prefix string) *pipelinerunner.PipelineRunner
 	namespace := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
 	runID := prefix + "-run"
 
-	driver, err := docker.New(docker.Config{Namespace: namespace}, logger)
+	driver, err := docker.New(context.Background(), docker.Config{Namespace: namespace}, logger)
 	if err != nil {
 		t.Fatalf("new docker driver: %v", err)
 	}
@@ -674,6 +674,16 @@ func TestRunAgent_ContextTasksPreInjection_RealDocker(t *testing.T) {
 	assert.Expect(strings.TrimSpace(artifact["text"])).NotTo(BeEmpty())
 }
 
+func findAuditEvent(auditLog []agent.AuditEvent, eventType string) *agent.AuditEvent {
+	for i := range auditLog {
+		if auditLog[i].Type == eventType {
+			return &auditLog[i]
+		}
+	}
+
+	return nil
+}
+
 // TestRunAgent_Validation_RealDocker consolidates all validation and follow-up
 // scenarios into subtests sharing a single Docker runner.
 func TestRunAgent_Validation_RealDocker(t *testing.T) {
@@ -710,10 +720,8 @@ func TestRunAgent_Validation_RealDocker(t *testing.T) {
 		assert.Expect(result).NotTo(BeNil())
 		assert.Expect(result.Text).To(ContainSubstring(`"summary"`))
 
-		for _, event := range result.AuditLog {
-			assert.Expect(event.Type).NotTo(Equal("validation_followup"),
-				"expected no validation_followup when validation passes")
-		}
+		assert.Expect(findAuditEvent(result.AuditLog, "validation_followup")).To(BeNil(),
+			"expected no validation_followup when validation passes")
 
 		assert.Expect(atomic.LoadInt32(reqCount)).To(BeNumerically(">=", 1))
 	})
@@ -755,13 +763,7 @@ func TestRunAgent_Validation_RealDocker(t *testing.T) {
 		assert.Expect(result.Text).To(ContainSubstring(`"summary"`))
 		assert.Expect(atomic.LoadInt32(reqCount)).To(BeNumerically("==", 2))
 
-		var followUpEvent *agent.AuditEvent
-		for i := range result.AuditLog {
-			if result.AuditLog[i].Type == "validation_followup" {
-				followUpEvent = &result.AuditLog[i]
-				break
-			}
-		}
+		followUpEvent := findAuditEvent(result.AuditLog, "validation_followup")
 
 		assert.Expect(followUpEvent).NotTo(BeNil(), "expected a validation_followup audit event")
 		assert.Expect(followUpEvent.Text).To(ContainSubstring("final text response"))
@@ -808,13 +810,7 @@ func TestRunAgent_Validation_RealDocker(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(result).NotTo(BeNil())
 
-		var followUpEvent *agent.AuditEvent
-		for i := range result.AuditLog {
-			if result.AuditLog[i].Type == "validation_followup" {
-				followUpEvent = &result.AuditLog[i]
-				break
-			}
-		}
+		followUpEvent := findAuditEvent(result.AuditLog, "validation_followup")
 
 		assert.Expect(followUpEvent).NotTo(BeNil())
 		assert.Expect(followUpEvent.Text).To(Equal(customPrompt))
@@ -856,19 +852,10 @@ func TestRunAgent_Validation_RealDocker(t *testing.T) {
 		assert.Expect(result).NotTo(BeNil())
 		assert.Expect(atomic.LoadInt32(reqCount)).To(BeNumerically("==", 2))
 
-		var sawError, sawFollowUp bool
-		for _, event := range result.AuditLog {
-			if event.Type == "validation_error" {
-				sawError = true
-				assert.Expect(event.Text).To(ContainSubstring("Validation expression error"))
-			}
-			if event.Type == "validation_followup" {
-				sawFollowUp = true
-			}
-		}
-
-		assert.Expect(sawError).To(BeTrue(), "expected validation_error audit event")
-		assert.Expect(sawFollowUp).To(BeTrue(), "expected validation_followup audit event")
+		errorEvent := findAuditEvent(result.AuditLog, "validation_error")
+		assert.Expect(errorEvent).NotTo(BeNil(), "expected validation_error audit event")
+		assert.Expect(errorEvent.Text).To(ContainSubstring("Validation expression error"))
+		assert.Expect(findAuditEvent(result.AuditLog, "validation_followup")).NotTo(BeNil(), "expected validation_followup audit event")
 	})
 
 	t.Run("default_followup_empty_text", func(t *testing.T) {
@@ -905,14 +892,7 @@ func TestRunAgent_Validation_RealDocker(t *testing.T) {
 		assert.Expect(result.Text).To(ContainSubstring("complete response after follow-up"))
 		assert.Expect(atomic.LoadInt32(reqCount)).To(BeNumerically("==", 2))
 
-		var sawFollowUp bool
-		for _, event := range result.AuditLog {
-			if event.Type == "validation_followup" {
-				sawFollowUp = true
-			}
-		}
-
-		assert.Expect(sawFollowUp).To(BeTrue(), "expected validation_followup for empty text default")
+		assert.Expect(findAuditEvent(result.AuditLog, "validation_followup")).NotTo(BeNil(), "expected validation_followup for empty text default")
 
 		artifact := readResultArtifact(t, runner, outVol, "read-def-followup")
 		assert.Expect(artifact["status"]).To(Equal("success"))

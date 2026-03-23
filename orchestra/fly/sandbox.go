@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"strings"
 	"time"
@@ -130,10 +131,6 @@ func (f *Fly) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 	maps.Copy(env, task.Env)
 
 	var mounts []fly.MachineMount
-	type mountMapping struct {
-		volumeName string
-		mountPath  string
-	}
 
 	var mountMappings []mountMapping
 
@@ -233,22 +230,7 @@ func (f *Fly) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 	}
 
 	// Create volume subdirectories and symlink mount paths inside the shared workspace volume.
-	if len(mountMappings) > 0 {
-		var cmdParts []string
-		for _, m := range mountMappings {
-			cmdParts = append(cmdParts, "mkdir -p /workspace/"+m.volumeName)
-			if m.mountPath != m.volumeName {
-				cmdParts = append(cmdParts, "ln -sfn /workspace/"+m.volumeName+" /workspace/"+m.mountPath)
-			}
-		}
-
-		_, err := f.client.Exec(ctx, f.appName, machine.ID, &fly.MachineExecRequest{
-			Cmd: strings.Join(cmdParts, " && "),
-		})
-		if err != nil {
-			logger.Warn("sandbox.mkdir.error", "err", err)
-		}
-	}
+	f.setupWorkspaceMounts(ctx, machine.ID, mountMappings, logger)
 
 	// Record volume attachment for future detach.
 	if sharedVolumeID != "" {
@@ -260,4 +242,27 @@ func (f *Fly) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 	logger.Debug("sandbox.started", "machineID", machine.ID)
 
 	return sandbox, nil
+}
+
+// setupWorkspaceMounts creates volume subdirectories and symlinks inside the
+// shared workspace volume on the given machine.
+func (f *Fly) setupWorkspaceMounts(ctx context.Context, machineID string, mappings []mountMapping, logger *slog.Logger) {
+	if len(mappings) == 0 {
+		return
+	}
+
+	var cmdParts []string
+	for _, m := range mappings {
+		cmdParts = append(cmdParts, "mkdir -p /workspace/"+m.volumeName)
+		if m.mountPath != m.volumeName {
+			cmdParts = append(cmdParts, "ln -sfn /workspace/"+m.volumeName+" /workspace/"+m.mountPath)
+		}
+	}
+
+	_, err := f.client.Exec(ctx, f.appName, machineID, &fly.MachineExecRequest{
+		Cmd: strings.Join(cmdParts, " && "),
+	})
+	if err != nil {
+		logger.Warn("sandbox.mkdir.error", "err", err)
+	}
 }

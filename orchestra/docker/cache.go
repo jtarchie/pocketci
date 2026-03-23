@@ -124,7 +124,6 @@ func (d *Docker) CopyFromVolume(ctx context.Context, volumeName string) (io.Read
 		ReadCloser:  reader,
 		containerID: resp.ID,
 		client:      d.client,
-		ctx:         ctx,
 	}, nil
 }
 
@@ -132,12 +131,12 @@ type dockerCopyReader struct {
 	io.ReadCloser
 	containerID string
 	client      *client.Client
-	ctx         context.Context
 }
 
 func (r *dockerCopyReader) Close() error {
 	err := r.ReadCloser.Close()
-	_ = r.client.ContainerRemove(r.ctx, r.containerID, container.RemoveOptions{Force: true})
+	// Use Background context so cleanup succeeds even if the original context was cancelled.
+	_ = r.client.ContainerRemove(context.Background(), r.containerID, container.RemoveOptions{Force: true})
 
 	return err
 }

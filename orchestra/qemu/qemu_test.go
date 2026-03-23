@@ -40,7 +40,7 @@ func TestMain(m *testing.M) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	var err error
-	testDriver, err = qemu.New(qemu.Config{
+	testDriver, err = qemu.New(context.Background(), qemu.Config{
 		ServerConfig: qemu.ServerConfig{
 			Memory: "2048",
 			CPUs:   "2",

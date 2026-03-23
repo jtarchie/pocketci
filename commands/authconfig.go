@@ -112,6 +112,18 @@ func ResolveAuthToken(explicitToken, configPath, serverURL string) string {
 }
 
 // authRequiredError returns a user-facing error when the server requires authentication.
+// checkAuthStatus returns an error for 401/403 status codes, nil otherwise.
+func checkAuthStatus(statusCode int, serverURL string) error {
+	switch statusCode {
+	case 401:
+		return authRequiredError(serverURL)
+	case 403:
+		return accessDeniedError(serverURL)
+	default:
+		return nil
+	}
+}
+
 func authRequiredError(serverURL string) error {
 	return fmt.Errorf(
 		"authentication required: server %s returned 401 Unauthorized\n\n"+

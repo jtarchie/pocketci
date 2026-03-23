@@ -25,7 +25,7 @@ func TestResumeSkipsCompletedSteps(t *testing.T) {
 	logger := slog.Default()
 
 	// Create docker driver
-	driver, err := docker.New(docker.Config{Namespace: "resume-test-ns"}, logger)
+	driver, err := docker.New(context.Background(), docker.Config{Namespace: "resume-test-ns"}, logger)
 	assert.Expect(err).NotTo(HaveOccurred())
 	defer func() { _ = driver.Close() }()
 
@@ -42,7 +42,7 @@ func TestResumeSkipsCompletedSteps(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		// Run first step
-		result1, err := r.Run(runner.RunInput{
+		result1, err := r.Run(runner.RunInput{ //nolint:contextcheck // Run uses stored ctx; JS VM cannot pass Go contexts
 			Name:  "step-1",
 			Image: "busybox",
 			Command: struct {
@@ -59,7 +59,7 @@ func TestResumeSkipsCompletedSteps(t *testing.T) {
 		assert.Expect(result1.Stdout).To(ContainSubstring("step 1 output"))
 
 		// Run second step
-		result2, err := r.Run(runner.RunInput{
+		result2, err := r.Run(runner.RunInput{ //nolint:contextcheck // Run uses stored ctx; JS VM cannot pass Go contexts
 			Name:  "step-2",
 			Image: "busybox",
 			Command: struct {
@@ -91,7 +91,7 @@ func TestResumeSkipsCompletedSteps(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		// Run first step again - should be skipped
-		result1, err := r.Run(runner.RunInput{
+		result1, err := r.Run(runner.RunInput{ //nolint:contextcheck // Run uses stored ctx; JS VM cannot pass Go contexts
 			Name:  "step-1",
 			Image: "busybox",
 			Command: struct {
@@ -109,7 +109,7 @@ func TestResumeSkipsCompletedSteps(t *testing.T) {
 		assert.Expect(result1.Stdout).To(ContainSubstring("step 1 output"))
 
 		// Run second step again - should be skipped
-		result2, err := r.Run(runner.RunInput{
+		result2, err := r.Run(runner.RunInput{ //nolint:contextcheck // Run uses stored ctx; JS VM cannot pass Go contexts
 			Name:  "step-2",
 			Image: "busybox",
 			Command: struct {
@@ -126,7 +126,7 @@ func TestResumeSkipsCompletedSteps(t *testing.T) {
 		assert.Expect(result2.Stdout).To(ContainSubstring("step 2 output"))
 
 		// Run a third step - this should actually execute
-		result3, err := r.Run(runner.RunInput{
+		result3, err := r.Run(runner.RunInput{ //nolint:contextcheck // Run uses stored ctx; JS VM cannot pass Go contexts
 			Name:  "step-3",
 			Image: "busybox",
 			Command: struct {
@@ -161,7 +161,7 @@ func TestGetContainerDockerDriver(t *testing.T) {
 	logger := slog.Default()
 
 	// Create docker driver
-	driver, err := docker.New(docker.Config{Namespace: "getcontainer-test-ns"}, logger)
+	driver, err := docker.New(context.Background(), docker.Config{Namespace: "getcontainer-test-ns"}, logger)
 	assert.Expect(err).NotTo(HaveOccurred())
 	defer func() { _ = driver.Close() }()
 

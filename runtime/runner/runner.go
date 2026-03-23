@@ -1,6 +1,11 @@
 package runner
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/secrets"
+)
 
 // Runner is the interface for running pipeline steps.
 // Both PipelineRunner and ResumableRunner implement this interface.
@@ -20,6 +25,9 @@ type Runner interface {
 	// ReadFilesFromVolume reads specific files from a volume and returns
 	// their contents as a map of relative path to file content.
 	ReadFilesFromVolume(volumeName string, filePaths ...string) (map[string]string, error)
+	SetSecretsManager(mgr secrets.Manager, pipelineID string)
+	SetPreseededVolumes(vols map[string]orchestra.Volume)
+	SetOutputCallback(cb OutputCallback)
 }
 
 // Ensure both runners implement the interface.

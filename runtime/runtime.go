@@ -59,7 +59,7 @@ func (r *Runtime) Run(call goja.FunctionCall) goja.Value {
 
 	// Extract input from the first argument
 	if len(call.Arguments) == 0 {
-			_ = reject(r.jsVM.NewGoError(errors.New("run requires an input object")))
+		_ = reject(r.jsVM.NewGoError(errors.New("run requires an input object")))
 		return r.jsVM.ToValue(promise)
 	}
 
@@ -79,7 +79,7 @@ func (r *Runtime) Run(call goja.FunctionCall) goja.Value {
 		var ok bool
 		onOutputFunc, ok = goja.AssertFunction(onOutputVal)
 		if !ok {
-				_ = reject(r.jsVM.NewGoError(errors.New("onOutput must be a function")))
+			_ = reject(r.jsVM.NewGoError(errors.New("onOutput must be a function")))
 			return r.jsVM.ToValue(promise)
 		}
 	}
@@ -234,123 +234,7 @@ func (r *Runtime) StartSandbox(call goja.FunctionCall) goja.Value {
 				return nil
 			}
 
-			// Build the sandbox JS object with exec and close methods.
-			sandboxObj := r.jsVM.NewObject()
-			_ = sandboxObj.Set("id", handle.ID())
-
-			_ = sandboxObj.Set("exec", func(call goja.FunctionCall) goja.Value {
-				execPromise, execResolve, execReject := r.jsVM.NewPromise()
-
-				if len(call.Arguments) == 0 {
-					_ = execReject(r.jsVM.NewGoError(errors.New("exec requires an input object")))
-					return r.jsVM.ToValue(execPromise)
-				}
-
-				execInputObj := call.Arguments[0].ToObject(r.jsVM)
-
-				var execInput runner.ExecInput
-				if err := r.jsVM.ExportTo(execInputObj, &execInput); err != nil {
-					_ = execReject(r.jsVM.NewGoError(fmt.Errorf("invalid exec input: %w", err)))
-					return r.jsVM.ToValue(execPromise)
-				}
-
-				// Check for onOutput callback.
-				onOutputVal := execInputObj.Get("onOutput")
-				if onOutputVal != nil && !goja.IsUndefined(onOutputVal) && !goja.IsNull(onOutputVal) {
-					if onOutputFunc, ok := goja.AssertFunction(onOutputVal); ok {
-						execInput.OnOutput = func(stream, data string) {
-							r.tasks <- func() error {
-								_, err := onOutputFunc(goja.Undefined(), r.jsVM.ToValue(stream), r.jsVM.ToValue(data))
-								if err != nil {
-									return nil
-								}
-
-								return nil
-							}
-						}
-					}
-				}
-
-				r.promises.Add(1)
-
-				go func() {
-					defer func() {
-						if p := recover(); p != nil {
-							slog.Error("runtime.sandbox.exec.panic", "panic", p, "stack", string(debug.Stack()))
-							r.tasks <- func() error {
-								defer r.promises.Done()
-								return execReject(r.jsVM.NewGoError(fmt.Errorf("panic in sandbox exec: %v", p)))
-							}
-						}
-					}()
-
-					result, err := handle.Exec(execInput)
-
-					r.tasks <- func() error {
-						defer r.promises.Done()
-
-						if err != nil {
-							err = execReject(err)
-							if err != nil {
-								return fmt.Errorf("could not reject exec: %w", err)
-							}
-
-							return nil
-						}
-
-						err = execResolve(result)
-						if err != nil {
-							return fmt.Errorf("could not resolve exec: %w", err)
-						}
-
-						return nil
-					}
-				}()
-
-				return r.jsVM.ToValue(execPromise)
-			})
-
-			_ = sandboxObj.Set("close", func(call goja.FunctionCall) goja.Value {
-				closePromise, closeResolve, closeReject := r.jsVM.NewPromise()
-
-				r.promises.Add(1)
-
-				go func() {
-					defer func() {
-						if p := recover(); p != nil {
-							slog.Error("runtime.sandbox.close.panic", "panic", p, "stack", string(debug.Stack()))
-							r.tasks <- func() error {
-								defer r.promises.Done()
-								return closeReject(r.jsVM.NewGoError(fmt.Errorf("panic in sandbox close: %v", p)))
-							}
-						}
-					}()
-
-					err := handle.Close()
-
-					r.tasks <- func() error {
-						defer r.promises.Done()
-
-						if err != nil {
-							err = closeReject(err)
-							if err != nil {
-								return fmt.Errorf("could not reject close: %w", err)
-							}
-
-							return nil
-						}
-
-						err = closeResolve(goja.Undefined())
-						if err != nil {
-							return fmt.Errorf("could not resolve close: %w", err)
-						}
-
-						return nil
-					}
-				}()
-
-				return r.jsVM.ToValue(closePromise)
-			})
+			sandboxObj := r.buildSandboxObject(handle)
 
 			err = resolve(sandboxObj)
 			if err != nil {
@@ -362,6 +246,143 @@ func (r *Runtime) StartSandbox(call goja.FunctionCall) goja.Value {
 	}()
 
 	return r.jsVM.ToValue(promise)
+}
+
+// buildSandboxObject constructs the JS object with exec and close methods
+// that is returned by startSandbox.
+func (r *Runtime) buildSandboxObject(handle *runner.SandboxHandle) *goja.Object {
+	sandboxObj := r.jsVM.NewObject()
+	_ = sandboxObj.Set("id", handle.ID())
+	_ = sandboxObj.Set("exec", r.sandboxExecFunc(handle))
+	_ = sandboxObj.Set("close", r.sandboxCloseFunc(handle))
+
+	return sandboxObj
+}
+
+// sandboxExecFunc returns the JS-callable exec method for a sandbox handle.
+func (r *Runtime) sandboxExecFunc(handle *runner.SandboxHandle) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		execPromise, execResolve, execReject := r.jsVM.NewPromise()
+
+		if len(call.Arguments) == 0 {
+			_ = execReject(r.jsVM.NewGoError(errors.New("exec requires an input object")))
+			return r.jsVM.ToValue(execPromise)
+		}
+
+		execInputObj := call.Arguments[0].ToObject(r.jsVM)
+
+		var execInput runner.ExecInput
+		if err := r.jsVM.ExportTo(execInputObj, &execInput); err != nil {
+			_ = execReject(r.jsVM.NewGoError(fmt.Errorf("invalid exec input: %w", err)))
+			return r.jsVM.ToValue(execPromise)
+		}
+
+		r.bindOnOutputCallback(execInputObj, &execInput)
+
+		r.promises.Add(1)
+
+		go func() {
+			defer func() {
+				if p := recover(); p != nil {
+					slog.Error("runtime.sandbox.exec.panic", "panic", p, "stack", string(debug.Stack()))
+					r.tasks <- func() error {
+						defer r.promises.Done()
+						return execReject(r.jsVM.NewGoError(fmt.Errorf("panic in sandbox exec: %v", p)))
+					}
+				}
+			}()
+
+			result, err := handle.Exec(r.ctx, execInput)
+
+			r.tasks <- func() error {
+				defer r.promises.Done()
+
+				if err != nil {
+					err = execReject(err)
+					if err != nil {
+						return fmt.Errorf("could not reject exec: %w", err)
+					}
+
+					return nil
+				}
+
+				err = execResolve(result)
+				if err != nil {
+					return fmt.Errorf("could not resolve exec: %w", err)
+				}
+
+				return nil
+			}
+		}()
+
+		return r.jsVM.ToValue(execPromise)
+	}
+}
+
+// bindOnOutputCallback extracts the onOutput JS callback from the exec input
+// object and wires it into the ExecInput's OnOutput field.
+func (r *Runtime) bindOnOutputCallback(execInputObj *goja.Object, execInput *runner.ExecInput) {
+	onOutputVal := execInputObj.Get("onOutput")
+	if onOutputVal == nil || goja.IsUndefined(onOutputVal) || goja.IsNull(onOutputVal) {
+		return
+	}
+
+	onOutputFunc, ok := goja.AssertFunction(onOutputVal)
+	if !ok {
+		return
+	}
+
+	execInput.OnOutput = func(stream, data string) {
+		r.tasks <- func() error {
+			_, _ = onOutputFunc(goja.Undefined(), r.jsVM.ToValue(stream), r.jsVM.ToValue(data))
+			return nil
+		}
+	}
+}
+
+// sandboxCloseFunc returns the JS-callable close method for a sandbox handle.
+func (r *Runtime) sandboxCloseFunc(handle *runner.SandboxHandle) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		closePromise, closeResolve, closeReject := r.jsVM.NewPromise()
+
+		r.promises.Add(1)
+
+		go func() {
+			defer func() {
+				if p := recover(); p != nil {
+					slog.Error("runtime.sandbox.close.panic", "panic", p, "stack", string(debug.Stack()))
+					r.tasks <- func() error {
+						defer r.promises.Done()
+						return closeReject(r.jsVM.NewGoError(fmt.Errorf("panic in sandbox close: %v", p)))
+					}
+				}
+			}()
+
+			err := handle.Close()
+
+			r.tasks <- func() error {
+				defer r.promises.Done()
+
+				if err != nil {
+					err = closeReject(err)
+					if err != nil {
+						return fmt.Errorf("could not reject close: %w", err)
+					}
+
+					return nil
+				}
+
+				err = closeResolve(goja.Undefined())
+				if err != nil {
+					return fmt.Errorf("could not resolve close: %w", err)
+				}
+
+				return nil
+			}
+		}()
+
+		return r.jsVM.ToValue(closePromise)
+	}
 }
 
 // Agent runs an LLM agent step. Accepts an object with prompt, model, image,
@@ -382,44 +403,7 @@ func (r *Runtime) Agent(call goja.FunctionCall) goja.Value {
 		return r.jsVM.ToValue(promise)
 	}
 
-	// Extract optional onOutput callback.
-	onOutputVal := inputObj.Get("onOutput")
-	if onOutputVal != nil && !goja.IsUndefined(onOutputVal) && !goja.IsNull(onOutputVal) {
-		if onOutputFunc, ok := goja.AssertFunction(onOutputVal); ok {
-			config.OnOutput = func(stream, data string) {
-				r.tasks <- func() error {
-					_, _ = onOutputFunc(goja.Undefined(), r.jsVM.ToValue(stream), r.jsVM.ToValue(data))
-					return nil
-				}
-			}
-		}
-	}
-
-	// Extract optional onUsage callback.
-	onUsageVal := inputObj.Get("onUsage")
-	if onUsageVal != nil && !goja.IsUndefined(onUsageVal) && !goja.IsNull(onUsageVal) {
-		if onUsageFunc, ok := goja.AssertFunction(onUsageVal); ok {
-			config.OnUsage = func(usage agent.AgentUsage) {
-				r.tasks <- func() error {
-					_, _ = onUsageFunc(goja.Undefined(), r.jsVM.ToValue(usage))
-					return nil
-				}
-			}
-		}
-	}
-
-	// Extract optional onAuditEvent callback.
-	onAuditEventVal := inputObj.Get("onAuditEvent")
-	if onAuditEventVal != nil && !goja.IsUndefined(onAuditEventVal) && !goja.IsNull(onAuditEventVal) {
-		if onAuditEventFunc, ok := goja.AssertFunction(onAuditEventVal); ok {
-			config.OnAuditEvent = func(event agent.AuditEvent) {
-				r.tasks <- func() error {
-					_, _ = onAuditEventFunc(goja.Undefined(), r.jsVM.ToValue(event))
-					return nil
-				}
-			}
-		}
-	}
+	r.extractAgentCallbacks(inputObj, &config)
 
 	r.promises.Add(1)
 
@@ -439,48 +423,9 @@ func (r *Runtime) Agent(call goja.FunctionCall) goja.Value {
 			ctx = context.Background()
 		}
 
-		// Populate runtime context into config before calling RunAgent.
-		config.Storage = r.storage
-		config.Namespace = r.namespace
-		config.RunID = r.runID
-		config.TriggeredBy = r.triggeredBy
+		r.prepareAgentConfig(&config)
+		r.installAgentFunc(ctx, &config)
 
-		// Set the AgentFunc on the runner so that ResumableRunner can track
-		// and cache agent results. The func captures per-call context
-		// (callbacks, secrets, storage, etc.) and delegates to agent.RunAgent.
-		r.runner.SetAgentFunc(func(configJSON json.RawMessage) (json.RawMessage, error) {
-			// Unmarshal the serializable parts of config, keeping the
-			// non-serialisable fields (callbacks, Storage, etc.) from the
-			// outer config closure.
-			var serializableConfig agent.AgentConfig
-			if err := json.Unmarshal(configJSON, &serializableConfig); err != nil {
-				return nil, fmt.Errorf("could not unmarshal agent config: %w", err)
-			}
-
-			// Merge: serializable fields from JSON, non-serializable from closure.
-			serializableConfig.OnOutput = config.OnOutput
-			serializableConfig.OnAuditEvent = config.OnAuditEvent
-			serializableConfig.OnUsage = config.OnUsage
-			serializableConfig.Storage = config.Storage
-			serializableConfig.Namespace = config.Namespace
-			serializableConfig.RunID = config.RunID
-			serializableConfig.PipelineID = config.PipelineID
-			serializableConfig.TriggeredBy = config.TriggeredBy
-
-			result, err := agent.RunAgent(ctx, r.runner, r.secretsManager, r.pipelineID, serializableConfig)
-			if err != nil {
-				return nil, err
-			}
-
-			resultJSON, err := json.Marshal(result)
-			if err != nil {
-				return nil, fmt.Errorf("could not marshal agent result: %w", err)
-			}
-
-			return resultJSON, nil
-		})
-
-		// Marshal the serializable config to JSON for the runner interface.
 		configJSON, err := json.Marshal(config)
 		if err != nil {
 			r.tasks <- func() error {
@@ -521,6 +466,93 @@ func (r *Runtime) Agent(call goja.FunctionCall) goja.Value {
 	}()
 
 	return r.jsVM.ToValue(promise)
+}
+
+// extractAgentCallbacks reads optional JS callback properties from the input
+// object and wires them into the agent config.
+func (r *Runtime) extractAgentCallbacks(inputObj *goja.Object, config *agent.AgentConfig) {
+	if fn := r.extractJSCallback(inputObj, "onOutput"); fn != nil {
+		config.OnOutput = func(stream, data string) {
+			r.tasks <- func() error {
+				_, _ = fn(goja.Undefined(), r.jsVM.ToValue(stream), r.jsVM.ToValue(data))
+				return nil
+			}
+		}
+	}
+
+	if fn := r.extractJSCallback(inputObj, "onUsage"); fn != nil {
+		config.OnUsage = func(usage agent.AgentUsage) {
+			r.tasks <- func() error {
+				_, _ = fn(goja.Undefined(), r.jsVM.ToValue(usage))
+				return nil
+			}
+		}
+	}
+
+	if fn := r.extractJSCallback(inputObj, "onAuditEvent"); fn != nil {
+		config.OnAuditEvent = func(event agent.AuditEvent) {
+			r.tasks <- func() error {
+				_, _ = fn(goja.Undefined(), r.jsVM.ToValue(event))
+				return nil
+			}
+		}
+	}
+}
+
+// extractJSCallback reads a named property from a goja object and returns the
+// callable if it exists and is a function; otherwise returns nil.
+func (r *Runtime) extractJSCallback(obj *goja.Object, name string) goja.Callable {
+	val := obj.Get(name)
+	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+		return nil
+	}
+
+	fn, ok := goja.AssertFunction(val)
+	if !ok {
+		return nil
+	}
+
+	return fn
+}
+
+// prepareAgentConfig populates runtime context into the agent config.
+func (r *Runtime) prepareAgentConfig(config *agent.AgentConfig) {
+	config.Storage = r.storage
+	config.Namespace = r.namespace
+	config.RunID = r.runID
+	config.TriggeredBy = r.triggeredBy
+}
+
+// installAgentFunc sets the AgentFunc on the runner so that ResumableRunner
+// can track and cache agent results.
+func (r *Runtime) installAgentFunc(ctx context.Context, config *agent.AgentConfig) {
+	r.runner.SetAgentFunc(func(configJSON json.RawMessage) (json.RawMessage, error) {
+		var serializableConfig agent.AgentConfig
+		if err := json.Unmarshal(configJSON, &serializableConfig); err != nil {
+			return nil, fmt.Errorf("could not unmarshal agent config: %w", err)
+		}
+
+		serializableConfig.OnOutput = config.OnOutput
+		serializableConfig.OnAuditEvent = config.OnAuditEvent
+		serializableConfig.OnUsage = config.OnUsage
+		serializableConfig.Storage = config.Storage
+		serializableConfig.Namespace = config.Namespace
+		serializableConfig.RunID = config.RunID
+		serializableConfig.PipelineID = config.PipelineID
+		serializableConfig.TriggeredBy = config.TriggeredBy
+
+		result, err := agent.RunAgent(ctx, r.runner, r.secretsManager, r.pipelineID, serializableConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		resultJSON, err := json.Marshal(result)
+		if err != nil {
+			return nil, fmt.Errorf("could not marshal agent result: %w", err)
+		}
+
+		return resultJSON, nil
+	})
 }
 
 // ReadFilesFromVolume reads specific files from a named volume.

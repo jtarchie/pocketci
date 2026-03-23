@@ -70,7 +70,7 @@ func (q *QEMU) Name() string {
 }
 
 // New creates a new QEMU driver.
-func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
+func New(_ context.Context, cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	homeDir, _ := os.UserHomeDir()
 	defaultCacheDir := filepath.Join(homeDir, ".cache", "pocketci", "qemu")
 
@@ -340,22 +340,15 @@ func (q *QEMU) connectQMP(ctx context.Context, sockPath string) error {
 	}
 }
 
-// connectQGA connects to the QGA TCP socket with retries.
-// Waits for the guest to boot, cloud-init to finish, and the guest agent to stabilize.
-func (q *QEMU) connectQGA(ctx context.Context, addr string) error {
-	deadline := time.After(300 * time.Second)
-
-	// Phase 1: Wait for cloud-init to finish by polling boot-finished file.
-	q.logger.Debug("qemu.qga.waiting-for-cloud-init")
-
-	cloudInitDone := false
-
-	for !cloudInitDone {
+// waitForCloudInit polls the guest agent until cloud-init has finished.
+// Returns nil once boot-finished is detected, or an error on timeout/cancel.
+func (q *QEMU) waitForCloudInit(ctx context.Context, addr string, deadline <-chan time.Time) error {
+	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline:
-				return errors.New("timeout waiting for cloud-init to finish")
+			return errors.New("timeout waiting for cloud-init to finish")
 		default:
 		}
 
@@ -392,24 +385,25 @@ func (q *QEMU) connectQGA(ctx context.Context, addr string) error {
 		}
 
 		if result.Exited && result.ExitCode == 0 {
-			cloudInitDone = true
-
 			q.logger.Info("qemu.cloud-init.finished")
-		} else {
-			q.logger.Debug("qemu.qga.cloud-init.not-ready", "exited", result.Exited, "exit_code", result.ExitCode)
-			time.Sleep(3 * time.Second)
+
+			return nil
 		}
+
+		q.logger.Debug("qemu.qga.cloud-init.not-ready", "exited", result.Exited, "exit_code", result.ExitCode)
+		time.Sleep(3 * time.Second)
 	}
+}
 
-	// Phase 2: Establish stable connection with full exec cycle verification
-	q.logger.Debug("qemu.qga.connecting-final")
-
+// establishStableQGA connects to QGA and verifies a full exec cycle.
+// Returns a connected client or an error on timeout/cancel.
+func (q *QEMU) establishStableQGA(ctx context.Context, addr string, deadline <-chan time.Time) (*QGAClient, error) {
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-deadline:
-				return errors.New("timeout waiting for stable QGA connection")
+			return nil, errors.New("timeout waiting for stable QGA connection")
 		default:
 		}
 
@@ -450,10 +444,33 @@ func (q *QEMU) connectQGA(ctx context.Context, addr string) error {
 			continue
 		}
 
-		q.qga = client
-
-		return nil
+		return client, nil
 	}
+}
+
+// connectQGA connects to the QGA TCP socket with retries.
+// Waits for the guest to boot, cloud-init to finish, and the guest agent to stabilize.
+func (q *QEMU) connectQGA(ctx context.Context, addr string) error {
+	deadline := time.After(300 * time.Second)
+
+	// Phase 1: Wait for cloud-init to finish by polling boot-finished file.
+	q.logger.Debug("qemu.qga.waiting-for-cloud-init")
+
+	if err := q.waitForCloudInit(ctx, addr, deadline); err != nil {
+		return err
+	}
+
+	// Phase 2: Establish stable connection with full exec cycle verification
+	q.logger.Debug("qemu.qga.connecting-final")
+
+	client, err := q.establishStableQGA(ctx, addr, deadline)
+	if err != nil {
+		return err
+	}
+
+	q.qga = client
+
+	return nil
 }
 
 // mountVolumes mounts the 9p shared directory inside the guest.
@@ -488,6 +505,46 @@ func (q *QEMU) mountVolumes() error {
 	return errors.New("timeout waiting for mount command")
 }
 
+// bindMountVolumes creates host dirs and bind-mounts them inside the QEMU guest.
+func (q *QEMU) bindMountVolumes(mounts []orchestra.Mount) error {
+	for _, mount := range mounts {
+		hostPath := filepath.Join(q.volumesDir, mount.Name)
+
+		if err := os.MkdirAll(hostPath, 0o755); err != nil {
+			return fmt.Errorf("failed to create volume dir: %w", err)
+		}
+
+		mountCmd := fmt.Sprintf(
+			"mkdir -p %s && (mountpoint -q %s || mount --bind /mnt/volumes/%s %s)",
+			mount.Path, mount.Path, mount.Name, mount.Path,
+		)
+
+		pid, err := q.qga.Exec("/bin/sh", []string{"-c", mountCmd}, nil, nil)
+		if err != nil {
+			return fmt.Errorf("failed to mount volume: %w", err)
+		}
+
+		for range 15 {
+			result, err := q.qga.ExecStatus(pid)
+			if err != nil {
+				return fmt.Errorf("failed to check mount status: %w", err)
+			}
+
+			if result.Exited {
+				if result.ExitCode != 0 {
+					q.logger.Warn("qemu.mount.failed", "name", mount.Name, "exit_code", result.ExitCode)
+				}
+
+				break
+			}
+
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+
+	return nil
+}
+
 // RunContainer executes a command inside the QEMU guest via QGA.
 func (q *QEMU) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.Container, error) {
 	if err := q.ensureVM(ctx); err != nil {
@@ -506,41 +563,8 @@ func (q *QEMU) RunContainer(ctx context.Context, task orchestra.Task) (orchestra
 	q.mu.Unlock()
 
 	// Handle mounts: create directories on host and bind-mount inside guest
-	for _, mount := range task.Mounts {
-		hostPath := filepath.Join(q.volumesDir, mount.Name)
-
-		if err := os.MkdirAll(hostPath, 0o755); err != nil {
-			return nil, fmt.Errorf("failed to create volume dir: %w", err)
-		}
-
-		// Create the mount path inside guest and bind-mount from 9p share
-		mountCmd := fmt.Sprintf(
-			"mkdir -p %s && (mountpoint -q %s || mount --bind /mnt/volumes/%s %s)",
-			mount.Path, mount.Path, mount.Name, mount.Path,
-		)
-
-		pid, err := q.qga.Exec("/bin/sh", []string{"-c", mountCmd}, nil, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to mount volume: %w", err)
-		}
-
-		// Wait for mount to complete
-		for range 15 {
-			result, err := q.qga.ExecStatus(pid)
-			if err != nil {
-				return nil, fmt.Errorf("failed to check mount status: %w", err)
-			}
-
-			if result.Exited {
-				if result.ExitCode != 0 {
-					q.logger.Warn("qemu.mount.failed", "name", mount.Name, "exit_code", result.ExitCode)
-				}
-
-				break
-			}
-
-			time.Sleep(500 * time.Millisecond)
-		}
+	if err := q.bindMountVolumes(task.Mounts); err != nil {
+		return nil, err
 	}
 
 	// Build environment variables

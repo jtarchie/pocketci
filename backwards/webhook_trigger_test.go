@@ -18,7 +18,7 @@ import (
 func setupNativeDriver(t *testing.T) orchestra.Driver {
 	t.Helper()
 	assert := NewGomegaWithT(t)
-	driver, err := native.New(native.Config{Namespace: "ci-test"}, slog.Default())
+	driver, err := native.New(context.Background(), native.Config{Namespace: "ci-test"}, slog.Default())
 	assert.Expect(err).NotTo(HaveOccurred())
 	t.Cleanup(func() { _ = driver.Close() })
 	return driver

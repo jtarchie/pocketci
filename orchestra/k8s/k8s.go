@@ -74,7 +74,7 @@ func (k *K8s) Close() error {
 	return nil
 }
 
-func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
+func New(_ context.Context, cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	// Try to get in-cluster config first (for running inside k8s)
 	config, err := rest.InClusterConfig()
 	if err != nil {

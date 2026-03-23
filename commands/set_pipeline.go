@@ -91,72 +91,74 @@ func (c *SetPipeline) Run(logger *slog.Logger) error {
 
 	logger.Info("pipeline.read", "file", c.Pipeline, "name", name)
 
-	// Read the pipeline file
 	content, err := os.ReadFile(c.Pipeline)
 	if err != nil {
 		return fmt.Errorf("could not read pipeline file: %w", err)
 	}
 
-	// Determine the file type and process accordingly
-	ext := strings.ToLower(filepath.Ext(c.Pipeline))
-
-	var contentType string
-
-	switch ext {
-	case ".yml", ".yaml":
-		// Validate YAML structure and semantics, but do NOT transpile.
-		// Transpilation happens lazily at pipeline trigger time so that
-		// the latest pipeline_runner.ts bundle is always used.
-		logger.Info("pipeline.validate")
-
-		if err := backwards.ValidatePipeline(content); err != nil {
-			return fmt.Errorf("pipeline validation failed: %w", err)
-		}
-
-		contentType = "yaml"
-
-	case ".ts":
-		// TypeScript — validate JS syntax before upload.
-		logger.Info("pipeline.validate")
-
-		_, err = runtime.TranspileAndValidate(string(content))
-		if err != nil {
-			return fmt.Errorf("pipeline validation failed: %w", err)
-		}
-
-		contentType = "ts"
-
-	case ".js":
-		// JavaScript — validate JS syntax before upload.
-		logger.Info("pipeline.validate")
-
-		_, err = runtime.TranspileAndValidate(string(content))
-		if err != nil {
-			return fmt.Errorf("pipeline validation failed: %w", err)
-		}
-
-		contentType = "js"
-
-	default:
-		return fmt.Errorf("unsupported file extension %q: expected .js, .ts, .yml, or .yaml", ext)
+	contentType, err := c.validatePipelineContent(logger, content)
+	if err != nil {
+		return err
 	}
 
 	logger.Info("pipeline.validate.success")
 
-	// Parse secrets from --secret-file and --secret flags
 	secretsMap, err := c.parseSecrets()
 	if err != nil {
 		return err
 	}
 
-	// Upload to server via PUT /api/pipelines/:name
-	serverURL := strings.TrimSuffix(c.ServerURL, "/")
-	endpoint := serverURL + "/api/pipelines/" + url.PathEscape(name)
+	reqBody := c.buildRequestBody(string(content), contentType, secretsMap)
 
-	logger.Info("pipeline.upload", "url", RedactURL(endpoint))
+	pipeline, err := c.uploadPipeline(logger, name, reqBody)
+	if err != nil {
+		return err
+	}
 
+	c.printSuccess(pipeline, secretsMap)
+
+	return nil
+}
+
+func (c *SetPipeline) validatePipelineContent(logger *slog.Logger, content []byte) (string, error) {
+	ext := strings.ToLower(filepath.Ext(c.Pipeline))
+
+	switch ext {
+	case ".yml", ".yaml":
+		logger.Info("pipeline.validate")
+
+		if err := backwards.ValidatePipeline(content); err != nil {
+			return "", fmt.Errorf("pipeline validation failed: %w", err)
+		}
+
+		return "yaml", nil
+
+	case ".ts":
+		logger.Info("pipeline.validate")
+
+		if _, err := runtime.TranspileAndValidate(string(content)); err != nil {
+			return "", fmt.Errorf("pipeline validation failed: %w", err)
+		}
+
+		return "ts", nil
+
+	case ".js":
+		logger.Info("pipeline.validate")
+
+		if _, err := runtime.TranspileAndValidate(string(content)); err != nil {
+			return "", fmt.Errorf("pipeline validation failed: %w", err)
+		}
+
+		return "js", nil
+
+	default:
+		return "", fmt.Errorf("unsupported file extension %q: expected .js, .ts, .yml, or .yaml", ext)
+	}
+}
+
+func (c *SetPipeline) buildRequestBody(content, contentType string, secretsMap map[string]string) pipelineRequest {
 	reqBody := pipelineRequest{
-		Content:       string(content),
+		Content:       content,
 		ContentType:   contentType,
 		Driver:        c.Driver,
 		DriverConfig:  c.buildDriverConfig(),
@@ -169,9 +171,17 @@ func (c *SetPipeline) Run(logger *slog.Logger) error {
 		reqBody.RBACExpression = &c.RBAC
 	}
 
+	return reqBody
+}
+
+func (c *SetPipeline) uploadPipeline(logger *slog.Logger, name string, reqBody pipelineRequest) (storage.Pipeline, error) {
+	serverURL := strings.TrimSuffix(c.ServerURL, "/")
+	endpoint := serverURL + "/api/pipelines/" + url.PathEscape(name)
+
+	logger.Info("pipeline.upload", "url", RedactURL(endpoint))
+
 	client := resty.New()
 
-	// Extract basic auth from URL if present and strip it from the endpoint.
 	if parsed, err := url.Parse(serverURL); err == nil && parsed.User != nil {
 		password, _ := parsed.User.Password()
 		client.SetBasicAuth(parsed.User.Username(), password)
@@ -179,7 +189,6 @@ func (c *SetPipeline) Run(logger *slog.Logger) error {
 		endpoint = parsed.String() + "/api/pipelines/" + url.PathEscape(name)
 	}
 
-	// Resolve auth token: explicit flag > config file lookup.
 	token := ResolveAuthToken(c.AuthToken, c.ConfigFile, c.ServerURL)
 	if token != "" {
 		client.SetAuthToken(token)
@@ -190,33 +199,29 @@ func (c *SetPipeline) Run(logger *slog.Logger) error {
 		SetBody(reqBody).
 		Put(endpoint)
 	if err != nil {
-		return fmt.Errorf("could not connect to server: %w", err)
+		return storage.Pipeline{}, fmt.Errorf("could not connect to server: %w", err)
 	}
 
 	body := resp.Body()
 
-	switch resp.StatusCode() {
-	case 200:
-		// success — handled below
-	case 401:
-		return authRequiredError(serverURL)
-	case 403:
-		return accessDeniedError(serverURL)
-	default:
+	if err := checkAuthStatus(resp.StatusCode(), serverURL); err != nil {
+		return storage.Pipeline{}, err
+	}
+
+	if resp.StatusCode() != 200 {
 		var errResp map[string]string
 		if json.Unmarshal(body, &errResp) == nil {
 			if msg, ok := errResp["error"]; ok {
-				return fmt.Errorf("server error (%d): %s", resp.StatusCode(), msg)
+				return storage.Pipeline{}, fmt.Errorf("server error (%d): %s", resp.StatusCode(), msg)
 			}
 		}
 
-		return fmt.Errorf("server error (%d): %s", resp.StatusCode(), string(body))
+		return storage.Pipeline{}, fmt.Errorf("server error (%d): %s", resp.StatusCode(), string(body))
 	}
 
-	// Parse the successful response
 	var pipeline storage.Pipeline
 	if err := json.Unmarshal(body, &pipeline); err != nil {
-		return fmt.Errorf("could not parse response: %w", err)
+		return storage.Pipeline{}, fmt.Errorf("could not parse response: %w", err)
 	}
 
 	logger.Info("pipeline.upload.success",
@@ -224,6 +229,10 @@ func (c *SetPipeline) Run(logger *slog.Logger) error {
 		"name", pipeline.Name,
 	)
 
+	return pipeline, nil
+}
+
+func (c *SetPipeline) printSuccess(pipeline storage.Pipeline, secretsMap map[string]string) {
 	fmt.Printf("Pipeline '%s' uploaded successfully!\n", pipeline.Name)
 	fmt.Printf("  ID: %s\n", pipeline.ID)
 
@@ -247,8 +256,6 @@ func (c *SetPipeline) Run(logger *slog.Logger) error {
 	if c.WebhookSecret != "" {
 		fmt.Printf("  Webhook URL: %s/api/webhooks/%s\n", displayURL, pipeline.ID)
 	}
-
-	return nil
 }
 
 // parseSecrets merges secrets from --secret-file and --secret flags.

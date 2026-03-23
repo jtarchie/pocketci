@@ -81,7 +81,7 @@ func (d *Docker) Close() error {
 	return nil
 }
 
-func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
+func New(_ context.Context, cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	var clientOpts []client.Opt
 
 	dockerHost := cfg.Host

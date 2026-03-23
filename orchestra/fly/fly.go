@@ -65,7 +65,7 @@ type Fly struct {
 	helperMachines map[string]string
 }
 
-func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
+func New(ctx context.Context, cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	if cfg.Token == "" {
 		return nil, errors.New("fly driver requires a token (set via CI_FLY_TOKEN)")
 	}
@@ -84,7 +84,7 @@ func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 
 	// Discharge third-party caveats on macaroon tokens. Macaroon tokens have
 	// short-lived discharge tokens that need refreshing via auth.fly.io.
-	if _, err := toks.Update(context.Background()); err != nil {
+	if _, err := toks.Update(ctx); err != nil {
 		logger.Warn("fly.tokens.update", "err", err)
 	}
 
@@ -95,7 +95,7 @@ func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 		Name:   "pocketci",
 	})
 
-	client, err := flaps.NewWithOptions(context.Background(), flaps.NewClientOpts{
+	client, err := flaps.NewWithOptions(ctx, flaps.NewClientOpts{
 		Tokens: toks,
 	})
 	if err != nil {
@@ -120,11 +120,11 @@ func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 
 	// If no app name provided, create an ephemeral one
 	if appName == "" {
-appName = SanitizeAppName("pocketci-" + cfg.Namespace)
+		appName = SanitizeAppName("pocketci-" + cfg.Namespace)
 
 		logger.Info("fly.app.create", "app", appName, "org", org)
 
-		_, err := client.CreateApp(context.Background(), flaps.CreateAppRequest{
+		_, err := client.CreateApp(ctx, flaps.CreateAppRequest{
 			Name: appName,
 			Org:  org,
 		})
@@ -132,7 +132,7 @@ appName = SanitizeAppName("pocketci-" + cfg.Namespace)
 			return nil, fmt.Errorf("failed to create fly app %q: %w", appName, err)
 		}
 
-		err = client.WaitForApp(context.Background(), appName)
+		err = client.WaitForApp(ctx, appName)
 		if err != nil {
 			return nil, fmt.Errorf("failed waiting for fly app %q to be ready: %w", appName, err)
 		}
@@ -192,41 +192,7 @@ func (f *Fly) Close() error {
 	}
 
 	// Best-effort sweep for untracked machines from partial/failed launches.
-	machines, err := f.client.List(ctx, f.appName, "")
-	if err != nil {
-		f.logger.Warn("fly.machine.list.error", "app", f.appName, "err", err)
-	} else {
-		namespacePrefix := SanitizeAppName(f.namespace) + "-"
-
-		for _, machine := range machines {
-			if machine == nil {
-				continue
-			}
-
-			if machine.State == "destroyed" {
-				continue
-			}
-
-			machineNamespace := ""
-			if machine.Config != nil && machine.Config.Metadata != nil {
-				machineNamespace = machine.Config.Metadata["orchestra.namespace"]
-			}
-
-			if machineNamespace != f.namespace && !strings.HasPrefix(machine.Name, namespacePrefix) {
-				continue
-			}
-
-			f.logger.Debug("fly.machine.destroy.sweep", "machine", machine.ID, "name", machine.Name, "state", machine.State)
-
-			err = f.client.Destroy(ctx, f.appName, fly.RemoveMachineInput{
-				ID:   machine.ID,
-				Kill: true,
-			}, "")
-			if err != nil {
-				f.logger.Warn("fly.machine.destroy.sweep.error", "machine", machine.ID, "err", err)
-			}
-		}
-	}
+	f.sweepUntrackedMachines(ctx)
 
 	// Delete all tracked volumes
 	for _, volumeID := range volumeIDs {
@@ -256,6 +222,48 @@ func (f *Fly) trackMachine(machineID string) {
 	defer f.mu.Unlock()
 
 	f.machineIDs = append(f.machineIDs, machineID)
+}
+
+// sweepUntrackedMachines destroys any machines belonging to this namespace
+// that were not explicitly tracked (e.g. from partial/failed launches).
+func (f *Fly) sweepUntrackedMachines(ctx context.Context) {
+	machines, err := f.client.List(ctx, f.appName, "")
+	if err != nil {
+		f.logger.Warn("fly.machine.list.error", "app", f.appName, "err", err)
+
+		return
+	}
+
+	namespacePrefix := SanitizeAppName(f.namespace) + "-"
+
+	for _, machine := range machines {
+		if machine == nil {
+			continue
+		}
+
+		if machine.State == "destroyed" {
+			continue
+		}
+
+		machineNamespace := ""
+		if machine.Config != nil && machine.Config.Metadata != nil {
+			machineNamespace = machine.Config.Metadata["orchestra.namespace"]
+		}
+
+		if machineNamespace != f.namespace && !strings.HasPrefix(machine.Name, namespacePrefix) {
+			continue
+		}
+
+		f.logger.Debug("fly.machine.destroy.sweep", "machine", machine.ID, "name", machine.Name, "state", machine.State)
+
+		err = f.client.Destroy(ctx, f.appName, fly.RemoveMachineInput{
+			ID:   machine.ID,
+			Kill: true,
+		}, "")
+		if err != nil {
+			f.logger.Warn("fly.machine.destroy.sweep.error", "machine", machine.ID, "err", err)
+		}
+	}
 }
 
 func (f *Fly) trackVolume(volumeID string) {

@@ -24,7 +24,7 @@ func TestMain(m *testing.M) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	var err error
-	testDriver, err = vzdriver.New(vzdriver.Config{
+	testDriver, err = vzdriver.New(context.Background(), vzdriver.Config{
 		ServerConfig: vzdriver.ServerConfig{
 			Memory: "2048",
 			CPUs:   "2",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/containerd/errdefs"
@@ -178,32 +179,8 @@ func (d *Docker) RunContainer(ctx context.Context, task orchestra.Task) (orchest
 		}, nil, nil,
 		containerName,
 	)
-	if err != nil && errdefs.IsConflict(err) {
-		logger.Error("container.create.conflict", "name", containerName, "err", err, "conflict", true)
-
-		filter := filters.NewArgs()
-		filter.Add("name", containerName)
-
-		containers, err := d.client.ContainerList(ctx, container.ListOptions{Filters: filter, All: true})
-		if err != nil {
-			logger.Error("container.list", "name", containerName, "err", err)
-
-			return nil, fmt.Errorf("failed to list containers: %w", err)
-		}
-
-		if len(containers) == 0 {
-			return nil, fmt.Errorf("failed to find container by name %s: %w", containerName, orchestra.ErrContainerNotFound)
-		}
-
-		return &Container{
-			id:     containers[0].ID,
-			client: d.client,
-			task:   task,
-		}, nil
-	} else if err != nil {
-		logger.Error("container.create.error", "name", containerName, "err", err)
-
-		return nil, fmt.Errorf("failed to create container: %w", err)
+	if err != nil {
+		return d.handleContainerCreateError(ctx, err, containerName, task, logger)
 	}
 
 	if enabledStdin {
@@ -237,6 +214,44 @@ func (d *Docker) RunContainer(ctx context.Context, task orchestra.Task) (orchest
 
 	return &Container{
 		id:     response.ID,
+		client: d.client,
+		task:   task,
+	}, nil
+}
+
+// handleContainerCreateError handles a container creation error, recovering from
+// conflict errors by finding the existing container.
+func (d *Docker) handleContainerCreateError(
+	ctx context.Context,
+	createErr error,
+	containerName string,
+	task orchestra.Task,
+	logger *slog.Logger,
+) (orchestra.Container, error) {
+	if !errdefs.IsConflict(createErr) {
+		logger.Error("container.create.error", "name", containerName, "err", createErr)
+
+		return nil, fmt.Errorf("failed to create container: %w", createErr)
+	}
+
+	logger.Error("container.create.conflict", "name", containerName, "err", createErr, "conflict", true)
+
+	filter := filters.NewArgs()
+	filter.Add("name", containerName)
+
+	containers, err := d.client.ContainerList(ctx, container.ListOptions{Filters: filter, All: true})
+	if err != nil {
+		logger.Error("container.list", "name", containerName, "err", err)
+
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	if len(containers) == 0 {
+		return nil, fmt.Errorf("failed to find container by name %s: %w", containerName, orchestra.ErrContainerNotFound)
+	}
+
+	return &Container{
+		id:     containers[0].ID,
 		client: d.client,
 		task:   task,
 	}, nil

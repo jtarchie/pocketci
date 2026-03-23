@@ -34,7 +34,7 @@ func TestFlyCleanup_LaunchErrorRecoveryTracksExistingMachine(t *testing.T) {
 	namespace := "test-" + gonanoid.Must()
 	taskID := gonanoid.Must()
 
-	driver, err := fly.New(fly.Config{ServerConfig: fly.ServerConfig{Token: token}, Namespace: namespace}, slog.Default())
+	driver, err := fly.New(context.Background(), fly.Config{ServerConfig: fly.ServerConfig{Token: token}, Namespace: namespace}, slog.Default())
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	f := driver.(*fly.Fly)
@@ -101,14 +101,14 @@ func TestFlyCleanup_SweepDestroysUntrackedNamespaceMachines(t *testing.T) {
 
 	namespace := "test-" + gonanoid.Must()
 
-	driver, err := fly.New(fly.Config{ServerConfig: fly.ServerConfig{Token: token}, Namespace: namespace}, slog.Default())
+	driver, err := fly.New(context.Background(), fly.Config{ServerConfig: fly.ServerConfig{Token: token}, Namespace: namespace}, slog.Default())
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	f := driver.(*fly.Fly)
 
 	// Launch a machine directly without going through RunContainer, so
 	// trackMachine is never called. This is the "orphaned machine" scenario.
-machineName := fly.SanitizeAppName(namespace + "-orphaned")
+	machineName := fly.SanitizeAppName(namespace + "-orphaned")
 
 	orphan, err := f.Client().Launch(context.Background(), f.AppName(), flygo.LaunchMachineInput{
 		Config: &flygo.MachineConfig{

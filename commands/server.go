@@ -141,7 +141,85 @@ type Server struct {
 }
 
 func (c *Server) Run(logger *slog.Logger) error {
-	// Initialize observability provider if configured
+	obsProvider, logger, err := c.initObservability(logger)
+	if err != nil {
+		return err
+	}
+
+	if obsProvider != nil {
+		defer func() { _ = obsProvider.Close() }()
+	}
+
+	client, err := c.initStorage(logger)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = client.Close() }()
+
+	secretsManager, err := c.initSecrets(logger)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = secretsManager.Close() }()
+
+	if err := c.storeGlobalSecrets(secretsManager); err != nil {
+		return err
+	}
+
+	authConfig, basicAuthUsername, basicAuthPassword, err := c.buildAuthConfig()
+	if err != nil {
+		return err
+	}
+
+	driverConfigs := c.buildDriverConfigs()
+	defaultDriver := c.defaultDriverName()
+
+	cacheStore, err := c.initCacheStore()
+	if err != nil {
+		return err
+	}
+
+	router, err := server.NewRouter(logger, client, server.RouterOptions{
+		MaxInFlight:           c.MaxInFlight,
+		WebhookTimeout:        c.WebhookTimeout,
+		BasicAuthUsername:     basicAuthUsername,
+		BasicAuthPassword:     basicAuthPassword,
+		AllowedDrivers:        c.AllowedDrivers,
+		AllowedFeatures:       c.AllowedFeatures,
+		SecretsManager:        secretsManager,
+		FetchTimeout:          c.FetchTimeout,
+		FetchMaxResponseBytes: int64(c.FetchMaxResponseMB) * 1024 * 1024,
+		AuthConfig:            authConfig,
+		ObservabilityProvider: obsProvider,
+		DefaultDriver:         defaultDriver,
+		DriverConfigs:         driverConfigs,
+		CacheStore:            cacheStore,
+		CacheCompression:      c.CacheCompression,
+		CacheKeyPrefix:        c.CacheKeyPrefix,
+		WebhookProviders: []webhooks.Provider{
+			webhookgithub.New(),
+			webhookhoneybadger.New(),
+			webhookslack.New(),
+			webhookgeneric.New(),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("could not create router: %w", err)
+	}
+
+	c.registerRoutes(router, client)
+
+	err = router.Start(fmt.Sprintf(":%d", c.Port))
+	if err != nil {
+		return fmt.Errorf("could not start server: %w", err)
+	}
+
+	return nil
+}
+
+func (c *Server) initObservability(logger *slog.Logger) (observability.Provider, *slog.Logger, error) {
 	var obsProvider observability.Provider
 
 	switch {
@@ -153,10 +231,8 @@ func (c *Server) Run(logger *slog.Logger) error {
 			Endpoint: c.PosthogEndpoint,
 		}, logger)
 		if err != nil {
-			return fmt.Errorf("could not create posthog provider: %w", err)
+			return nil, logger, fmt.Errorf("could not create posthog provider: %w", err)
 		}
-
-		defer func() { _ = obsProvider.Close() }()
 
 	case c.HoneybadgerAPIKey != "":
 		var err error
@@ -166,24 +242,22 @@ func (c *Server) Run(logger *slog.Logger) error {
 			Env:    c.HoneybadgerEnv,
 		}, logger)
 		if err != nil {
-			return fmt.Errorf("could not create honeybadger provider: %w", err)
+			return nil, logger, fmt.Errorf("could not create honeybadger provider: %w", err)
 		}
-
-		defer func() { _ = obsProvider.Close() }()
 	}
 
 	if obsProvider != nil {
-		// Wrap the logger so log records are also forwarded to the provider
 		logger = slog.New(obsProvider.SlogHandler(logger.Handler()))
 		slog.SetDefault(logger)
 	}
 
-	var client storage.Driver
-	var err error
+	return obsProvider, logger, nil
+}
 
+func (c *Server) initStorage(logger *slog.Logger) (storage.Driver, error) {
 	switch {
 	case c.StorageS3Bucket != "":
-		client, err = storages3.NewS3(storages3.Config{
+		client, err := storages3.NewS3(storages3.Config{
 			Config: s3config.Config{
 				Bucket:          c.StorageS3Bucket,
 				Prefix:          c.StorageS3Prefix,
@@ -195,25 +269,26 @@ func (c *Server) Run(logger *slog.Logger) error {
 			},
 		}, "", logger)
 		if err != nil {
-			return fmt.Errorf("could not create S3 storage client: %w", err)
+			return nil, fmt.Errorf("could not create S3 storage client: %w", err)
 		}
+
+		return client, nil
 	default:
-		client, err = storagesqlite.NewSqlite(storagesqlite.Config{
+		client, err := storagesqlite.NewSqlite(storagesqlite.Config{
 			Path: c.StorageSQLitePath,
 		}, "", logger)
 		if err != nil {
-			return fmt.Errorf("could not create SQLite storage client: %w", err)
+			return nil, fmt.Errorf("could not create SQLite storage client: %w", err)
 		}
+
+		return client, nil
 	}
+}
 
-	defer func() { _ = client.Close() }()
-
-	// Initialize secrets manager
-	var secretsManager secrets.Manager
-
+func (c *Server) initSecrets(logger *slog.Logger) (secrets.Manager, error) {
 	switch {
 	case c.SecretsS3Bucket != "":
-		secretsManager, err = secretss3.New(secretss3.Config{
+		mgr, err := secretss3.New(secretss3.Config{
 			Config: s3config.Config{
 				Bucket:          c.SecretsS3Bucket,
 				Prefix:          c.SecretsS3Prefix,
@@ -227,34 +302,39 @@ func (c *Server) Run(logger *slog.Logger) error {
 			},
 		}, logger)
 		if err != nil {
-			return fmt.Errorf("could not create S3 secrets manager: %w", err)
+			return nil, fmt.Errorf("could not create S3 secrets manager: %w", err)
 		}
-		defer func() { _ = secretsManager.Close() }()
+
+		return mgr, nil
 	default:
-		secretsManager, err = secretssqlite.New(secretssqlite.Config{
+		mgr, err := secretssqlite.New(secretssqlite.Config{
 			Path:       c.SecretsSQLitePath,
 			Passphrase: c.SecretsSQLitePassphrase,
 		}, logger)
 		if err != nil {
-			return fmt.Errorf("could not create SQLite secrets manager: %w", err)
+			return nil, fmt.Errorf("could not create SQLite secrets manager: %w", err)
 		}
-		defer func() { _ = secretsManager.Close() }()
-	}
 
-	// Store any secrets provided via --secret flags (global scope)
+		return mgr, nil
+	}
+}
+
+func (c *Server) storeGlobalSecrets(mgr secrets.Manager) error {
 	for _, s := range c.Secret {
 		key, value, found := strings.Cut(s, "=")
 		if !found || key == "" {
 			return fmt.Errorf("invalid --secret flag %q: expected KEY=VALUE format", s)
 		}
 
-		err = secretsManager.Set(context.Background(), secrets.GlobalScope, key, value)
-		if err != nil {
+		if err := mgr.Set(context.Background(), secrets.GlobalScope, key, value); err != nil {
 			return fmt.Errorf("could not set global secret %q: %w", key, err)
 		}
 	}
 
-	// Build auth config from OAuth flags
+	return nil
+}
+
+func (c *Server) buildAuthConfig() (*auth.Config, string, string, error) {
 	authConfig := &auth.Config{
 		GithubClientID:        c.OAuthGithubClientID,
 		GithubClientSecret:    c.OAuthGithubClientSecret,
@@ -269,45 +349,45 @@ func (c *Server) Run(logger *slog.Logger) error {
 		ServerRBAC:            c.ServerRBAC,
 	}
 
-	// Parse basic auth credentials if provided
 	var basicAuthUsername, basicAuthPassword string
 	if c.BasicAuth != "" {
 		parts := strings.SplitN(c.BasicAuth, ":", 2)
 		if len(parts) != 2 {
-			return fmt.Errorf("invalid basic auth format: expected 'username:password', got '%s'", c.BasicAuth)
+			return nil, "", "", fmt.Errorf("invalid basic auth format: expected 'username:password', got '%s'", c.BasicAuth)
 		}
+
 		basicAuthUsername = parts[0]
 		basicAuthPassword = parts[1]
+
 		if basicAuthUsername == "" || basicAuthPassword == "" {
-			return errors.New("basic auth username and password cannot be empty")
+			return nil, "", "", errors.New("basic auth username and password cannot be empty")
 		}
 	}
 
-	// Validate mutual exclusion: basic auth and OAuth cannot coexist
 	if c.BasicAuth != "" && authConfig.HasOAuthProviders() {
-		return errors.New("basic auth and OAuth providers cannot be used together: choose one authentication method")
+		return nil, "", "", errors.New("basic auth and OAuth providers cannot be used together: choose one authentication method")
 	}
 
-	// Validate OAuth config: session secret required when providers are configured
 	if authConfig.HasOAuthProviders() && authConfig.SessionSecret == "" {
-		return errors.New("CI_OAUTH_SESSION_SECRET is required when OAuth providers are configured")
+		return nil, "", "", errors.New("CI_OAUTH_SESSION_SECRET is required when OAuth providers are configured")
 	}
 
 	if authConfig.HasOAuthProviders() && authConfig.CallbackURL == "" {
-		return errors.New("CI_OAUTH_CALLBACK_URL is required when OAuth providers are configured")
+		return nil, "", "", errors.New("CI_OAUTH_CALLBACK_URL is required when OAuth providers are configured")
 	}
 
-	// Validate server RBAC expression compiles
 	if c.ServerRBAC != "" {
 		if err := auth.ValidateExpression(c.ServerRBAC); err != nil {
-			return fmt.Errorf("invalid server RBAC expression: %w", err)
+			return nil, "", "", fmt.Errorf("invalid server RBAC expression: %w", err)
 		}
 	}
 
-	// Build driver configs for all configured drivers.
+	return authConfig, basicAuthUsername, basicAuthPassword, nil
+}
+
+func (c *Server) buildDriverConfigs() map[string]orchestra.DriverConfig {
 	driverConfigs := map[string]orchestra.DriverConfig{}
 
-	// Docker and native are always available.
 	driverConfigs["docker"] = docker.ServerConfig{Host: c.DockerHost}
 	driverConfigs["native"] = native.ServerConfig{}
 
@@ -361,67 +441,49 @@ func (c *Server) Run(logger *slog.Logger) error {
 		}
 	}
 
-	// Determine default driver: prefer cloud/VM drivers over local ones.
-	defaultDriver := "docker"
+	return driverConfigs
+}
+
+func (c *Server) defaultDriverName() string {
 	switch {
 	case c.HetznerToken != "":
-		defaultDriver = "hetzner"
+		return "hetzner"
 	case c.DigitalOceanToken != "":
-		defaultDriver = "digitalocean"
+		return "digitalocean"
 	case c.FlyToken != "":
-		defaultDriver = "fly"
+		return "fly"
 	case c.K8sKubeconfig != "" || k8s.IsAvailable():
-		defaultDriver = "k8s"
+		return "k8s"
 	case c.QEMUImage != "":
-		defaultDriver = "qemu"
+		return "qemu"
+	default:
+		return "docker"
+	}
+}
+
+func (c *Server) initCacheStore() (cache.CacheStore, error) {
+	if c.CacheS3Bucket == "" {
+		return nil, nil
 	}
 
-	// Build optional cache store.
-	var cacheStore cache.CacheStore
-	if c.CacheS3Bucket != "" {
-		cacheStore, err = cacheplugins3.New(cacheplugins3.Config{Config: s3config.Config{
-			Bucket:          c.CacheS3Bucket,
-			Prefix:          c.CacheS3Prefix,
-			Endpoint:        c.CacheS3Endpoint,
-			Region:          c.CacheS3Region,
-			AccessKeyID:     c.CacheS3AccessKeyID,
-			SecretAccessKey: c.CacheS3SecretAccessKey,
-			ForcePathStyle:  c.CacheS3Endpoint != "",
-			TTL:             c.CacheS3TTL,
-		}})
-		if err != nil {
-			return fmt.Errorf("could not create cache store: %w", err)
-		}
-	}
-
-	router, err := server.NewRouter(logger, client, server.RouterOptions{
-		MaxInFlight:           c.MaxInFlight,
-		WebhookTimeout:        c.WebhookTimeout,
-		BasicAuthUsername:     basicAuthUsername,
-		BasicAuthPassword:     basicAuthPassword,
-		AllowedDrivers:        c.AllowedDrivers,
-		AllowedFeatures:       c.AllowedFeatures,
-		SecretsManager:        secretsManager,
-		FetchTimeout:          c.FetchTimeout,
-		FetchMaxResponseBytes: int64(c.FetchMaxResponseMB) * 1024 * 1024,
-		AuthConfig:            authConfig,
-		ObservabilityProvider: obsProvider,
-		DefaultDriver:         defaultDriver,
-		DriverConfigs:         driverConfigs,
-		CacheStore:            cacheStore,
-		CacheCompression:      c.CacheCompression,
-		CacheKeyPrefix:        c.CacheKeyPrefix,
-		WebhookProviders: []webhooks.Provider{
-			webhookgithub.New(),
-			webhookhoneybadger.New(),
-			webhookslack.New(),
-			webhookgeneric.New(),
-		},
-	})
+	store, err := cacheplugins3.New(context.Background(), cacheplugins3.Config{Config: s3config.Config{
+		Bucket:          c.CacheS3Bucket,
+		Prefix:          c.CacheS3Prefix,
+		Endpoint:        c.CacheS3Endpoint,
+		Region:          c.CacheS3Region,
+		AccessKeyID:     c.CacheS3AccessKeyID,
+		SecretAccessKey: c.CacheS3SecretAccessKey,
+		ForcePathStyle:  c.CacheS3Endpoint != "",
+		TTL:             c.CacheS3TTL,
+	}})
 	if err != nil {
-		return fmt.Errorf("could not create router: %w", err)
+		return nil, fmt.Errorf("could not create cache store: %w", err)
 	}
 
+	return store, nil
+}
+
+func (c *Server) registerRoutes(router *server.Router, client storage.Driver) {
 	router.ProtectedGroup().GET("/tasks/*", func(ctx *echo.Context) error {
 		lookupPath := ctx.Param("*")
 		if lookupPath == "" || lookupPath[0] != '/' {
@@ -462,11 +524,4 @@ func (c *Server) Run(logger *slog.Logger) error {
 			"Path":     lookupPath,
 		})
 	})
-
-	err = router.Start(fmt.Sprintf(":%d", c.Port))
-	if err != nil {
-		return fmt.Errorf("could not start server: %w", err)
-	}
-
-	return nil
 }

@@ -23,7 +23,6 @@ type Resource struct {
 }
 
 func (r *Resource) Run(logger *slog.Logger) error {
-	// Get the resource
 	res, err := resources.Get(r.Type)
 	if err != nil {
 		return fmt.Errorf("failed to get resource: %w", err)
@@ -32,71 +31,89 @@ func (r *Resource) Run(logger *slog.Logger) error {
 	logger = logger.With("resource", r.Type, "operation", r.Operation, "event", fmt.Sprintf("%s.%s", r.Type, r.Operation))
 	logger.Debug("resource.operation.executing")
 
-	// Read request from stdin
 	input, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		return fmt.Errorf("failed to read stdin: %w", err)
 	}
 
-	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), r.Timeout)
 	defer cancel()
 
-	var response any
-
-	switch r.Operation {
-	case "check":
-		var req resources.CheckRequest
-
-		err = json.Unmarshal(input, &req)
-		if err != nil {
-			return fmt.Errorf("failed to parse check request: %w", err)
-		}
-
-		response, err = res.Check(ctx, req)
-		if err != nil {
-			return fmt.Errorf("check failed: %w", err)
-		}
-
-	case "in":
-		if r.Path == "" {
-			return errors.New("path is required for 'in' operation")
-		}
-
-		var req resources.InRequest
-
-		err = json.Unmarshal(input, &req)
-		if err != nil {
-			return fmt.Errorf("failed to parse in request: %w", err)
-		}
-
-		response, err = res.In(ctx, r.Path, req)
-		if err != nil {
-			return fmt.Errorf("in failed: %w", err)
-		}
-
-	case "out":
-		if r.Path == "" {
-			return errors.New("path is required for 'out' operation")
-		}
-
-		var req resources.OutRequest
-
-		err = json.Unmarshal(input, &req)
-		if err != nil {
-			return fmt.Errorf("failed to parse out request: %w", err)
-		}
-
-		response, err = res.Out(ctx, r.Path, req)
-		if err != nil {
-			return fmt.Errorf("out failed: %w", err)
-		}
-
-	default:
-		return fmt.Errorf("unknown operation: %s", r.Operation)
+	response, err := r.executeOperation(ctx, res, input)
+	if err != nil {
+		return err
 	}
 
-	// Write response to stdout
+	return writeJSONResponse(response)
+}
+
+func (r *Resource) executeOperation(ctx context.Context, res resources.Resource, input []byte) (any, error) {
+	switch r.Operation {
+	case "check":
+		return r.executeCheck(ctx, res, input)
+	case "in":
+		return r.executeIn(ctx, res, input)
+	case "out":
+		return r.executeOut(ctx, res, input)
+	default:
+		return nil, fmt.Errorf("unknown operation: %s", r.Operation)
+	}
+}
+
+func (r *Resource) executeCheck(ctx context.Context, res resources.Resource, input []byte) (any, error) {
+	var req resources.CheckRequest
+
+	if err := json.Unmarshal(input, &req); err != nil {
+		return nil, fmt.Errorf("failed to parse check request: %w", err)
+	}
+
+	result, err := res.Check(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("check failed: %w", err)
+	}
+
+	return result, nil
+}
+
+func (r *Resource) executeIn(ctx context.Context, res resources.Resource, input []byte) (any, error) {
+	if r.Path == "" {
+		return nil, errors.New("path is required for 'in' operation")
+	}
+
+	var req resources.InRequest
+
+	if err := json.Unmarshal(input, &req); err != nil {
+		return nil, fmt.Errorf("failed to parse in request: %w", err)
+	}
+
+	result, err := res.In(ctx, r.Path, req)
+	if err != nil {
+		return nil, fmt.Errorf("in failed: %w", err)
+	}
+
+	return result, nil
+}
+
+func (r *Resource) executeOut(ctx context.Context, res resources.Resource, input []byte) (any, error) {
+	if r.Path == "" {
+		return nil, errors.New("path is required for 'out' operation")
+	}
+
+	var req resources.OutRequest
+
+	if err := json.Unmarshal(input, &req); err != nil {
+		return nil, fmt.Errorf("failed to parse out request: %w", err)
+	}
+
+	result, err := res.Out(ctx, r.Path, req)
+	if err != nil {
+		return nil, fmt.Errorf("out failed: %w", err)
+	}
+
+	return result, nil
+}
+
+func writeJSONResponse(response any) error {
 	output, err := json.Marshal(response)
 	if err != nil {
 		return fmt.Errorf("failed to marshal response: %w", err)

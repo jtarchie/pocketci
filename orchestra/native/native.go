@@ -37,7 +37,7 @@ func (n *Native) Close() error {
 	return nil
 }
 
-func New(cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
+func New(_ context.Context, cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	path, err := os.MkdirTemp("", cfg.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp dir: %w", err)

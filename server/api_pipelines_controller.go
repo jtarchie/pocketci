@@ -70,6 +70,18 @@ type APIPipelinesController struct {
 
 const pipelineDriverSecretKey = "driver"
 
+// errHandled is returned by helper functions that have already written an HTTP
+// response. Callers should return nil to prevent Echo from double-writing.
+var errHandled = errors.New("response already sent")
+
+// respondJSON writes a JSON error response and returns errHandled so the caller
+// knows to stop processing.
+func respondJSON(ctx *echo.Context, code int, body any) error {
+	_ = ctx.JSON(code, body)
+
+	return errHandled
+}
+
 // checkPipelineRBAC evaluates a pipeline's RBAC expression against the current user.
 // Returns nil if access is allowed, or an error response if denied.
 func checkPipelineRBAC(ctx *echo.Context, pipeline *storage.Pipeline) error {
@@ -85,7 +97,7 @@ func checkPipelineRBAC(ctx *echo.Context, pipeline *storage.Pipeline) error {
 
 	allowed, err := auth.EvaluateAccess(pipeline.RBACExpression, *user)
 	if err != nil || !allowed {
-		return ctx.JSON(http.StatusForbidden, map[string]string{
+		return respondJSON(ctx, http.StatusForbidden, map[string]string{
 			"error": "access denied to this pipeline",
 		})
 	}
@@ -169,7 +181,7 @@ func (c *APIPipelinesController) Show(ctx *echo.Context) error {
 	}
 
 	if err := checkPipelineRBAC(ctx, pipeline); err != nil {
-		return err
+		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
 	return ctx.JSON(http.StatusOK, toPipelineAPIResponse(pipeline))
@@ -270,25 +282,16 @@ func (c *APIPipelinesController) persistSecrets(ctx context.Context, pipeline *s
 	return nil
 }
 
-// Upsert handles PUT /api/pipelines/:name - Create or update a pipeline by name.
-func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
-	name := ctx.Param("name")
-
+// validateUpsertRequest validates and normalizes a PipelineRequest for Upsert.
+func (c *APIPipelinesController) validateUpsertRequest(ctx *echo.Context, name string, req *PipelineRequest) error {
 	if name == "" {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{
+		return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 			"error": "name is required",
 		})
 	}
 
-	var req PipelineRequest
-	if err := ctx.Bind(&req); err != nil {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{
-			"error": "invalid request body",
-		})
-	}
-
 	if req.Content == "" {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{
+		return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 			"error": "content is required",
 		})
 	}
@@ -298,39 +301,98 @@ func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
 	}
 
 	if err := orchestra.IsDriverAllowed(req.Driver, c.allowedDrivers); err != nil {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{
+		return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 			"error": fmt.Sprintf("driver not allowed: %v", err),
 		})
 	}
 
 	if req.WebhookSecret != nil && *req.WebhookSecret != "" && !IsFeatureEnabled(FeatureWebhooks, c.allowedFeatures) {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{
+		return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 			"error": "webhooks feature is not enabled",
 		})
 	}
 
 	if req.WebhookSecret != nil && *req.WebhookSecret != "" && c.secretsMgr == nil {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{
+		return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 			"error": "secrets backend is not configured on the server",
 		})
 	}
 
-	if err := c.validateSecrets(ctx.Request().Context(), name, req); err != nil {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{
+	if err := c.validateSecrets(ctx.Request().Context(), name, *req); err != nil {
+		return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 			"error": err.Error(),
 		})
 	}
 
 	if !IsFeatureEnabled(FeatureSecrets, c.allowedFeatures) {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{
+		return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 			"error": "secrets feature is not enabled",
 		})
 	}
 
 	if c.secretsMgr == nil {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{
+		return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 			"error": "secrets backend is not configured on the server",
 		})
+	}
+
+	return nil
+}
+
+// upsertPostSave handles resume and RBAC updates after a pipeline is saved.
+func (c *APIPipelinesController) upsertPostSave(ctx *echo.Context, pipeline *storage.Pipeline, req PipelineRequest) error {
+	if req.ResumeEnabled != nil && *req.ResumeEnabled {
+		if !IsFeatureEnabled(FeatureResume, c.allowedFeatures) {
+			return respondJSON(ctx, http.StatusBadRequest, map[string]string{
+				"error": "resume feature is not enabled",
+			})
+		}
+	}
+
+	if req.ResumeEnabled != nil {
+		if err := c.store.UpdatePipelineResumeEnabled(ctx.Request().Context(), pipeline.ID, *req.ResumeEnabled); err != nil {
+			return respondJSON(ctx, http.StatusInternalServerError, map[string]string{
+				"error": fmt.Sprintf("failed to update resume_enabled: %v", err),
+			})
+		}
+
+		pipeline.ResumeEnabled = *req.ResumeEnabled
+	}
+
+	if req.RBACExpression != nil {
+		if *req.RBACExpression != "" {
+			if err := auth.ValidateExpression(*req.RBACExpression); err != nil {
+				return respondJSON(ctx, http.StatusBadRequest, map[string]string{
+					"error": fmt.Sprintf("invalid RBAC expression: %v", err),
+				})
+			}
+		}
+
+		if err := c.store.UpdatePipelineRBACExpression(ctx.Request().Context(), pipeline.ID, *req.RBACExpression); err != nil {
+			return respondJSON(ctx, http.StatusInternalServerError, map[string]string{
+				"error": fmt.Sprintf("failed to update rbac_expression: %v", err),
+			})
+		}
+
+		pipeline.RBACExpression = *req.RBACExpression
+	}
+
+	return nil
+}
+
+// Upsert handles PUT /api/pipelines/:name - Create or update a pipeline by name.
+func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
+	name := ctx.Param("name")
+
+	var req PipelineRequest
+	if err := ctx.Bind(&req); err != nil {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{
+			"error": "invalid request body",
+		})
+	}
+
+	if err := c.validateUpsertRequest(ctx, name, &req); err != nil {
+		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
 	pipeline, err := c.store.SavePipeline(ctx.Request().Context(), name, req.Content, req.Driver, req.ContentType)
@@ -346,41 +408,8 @@ func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
 		})
 	}
 
-	if req.ResumeEnabled != nil && *req.ResumeEnabled {
-		if !IsFeatureEnabled(FeatureResume, c.allowedFeatures) {
-			return ctx.JSON(http.StatusBadRequest, map[string]string{
-				"error": "resume feature is not enabled",
-			})
-		}
-	}
-
-	if req.ResumeEnabled != nil {
-		if err := c.store.UpdatePipelineResumeEnabled(ctx.Request().Context(), pipeline.ID, *req.ResumeEnabled); err != nil {
-			return ctx.JSON(http.StatusInternalServerError, map[string]string{
-				"error": fmt.Sprintf("failed to update resume_enabled: %v", err),
-			})
-		}
-
-		pipeline.ResumeEnabled = *req.ResumeEnabled
-	}
-
-	// Handle RBAC expression update
-	if req.RBACExpression != nil {
-		if *req.RBACExpression != "" {
-			if err := auth.ValidateExpression(*req.RBACExpression); err != nil {
-				return ctx.JSON(http.StatusBadRequest, map[string]string{
-					"error": fmt.Sprintf("invalid RBAC expression: %v", err),
-				})
-			}
-		}
-
-		if err := c.store.UpdatePipelineRBACExpression(ctx.Request().Context(), pipeline.ID, *req.RBACExpression); err != nil {
-			return ctx.JSON(http.StatusInternalServerError, map[string]string{
-				"error": fmt.Sprintf("failed to update rbac_expression: %v", err),
-			})
-		}
-
-		pipeline.RBACExpression = *req.RBACExpression
+	if err := c.upsertPostSave(ctx, pipeline, req); err != nil {
+		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
 	return ctx.JSON(http.StatusOK, toPipelineAPIResponse(pipeline))
@@ -404,7 +433,7 @@ func (c *APIPipelinesController) Destroy(ctx *echo.Context) error {
 	}
 
 	if err := checkPipelineRBAC(ctx, pipeline); err != nil {
-		return err
+		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
 	err = c.store.DeletePipeline(ctx.Request().Context(), id)
@@ -434,6 +463,43 @@ type webhookSimData struct {
 	Body    string            `json:"body"`
 	Headers map[string]string `json:"headers"`
 	Method  string            `json:"method"`
+}
+
+// triggerByMode dispatches the trigger request to the appropriate execution
+// path based on its mode field. Returns the created run or an error response.
+func (c *APIPipelinesController) triggerByMode(ctx *echo.Context, pipeline *storage.Pipeline, req triggerRequest) (*storage.PipelineRun, error) {
+	switch req.Mode {
+	case "args":
+		return c.execService.TriggerPipeline(ctx.Request().Context(), pipeline, req.Args)
+
+	case "webhook":
+		if !IsFeatureEnabled(FeatureWebhooks, c.allowedFeatures) {
+			return nil, respondJSON(ctx, http.StatusForbidden, map[string]string{
+				"error": "webhooks feature is not enabled",
+			})
+		}
+
+		method := "POST"
+		if req.Webhook != nil && req.Webhook.Method != "" {
+			method = req.Webhook.Method
+		}
+
+		webhookData := &jsapi.WebhookData{
+			Provider: "manual",
+			Method:   method,
+		}
+		if req.Webhook != nil {
+			webhookData.Body = req.Webhook.Body
+			webhookData.Headers = req.Webhook.Headers
+		}
+
+		responseChan := make(chan *jsapi.HTTPResponse, 1)
+
+		return c.execService.TriggerWebhookPipeline(ctx.Request().Context(), pipeline, webhookData, responseChan)
+
+	default:
+		return c.execService.TriggerPipeline(ctx.Request().Context(), pipeline, nil)
+	}
 }
 
 // Trigger handles POST /api/pipelines/:id/trigger - Trigger pipeline execution.
@@ -469,7 +535,7 @@ func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
 	}
 
 	if err := checkPipelineRBAC(ctx, pipeline); err != nil {
-		return err
+		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
 	// Parse optional JSON body for trigger mode.
@@ -478,42 +544,12 @@ func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
 		_ = json.NewDecoder(ctx.Request().Body).Decode(&req)
 	}
 
-	var run *storage.PipelineRun
-
-	switch req.Mode {
-	case "args":
-		run, err = c.execService.TriggerPipeline(ctx.Request().Context(), pipeline, req.Args)
-
-	case "webhook":
-		if !IsFeatureEnabled(FeatureWebhooks, c.allowedFeatures) {
-			return ctx.JSON(http.StatusForbidden, map[string]string{
-				"error": "webhooks feature is not enabled",
-			})
-		}
-
-		method := "POST"
-		if req.Webhook != nil && req.Webhook.Method != "" {
-			method = req.Webhook.Method
-		}
-
-		webhookData := &jsapi.WebhookData{
-			Provider: "manual",
-			Method:   method,
-		}
-		if req.Webhook != nil {
-			webhookData.Body = req.Webhook.Body
-			webhookData.Headers = req.Webhook.Headers
-		}
-
-		responseChan := make(chan *jsapi.HTTPResponse, 1)
-		run, err = c.execService.TriggerWebhookPipeline(ctx.Request().Context(), pipeline, webhookData, responseChan)
-
-	default:
-		// mode="" or "manual" — current behavior
-		run, err = c.execService.TriggerPipeline(ctx.Request().Context(), pipeline, nil)
-	}
-
+	run, err := c.triggerByMode(ctx, pipeline, req)
 	if err != nil {
+		if errors.Is(err, errHandled) {
+			return nil
+		}
+
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to trigger pipeline: %v", err),
 		})
@@ -537,46 +573,7 @@ func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
 func (c *APIPipelinesController) Run(ctx *echo.Context) error {
 	name := ctx.Param("name")
 
-	var args []string
-	var workdirTar io.Reader
-
-	// Try multipart streaming first (preferred: allows large workdir tars without buffering).
-	if mr, err := ctx.Request().MultipartReader(); err == nil {
-		for {
-			part, partErr := mr.NextPart()
-			if partErr == io.EOF {
-				break
-			}
-			if partErr != nil {
-				break
-			}
-
-			switch part.FormName() {
-			case "args":
-				data, _ := io.ReadAll(part)
-				_ = json.Unmarshal(data, &args)
-			case "workdir":
-				zr, zErr := zstd.NewReader(part)
-				if zErr != nil {
-					break
-				}
-				defer zr.Close()
-				workdirTar = zr
-			}
-
-			if workdirTar != nil {
-				// workdir part found, stop iterating to preserve the reader.
-				break
-			}
-		}
-	} else {
-		// Fall back to JSON body (no workdir support in this path).
-		var req struct {
-			Args []string `json:"args"`
-		}
-		_ = json.NewDecoder(ctx.Request().Body).Decode(&req)
-		args = req.Args
-	}
+	args, workdirTar := parseRunInput(ctx)
 
 	w := ctx.Response()
 
@@ -595,7 +592,7 @@ func (c *APIPipelinesController) Run(ctx *echo.Context) error {
 	}
 
 	if err := checkPipelineRBAC(ctx, pipeline); err != nil {
-		return err
+		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
 	err = c.execService.RunByNameSync(ctx.Request().Context(), name, args, workdirTar, w)
@@ -620,6 +617,50 @@ func (c *APIPipelinesController) Run(ctx *echo.Context) error {
 	}
 
 	return nil
+}
+
+// parseRunInput extracts args and an optional workdir tar from the request,
+// trying multipart streaming first then falling back to JSON body.
+func parseRunInput(ctx *echo.Context) ([]string, io.Reader) {
+	var args []string
+	var workdirTar io.Reader
+
+	if mr, err := ctx.Request().MultipartReader(); err == nil {
+		for {
+			part, partErr := mr.NextPart()
+			if partErr == io.EOF {
+				break
+			}
+			if partErr != nil {
+				break
+			}
+
+			switch part.FormName() {
+			case "args":
+				data, _ := io.ReadAll(part)
+				_ = json.Unmarshal(data, &args)
+			case "workdir":
+				zr, zErr := zstd.NewReader(part)
+				if zErr != nil {
+					break
+				}
+				defer zr.Close()
+				workdirTar = zr
+			}
+
+			if workdirTar != nil {
+				break
+			}
+		}
+	} else {
+		var req struct {
+			Args []string `json:"args"`
+		}
+		_ = json.NewDecoder(ctx.Request().Body).Decode(&req)
+		args = req.Args
+	}
+
+	return args, workdirTar
 }
 
 // RegisterRoutes registers all pipeline API routes on the given group.

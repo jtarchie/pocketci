@@ -131,33 +131,36 @@ func (r *ResumableRunner) Run(input RunInput) (*RunResult, error) {
 	// Check if this step already exists in state
 	existingStep := r.state.GetStep(stepID)
 
-	if existingStep != nil {
-		// Handle completed step - skip and return cached result
-		if existingStep.CanSkip() {
-			r.logger.Info("resume.skip_completed", "stepID", stepID, "name", input.Name)
-			return existingStep.Result, nil
-		}
+	if existingStep == nil {
+		// Run the step fresh
+		return r.runStep(stepID, input)
+	}
 
-		// Handle failed/aborted step - retry
-		if existingStep.ShouldRetry() {
-			r.logger.Info("resume.retry_step", "stepID", stepID, "name", input.Name, "previousStatus", existingStep.Status)
-			existingStep.MarkForRetry()
-			if err := r.saveState(); err != nil {
-				r.logger.Error("resume.save_state_failed.retry", "stepID", stepID, "err", err)
-			}
-			// Fall through to run fresh
-		}
+	// Handle completed step - skip and return cached result
+	if existingStep.CanSkip() {
+		r.logger.Info("resume.skip_completed", "stepID", stepID, "name", input.Name)
+		return existingStep.Result, nil
+	}
 
-		// Handle step that was in progress - try to reattach
-		if existingStep.IsResumable() {
-			r.logger.Info("resume.reattach_attempt", "stepID", stepID, "containerID", existingStep.ContainerID)
-			result, err := r.reattachToContainer(existingStep)
-			if err == nil {
-				return result, nil
-			}
-			r.logger.Warn("resume.reattach_failed", "stepID", stepID, "err", err)
-			// Fall through to run new container
+	// Handle failed/aborted step - retry
+	if existingStep.ShouldRetry() {
+		r.logger.Info("resume.retry_step", "stepID", stepID, "name", input.Name, "previousStatus", existingStep.Status)
+		existingStep.MarkForRetry()
+		if err := r.saveState(); err != nil {
+			r.logger.Error("resume.save_state_failed.retry", "stepID", stepID, "err", err)
 		}
+		// Fall through to run fresh
+	}
+
+	// Handle step that was in progress - try to reattach
+	if existingStep.IsResumable() {
+		r.logger.Info("resume.reattach_attempt", "stepID", stepID, "containerID", existingStep.ContainerID)
+		result, err := r.reattachToContainer(existingStep)
+		if err == nil {
+			return result, nil
+		}
+		r.logger.Warn("resume.reattach_failed", "stepID", stepID, "err", err)
+		// Fall through to run new container
 	}
 
 	// Run the step fresh
@@ -221,8 +224,36 @@ func (r *ResumableRunner) runStep(stepID string, input RunInput) (*RunResult, er
 		r.logger.Error("resume.save_state_failed.running", "stepID", stepID, "err", err)
 	}
 
-	// Build mounts
-	var mounts orchestra.Mounts
+	container, err := r.startStepContainer(ctx, stepID, taskID, input)
+	if err != nil {
+		return r.handleStepContainerError(step, err)
+	}
+
+	// Update step with container ID for potential reattachment
+	step.ContainerID = container.ID()
+	if err := r.saveState(); err != nil {
+		r.logger.Error("resume.save_state_failed.container_set", "stepID", stepID, "err", err)
+	}
+
+	result, err := r.waitAndCollectStepResult(ctx, container, step)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := r.saveState(); err != nil {
+		r.logger.Error("resume.save_state_failed.completed", "stepID", stepID, "err", err)
+	}
+
+	if cleanupErr := container.Cleanup(ctx); cleanupErr != nil {
+		r.logger.Error("container.cleanup", "err", cleanupErr)
+	}
+
+	return result, nil
+}
+
+// startStepContainer builds mounts/command from input and runs the container.
+func (r *ResumableRunner) startStepContainer(ctx context.Context, stepID, taskID string, input RunInput) (orchestra.Container, error) {
+	mounts := make(orchestra.Mounts, 0, len(input.Mounts))
 	for path, volume := range input.Mounts {
 		mounts = append(mounts, orchestra.Mount{
 			Name: volume.Name,
@@ -230,19 +261,16 @@ func (r *ResumableRunner) runStep(stepID string, input RunInput) (*RunResult, er
 		})
 	}
 
-	// Build command
-command := make([]string, 0, 1+len(input.Command.Args))
-		command = append(command, input.Command.Path)
+	command := make([]string, 0, 1+len(input.Command.Args))
+	command = append(command, input.Command.Path)
 	command = append(command, input.Command.Args...)
 
-	// Only create stdin reader if there's actual content
 	var stdinReader io.Reader
 	if input.Stdin != "" {
 		stdinReader = strings.NewReader(input.Stdin)
 	}
 
-	// Run the container
-	container, err := r.client.RunContainer(
+	return r.client.RunContainer(
 		ctx,
 		orchestra.Task{
 			Command: command,
@@ -259,61 +287,51 @@ command := make([]string, 0, 1+len(input.Command.Args))
 			User:       input.Command.User,
 		},
 	)
-	if err != nil {
-		r.logger.Error("container.run.create_failed", "err", err)
+}
 
+// handleStepContainerError updates step state based on the container creation error.
+func (r *ResumableRunner) handleStepContainerError(step *StepState, err error) (*RunResult, error) {
+	r.logger.Error("container.run.create_failed", "err", err)
+
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		step.Status = StepStatusAborted
+		_ = r.saveState()
+		return &RunResult{Status: RunAbort}, nil
+	}
+
+	step.Status = StepStatusFailed
+	step.Error = err.Error()
+	_ = r.saveState()
+	return nil, fmt.Errorf("could not run container: %w", err)
+}
+
+// waitAndCollectStepResult waits for the container to finish, collects logs,
+// and updates step state with the result.
+func (r *ResumableRunner) waitAndCollectStepResult(ctx context.Context, container orchestra.Container, step *StepState) (*RunResult, error) {
+	containerStatus, err := r.waitForContainer(ctx, container)
+	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			step.Status = StepStatusAborted
 			_ = r.saveState()
+			if cleanupErr := container.Cleanup(context.Background()); cleanupErr != nil { //nolint:contextcheck // cleanup after cancellation needs fresh context
+				r.logger.Error("container.cleanup.abort", "err", cleanupErr)
+			}
 			return &RunResult{Status: RunAbort}, nil
 		}
-
 		step.Status = StepStatusFailed
 		step.Error = err.Error()
 		_ = r.saveState()
-		return nil, fmt.Errorf("could not run container: %w", err)
+		return nil, fmt.Errorf("could not get container status: %w", err)
 	}
 
-	// Update step with container ID for potential reattachment
-	step.ContainerID = container.ID()
-	if err := r.saveState(); err != nil {
-		r.logger.Error("resume.save_state_failed.container_set", "stepID", stepID, "err", err)
-	}
-
-	// Wait for container to complete
-	var containerStatus orchestra.ContainerStatus
-	for {
-		containerStatus, err = container.Status(ctx)
-		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				step.Status = StepStatusAborted
-				_ = r.saveState()
-				if cleanupErr := container.Cleanup(context.Background()); cleanupErr != nil {
-					r.logger.Error("container.cleanup.abort", "err", cleanupErr)
-				}
-				return &RunResult{Status: RunAbort}, nil
-			}
-			step.Status = StepStatusFailed
-			step.Error = err.Error()
-			_ = r.saveState()
-			return nil, fmt.Errorf("could not get container status: %w", err)
-		}
-
-		if containerStatus.IsDone() {
-			break
-		}
-	}
-
-	// Get logs
 	stdout, stderr := &strings.Builder{}, &strings.Builder{}
-	err = container.Logs(ctx, stdout, stderr, false)
-	if err != nil {
+	if err := container.Logs(ctx, stdout, stderr, false); err != nil {
 		r.logger.Error("container.logs.failed", "err", err)
 
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			step.Status = StepStatusAborted
 			_ = r.saveState()
-			if cleanupErr := container.Cleanup(context.Background()); cleanupErr != nil {
+			if cleanupErr := container.Cleanup(context.Background()); cleanupErr != nil { //nolint:contextcheck // cleanup after cancellation needs fresh context
 				r.logger.Error("container.cleanup.abort", "err", cleanupErr)
 			}
 			return &RunResult{Status: RunAbort}, nil
@@ -325,7 +343,6 @@ command := make([]string, 0, 1+len(input.Command.Args))
 		return nil, fmt.Errorf("could not get container logs: %w", err)
 	}
 
-	// Build result
 	result := &RunResult{
 		Status: RunComplete,
 		Stdout: stdout.String(),
@@ -333,7 +350,6 @@ command := make([]string, 0, 1+len(input.Command.Args))
 		Code:   containerStatus.ExitCode(),
 	}
 
-	// Update step state
 	completedAt := time.Now()
 	step.CompletedAt = &completedAt
 	step.Status = StepStatusCompleted
@@ -342,16 +358,21 @@ command := make([]string, 0, 1+len(input.Command.Args))
 		step.ExitCode = &result.Code
 	}
 
-	if err := r.saveState(); err != nil {
-		r.logger.Error("resume.save_state_failed.completed", "stepID", stepID, "err", err)
-	}
-
-	// Clean up container
-	if cleanupErr := container.Cleanup(ctx); cleanupErr != nil {
-		r.logger.Error("container.cleanup", "err", cleanupErr)
-	}
-
 	return result, nil
+}
+
+// waitForContainer polls container status until it is done.
+func (r *ResumableRunner) waitForContainer(ctx context.Context, container orchestra.Container) (orchestra.ContainerStatus, error) {
+	for {
+		status, err := container.Status(ctx)
+		if err != nil {
+			return status, err
+		}
+
+		if status.IsDone() {
+			return status, nil
+		}
+	}
 }
 
 // reattachToContainer attempts to reattach to an existing container.
@@ -484,29 +505,27 @@ func (r *ResumableRunner) RunAgent(configJSON json.RawMessage) (json.RawMessage,
 	stepID := r.findOrGenerateStepID(name)
 	existingStep := r.state.GetStep(stepID)
 
-	if existingStep != nil {
-		// Completed agent — return cached result
-		if existingStep.CanSkip() {
-			r.logger.Info("resume.skip_completed_agent", "stepID", stepID, "name", name)
-			return existingStep.AgentResultJSON, nil
-		}
+	// Completed agent — return cached result
+	if existingStep != nil && existingStep.CanSkip() {
+		r.logger.Info("resume.skip_completed_agent", "stepID", stepID, "name", name)
+		return existingStep.AgentResultJSON, nil
+	}
 
-		// Failed/aborted agent — retry from scratch
-		if existingStep.ShouldRetry() {
-			r.logger.Info("resume.retry_agent", "stepID", stepID, "name", name, "previousStatus", existingStep.Status)
-			existingStep.MarkForRetry()
-			if err := r.saveState(); err != nil {
-				r.logger.Error("resume.save_state_failed.agent_retry", "stepID", stepID, "err", err)
-			}
+	// Failed/aborted agent — retry from scratch
+	if existingStep != nil && existingStep.ShouldRetry() {
+		r.logger.Info("resume.retry_agent", "stepID", stepID, "name", name, "previousStatus", existingStep.Status)
+		existingStep.MarkForRetry()
+		if err := r.saveState(); err != nil {
+			r.logger.Error("resume.save_state_failed.agent_retry", "stepID", stepID, "err", err)
 		}
+	}
 
-		// Running agent (interrupted mid-conversation) — treat as needing re-run
-		if existingStep.Status == StepStatusRunning {
-			r.logger.Info("resume.agent_was_running", "stepID", stepID, "name", name)
-			existingStep.MarkForRetry()
-			if err := r.saveState(); err != nil {
-				r.logger.Error("resume.save_state_failed.agent_running", "stepID", stepID, "err", err)
-			}
+	// Running agent (interrupted mid-conversation) — treat as needing re-run
+	if existingStep != nil && existingStep.Status == StepStatusRunning {
+		r.logger.Info("resume.agent_was_running", "stepID", stepID, "name", name)
+		existingStep.MarkForRetry()
+		if err := r.saveState(); err != nil {
+			r.logger.Error("resume.save_state_failed.agent_running", "stepID", stepID, "err", err)
 		}
 	}
 

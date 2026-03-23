@@ -112,45 +112,9 @@ func (j *JS) Execute(ctx context.Context, source string, driver orchestra.Driver
 
 // ExecuteWithOptions runs a pipeline with the given options.
 func (j *JS) ExecuteWithOptions(ctx context.Context, source string, driver orchestra.Driver, storage storage.Driver, opts ExecuteOptions) error {
-	var r runner.Runner
-
-	if opts.Resume {
-		resumableRunner, err := runner.NewResumableRunner(ctx, driver, storage, j.logger, opts.Namespace, runner.ResumeOptions{
-			RunID:  opts.RunID,
-			Resume: opts.Resume,
-		})
-		if err != nil {
-			return fmt.Errorf("could not create resumable runner: %w", err)
-		}
-
-		if opts.SecretsManager != nil {
-			resumableRunner.SetSecretsManager(opts.SecretsManager, opts.PipelineID)
-		}
-
-		if opts.PreseededVolumes != nil {
-			resumableRunner.SetPreseededVolumes(opts.PreseededVolumes)
-		}
-
-		if opts.OutputCallback != nil {
-			resumableRunner.SetOutputCallback(opts.OutputCallback)
-		}
-
-		r = resumableRunner
-	} else {
-		pipelineRunner := runner.NewPipelineRunner(ctx, driver, storage, j.logger, opts.Namespace, opts.RunID)
-		if opts.SecretsManager != nil {
-			pipelineRunner.SetSecretsManager(opts.SecretsManager, opts.PipelineID)
-		}
-
-		if opts.PreseededVolumes != nil {
-			pipelineRunner.SetPreseededVolumes(opts.PreseededVolumes)
-		}
-
-		if opts.OutputCallback != nil {
-			pipelineRunner.SetOutputCallback(opts.OutputCallback)
-		}
-
-		r = pipelineRunner
+	r, err := j.createRunner(ctx, driver, storage, opts)
+	if err != nil {
+		return err
 	}
 
 	finalSource, err := TranspileAndValidate(source)
@@ -158,42 +122,18 @@ func (j *JS) ExecuteWithOptions(ctx context.Context, source string, driver orche
 		return err
 	}
 
-	program, err := goja.Compile(
-		"main.js",
-		finalSource,
-		true,
-	)
+	program, err := goja.Compile("main.js", finalSource, true)
 	if err != nil {
 		return fmt.Errorf("could not compile: %w", err)
 	}
 
-	// this is setup to build the pipeline in a goja jsVM
 	jsVM := goja.New()
 	jsVM.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
 
 	if timeout, ok := ctx.Deadline(); ok {
-		// https://github.com/dop251/goja?tab=readme-ov-file#interrupting
 		time.AfterFunc(time.Until(timeout), func() {
 			jsVM.Interrupt("context deadline exceeded")
 		})
-	}
-
-	registry := require.NewRegistry()
-	registry.Enable(jsVM)
-	registry.RegisterNativeModule("console", console.RequireWithPrinter(jsapi.NewPrinter(
-		j.logger.WithGroup("console.log"),
-	)))
-
-	_ = jsVM.Set("console", require.Require(jsVM, "console"))
-
-	err = jsVM.Set("assert", jsapi.NewAssert(jsVM, j.logger))
-	if err != nil {
-		return fmt.Errorf("could not set assert: %w", err)
-	}
-
-	err = jsVM.Set("YAML", jsapi.NewYAML(jsVM, j.logger))
-	if err != nil {
-		return fmt.Errorf("could not set YAML: %w", err)
 	}
 
 	runtime := NewRuntime(jsVM, r, opts.Namespace, opts.RunID)
@@ -202,12 +142,77 @@ func (j *JS) ExecuteWithOptions(ctx context.Context, source string, driver orche
 	runtime.ctx = ctx
 	runtime.storage = storage
 
-	err = jsVM.Set("runtime", runtime)
-	if err != nil {
+	if err := j.setupJSVM(ctx, jsVM, runtime, driver, storage, opts); err != nil {
+		return err
+	}
+
+	return j.runPipeline(ctx, jsVM, program, runtime, r)
+}
+
+// createRunner initialises the appropriate pipeline runner based on opts.
+func (j *JS) createRunner(ctx context.Context, driver orchestra.Driver, storage storage.Driver, opts ExecuteOptions) (runner.Runner, error) {
+	var r runner.Runner
+
+	if !opts.Resume {
+		r = runner.NewPipelineRunner(ctx, driver, storage, j.logger, opts.Namespace, opts.RunID)
+	} else {
+		resumableRunner, err := runner.NewResumableRunner(ctx, driver, storage, j.logger, opts.Namespace, runner.ResumeOptions{
+			RunID:  opts.RunID,
+			Resume: opts.Resume,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("could not create resumable runner: %w", err)
+		}
+
+		r = resumableRunner
+	}
+
+	if opts.SecretsManager != nil {
+		r.SetSecretsManager(opts.SecretsManager, opts.PipelineID)
+	}
+
+	if opts.PreseededVolumes != nil {
+		r.SetPreseededVolumes(opts.PreseededVolumes)
+	}
+
+	if opts.OutputCallback != nil {
+		r.SetOutputCallback(opts.OutputCallback)
+	}
+
+	return r, nil
+}
+
+// setupJSVM registers all global JS bindings (assert, YAML, runtime, notify,
+// nativeResources, storage, fetch, http, webhookTrigger, webhookParams,
+// pipelineContext) onto the goja VM.
+func (j *JS) setupJSVM(
+	ctx context.Context,
+	jsVM *goja.Runtime,
+	runtime *Runtime,
+	driver orchestra.Driver,
+	storage storage.Driver,
+	opts ExecuteOptions,
+) error {
+	registry := require.NewRegistry()
+	registry.Enable(jsVM)
+	registry.RegisterNativeModule("console", console.RequireWithPrinter(jsapi.NewPrinter(
+		j.logger.WithGroup("console.log"),
+	)))
+
+	_ = jsVM.Set("console", require.Require(jsVM, "console"))
+
+	if err := jsVM.Set("assert", jsapi.NewAssert(jsVM, j.logger)); err != nil {
+		return fmt.Errorf("could not set assert: %w", err)
+	}
+
+	if err := jsVM.Set("YAML", jsapi.NewYAML(jsVM, j.logger)); err != nil {
+		return fmt.Errorf("could not set YAML: %w", err)
+	}
+
+	if err := jsVM.Set("runtime", runtime); err != nil {
 		return fmt.Errorf("could not set runtime: %w", err)
 	}
 
-	// Set up notification runtime (disabled when feature is gated)
 	notifier := jsapi.NewNotifier(j.logger)
 	notifier.Disabled = opts.DisableNotifications
 	if opts.SecretsManager != nil {
@@ -215,69 +220,51 @@ func (j *JS) ExecuteWithOptions(ctx context.Context, source string, driver orche
 	}
 	notifyRuntime := jsapi.NewNotifyRuntime(ctx, jsVM, notifier, runtime.promises, runtime.tasks)
 
-	err = jsVM.Set("notify", notifyRuntime)
-	if err != nil {
+	if err := jsVM.Set("notify", notifyRuntime); err != nil {
 		return fmt.Errorf("could not set notify: %w", err)
 	}
 
-	// Set up native resource runner
 	resourceRunner := runner.NewResourceRunner(ctx, j.logger)
 	if opts.SecretsManager != nil {
 		resourceRunner.SetSecretsManager(opts.SecretsManager, opts.PipelineID)
 	}
 
-	err = jsVM.Set("nativeResources", resourceRunner)
-	if err != nil {
+	if err := jsVM.Set("nativeResources", resourceRunner); err != nil {
 		return fmt.Errorf("could not set nativeResources: %w", err)
 	}
 
-	// Wrap storage to inject context automatically for JavaScript calls
-	storageWrapper := &storageContextWrapper{
-		driver: storage,
-		ctx:    ctx,
-	}
-	err = jsVM.Set("storage", storageWrapper)
-	if err != nil {
+	storageWrapper := &storageContextWrapper{driver: storage, ctx: ctx}
+	if err := jsVM.Set("storage", storageWrapper); err != nil {
 		return fmt.Errorf("could not set storage: %w", err)
 	}
 
-	// Set up fetch runtime for outbound HTTP requests
 	fetchRuntime := jsapi.NewFetchRuntime(ctx, jsVM, runtime.promises, runtime.tasks, opts.FetchTimeout, opts.FetchMaxResponseBytes)
 	fetchRuntime.Disabled = opts.DisableFetch
 
-	err = jsVM.Set("fetch", fetchRuntime.Fetch)
-	if err != nil {
+	if err := jsVM.Set("fetch", fetchRuntime.Fetch); err != nil {
 		return fmt.Errorf("could not set fetch: %w", err)
 	}
 
-	// Set up HTTP runtime for webhook support
 	httpRuntime := jsapi.NewHTTPRuntime(jsVM, opts.WebhookData, opts.ResponseChan)
-
-	err = jsVM.Set("http", httpRuntime)
-	if err != nil {
+	if err := jsVM.Set("http", httpRuntime); err != nil {
 		return fmt.Errorf("could not set http: %w", err)
 	}
 
-	// webhookTrigger evaluates an expr-lang expression against the current webhook data.
-	// Returns true when no webhook is active (manual trigger) so jobs always run.
-	err = jsVM.Set("webhookTrigger", func(expression string) bool {
+	if err := j.setupWebhookBindings(jsVM, opts); err != nil {
+		return err
+	}
+
+	return j.setupPipelineContext(jsVM, runtime, driver, opts)
+}
+
+// setupWebhookBindings registers webhookTrigger and webhookParams on the VM.
+func (j *JS) setupWebhookBindings(jsVM *goja.Runtime, opts ExecuteOptions) error {
+	if err := jsVM.Set("webhookTrigger", func(expression string) bool {
 		if opts.WebhookData == nil {
 			return true
 		}
 
-		env := filter.WebhookEnv{
-			Provider:  opts.WebhookData.Provider,
-			EventType: opts.WebhookData.EventType,
-			Method:    opts.WebhookData.Method,
-			Headers:   opts.WebhookData.Headers,
-			Query:     opts.WebhookData.Query,
-			Body:      opts.WebhookData.Body,
-		}
-
-		var payload map[string]any
-		if jsonErr := json.Unmarshal([]byte(opts.WebhookData.Body), &payload); jsonErr == nil {
-			env.Payload = payload
-		}
+		env := buildWebhookEnv(opts.WebhookData)
 
 		result, evalErr := filter.Evaluate(expression, env)
 		if evalErr != nil {
@@ -287,34 +274,18 @@ func (j *JS) ExecuteWithOptions(ctx context.Context, source string, driver orche
 		}
 
 		return result
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("could not set webhookTrigger: %w", err)
 	}
 
-	// webhookParams evaluates a map of expr-lang string expressions against the current
-	// webhook data, returning a map of resolved string values. Returns an empty map when
-	// no webhook is active so callers can always treat the result as a plain string map.
-	err = jsVM.Set("webhookParams", func(paramsExprs map[string]string) map[string]string {
+	if err := jsVM.Set("webhookParams", func(paramsExprs map[string]string) map[string]string {
 		result := make(map[string]string, len(paramsExprs))
 
 		if opts.WebhookData == nil {
 			return result
 		}
 
-		env := filter.WebhookEnv{
-			Provider:  opts.WebhookData.Provider,
-			EventType: opts.WebhookData.EventType,
-			Method:    opts.WebhookData.Method,
-			Headers:   opts.WebhookData.Headers,
-			Query:     opts.WebhookData.Query,
-			Body:      opts.WebhookData.Body,
-		}
-
-		var payload map[string]any
-		if jsonErr := json.Unmarshal([]byte(opts.WebhookData.Body), &payload); jsonErr == nil {
-			env.Payload = payload
-		}
+		env := buildWebhookEnv(opts.WebhookData)
 
 		for key, expression := range paramsExprs {
 			val, evalErr := filter.EvaluateString(expression, env)
@@ -328,12 +299,34 @@ func (j *JS) ExecuteWithOptions(ctx context.Context, source string, driver orche
 		}
 
 		return result
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("could not set webhookParams: %w", err)
 	}
 
-	// Expose pipeline context to JavaScript (runID, pipelineID, etc.)
+	return nil
+}
+
+// buildWebhookEnv constructs a filter.WebhookEnv from webhook data.
+func buildWebhookEnv(wd *jsapi.WebhookData) filter.WebhookEnv {
+	env := filter.WebhookEnv{
+		Provider:  wd.Provider,
+		EventType: wd.EventType,
+		Method:    wd.Method,
+		Headers:   wd.Headers,
+		Query:     wd.Query,
+		Body:      wd.Body,
+	}
+
+	var payload map[string]any
+	if jsonErr := json.Unmarshal([]byte(wd.Body), &payload); jsonErr == nil {
+		env.Payload = payload
+	}
+
+	return env
+}
+
+// setupPipelineContext registers the pipelineContext global on the VM.
+func (j *JS) setupPipelineContext(jsVM *goja.Runtime, runtime *Runtime, driver orchestra.Driver, opts ExecuteOptions) error {
 	triggeredBy := "manual"
 	if opts.WebhookData != nil {
 		triggeredBy = "webhook"
@@ -354,11 +347,17 @@ func (j *JS) ExecuteWithOptions(ctx context.Context, source string, driver orche
 	if driver != nil {
 		pipelineContext["driverName"] = driver.Name()
 	}
-	err = jsVM.Set("pipelineContext", pipelineContext)
-	if err != nil {
+
+	if err := jsVM.Set("pipelineContext", pipelineContext); err != nil {
 		return fmt.Errorf("could not set pipelineContext: %w", err)
 	}
 
+	return nil
+}
+
+// runPipeline runs the compiled program, executes the pipeline function, and
+// handles promise resolution and cleanup.
+func (j *JS) runPipeline(ctx context.Context, jsVM *goja.Runtime, program *goja.Program, runtime *Runtime, r runner.Runner) error {
 	pipeline, err := jsVM.RunProgram(program)
 	if err != nil {
 		defer jsVM.ClearInterrupt()
@@ -366,7 +365,6 @@ func (j *JS) ExecuteWithOptions(ctx context.Context, source string, driver orche
 		return fmt.Errorf("could not run program: %w", err)
 	}
 
-	// let's run the pipeline
 	pipelineFunc, found := goja.AssertFunction(pipeline)
 	if !found {
 		return ErrPipelineNotFunction
@@ -388,7 +386,6 @@ func (j *JS) ExecuteWithOptions(ctx context.Context, source string, driver orche
 
 	err = runtime.Wait()
 	if err != nil {
-		// Mark in-progress steps as aborted if using resumable runner
 		if resumable, ok := r.(*runner.ResumableRunner); ok {
 			resumable.MarkInProgressAsAborted()
 		}
@@ -396,18 +393,14 @@ func (j *JS) ExecuteWithOptions(ctx context.Context, source string, driver orche
 		return fmt.Errorf("pipeline did not successfully execute: %w", err)
 	}
 
-	// If the context was cancelled, mark any remaining in-progress steps as aborted
 	if ctx.Err() != nil {
 		if resumable, ok := r.(*runner.ResumableRunner); ok {
 			resumable.MarkInProgressAsAborted()
 		}
 	}
 
-	// Cleanup volumes after pipeline completes - this triggers cache persistence
-	err = r.CleanupVolumes()
-	if err != nil {
-		j.logger.Error("volume.cleanup.failed", "err", err)
-		// Don't fail the pipeline on volume cleanup errors, just log
+	if cleanupErr := r.CleanupVolumes(); cleanupErr != nil {
+		j.logger.Error("volume.cleanup.failed", "err", cleanupErr)
 	}
 
 	if promise.State() == goja.PromiseStateRejected {
@@ -434,7 +427,7 @@ var (
 // for JavaScript calls that don't pass context explicitly.
 type storageContextWrapper struct {
 	driver storage.Driver
-	ctx    context.Context
+	ctx    context.Context //nolint:containedctx // deliberate: JS VM cannot pass context parameters
 }
 
 // Set wraps the storage Set method, injecting context automatically.
