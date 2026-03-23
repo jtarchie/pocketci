@@ -617,12 +617,14 @@ func (r *Runtime) Wait() error {
 		close(r.tasks)
 	}()
 
+	var firstErr error
+
 	for task := range r.tasks {
 		err := task()
-		if err != nil {
-			return fmt.Errorf("could not wait: %w", err)
+		if err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("could not wait: %w", err)
 		}
 	}
 
-	return nil
+	return firstErr
 }

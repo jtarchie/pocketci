@@ -533,7 +533,7 @@ func (h *Hetzner) ensureSSHKey(ctx context.Context) (*hcloud.SSHKey, string, err
 		h.logger.Debug("hetzner.ssh_key.exists", "name", keyName, "id", existingKey.ID)
 
 		// Try to find the local key file
-			sshKeyPath := filepath.Join(os.TempDir(), "pocketci-hetzner-"+h.namespace)
+		sshKeyPath := filepath.Join(os.TempDir(), "pocketci-hetzner-"+h.namespace)
 		if _, err := os.Stat(sshKeyPath); err == nil {
 			return existingKey, sshKeyPath, nil
 		}
@@ -601,7 +601,7 @@ func (h *Hetzner) waitForServer(ctx context.Context, serverID int64) (*hcloud.Se
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-timeout:
-				return nil, errors.New("timeout waiting for server to become running")
+			return nil, errors.New("timeout waiting for server to become running")
 		case <-ticker.C:
 			server, _, err := h.client.Server.GetByID(ctx, serverID)
 			if err != nil {

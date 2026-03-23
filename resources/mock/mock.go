@@ -78,7 +78,7 @@ func (m *Mock) Check(_ context.Context, req resources.CheckRequest) (resources.C
 func (m *Mock) In(_ context.Context, destDir string, req resources.InRequest) (resources.InResponse, error) {
 	version := req.Version["version"]
 	if version == "" {
-			return resources.InResponse{}, errors.New("version is required")
+		return resources.InResponse{}, errors.New("version is required")
 	}
 
 	// Create version file

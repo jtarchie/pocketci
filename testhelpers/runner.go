@@ -107,9 +107,16 @@ func (c *Runner) Run(logger *slog.Logger) error {
 
 	// Handle signals in a separate goroutine
 	go func() {
-		sig := <-sigs
-		logger.Debug("execution.canceled", "signal", sig)
-		cancel() // Cancel the context when signal is received
+		select {
+		case sig, ok := <-sigs:
+			if !ok {
+				return
+			}
+
+			logger.Debug("execution.canceled", "signal", sig)
+			cancel() // Cancel the context when signal is received
+		case <-ctx.Done():
+		}
 	}()
 
 	pipeline, err := loadPipeline(pipelinePath)

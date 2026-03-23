@@ -9,23 +9,23 @@ linters:
     - staticcheck
     - unused
     # Correctness
-    - errorlint      # %v vs %w, errors.Is/As instead of == / type assertions
-    - musttag        # JSON tags required on marshaled structs (Goja VM requirement)
-    - recvcheck      # Consistent pointer vs value receivers
-    - wastedassign   # Assignments whose values are never read
-    - nolintlint     # Stale or malformed //nolint directives
+    - errorlint # %v vs %w, errors.Is/As instead of == / type assertions
+    - musttag # JSON tags required on marshaled structs (Goja VM requirement)
+    - recvcheck # Consistent pointer vs value receivers
+    - wastedassign # Assignments whose values are never read
+    - nolintlint # Stale or malformed //nolint directives
     # Style / consistency
-    - sloglint       # Consistent slog usage (DiscardHandler, key-value pairs)
+    - sloglint # Consistent slog usage (DiscardHandler, key-value pairs)
     # Performance
-    - perfsprint     # Replace fmt.Sprintf/Errorf with faster alternatives
-    - prealloc       # Pre-allocate slices where capacity is known
+    - perfsprint # Replace fmt.Sprintf/Errorf with faster alternatives
+    - prealloc # Pre-allocate slices where capacity is known
     # Complexity
-    - cyclop         # Cyclomatic complexity per function
-    - gocognit       # Cognitive complexity (deeply nested / hard-to-read logic)
-    - nestif         # Deeply nested if blocks
+    - cyclop # Cyclomatic complexity per function
+    - gocognit # Cognitive complexity (deeply nested / hard-to-read logic)
+    - nestif # Deeply nested if blocks
     # Concurrency / context safety
-    - contextcheck   # context.Context must be propagated, not ignored
-    - containedctx   # context.Context must not be stored in structs
+    - contextcheck # context.Context must be propagated, not ignored
+    - containedctx # context.Context must not be stored in structs
 
   settings:
     sloglint:

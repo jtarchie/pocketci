@@ -52,6 +52,7 @@ require (
 	github.com/samber/lo v1.53.0
 	github.com/schollz/progressbar/v3 v3.19.0
 	github.com/superfly/fly-go v0.3.1
+	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.49.0
 	golang.org/x/net v0.52.0
 	golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb

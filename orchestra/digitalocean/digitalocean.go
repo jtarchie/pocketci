@@ -519,7 +519,7 @@ func (d *DigitalOcean) ensureSSHKey(ctx context.Context) (int, string, error) {
 			d.logger.Debug("digitalocean.ssh_key.exists", "name", keyName, "id", key.ID)
 
 			// Try to find the local key file
-				sshKeyPath := filepath.Join(os.TempDir(), "pocketci-do-"+d.namespace)
+			sshKeyPath := filepath.Join(os.TempDir(), "pocketci-do-"+d.namespace)
 			if _, err := os.Stat(sshKeyPath); err == nil {
 				return key.ID, sshKeyPath, nil
 			}
@@ -587,7 +587,7 @@ func (d *DigitalOcean) waitForDroplet(ctx context.Context, dropletID int) (*godo
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-timeout:
-				return nil, errors.New("timeout waiting for droplet to become active")
+			return nil, errors.New("timeout waiting for droplet to become active")
 		case <-ticker.C:
 			droplet, _, err := d.client.Droplets.Get(ctx, dropletID)
 			if err != nil {
