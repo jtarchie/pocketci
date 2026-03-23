@@ -13,6 +13,7 @@ import (
 
 	"github.com/pkg/sftp"
 	fly "github.com/superfly/fly-go"
+	"github.com/superfly/fly-go/flaps"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/jtarchie/pocketci/cache"
@@ -76,7 +77,7 @@ func (f *Fly) launchHelperMachine(ctx context.Context, vol *Volume) (*fly.Machin
 			// Resume failed – fall through to destroy and re-create below.
 			f.logger.Warn("fly.cache.helper.resume.failed", "machine", existingID, "err", startErr)
 			cleanupHelper()
-		} else if waitErr := f.client.Wait(ctx, f.appName, &fly.Machine{ID: existingID}, "started", 2*time.Minute); waitErr != nil {
+		} else if waitErr := f.client.Wait(ctx, f.appName, existingID, flaps.WithWaitStates("started"), flaps.WithWaitTimeout(2*time.Minute)); waitErr != nil {
 			f.logger.Warn("fly.cache.helper.resume.timeout", "machine", existingID, "err", waitErr)
 			cleanupHelper()
 		} else if machine, getErr := f.client.Get(ctx, f.appName, existingID); getErr != nil || machine.PrivateIP == "" {
@@ -154,7 +155,7 @@ func (f *Fly) launchHelperMachine(ctx context.Context, vol *Volume) (*fly.Machin
 	f.mu.Unlock()
 
 	// Wait for the machine to start
-	err = f.client.Wait(ctx, f.appName, machine, "started", 2*time.Minute)
+	err = f.client.Wait(ctx, f.appName, machine.ID, flaps.WithWaitStates("started"), flaps.WithWaitTimeout(2*time.Minute))
 	if err != nil {
 		// Try to clean up the machine
 		_ = f.client.Destroy(ctx, f.appName, fly.RemoveMachineInput{
@@ -212,7 +213,7 @@ func (f *Fly) destroyHelperMachine(ctx context.Context, machineID string) {
 		_ = f.client.Kill(ctx, f.appName, machineID)
 
 		machine := &fly.Machine{ID: machineID}
-		_ = f.client.Wait(ctx, f.appName, machine, "stopped", 30*time.Second)
+		_ = f.client.Wait(ctx, f.appName, machine.ID, flaps.WithWaitStates("stopped"), flaps.WithWaitTimeout(30*time.Second))
 
 		_ = f.client.Destroy(ctx, f.appName, fly.RemoveMachineInput{ID: machineID, Kill: true}, "")
 
@@ -221,7 +222,7 @@ func (f *Fly) destroyHelperMachine(ctx context.Context, machineID string) {
 
 	// Wait for the machine to reach a fully suspended state.
 	machine := &fly.Machine{ID: machineID}
-	if err := f.client.Wait(ctx, f.appName, machine, "suspended", 30*time.Second); err != nil {
+	if err := f.client.Wait(ctx, f.appName, machine.ID, flaps.WithWaitStates("suspended"), flaps.WithWaitTimeout(30*time.Second)); err != nil {
 		f.logger.Warn("fly.cache.helper.suspend.wait", "machine", machineID, "err", err)
 	}
 

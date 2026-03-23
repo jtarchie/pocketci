@@ -11,6 +11,7 @@ import (
 
 	"github.com/jtarchie/pocketci/orchestra"
 	fly "github.com/superfly/fly-go"
+	"github.com/superfly/fly-go/flaps"
 )
 
 // FlySandbox keeps a Fly machine alive with "tail -f /dev/null" and dispatches
@@ -111,7 +112,7 @@ func (s *FlySandbox) Cleanup(ctx context.Context) error {
 
 	if machine.State == "started" || machine.State == "starting" {
 		_ = s.driver.client.Kill(ctx, s.driver.appName, s.machineID)
-		_ = s.driver.client.Wait(ctx, s.driver.appName, machine, "stopped", 30*time.Second)
+		_ = s.driver.client.Wait(ctx, s.driver.appName, machine.ID, flaps.WithWaitStates("stopped"), flaps.WithWaitTimeout(30*time.Second))
 	}
 
 	return s.driver.client.Destroy(ctx, s.driver.appName, fly.RemoveMachineInput{
@@ -214,7 +215,7 @@ func (f *Fly) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 	f.mu.Unlock()
 
 	// Wait for the machine to be in the started state.
-	if err := f.client.Wait(ctx, f.appName, machine, "started", 2*time.Minute); err != nil {
+	if err := f.client.Wait(ctx, f.appName, machine.ID, flaps.WithWaitStates("started"), flaps.WithWaitTimeout(2*time.Minute)); err != nil {
 		return nil, fmt.Errorf("sandbox: machine did not start: %w", err)
 	}
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	fly "github.com/superfly/fly-go"
+	"github.com/superfly/fly-go/flaps"
 
 	"github.com/jtarchie/pocketci/orchestra"
 )
@@ -59,7 +60,7 @@ func (c *Container) waitForStop() {
 	// This is much more efficient and avoids rate limiting.
 	machine := &fly.Machine{ID: c.machineID, InstanceID: c.instanceID}
 
-	err := c.driver.client.Wait(ctx, c.driver.appName, machine, "stopped", 5*time.Minute)
+	err := c.driver.client.Wait(ctx, c.driver.appName, machine.ID, flaps.WithWaitStates("stopped"), flaps.WithWaitTimeout(5*time.Minute))
 	if err != nil {
 		c.driver.logger.Warn("fly.machine.wait.error", "machine", c.machineID, "err", err)
 	}
@@ -234,7 +235,7 @@ func (c *Container) Cleanup(ctx context.Context) error {
 		}
 
 		// Wait briefly for stop
-		_ = c.driver.client.Wait(ctx, c.driver.appName, machine, "stopped", 30*time.Second)
+		_ = c.driver.client.Wait(ctx, c.driver.appName, machine.ID, flaps.WithWaitStates("stopped"), flaps.WithWaitTimeout(30*time.Second))
 	}
 
 	err = c.driver.client.Destroy(ctx, c.driver.appName, fly.RemoveMachineInput{

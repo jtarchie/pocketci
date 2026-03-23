@@ -6,6 +6,7 @@ import (
 	"time"
 
 	fly "github.com/superfly/fly-go"
+	"github.com/superfly/fly-go/flaps"
 
 	"github.com/jtarchie/pocketci/orchestra"
 )
@@ -41,7 +42,7 @@ func (v *Volume) Cleanup(ctx context.Context) error {
 		_ = v.driver.client.Kill(ctx, v.driver.appName, helperID)
 
 		machine := &fly.Machine{ID: helperID}
-		_ = v.driver.client.Wait(ctx, v.driver.appName, machine, "stopped", 30*time.Second)
+		_ = v.driver.client.Wait(ctx, v.driver.appName, machine.ID, flaps.WithWaitStates("stopped"), flaps.WithWaitTimeout(30*time.Second))
 
 		_ = v.driver.client.Destroy(ctx, v.driver.appName, fly.RemoveMachineInput{
 			ID:   helperID,

@@ -170,7 +170,7 @@ func (f *Fly) Close() error {
 		_ = f.client.Kill(ctx, f.appName, machineID)
 
 		machine := &fly.Machine{ID: machineID}
-		_ = f.client.Wait(ctx, f.appName, machine, "stopped", 30*time.Second)
+		_ = f.client.Wait(ctx, f.appName, machine.ID, flaps.WithWaitStates("stopped"), flaps.WithWaitTimeout(30*time.Second))
 
 		_ = f.client.Destroy(ctx, f.appName, fly.RemoveMachineInput{
 			ID:   machineID,
