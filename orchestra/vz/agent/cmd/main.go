@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -103,7 +104,7 @@ func handleConnection(conn net.Conn) {
 		case "exec-status":
 			resp = handleExecStatus(req)
 		default:
-			resp = response{OK: false, Error: fmt.Sprintf("unknown request type: %s", req.Type)}
+			resp = response{OK: false, Error: "unknown request type: " + req.Type}
 		}
 
 		if err := encoder.Encode(resp); err != nil {
@@ -149,7 +150,8 @@ func handleExec(req request) response {
 		exitCode := 0
 
 		if err := cmd.Wait(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
 				exitCode = exitErr.ExitCode()
 			} else {
 				exitCode = 1
