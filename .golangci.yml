@@ -2,6 +2,12 @@ version: "2"
 
 linters:
   enable:
+    # default
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
     # Correctness
     - errorlint      # %v vs %w, errors.Is/As instead of == / type assertions
     - musttag        # JSON tags required on marshaled structs (Goja VM requirement)
