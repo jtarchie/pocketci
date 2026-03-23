@@ -301,6 +301,27 @@ func (s *S3) UpdatePipelineResumeEnabled(ctx context.Context, pipelineID string,
 	return nil
 }
 
+// UpdatePipelinePaused updates the paused flag for a pipeline.
+func (s *S3) UpdatePipelinePaused(ctx context.Context, pipelineID string, paused bool) error {
+	pipeline, err := s.GetPipeline(ctx, pipelineID)
+	if err != nil {
+		return err
+	}
+
+	pipeline.Paused = paused
+
+	data, err := json.Marshal(pipeline)
+	if err != nil {
+		return fmt.Errorf("failed to marshal pipeline: %w", err)
+	}
+
+	if err := s.putJSON(ctx, s.pipelineByIDKey(pipelineID), data); err != nil {
+		return fmt.Errorf("failed to update pipeline: %w", err)
+	}
+
+	return nil
+}
+
 // UpdatePipelineRBACExpression updates the RBAC expression for a pipeline.
 func (s *S3) UpdatePipelineRBACExpression(ctx context.Context, pipelineID, expression string) error {
 	pipeline, err := s.GetPipeline(ctx, pipelineID)

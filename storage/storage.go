@@ -13,6 +13,9 @@ import (
 // ErrNotFound is returned when a requested key does not exist.
 var ErrNotFound = errors.New("not found")
 
+// ErrPipelinePaused is returned when a run is attempted on a paused pipeline.
+var ErrPipelinePaused = errors.New("pipeline is paused")
+
 // ContentType represents the format of a pipeline's content.
 type ContentType = string
 
@@ -30,6 +33,7 @@ type Pipeline struct {
 	ContentType    ContentType `json:"content_type"`
 	Driver         string      `json:"driver"`
 	ResumeEnabled  bool        `json:"resume_enabled"`
+	Paused         bool        `json:"paused"`
 	RBACExpression string      `json:"rbac_expression,omitempty"`
 	CreatedAt      time.Time   `json:"created_at"`
 	UpdatedAt      time.Time   `json:"updated_at"`
@@ -87,6 +91,7 @@ type Driver interface {
 	// Pipeline CRUD operations
 	SavePipeline(ctx context.Context, name, content, driver, contentType string) (*Pipeline, error)
 	UpdatePipelineResumeEnabled(ctx context.Context, pipelineID string, enabled bool) error
+	UpdatePipelinePaused(ctx context.Context, pipelineID string, paused bool) error
 	UpdatePipelineRBACExpression(ctx context.Context, pipelineID, expression string) error
 	GetPipeline(ctx context.Context, id string) (*Pipeline, error)
 	GetPipelineByName(ctx context.Context, name string) (*Pipeline, error)

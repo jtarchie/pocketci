@@ -18,6 +18,14 @@
       class="text-blue-600 dark:text-blue-400 hover:underline font-medium">
       {{ .Pipeline.Name }}
     </a>
+    {{ if .Pipeline.Paused }}
+    <span
+      class="inline-flex items-center ml-2 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+      role="status"
+      aria-label="Paused">
+      Paused
+    </span>
+    {{ end }}
   </td>
   <td class="px-6 py-4 text-gray-600 dark:text-gray-300">
     <code
@@ -109,7 +117,8 @@
       hx-post="/api/pipelines/{{ .Pipeline.ID }}/trigger"
       hx-swap="none"
       data-pipeline-name="{{ .Pipeline.Name }}"
-      title="Trigger pipeline execution">
+      {{ if .Pipeline.Paused }}disabled{{ end }}
+      title="{{ if .Pipeline.Paused }}Pipeline is paused{{ else }}Trigger pipeline execution{{ end }}">
       <span class="btn-text">Trigger</span>
       <span class="htmx-indicator">
         <svg class="animate-spin h-4 w-4 inline"

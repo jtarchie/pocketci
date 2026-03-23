@@ -117,6 +117,14 @@ func (c *APIWebhooksController) Trigger(ctx *echo.Context) error {
 		})
 	}
 
+	if pipeline.Paused {
+		logger.Info("webhook.pipeline_paused")
+
+		return ctx.JSON(http.StatusConflict, map[string]string{
+			"error": "pipeline is paused",
+		})
+	}
+
 	webhookSecret, secretErr := c.resolveWebhookSecret(ctx, pipeline, logger)
 	if secretErr != nil {
 		return nil //nolint:nilerr // helper already wrote the HTTP response

@@ -1,0 +1,72 @@
+package commands
+
+import (
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net/url"
+	"os"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/go-resty/resty/v2"
+	"github.com/jtarchie/pocketci/storage"
+)
+
+type ListPipelines struct {
+	ServerURL  string `env:"CI_SERVER_URL"  help:"URL of the CI server"                                        required:"" short:"s"`
+	AuthToken  string `env:"CI_AUTH_TOKEN"  help:"Bearer token for OAuth-authenticated servers"                short:"t"`
+	ConfigFile string `env:"CI_AUTH_CONFIG" help:"Path to auth config file (default: ~/.pocketci/auth.config)" short:"c"`
+}
+
+func (c *ListPipelines) Run(_ *slog.Logger) error {
+	serverURL := strings.TrimSuffix(c.ServerURL, "/")
+	endpoint := serverURL + "/api/pipelines"
+
+	client := resty.New()
+
+	if parsed, err := url.Parse(serverURL); err == nil && parsed.User != nil {
+		password, _ := parsed.User.Password()
+		client.SetBasicAuth(parsed.User.Username(), password)
+		parsed.User = nil
+		endpoint = parsed.String() + "/api/pipelines"
+	}
+
+	token := ResolveAuthToken(c.AuthToken, c.ConfigFile, c.ServerURL)
+	if token != "" {
+		client.SetAuthToken(token)
+	}
+
+	resp, err := client.R().Get(endpoint)
+	if err != nil {
+		return fmt.Errorf("could not list pipelines: %w", err)
+	}
+
+	if err := checkAuthStatus(resp.StatusCode(), serverURL); err != nil {
+		return err
+	}
+
+	if resp.StatusCode() != 200 {
+		return fmt.Errorf("server error listing pipelines (%d): %s", resp.StatusCode(), resp.String())
+	}
+
+	var result storage.PaginationResult[storage.Pipeline]
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return fmt.Errorf("could not parse pipeline list: %w", err)
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+
+	_, _ = fmt.Fprintln(w, "NAME\tDRIVER\tPAUSED\tCREATED")
+
+	for _, p := range result.Items {
+		paused := "no"
+		if p.Paused {
+			paused = "yes"
+		}
+
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", p.Name, p.Driver, paused, p.CreatedAt.Format("Jan 02, 2006 15:04"))
+	}
+
+	return w.Flush()
+}

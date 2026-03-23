@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS pipelines (
   content_type    TEXT    NOT NULL DEFAULT '',
   driver          TEXT    NOT NULL,
   resume_enabled  INTEGER NOT NULL DEFAULT 0,
+  paused          INTEGER NOT NULL DEFAULT 0,
   rbac_expression TEXT    NOT NULL DEFAULT '',
   created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at      INTEGER NOT NULL DEFAULT (unixepoch())

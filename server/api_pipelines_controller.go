@@ -40,6 +40,7 @@ type PipelineAPIResponse struct {
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 	ResumeEnabled  bool      `json:"resume_enabled"`
+	Paused         bool      `json:"paused"`
 	RBACExpression string    `json:"rbac_expression,omitempty"`
 }
 
@@ -56,6 +57,7 @@ func toPipelineAPIResponse(pipeline *storage.Pipeline) PipelineAPIResponse {
 		CreatedAt:      pipeline.CreatedAt,
 		UpdatedAt:      pipeline.UpdatedAt,
 		ResumeEnabled:  pipeline.ResumeEnabled,
+		Paused:         pipeline.Paused,
 		RBACExpression: pipeline.RBACExpression,
 	}
 }
@@ -538,6 +540,16 @@ func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
 		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
+	if pipeline.Paused {
+		if isHtmxRequest(ctx) {
+			return ctx.String(http.StatusConflict, "Pipeline is paused")
+		}
+
+		return ctx.JSON(http.StatusConflict, map[string]string{
+			"error": "pipeline is paused",
+		})
+	}
+
 	// Parse optional JSON body for trigger mode.
 	var req triggerRequest
 	if ctx.Request().ContentLength > 0 {
@@ -593,6 +605,12 @@ func (c *APIPipelinesController) Run(ctx *echo.Context) error {
 
 	if err := checkPipelineRBAC(ctx, pipeline); err != nil {
 		return nil //nolint:nilerr // helper already wrote the HTTP response
+	}
+
+	if pipeline.Paused {
+		return ctx.JSON(http.StatusConflict, map[string]string{
+			"error": "pipeline is paused",
+		})
 	}
 
 	err = c.execService.RunByNameSync(ctx.Request().Context(), name, args, workdirTar, w)
@@ -664,11 +682,73 @@ func parseRunInput(ctx *echo.Context) ([]string, io.Reader) {
 }
 
 // RegisterRoutes registers all pipeline API routes on the given group.
+// Pause handles POST /api/pipelines/:id/pause - Pause a pipeline.
+func (c *APIPipelinesController) Pause(ctx *echo.Context) error {
+	return c.setPaused(ctx, true)
+}
+
+// Unpause handles POST /api/pipelines/:id/unpause - Unpause a pipeline.
+func (c *APIPipelinesController) Unpause(ctx *echo.Context) error {
+	return c.setPaused(ctx, false)
+}
+
+func (c *APIPipelinesController) setPaused(ctx *echo.Context, paused bool) error {
+	id := ctx.Param("id")
+
+	pipeline, err := c.store.GetPipeline(ctx.Request().Context(), id)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			if isHtmxRequest(ctx) {
+				return ctx.String(http.StatusNotFound, "Pipeline not found")
+			}
+
+			return ctx.JSON(http.StatusNotFound, map[string]string{
+				"error": "pipeline not found",
+			})
+		}
+
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": fmt.Sprintf("failed to get pipeline: %v", err),
+		})
+	}
+
+	if err := checkPipelineRBAC(ctx, pipeline); err != nil {
+		return nil //nolint:nilerr // helper already wrote the HTTP response
+	}
+
+	if err := c.store.UpdatePipelinePaused(ctx.Request().Context(), id, paused); err != nil {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": fmt.Sprintf("failed to update pipeline: %v", err),
+		})
+	}
+
+	action := "paused"
+	if !paused {
+		action = "unpaused"
+	}
+
+	if isHtmxRequest(ctx) {
+		ctx.Response().Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast":{"message":"%s %s successfully","type":"success"}}`, pipeline.Name, action))
+		ctx.Response().Header().Set("HX-Refresh", "true")
+
+		return ctx.NoContent(http.StatusOK)
+	}
+
+	return ctx.JSON(http.StatusOK, map[string]any{
+		"id":      pipeline.ID,
+		"paused":  paused,
+		"message": "pipeline " + action,
+	})
+}
+
+// RegisterRoutes registers all pipeline API routes on the given group.
 func (c *APIPipelinesController) RegisterRoutes(api *echo.Group) {
 	api.GET("/pipelines", c.Index)
 	api.GET("/pipelines/:id", c.Show)
 	api.PUT("/pipelines/:name", c.Upsert)
 	api.DELETE("/pipelines/:id", c.Destroy)
 	api.POST("/pipelines/:id/trigger", c.Trigger)
+	api.POST("/pipelines/:id/pause", c.Pause)
+	api.POST("/pipelines/:id/unpause", c.Unpause)
 	api.POST("/pipelines/:name/run", c.Run)
 }

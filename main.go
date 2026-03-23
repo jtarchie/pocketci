@@ -11,12 +11,15 @@ import (
 )
 
 type CLI struct {
-	Run            commands.Run            `cmd:"" help:"Run a stored pipeline by name on a server"`
-	Resource       commands.Resource       `cmd:"" help:"Execute a native resource operation"`
-	Server         commands.Server         `cmd:"" help:"Run a server"`
-	SetPipeline    commands.SetPipeline    `cmd:"" help:"Upload a pipeline to the server"                       name:"set-pipeline"`
-	DeletePipeline commands.DeletePipeline `cmd:"" help:"Delete a pipeline from the server"                     name:"delete-pipeline"`
-	Login          commands.Login          `cmd:"" help:"Authenticate with a CI server via browser-based OAuth"`
+	Run             commands.Run             `cmd:"" help:"Run a stored pipeline by name on a server"`
+	Resource        commands.Resource        `cmd:"" help:"Execute a native resource operation"`
+	Server          commands.Server          `cmd:"" help:"Run a server"`
+	SetPipeline     commands.SetPipeline     `cmd:"" help:"Upload a pipeline to the server"                       name:"set-pipeline"`
+	DeletePipeline  commands.DeletePipeline  `cmd:"" help:"Delete a pipeline from the server"                     name:"delete-pipeline"`
+	ListPipelines   commands.ListPipelines   `cmd:"" help:"List all pipelines on the server"                      name:"list-pipelines"`
+	PausePipeline   commands.PausePipeline   `cmd:"" help:"Pause a pipeline to prevent new runs"                  name:"pause-pipeline"`
+	UnpausePipeline commands.UnpausePipeline `cmd:"" help:"Unpause a pipeline to allow new runs"                  name:"unpause-pipeline"`
+	Login           commands.Login           `cmd:"" help:"Authenticate with a CI server via browser-based OAuth"`
 
 	LogLevel  slog.Level `default:"info"      env:"CI_LOG_LEVEL"                              help:"Set the log level (debug, info, warn, error)"`
 	AddSource bool       `env:"CI_ADD_SOURCE" help:"Add source code location to log messages"`

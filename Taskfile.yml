@@ -89,11 +89,11 @@ tasks:
       Usage: task bench:profile
     cmds:
       - |
-        PPROF=1 ./bin/k6-with-server.sh run --vus 10 --duration 30s benchmarks/api_load.js &
-        K6_PID=$!
-        echo "Collecting CPU profile (30s)..."
-        go tool pprof -http=:8888 "http://localhost:6060/debug/pprof/profile?seconds=25"
-        wait $K6_PID || true
+          PPROF=1 ./bin/k6-with-server.sh run --vus 10 --duration 30s benchmarks/api_load.js &
+          K6_PID=$!
+          echo "Collecting CPU profile (30s)..."
+          go tool pprof -http=:8888 "http://localhost:6060/debug/pprof/profile?seconds=25"
+          wait $K6_PID || true
 
   cleanup:
     desc: Remove leaked Docker containers and volumes

@@ -39,6 +39,7 @@ type pipelineScan struct {
 	ContentType    string `db:"content_type"`
 	Driver         string `db:"driver"`
 	ResumeEnabled  int    `db:"resume_enabled"`
+	Paused         int    `db:"paused"`
 	RBACExpression string `db:"rbac_expression"`
 	CreatedAt      int64  `db:"created_at"`
 	UpdatedAt      int64  `db:"updated_at"`
@@ -52,6 +53,7 @@ func (p pipelineScan) toStorage() storage.Pipeline {
 		ContentType:    p.ContentType,
 		Driver:         p.Driver,
 		ResumeEnabled:  p.ResumeEnabled != 0,
+		Paused:         p.Paused != 0,
 		RBACExpression: p.RBACExpression,
 		CreatedAt:      time.Unix(p.CreatedAt, 0).UTC(),
 		UpdatedAt:      time.Unix(p.UpdatedAt, 0).UTC(),
@@ -417,7 +419,7 @@ func (s *Sqlite) GetPipeline(ctx context.Context, id string) (*storage.Pipeline,
 	var row pipelineScan
 
 	err := sqlscan.Get(ctx, s.writer, &row, `
-		SELECT id, name, content, content_type, driver, resume_enabled, rbac_expression, created_at, updated_at
+		SELECT id, name, content, content_type, driver, resume_enabled, paused, rbac_expression, created_at, updated_at
 		FROM pipelines WHERE id = ?
 	`, id)
 	if err != nil {
@@ -438,7 +440,7 @@ func (s *Sqlite) GetPipelineByName(ctx context.Context, name string) (*storage.P
 	var row pipelineScan
 
 	err := sqlscan.Get(ctx, s.writer, &row, `
-		SELECT id, name, content, content_type, driver, resume_enabled, rbac_expression, created_at, updated_at
+		SELECT id, name, content, content_type, driver, resume_enabled, paused, rbac_expression, created_at, updated_at
 		FROM pipelines WHERE name = ?
 		ORDER BY updated_at DESC LIMIT 1
 	`, name)
@@ -512,6 +514,30 @@ func (s *Sqlite) UpdatePipelineResumeEnabled(ctx context.Context, pipelineID str
 	result, err := s.writer.ExecContext(ctx, `UPDATE pipelines SET resume_enabled = ? WHERE id = ?`, val, pipelineID)
 	if err != nil {
 		return fmt.Errorf("failed to update pipeline resume_enabled: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return storage.ErrNotFound
+	}
+
+	return nil
+}
+
+// UpdatePipelinePaused updates the paused flag for a pipeline.
+func (s *Sqlite) UpdatePipelinePaused(ctx context.Context, pipelineID string, paused bool) error {
+	val := 0
+	if paused {
+		val = 1
+	}
+
+	result, err := s.writer.ExecContext(ctx, `UPDATE pipelines SET paused = ? WHERE id = ?`, val, pipelineID)
+	if err != nil {
+		return fmt.Errorf("failed to update pipeline paused: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
@@ -854,7 +880,7 @@ func (s *Sqlite) SearchPipelines(ctx context.Context, query string, page, perPag
 
 		var rows []pipelineScan
 		err = sqlscan.Select(ctx, s.writer, &rows, `
-			SELECT id, name, content, content_type, driver, resume_enabled, rbac_expression, created_at, updated_at
+			SELECT id, name, content, content_type, driver, resume_enabled, paused, rbac_expression, created_at, updated_at
 			FROM pipelines ORDER BY created_at DESC
 			LIMIT ? OFFSET ?
 		`, perPage, offset)
@@ -894,7 +920,7 @@ func (s *Sqlite) SearchPipelines(ctx context.Context, query string, page, perPag
 	var rows []pipelineScan
 
 	err = sqlscan.Select(ctx, s.writer, &rows, `
-		SELECT p.id, p.name, p.content, p.content_type, p.driver, p.resume_enabled, p.rbac_expression, p.created_at, p.updated_at
+		SELECT p.id, p.name, p.content, p.content_type, p.driver, p.resume_enabled, p.paused, p.rbac_expression, p.created_at, p.updated_at
 		FROM pipelines p
 		WHERE p.id IN (SELECT id FROM pipelines_fts WHERE pipelines_fts MATCH ?)
 		ORDER BY p.created_at DESC

@@ -379,6 +379,118 @@ func TestPipelineAPI(t *testing.T) {
 			assert.Expect(resp["error"]).To(ContainSubstring("reserved for system use"))
 		})
 
+		t.Run("POST /api/pipelines/:id/pause pauses a pipeline", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
+
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
+
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = client.Close() }()
+
+			saved, err := client.SavePipeline(context.Background(), "pausable", "content", "docker", "")
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			router := newRouterWithSecrets(t, client, server.RouterOptions{})
+
+			req := httptest.NewRequest(http.MethodPost, "/api/pipelines/"+saved.ID+"/pause", nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			assert.Expect(rec.Code).To(Equal(http.StatusOK))
+
+			pipeline, err := client.GetPipeline(context.Background(), saved.ID)
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(pipeline.Paused).To(BeTrue())
+		})
+
+		t.Run("POST /api/pipelines/:id/unpause unpauses a pipeline", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
+
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
+
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = client.Close() }()
+
+			saved, err := client.SavePipeline(context.Background(), "unpausable", "content", "docker", "")
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			err = client.UpdatePipelinePaused(context.Background(), saved.ID, true)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			router := newRouterWithSecrets(t, client, server.RouterOptions{})
+
+			req := httptest.NewRequest(http.MethodPost, "/api/pipelines/"+saved.ID+"/unpause", nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			assert.Expect(rec.Code).To(Equal(http.StatusOK))
+
+			pipeline, err := client.GetPipeline(context.Background(), saved.ID)
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(pipeline.Paused).To(BeFalse())
+		})
+
+		t.Run("POST /api/pipelines/:id/trigger returns 409 for paused pipeline", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
+
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
+
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = client.Close() }()
+
+			saved, err := client.SavePipeline(context.Background(), "paused-trigger", "content", "docker", "")
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			err = client.UpdatePipelinePaused(context.Background(), saved.ID, true)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			router := newRouterWithSecrets(t, client, server.RouterOptions{})
+
+			req := httptest.NewRequest(http.MethodPost, "/api/pipelines/"+saved.ID+"/trigger", nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			assert.Expect(rec.Code).To(Equal(http.StatusConflict))
+
+			var resp map[string]string
+			err = json.Unmarshal(rec.Body.Bytes(), &resp)
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(resp["error"]).To(Equal("pipeline is paused"))
+		})
+
+		t.Run("POST /api/pipelines/:id/pause returns 404 for non-existent", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
+
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
+
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = client.Close() }()
+
+			router := newRouterWithSecrets(t, client, server.RouterOptions{})
+
+			req := httptest.NewRequest(http.MethodPost, "/api/pipelines/non-existent/pause", nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			assert.Expect(rec.Code).To(Equal(http.StatusNotFound))
+		})
+
 		t.Run("PUT /api/pipelines/:name rejects system key webhook_secret in user secrets", func(t *testing.T) {
 			t.Parallel()
 			assert := NewGomegaWithT(t)

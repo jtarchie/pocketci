@@ -167,6 +167,55 @@ func TestPipelineStorage(t *testing.T) {
 				assert.Expect(err).To(Equal(storage.ErrNotFound))
 			})
 
+			t.Run("SavePipeline creates pipeline with Paused false by default", func(t *testing.T) {
+				assert := NewGomegaWithT(t)
+
+				client := df.new(t, "namespace")
+
+				pipeline, err := client.SavePipeline(context.Background(), "default-paused", "content", "docker", "")
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(pipeline.Paused).To(BeFalse())
+
+				retrieved, err := client.GetPipeline(context.Background(), pipeline.ID)
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(retrieved.Paused).To(BeFalse())
+			})
+
+			t.Run("UpdatePipelinePaused sets and clears paused flag", func(t *testing.T) {
+				assert := NewGomegaWithT(t)
+
+				client := df.new(t, "namespace")
+
+				ctx := context.Background()
+
+				pipeline, err := client.SavePipeline(ctx, "pause-test", "content", "docker", "")
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(pipeline.Paused).To(BeFalse())
+
+				err = client.UpdatePipelinePaused(ctx, pipeline.ID, true)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				retrieved, err := client.GetPipeline(ctx, pipeline.ID)
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(retrieved.Paused).To(BeTrue())
+
+				err = client.UpdatePipelinePaused(ctx, pipeline.ID, false)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				retrieved, err = client.GetPipeline(ctx, pipeline.ID)
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(retrieved.Paused).To(BeFalse())
+			})
+
+			t.Run("UpdatePipelinePaused returns error for non-existent ID", func(t *testing.T) {
+				assert := NewGomegaWithT(t)
+
+				client := df.new(t, "namespace")
+
+				err := client.UpdatePipelinePaused(context.Background(), "non-existent-id", true)
+				assert.Expect(err).To(Equal(storage.ErrNotFound))
+			})
+
 			t.Run("SavePipeline called twice with same name updates content instead of creating a second pipeline", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 

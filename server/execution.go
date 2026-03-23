@@ -489,6 +489,10 @@ func (s *ExecutionService) RunByNameSync(
 		return err
 	}
 
+	if pipeline.Paused {
+		return storage.ErrPipelinePaused
+	}
+
 	run, err := s.store.SaveRun(ctx, pipeline.ID)
 	if err != nil {
 		return fmt.Errorf("failed to save run: %w", err)
