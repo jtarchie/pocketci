@@ -81,6 +81,20 @@ tasks:
     cmds:
       - ./bin/k6-with-server.sh run --vus 1 --duration 10s benchmarks/api_load.js
 
+  bench:profile:
+    desc: |
+      Profile the server under k6 load and open an interactive flame graph.
+      Starts server with pprof on :6060, runs k6 load scenario for 30s,
+      then collects a CPU profile and opens it in a browser.
+      Usage: task bench:profile
+    cmds:
+      - |
+        PPROF=1 ./bin/k6-with-server.sh run --vus 10 --duration 30s benchmarks/api_load.js &
+        K6_PID=$!
+        echo "Collecting CPU profile (30s)..."
+        go tool pprof -http=:8888 "http://localhost:6060/debug/pprof/profile?seconds=25"
+        wait $K6_PID || true
+
   cleanup:
     desc: Remove leaked Docker containers and volumes
     cmds:

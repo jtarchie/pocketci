@@ -2,7 +2,14 @@
 set -e
 
 # Start server in background
-go run main.go server --storage sqlite://:memory: &
+# If PPROF=1, enable the pprof debug endpoint on :6060
+PPROF_FLAG=""
+if [ "${PPROF:-}" = "1" ]; then
+	PPROF_FLAG="--pprof-addr=:6060"
+fi
+
+# shellcheck disable=SC2086
+go run main.go server --storage sqlite://:memory: ${PPROF_FLAG} &
 SERVER_PID=$!
 
 # Cleanup function to ensure server is killed

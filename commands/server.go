@@ -138,6 +138,8 @@ type Server struct {
 	CacheS3TTL             time.Duration `env:"CI_CACHE_S3_TTL"               help:"Cache object TTL (0 = no expiry)"                       name:"cache-s3-ttl"`
 	CacheCompression       string        `env:"CI_CACHE_COMPRESSION"          help:"Cache compression: zstd, gzip, or none (default: zstd)"`
 	CacheKeyPrefix         string        `env:"CI_CACHE_KEY_PREFIX"           help:"Cache key prefix"`
+	// Profiling
+	PprofAddr string `env:"CI_PPROF_ADDR" help:"Address to serve pprof debug endpoints (e.g. ':6060'). Empty disables profiling." name:"pprof-addr"`
 }
 
 func (c *Server) Run(logger *slog.Logger) error {
@@ -210,6 +212,10 @@ func (c *Server) Run(logger *slog.Logger) error {
 	}
 
 	c.registerRoutes(router, client)
+
+	if c.PprofAddr != "" {
+		server.StartPprof(c.PprofAddr, logger)
+	}
 
 	err = router.Start(fmt.Sprintf(":%d", c.Port))
 	if err != nil {
