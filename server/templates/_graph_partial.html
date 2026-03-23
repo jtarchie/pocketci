@@ -1,7 +1,7 @@
 {{ define "graph-partial" }}
 <!-- Graph data partial - used for htmx polling -->
 {{ if .OOB }}
-{{ template "_run_error_alert" dict "Run" .Run "SwapOOB" true }}
+{{ template "run-error-alert" dict "Run" .Run "SwapOOB" true }}
 {{ template "run-status-badge" dict "Run" .Run "IsActive" .IsActive "SwapOOB"
 true }}
 {{ end }}

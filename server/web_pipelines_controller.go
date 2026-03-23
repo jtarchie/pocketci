@@ -79,7 +79,7 @@ func hasActiveRunInRows(rows []PipelineRow) bool {
 }
 
 // Index handles GET /pipelines/ - Pipeline listing page.
-// Returns full HTML page for normal requests, or just the _pipelines_content
+// Returns full HTML page for normal requests, or just the pipelines-content
 // partial for HTMX requests (search, pagination, polling).
 func (c *WebPipelinesController) Index(ctx *echo.Context) error {
 	q := ctx.QueryParam("q")
@@ -123,7 +123,7 @@ func (c *WebPipelinesController) Index(ctx *echo.Context) error {
 	if isHtmxRequest(ctx) {
 		ctx.Response().Header().Set("HX-Push-Url", buildPipelinesURL(q, page, perPage))
 
-		return ctx.Render(http.StatusOK, "_pipelines_content", data)
+		return ctx.Render(http.StatusOK, "pipelines-content", data)
 	}
 
 	return ctx.Render(http.StatusOK, "pipelines.html", data)

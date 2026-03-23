@@ -506,8 +506,8 @@ test.describe("Run Views", () => {
     await expect(tasksLink).toBeVisible({ timeout: 10000 });
     await tasksLink.click();
 
-    // Should have a "Graph View" link
-    const graphViewLink = page.getByRole("link", { name: /Graph View/i });
+    // Should have a "Graph" link
+    const graphViewLink = page.getByRole("link", { name: /^Graph$/i });
     await expect(graphViewLink).toBeVisible();
 
     // Click it and verify navigation
@@ -537,8 +537,8 @@ test.describe("Run Views", () => {
     await expect(graphLink).toBeVisible({ timeout: 10000 });
     await graphLink.click();
 
-    // Should have a "List View" link
-    const listViewLink = page.getByRole("link", { name: /List View/i });
+    // Should have a "Tasks" link
+    const listViewLink = page.getByRole("link", { name: /^Tasks$/i });
     await expect(listViewLink).toBeVisible();
 
     // Click it and verify navigation

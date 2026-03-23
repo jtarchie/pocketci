@@ -1,4 +1,4 @@
-{{ define "_run_error_alert" }}
+{{ define "run-error-alert" }}
 <div id="run-error-alert" {{ if .SwapOOB }} hx-swap-oob="true" {{ end }}>
   {{ if and .Run .Run.ErrorMessage }}
   <div

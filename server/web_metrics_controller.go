@@ -120,7 +120,7 @@ func (c *WebMetricsController) Content(ctx *echo.Context) error {
 		return err
 	}
 
-	return ctx.Render(http.StatusOK, "_metrics_content", data)
+	return ctx.Render(http.StatusOK, "metrics-content", data)
 }
 
 func (c *WebMetricsController) buildData(ctx *echo.Context) (MetricsDashboardData, error) {

@@ -1,4 +1,4 @@
-{{ define "_pipelines_content" }}
+{{ define "pipelines-content" }}
 <input type="hidden" id="pipeline-page" name="page"
   value="{{ .Pagination.Page }}">
 <input type="hidden" id="pipeline-per-page" name="per_page"
@@ -31,7 +31,7 @@
     </thead>
     <tbody class="divide-y divide-gray-200 dark:divide-gray-600"
       id="pipelines-table">
-      {{ template "_pipeline_rows" . }}
+      {{ template "pipeline-rows" . }}
     </tbody>
   </table>
 </div>

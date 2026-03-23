@@ -192,7 +192,7 @@ func (c *WebRunsController) Show(ctx *echo.Context) error {
 	stats := countTaskStats(tree)
 	c.preloadTerminalHTML(ctx, lookupPath, tree)
 
-	return ctx.Render(http.StatusOK, "results.html", map[string]any{
+	return ctx.Render(http.StatusOK, "tasks.html", map[string]any{
 		"Tree":     tree,
 		"Path":     lookupPath,
 		"RunID":    runID,

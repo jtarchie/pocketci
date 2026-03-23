@@ -58,7 +58,7 @@
 
 <main id="main-content" role="main">
   <div class="container mx-auto p-4">
-    {{ template "_run_error_alert" dict "Run" .Run }}
+    {{ template "run-error-alert" dict "Run" .Run }}
 
     <div
       class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
@@ -87,14 +87,14 @@
         {{ if .RunID }}
         <a href="/runs/{{ .RunID }}/graph"
           class="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-center transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 sm:w-auto">
-          Graph View
+          Graph
         </a>
         {{ template "run-stop-button" dict "RunID" .RunID "IsActive" .IsActive
         }}
         {{ else }}
         <a href="/graph{{ .Path }}/"
           class="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-center transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 sm:w-auto">
-          Graph View
+          Graph
         </a>
         {{ end }}
         <!-- ... menu (always shown, rightmost to keep dropdown on-screen) -->
@@ -384,7 +384,7 @@ true }}
   .Stats.Failure }}</span>
 <span id="stat-pending" hx-swap-oob="true" aria-label="Pending tasks">{{
   .Stats.Pending }}</span>
-{{ template "_run_error_alert" dict "Run" .Run "SwapOOB" true }}
+{{ template "run-error-alert" dict "Run" .Run "SwapOOB" true }}
 {{ end }}
 <div class="space-y-4" id="tasks-container"
   {{ if and .RunID .IsActive (not .ReadOnly) }}
@@ -394,13 +394,13 @@ true }}
   {{ end }}
   data-run-active="{{ if .IsActive }}true{{ else }}false{{ end }}"
   {{ if .ReadOnly }}data-readonly="true"{{ end }}>
-  {{ template "renderPath" dict "Path" .Tree "Depth" 0 "Order" 1 "RunID"
+  {{ template "render-path" dict "Path" .Tree "Depth" 0 "Order" 1 "RunID"
   .RunID "ReadOnly" .ReadOnly }}
 </div>
 {{ end }}
 
 {{/* Helper function to get status color */}}
-{{- define "getStatusColor" -}}
+{{- define "get-status-color" -}}
 {{- $status := .Value.status -}}
 {{- if eq $status "success" -}}
 bg-green-100 border-green-200 dark:bg-green-900/30 dark:border-green-800
@@ -422,7 +422,7 @@ bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700
 {{- end -}}
 
 {{/* Helper function to get status icon */}}
-{{- define "getStatusIcon" -}}
+{{- define "get-status-icon" -}}
 {{- $status := .Value.status -}}
 {{- if eq $status "success" -}}
 <svg class="w-5 h-5 text-success" xmlns="http://www.w3.org/2000/svg"
@@ -494,7 +494,7 @@ bg-white border-gray-200 dark:bg-gray-800 dark:border-gray-700
 {{- end -}}
 
 {{/* Get group color based on depth */}}
-{{- define "getGroupColor" -}}
+{{- define "get-group-color" -}}
 {{- $depth := . -}}
 {{- $mod := mod $depth 8 -}}
 {{- if eq $mod 0 -}}
@@ -517,13 +517,13 @@ border-indigo-300 dark:border-indigo-600
 {{- end -}}
 
 {{/* Task template */}}
-{{- define "renderTask" -}}
+{{- define "render-task" -}}
 {{- $path := .Path -}}
 {{- $order := .Order -}}
 {{- $runID := .RunID -}}
 {{- $readOnly := .ReadOnly -}}
 <details class="task-item
-    {{ template "getStatusColor" $path }} border rounded-md p-3 transition-all
+    {{ template "get-status-color" $path }} border rounded-md p-3 transition-all
   dark:text-gray-200"
   id="task-{{ $path.FullPath | urlquery }}"
   tabindex="0"
@@ -531,7 +531,7 @@ border-indigo-300 dark:border-indigo-600
   data-task-status="{{ $path.Value.status }}">
   <summary class="flex items-center justify-between cursor-pointer">
     <div class="flex items-center space-x-2">
-      {{ template "getStatusIcon" $path }}
+      {{ template "get-status-icon" $path }}
       <div class="flex items-center">
         <span
           class="inline-flex items-center justify-center w-6 h-6 mr-2 text-xs font-semibold rounded-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 dark:text-gray-200">
@@ -613,18 +613,18 @@ border-indigo-300 dark:border-indigo-600
 {{- end -}}
 
 {{/* Group template - updated to show status if available */}}
-{{- define "renderGroup" -}}
+{{- define "render-group" -}}
 {{- $path := .Path -}}
 {{- $depth := .Depth -}}
 {{- $readOnly := .ReadOnly -}}
-<div class="group-container border-l-4 pl-4 {{ template "getGroupColor" $depth
+<div class="group-container border-l-4 pl-4 {{ template "get-group-color" $depth
   }}"
   id="group-{{ $path.FullPath | urlquery }}">
   <div class="flex items-center justify-between mb-2">
     <div class="flex items-center">
       {{/* Show status icon from self-entry if one exists */}}
       {{ range $path.Children }}{{ if and (eq .Name "") .Value.status }}
-      <span class="mr-2">{{ template "getStatusIcon" . }}</span>
+      <span class="mr-2">{{ template "get-status-icon" . }}</span>
       {{ end }}{{ end }}
       <div class="font-medium text-gray-700 dark:text-gray-300">
         {{ if not $readOnly }}
@@ -645,7 +645,7 @@ border-indigo-300 dark:border-indigo-600
   <div class="space-y-2">
     {{/* Render children */}}
     {{ range $index, $child := $path.Children }}
-    {{ template "renderPath" dict "Path" $child "Depth" (add $depth 1) "Order"
+    {{ template "render-path" dict "Path" $child "Depth" (add $depth 1) "Order"
     (add $index 1) "RunID"
     $.RunID "ReadOnly" $.ReadOnly }}
     {{ end }}
@@ -654,20 +654,20 @@ border-indigo-300 dark:border-indigo-600
 {{- end -}}
 
 {{/* Main recursive path rendering - simplified with new methods */}}
-{{ define "renderPath" }}
+{{ define "render-path" }}
 {{ $path := .Path }}
 {{ $depth := .Depth }}
 {{ $order := .Order }}
 
 {{ if and $path.IsGroup (ne $path.Name "") }}
-{{ template "renderGroup" dict "Path" $path "Depth" $depth "RunID" .RunID "ReadOnly" .ReadOnly }}
+{{ template "render-group" dict "Path" $path "Depth" $depth "RunID" .RunID "ReadOnly" .ReadOnly }}
 {{ else if ne $path.Name "" }}
-{{ template "renderTask" dict "Path" $path "Order" $order "RunID" .RunID "ReadOnly" .ReadOnly }}
+{{ template "render-task" dict "Path" $path "Order" $order "RunID" .RunID "ReadOnly" .ReadOnly }}
 {{ else if $path.IsLeaf }}
-{{ template "renderTask" dict "Path" $path "Order" $order "RunID" .RunID "ReadOnly" .ReadOnly }}
+{{ template "render-task" dict "Path" $path "Order" $order "RunID" .RunID "ReadOnly" .ReadOnly }}
 {{ else }}
 {{ range $index, $child := $path.Children }}
-{{ template "renderPath" dict "Path" $child "Depth" $depth "Order" (add $index
+{{ template "render-path" dict "Path" $child "Depth" $depth "Order" (add $index
 1)
 "RunID" $.RunID "ReadOnly" $.ReadOnly }}
 {{ end }}
