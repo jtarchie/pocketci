@@ -200,4 +200,4 @@ backwards/bundle.js
 !.dev.vars.example
 !.env.example
 
-.claude/
+.claude/settings.*

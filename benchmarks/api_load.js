@@ -86,20 +86,21 @@ export default function () {
   group("Pipeline CRUD", function () {
     // Create pipeline
     group("Create Pipeline", function () {
+      const name = uniqueName();
       const payload = JSON.stringify({
-        name: uniqueName(),
         content: MINIMAL_PIPELINE,
         driver: "docker",
       });
 
-      const createRes = http.post(`${BASE_URL}/api/pipelines`, payload, {
+      // The API uses PUT /api/pipelines/:name (upsert)
+      const createRes = http.put(`${BASE_URL}/api/pipelines/${name}`, payload, {
         headers: { "Content-Type": "application/json" },
       });
 
       pipelineCreateDuration.add(createRes.timings.duration);
 
       const createOk = check(createRes, {
-        "create status is 201": (r) => r.status === 201,
+        "create status is 200": (r) => r.status === 200,
         "create returns pipeline id": (r) => {
           const body = r.json();
           pipelineId = body.id;
@@ -120,9 +121,10 @@ export default function () {
       const listRes = http.get(`${BASE_URL}/api/pipelines`);
       pipelineListDuration.add(listRes.timings.duration);
 
+      // The API returns a PaginationResult: { items: [...], page, per_page, ... }
       const listOk = check(listRes, {
         "list status is 200": (r) => r.status === 200,
-        "list returns array": (r) => Array.isArray(r.json()),
+        "list returns items array": (r) => Array.isArray(r.json().items),
       });
 
       if (!listOk) {
@@ -168,9 +170,13 @@ export default function () {
 
       pipelineTriggerDuration.add(triggerRes.timings.duration);
 
+      // 429 = server is rate-limiting (MaxInFlight reached); not an error.
+      const rateLimited = triggerRes.status === 429;
       const triggerOk = check(triggerRes, {
-        "trigger status is 202": (r) => r.status === 202,
-        "trigger returns run id": (r) => {
+        "trigger status is 202 or 429": (r) =>
+          r.status === 202 || r.status === 429,
+        "trigger returns run id or rate-limited": (r) => {
+          if (r.status === 429) return true;
           const body = r.json();
           runId = body.run_id;
           return body.run_id !== undefined;
@@ -179,7 +185,7 @@ export default function () {
 
       if (!triggerOk) {
         errorRate.add(1);
-      } else {
+      } else if (!rateLimited) {
         errorRate.add(0);
       }
     });
