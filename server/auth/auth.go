@@ -7,15 +7,15 @@ import (
 // User represents an authenticated user from any OAuth provider.
 // Fields are tagged with `expr` for use in RBAC expression evaluation.
 type User struct {
-	Email         string         `json:"email"         expr:"Email"`
-	Name          string         `json:"name"          expr:"Name"`
-	NickName      string         `json:"nick_name"     expr:"NickName"`
-	AvatarURL     string         `json:"avatar_url"    expr:"AvatarURL"`
-	Provider      string         `json:"provider"      expr:"Provider"`
-	UserID        string         `json:"user_id"       expr:"UserID"`
-	Organizations []string       `json:"organizations" expr:"Organizations"`
-	Groups        []string       `json:"groups"        expr:"Groups"`
-	RawData       map[string]any `json:"raw_data"      expr:"RawData"`
+	Email         string         `expr:"Email"            json:"email"`
+	Name          string         `expr:"Name"             json:"name"`
+	NickName      string         `expr:"NickName"         json:"nick_name"`
+	AvatarURL     string         `expr:"AvatarURL"        json:"avatar_url"`
+	Provider      string         `expr:"Provider"         json:"provider"`
+	UserID        string         `expr:"UserID"           json:"user_id"`
+	Organizations []string       `expr:"Organizations"    json:"organizations"`
+	Groups        []string       `expr:"Groups"           json:"groups"`
+	RawData       map[string]any `expr:"RawData"          json:"raw_data"`
 	Scopes        []string       `json:"scopes,omitempty"`
 }
 

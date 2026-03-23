@@ -179,13 +179,13 @@ type Steps []Step
 // WebhookTriggerConfig holds the filter expression and optional parameter
 // extraction map for webhook-based job triggers.
 type WebhookTriggerConfig struct {
-	Filter string            `yaml:"filter,omitempty" json:"filter,omitempty"`
-	Params map[string]string `yaml:"params,omitempty" json:"params,omitempty"`
+	Filter string            `json:"filter,omitempty" yaml:"filter,omitempty"`
+	Params map[string]string `json:"params,omitempty" yaml:"params,omitempty"`
 }
 
 // Triggers holds the set of trigger configurations for a job.
 type Triggers struct {
-	Webhook *WebhookTriggerConfig `yaml:"webhook,omitempty" json:"webhook,omitempty"`
+	Webhook *WebhookTriggerConfig `json:"webhook,omitempty" yaml:"webhook,omitempty"`
 }
 
 type Job struct {
@@ -198,8 +198,8 @@ type Job struct {
 		Days   int `yaml:"days,omitempty"`
 	} `yaml:"build_log_retention,omitempty"`
 
-	Name           string        `validate:"required,min=3"      yaml:"name,omitempty"`
-	Plan           Steps         `validate:"required,min=1,dive" yaml:"plan,omitempty"`
+	Name           string        `validate:"required,min=3"        yaml:"name,omitempty"`
+	Plan           Steps         `validate:"required,min=1,dive"   yaml:"plan,omitempty"`
 	MaxInFlight    int           `yaml:"max_in_flight,omitempty"`
 	Public         bool          `yaml:"public,omitempty"`
 	Ensure         *Step         `yaml:"ensure,omitempty"`
@@ -208,7 +208,7 @@ type Job struct {
 	OnSuccess      *Step         `yaml:"on_success,omitempty"`
 	OnFailure      *Step         `yaml:"on_failure,omitempty"`
 	Timeout        time.Duration `yaml:"timeout,omitempty"`
-	Triggers       *Triggers     `yaml:"triggers,omitempty"       json:"triggers,omitempty"`
+	Triggers       *Triggers     `json:"triggers,omitempty"        yaml:"triggers,omitempty"`
 	WebhookTrigger string        `yaml:"webhook_trigger,omitempty"`
 }
 

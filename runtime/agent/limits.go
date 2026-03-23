@@ -16,15 +16,15 @@ const (
 
 // AgentContextGuardConfig enables context window management.
 type AgentContextGuardConfig struct {
-	Strategy  string `yaml:"strategy"             json:"strategy"`
-	MaxTurns  int    `yaml:"max_turns,omitempty"  json:"max_turns,omitempty"`
-	MaxTokens int    `yaml:"max_tokens,omitempty" json:"max_tokens,omitempty"`
+	Strategy  string `json:"strategy"             yaml:"strategy"`
+	MaxTurns  int    `json:"max_turns,omitempty"  yaml:"max_turns,omitempty"`
+	MaxTokens int    `json:"max_tokens,omitempty" yaml:"max_tokens,omitempty"`
 }
 
 // AgentLimitsConfig configures hard limits that stop agent execution.
 type AgentLimitsConfig struct {
-	MaxTurns       int   `yaml:"max_turns,omitempty"        json:"max_turns,omitempty"`
-	MaxTotalTokens int32 `yaml:"max_total_tokens,omitempty" json:"max_total_tokens,omitempty"`
+	MaxTurns       int   `json:"max_turns,omitempty"        yaml:"max_turns,omitempty"`
+	MaxTotalTokens int32 `json:"max_total_tokens,omitempty" yaml:"max_total_tokens,omitempty"`
 }
 
 // normalizeContextGuardConfig normalises context guard configuration so limits

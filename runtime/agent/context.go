@@ -17,24 +17,24 @@ import (
 // AgentContextTask specifies a prior task whose output is pre-fetched into the
 // agent's session history before the first turn.
 type AgentContextTask struct {
-	Name  string `yaml:"name"            json:"name"`
-	Field string `yaml:"field,omitempty" json:"field,omitempty"` // "stdout" | "stderr" | "both" (default)
+	Name  string `json:"name"            yaml:"name"`
+	Field string `json:"field,omitempty" yaml:"field,omitempty"` // "stdout" | "stderr" | "both" (default)
 }
 
 // AgentContextFile specifies a volume file whose contents are pre-read into the
 // agent's session history before the first turn, saving a read tool call.
 // Path is "mountname/relative/path" (e.g. "diff/pr.diff").
 type AgentContextFile struct {
-	Path     string `yaml:"path"                json:"path"`
-	MaxBytes int    `yaml:"max_bytes,omitempty" json:"max_bytes,omitempty"`
+	Path     string `json:"path"                yaml:"path"`
+	MaxBytes int    `json:"max_bytes,omitempty" yaml:"max_bytes,omitempty"`
 }
 
 // AgentContext configures pre-fetched task outputs and file contents injected
 // as synthetic tool call events before the agent's first turn.
 type AgentContext struct {
-	Tasks    []AgentContextTask `yaml:"tasks,omitempty"     json:"tasks,omitempty"`
-	Files    []AgentContextFile `yaml:"files,omitempty"     json:"files,omitempty"`
-	MaxBytes int                `yaml:"max_bytes,omitempty" json:"max_bytes,omitempty"`
+	Tasks    []AgentContextTask `json:"tasks,omitempty"     yaml:"tasks,omitempty"`
+	Files    []AgentContextFile `json:"files,omitempty"     yaml:"files,omitempty"`
+	MaxBytes int                `json:"max_bytes,omitempty" yaml:"max_bytes,omitempty"`
 }
 
 // injectSyntheticToolCall appends a matched FunctionCall + FunctionResponse

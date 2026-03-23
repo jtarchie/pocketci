@@ -32,30 +32,30 @@ import (
 )
 
 type Runner struct {
-	StorageSQLitePath       string        `default:"test.db"                                             env:"CI_STORAGE_SQLITE_PATH"  help:"SQLite storage database file path"                                                                                                                             required:""`
-	Pipeline                string        `arg:""                                                        help:"Path to pipeline javascript file"                                                                                                                          type:"existingfile"`
-	Driver                  string        `default:"native"                                              env:"CI_DRIVER"               help:"Orchestrator driver name (docker, native, k8s)"`
-	DockerHost              string        `env:"CI_DOCKER_HOST"         help:"Docker daemon host URL"`
-	K8sKubeconfig           string        `env:"CI_K8S_KUBECONFIG"      help:"Path to kubeconfig file"`
-	K8sNamespace            string        `env:"CI_K8S_NAMESPACE"       help:"Kubernetes namespace for jobs"`
-	CacheS3Bucket           string        `env:"CI_CACHE_S3_BUCKET"            help:"S3 bucket for cache backend"`
-	CacheS3Prefix           string        `env:"CI_CACHE_S3_PREFIX"            help:"S3 key prefix for cache"`
-	CacheS3Endpoint         string        `env:"CI_CACHE_S3_ENDPOINT"          help:"S3-compatible endpoint URL for cache"`
-	CacheS3Region           string        `env:"CI_CACHE_S3_REGION"            help:"AWS region for cache S3 backend"`
-	CacheS3AccessKeyID      string        `env:"CI_CACHE_S3_ACCESS_KEY_ID"     help:"S3 access key ID for cache"`
-	CacheS3SecretAccessKey  string        `env:"CI_CACHE_S3_SECRET_ACCESS_KEY" help:"S3 secret access key for cache"`
-	CacheS3TTL              time.Duration `env:"CI_CACHE_S3_TTL"               help:"Cache object TTL (0 = no expiry)"`
-	CacheCompression        string        `env:"CI_CACHE_COMPRESSION"          help:"Cache compression: zstd, gzip, or none"`
-	CacheKeyPrefix          string        `env:"CI_CACHE_KEY_PREFIX"           help:"Cache key prefix"`
-	Timeout                 time.Duration `env:"CI_TIMEOUT"                                              help:"timeout for the pipeline, will cause abort if exceeded"`
+	StorageSQLitePath       string        `default:"test.db"                                                        env:"CI_STORAGE_SQLITE_PATH"                                  help:"SQLite storage database file path"                                required:""`
+	Pipeline                string        `arg:""                                                                   help:"Path to pipeline javascript file"                       type:"existingfile"`
+	Driver                  string        `default:"native"                                                         env:"CI_DRIVER"                                               help:"Orchestrator driver name (docker, native, k8s)"`
+	DockerHost              string        `env:"CI_DOCKER_HOST"                                                     help:"Docker daemon host URL"`
+	K8sKubeconfig           string        `env:"CI_K8S_KUBECONFIG"                                                  help:"Path to kubeconfig file"`
+	K8sNamespace            string        `env:"CI_K8S_NAMESPACE"                                                   help:"Kubernetes namespace for jobs"`
+	CacheS3Bucket           string        `env:"CI_CACHE_S3_BUCKET"                                                 help:"S3 bucket for cache backend"`
+	CacheS3Prefix           string        `env:"CI_CACHE_S3_PREFIX"                                                 help:"S3 key prefix for cache"`
+	CacheS3Endpoint         string        `env:"CI_CACHE_S3_ENDPOINT"                                               help:"S3-compatible endpoint URL for cache"`
+	CacheS3Region           string        `env:"CI_CACHE_S3_REGION"                                                 help:"AWS region for cache S3 backend"`
+	CacheS3AccessKeyID      string        `env:"CI_CACHE_S3_ACCESS_KEY_ID"                                          help:"S3 access key ID for cache"`
+	CacheS3SecretAccessKey  string        `env:"CI_CACHE_S3_SECRET_ACCESS_KEY"                                      help:"S3 secret access key for cache"`
+	CacheS3TTL              time.Duration `env:"CI_CACHE_S3_TTL"                                                    help:"Cache object TTL (0 = no expiry)"`
+	CacheCompression        string        `env:"CI_CACHE_COMPRESSION"                                               help:"Cache compression: zstd, gzip, or none"`
+	CacheKeyPrefix          string        `env:"CI_CACHE_KEY_PREFIX"                                                help:"Cache key prefix"`
+	Timeout                 time.Duration `env:"CI_TIMEOUT"                                                         help:"timeout for the pipeline, will cause abort if exceeded"`
 	Resume                  bool          `help:"Resume from last checkpoint if pipeline was interrupted"`
 	RunID                   string        `help:"Unique run ID for resume support (auto-generated if not provided)"`
-	SecretsSQLitePath       string        `default:""  env:"CI_SECRETS_SQLITE_PATH"       help:"SQLite secrets database file path (use ':memory:' for in-memory)"`
-	SecretsSQLitePassphrase string        `default:""  env:"CI_SECRETS_SQLITE_PASSPHRASE" help:"Encryption passphrase for SQLite secrets backend"`
-	Secret                  []string      `help:"Set a pipeline-scoped secret as KEY=VALUE (can be repeated)" short:"e"`
+	SecretsSQLitePath       string        `default:""                                                               env:"CI_SECRETS_SQLITE_PATH"                                  help:"SQLite secrets database file path (use ':memory:' for in-memory)"`
+	SecretsSQLitePassphrase string        `default:""                                                               env:"CI_SECRETS_SQLITE_PASSPHRASE"                            help:"Encryption passphrase for SQLite secrets backend"`
+	Secret                  []string      `help:"Set a pipeline-scoped secret as KEY=VALUE (can be repeated)"       short:"e"`
 	GlobalSecret            []string      `help:"Set a global secret as KEY=VALUE (can be repeated)"`
-	FetchTimeout            time.Duration `default:"30s"                                              env:"CI_FETCH_TIMEOUT"            help:"Timeout for fetch() requests in pipelines"`
-	FetchMaxResponseMB      int           `default:"10"                                               env:"CI_FETCH_MAX_RESPONSE_MB"    help:"Maximum response size in MB for fetch() requests"`
+	FetchTimeout            time.Duration `default:"30s"                                                            env:"CI_FETCH_TIMEOUT"                                        help:"Timeout for fetch() requests in pipelines"`
+	FetchMaxResponseMB      int           `default:"10"                                                             env:"CI_FETCH_MAX_RESPONSE_MB"                                help:"Maximum response size in MB for fetch() requests"`
 }
 
 func youtubeIDStyle(input string) string {
@@ -106,18 +106,7 @@ func (c *Runner) Run(logger *slog.Logger) error {
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
 	// Handle signals in a separate goroutine
-	go func() {
-		select {
-		case sig, ok := <-sigs:
-			if !ok {
-				return
-			}
-
-			logger.Debug("execution.canceled", "signal", sig)
-			cancel() // Cancel the context when signal is received
-		case <-ctx.Done():
-		}
-	}()
+	go handleSignals(ctx, cancel, logger, sigs)
 
 	pipeline, err := loadPipeline(pipelinePath)
 	if err != nil {
@@ -137,21 +126,9 @@ func (c *Runner) Run(logger *slog.Logger) error {
 
 	defer func() { _ = driver.Close() }()
 
-	if c.CacheS3Bucket != "" {
-		store, err := cacheplugins3.New(context.Background(), cacheplugins3.Config{Config: s3config.Config{
-			Bucket:          c.CacheS3Bucket,
-			Prefix:          c.CacheS3Prefix,
-			Endpoint:        c.CacheS3Endpoint,
-			Region:          c.CacheS3Region,
-			AccessKeyID:     c.CacheS3AccessKeyID,
-			SecretAccessKey: c.CacheS3SecretAccessKey,
-			ForcePathStyle:  c.CacheS3Endpoint != "",
-			TTL:             c.CacheS3TTL,
-		}})
-		if err != nil {
-			return fmt.Errorf("could not initialize cache layer: %w", err)
-		}
-		driver = cache.WrapWithCaching(driver, store, c.CacheCompression, c.CacheKeyPrefix, logger)
+	driver, err = c.wrapDriverWithCache(driver, logger)
+	if err != nil {
+		return err
 	}
 
 	storage, err := storagesqlite.NewSqlite(storagesqlite.Config{
@@ -305,4 +282,39 @@ func initSecretsManager(ctx context.Context, c *Runner, runtimeID string, logger
 	}
 
 	return secretsManager, nil
+}
+
+func handleSignals(ctx context.Context, cancel context.CancelFunc, logger *slog.Logger, sigs <-chan os.Signal) {
+	select {
+	case sig, ok := <-sigs:
+		if !ok {
+			return
+		}
+
+		logger.Debug("execution.canceled", "signal", sig)
+		cancel()
+	case <-ctx.Done():
+	}
+}
+
+func (c *Runner) wrapDriverWithCache(driver orchestra.Driver, logger *slog.Logger) (orchestra.Driver, error) {
+	if c.CacheS3Bucket == "" {
+		return driver, nil
+	}
+
+	store, err := cacheplugins3.New(context.Background(), cacheplugins3.Config{Config: s3config.Config{
+		Bucket:          c.CacheS3Bucket,
+		Prefix:          c.CacheS3Prefix,
+		Endpoint:        c.CacheS3Endpoint,
+		Region:          c.CacheS3Region,
+		AccessKeyID:     c.CacheS3AccessKeyID,
+		SecretAccessKey: c.CacheS3SecretAccessKey,
+		ForcePathStyle:  c.CacheS3Endpoint != "",
+		TTL:             c.CacheS3TTL,
+	}})
+	if err != nil {
+		return nil, fmt.Errorf("could not initialize cache layer: %w", err)
+	}
+
+	return cache.WrapWithCaching(driver, store, c.CacheCompression, c.CacheKeyPrefix, logger), nil
 }

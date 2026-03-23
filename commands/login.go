@@ -15,8 +15,8 @@ import (
 )
 
 type Login struct {
-	ServerURL  string `env:"CI_SERVER_URL"     help:"URL of the CI server" required:"" short:"s"`
-	ConfigFile string `env:"CI_AUTH_CONFIG"     help:"Path to auth config file (default: ~/.pocketci/auth.config)" short:"c"`
+	ServerURL  string `env:"CI_SERVER_URL"  help:"URL of the CI server"                                        required:"" short:"s"`
+	ConfigFile string `env:"CI_AUTH_CONFIG" help:"Path to auth config file (default: ~/.pocketci/auth.config)" short:"c"`
 }
 
 func (c *Login) Run(logger *slog.Logger) error {

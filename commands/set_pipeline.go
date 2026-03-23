@@ -25,45 +25,45 @@ import (
 )
 
 type SetPipeline struct {
-	Pipeline      string   `arg:""                  help:"Path to pipeline file (JS, TS, or YAML)"  required:"" type:"existingfile"`
-	Name          string   `help:"Name for the pipeline (defaults to filename without extension)" short:"n"`
-	ServerURL     string   `env:"CI_SERVER_URL"      help:"URL of the CI server"                                           required:"" short:"s"`
-	Driver        string   `env:"CI_DRIVER"          help:"Orchestrator driver (e.g., 'docker', 'native', 'k8s')"      short:"d"`
-	WebhookSecret string   `env:"CI_WEBHOOK_SECRET"  help:"Secret for webhook signature validation"                        short:"w"`
-	Secret        []string `help:"Set a pipeline-scoped secret as KEY=VALUE (can be repeated)" short:"e"`
+	Pipeline      string   `arg:""                                                                      help:"Path to pipeline file (JS, TS, or YAML)"                        required:"" type:"existingfile"`
+	Name          string   `help:"Name for the pipeline (defaults to filename without extension)"       short:"n"`
+	ServerURL     string   `env:"CI_SERVER_URL"                                                         help:"URL of the CI server"                                           required:"" short:"s"`
+	Driver        string   `env:"CI_DRIVER"                                                             help:"Orchestrator driver (e.g., 'docker', 'native', 'k8s')"          short:"d"`
+	WebhookSecret string   `env:"CI_WEBHOOK_SECRET"                                                     help:"Secret for webhook signature validation"                        short:"w"`
+	Secret        []string `help:"Set a pipeline-scoped secret as KEY=VALUE (can be repeated)"          short:"e"`
 	SecretFile    string   `help:"Path to a file containing secrets in KEY=VALUE format (one per line)" type:"existingfile"`
-	Resume        bool     `help:"Enable automatic resume for this pipeline" default:"false"`
-	RBAC          string   `name:"rbac" help:"RBAC expression to control access to this pipeline (expr-lang)" env:"CI_PIPELINE_RBAC"`
-	AuthToken     string   `env:"CI_AUTH_TOKEN"      help:"Bearer token for OAuth-authenticated servers"                   short:"t"`
-	ConfigFile    string   `env:"CI_AUTH_CONFIG"     help:"Path to auth config file (default: ~/.pocketci/auth.config)"   short:"c"`
+	Resume        bool     `default:"false"                                                             help:"Enable automatic resume for this pipeline"`
+	RBAC          string   `env:"CI_PIPELINE_RBAC"                                                      help:"RBAC expression to control access to this pipeline (expr-lang)" name:"rbac"`
+	AuthToken     string   `env:"CI_AUTH_TOKEN"                                                         help:"Bearer token for OAuth-authenticated servers"                   short:"t"`
+	ConfigFile    string   `env:"CI_AUTH_CONFIG"                                                        help:"Path to auth config file (default: ~/.pocketci/auth.config)"    short:"c"`
 
 	// Driver-specific configuration (passed via driver_config map)
-	DockerHost              string `name:"docker-host"              env:"CI_DOCKER_HOST"              help:"Docker daemon host URL"`
-	HetznerToken            string `name:"hetzner-token"            env:"CI_HETZNER_TOKEN"            help:"Hetzner Cloud API token"`
-	HetznerImage            string `name:"hetzner-image"            env:"CI_HETZNER_IMAGE"            help:"Hetzner server image"`
-	HetznerServerType       string `name:"hetzner-server-type"      env:"CI_HETZNER_SERVER_TYPE"      help:"Hetzner server type"`
-	HetznerLocation         string `name:"hetzner-location"         env:"CI_HETZNER_LOCATION"         help:"Hetzner datacenter location"`
-	HetznerMaxWorkers       int    `name:"hetzner-max-workers"      env:"CI_HETZNER_MAX_WORKERS"      help:"Max concurrent Hetzner servers"`
-	HetznerReuseWorker      bool   `name:"hetzner-reuse-worker"     env:"CI_HETZNER_REUSE_WORKER"     help:"Reuse idle Hetzner servers"`
-	DigitalOceanToken       string `name:"digitalocean-token"       env:"CI_DIGITALOCEAN_TOKEN"       help:"DigitalOcean API token"`
-	DigitalOceanImage       string `name:"digitalocean-image"       env:"CI_DIGITALOCEAN_IMAGE"       help:"Droplet image slug"`
-	DigitalOceanSize        string `name:"digitalocean-size"        env:"CI_DIGITALOCEAN_SIZE"        help:"Droplet size slug"`
-	DigitalOceanRegion      string `name:"digitalocean-region"      env:"CI_DIGITALOCEAN_REGION"      help:"Droplet region"`
-	DigitalOceanMaxWorkers  int    `name:"digitalocean-max-workers" env:"CI_DIGITALOCEAN_MAX_WORKERS" help:"Max concurrent droplets"`
-	DigitalOceanReuseWorker bool   `name:"digitalocean-reuse-worker" env:"CI_DIGITALOCEAN_REUSE_WORKER" help:"Reuse idle droplets"`
-	FlyToken                string `name:"fly-token"                env:"CI_FLY_TOKEN"                help:"Fly.io API token"`
-	FlyApp                  string `name:"fly-app"                  env:"CI_FLY_APP"                  help:"Fly.io app name"`
-	FlyRegion               string `name:"fly-region"               env:"CI_FLY_REGION"               help:"Fly.io machine region"`
-	FlyOrg                  string `name:"fly-org"                  env:"CI_FLY_ORG"                  help:"Fly.io org slug"`
-	FlySize                 string `name:"fly-size"                 env:"CI_FLY_SIZE"                 help:"Fly.io machine size"`
-	K8sKubeconfig           string `name:"k8s-kubeconfig"           env:"CI_K8S_KUBECONFIG"           help:"Path to kubeconfig file"`
-	K8sNamespace            string `name:"k8s-namespace"            env:"CI_K8S_NAMESPACE"            help:"Kubernetes namespace for jobs"`
-	QEMUMemory              string `name:"qemu-memory"              env:"CI_QEMU_MEMORY"              help:"QEMU VM memory"`
-	QEMUCPUs                string `name:"qemu-cpus"                env:"CI_QEMU_CPUS"                help:"QEMU VM CPU count"`
-	QEMUAccel               string `name:"qemu-accel"               env:"CI_QEMU_ACCEL"               help:"QEMU acceleration mode"`
-	QEMUImage               string `name:"qemu-image"               env:"CI_QEMU_IMAGE"               help:"QEMU boot image path or URL"`
-	QEMUBinary              string `name:"qemu-binary"              env:"CI_QEMU_BINARY"              help:"Path to qemu-system binary"`
-	QEMUCacheDir            string `name:"qemu-cache-dir"           env:"CI_QEMU_CACHE_DIR"           help:"Directory for QEMU image cache"`
+	DockerHost              string `env:"CI_DOCKER_HOST"               help:"Docker daemon host URL"         name:"docker-host"`
+	HetznerToken            string `env:"CI_HETZNER_TOKEN"             help:"Hetzner Cloud API token"        name:"hetzner-token"`
+	HetznerImage            string `env:"CI_HETZNER_IMAGE"             help:"Hetzner server image"           name:"hetzner-image"`
+	HetznerServerType       string `env:"CI_HETZNER_SERVER_TYPE"       help:"Hetzner server type"            name:"hetzner-server-type"`
+	HetznerLocation         string `env:"CI_HETZNER_LOCATION"          help:"Hetzner datacenter location"    name:"hetzner-location"`
+	HetznerMaxWorkers       int    `env:"CI_HETZNER_MAX_WORKERS"       help:"Max concurrent Hetzner servers" name:"hetzner-max-workers"`
+	HetznerReuseWorker      bool   `env:"CI_HETZNER_REUSE_WORKER"      help:"Reuse idle Hetzner servers"     name:"hetzner-reuse-worker"`
+	DigitalOceanToken       string `env:"CI_DIGITALOCEAN_TOKEN"        help:"DigitalOcean API token"         name:"digitalocean-token"`
+	DigitalOceanImage       string `env:"CI_DIGITALOCEAN_IMAGE"        help:"Droplet image slug"             name:"digitalocean-image"`
+	DigitalOceanSize        string `env:"CI_DIGITALOCEAN_SIZE"         help:"Droplet size slug"              name:"digitalocean-size"`
+	DigitalOceanRegion      string `env:"CI_DIGITALOCEAN_REGION"       help:"Droplet region"                 name:"digitalocean-region"`
+	DigitalOceanMaxWorkers  int    `env:"CI_DIGITALOCEAN_MAX_WORKERS"  help:"Max concurrent droplets"        name:"digitalocean-max-workers"`
+	DigitalOceanReuseWorker bool   `env:"CI_DIGITALOCEAN_REUSE_WORKER" help:"Reuse idle droplets"            name:"digitalocean-reuse-worker"`
+	FlyToken                string `env:"CI_FLY_TOKEN"                 help:"Fly.io API token"               name:"fly-token"`
+	FlyApp                  string `env:"CI_FLY_APP"                   help:"Fly.io app name"                name:"fly-app"`
+	FlyRegion               string `env:"CI_FLY_REGION"                help:"Fly.io machine region"          name:"fly-region"`
+	FlyOrg                  string `env:"CI_FLY_ORG"                   help:"Fly.io org slug"                name:"fly-org"`
+	FlySize                 string `env:"CI_FLY_SIZE"                  help:"Fly.io machine size"            name:"fly-size"`
+	K8sKubeconfig           string `env:"CI_K8S_KUBECONFIG"            help:"Path to kubeconfig file"        name:"k8s-kubeconfig"`
+	K8sNamespace            string `env:"CI_K8S_NAMESPACE"             help:"Kubernetes namespace for jobs"  name:"k8s-namespace"`
+	QEMUMemory              string `env:"CI_QEMU_MEMORY"               help:"QEMU VM memory"                 name:"qemu-memory"`
+	QEMUCPUs                string `env:"CI_QEMU_CPUS"                 help:"QEMU VM CPU count"              name:"qemu-cpus"`
+	QEMUAccel               string `env:"CI_QEMU_ACCEL"                help:"QEMU acceleration mode"         name:"qemu-accel"`
+	QEMUImage               string `env:"CI_QEMU_IMAGE"                help:"QEMU boot image path or URL"    name:"qemu-image"`
+	QEMUBinary              string `env:"CI_QEMU_BINARY"               help:"Path to qemu-system binary"     name:"qemu-binary"`
+	QEMUCacheDir            string `env:"CI_QEMU_CACHE_DIR"            help:"Directory for QEMU image cache" name:"qemu-cache-dir"`
 }
 
 // pipelineRequest matches the server's expected JSON body for PUT /api/pipelines/:name.

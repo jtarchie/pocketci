@@ -16,16 +16,16 @@ import (
 
 // LLMConfig controls LLM generation parameters.
 type LLMConfig struct {
-	Temperature *float32 `yaml:"temperature,omitempty" json:"temperature,omitempty"`
-	MaxTokens   int32    `yaml:"max_tokens,omitempty"   json:"max_tokens,omitempty"`
+	Temperature *float32 `json:"temperature,omitempty" yaml:"temperature,omitempty"`
+	MaxTokens   int32    `json:"max_tokens,omitempty"  yaml:"max_tokens,omitempty"`
 }
 
 // ThinkingConfig enables extended thinking for supported models.
 // Budget sets the maximum thinking tokens (>= 1024).
 // Level is Gemini-specific: LOW | MEDIUM | HIGH | MINIMAL.
 type ThinkingConfig struct {
-	Budget int32  `yaml:"budget"          json:"budget"`
-	Level  string `yaml:"level,omitempty" json:"level,omitempty"`
+	Budget int32  `json:"budget"          yaml:"budget"`
+	Level  string `json:"level,omitempty" yaml:"level,omitempty"`
 }
 
 // DefaultBaseURLs maps providers (that use the OpenAI-compatible API) to their base URLs.

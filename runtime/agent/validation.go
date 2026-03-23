@@ -10,8 +10,8 @@ import (
 // The expression is evaluated with {text: string, status: string} as the environment.
 // If it returns false, a follow-up prompt is sent asking the model to correct its output.
 type AgentValidationConfig struct {
-	Expr   string `yaml:"expr"              json:"expr"`
-	Prompt string `yaml:"prompt,omitempty"  json:"prompt,omitempty"`
+	Expr   string `json:"expr"             yaml:"expr"`
+	Prompt string `json:"prompt,omitempty" yaml:"prompt,omitempty"`
 }
 
 // evalValidation compiles and runs a boolean Expr expression against the given

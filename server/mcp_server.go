@@ -203,7 +203,7 @@ func searchTasksByPipeline(ctx context.Context, store storage.Driver, input sear
 }
 
 type searchPipelinesInput struct {
-	Query   string `json:"query"    jsonschema:"Search query matching pipeline name or content (empty returns all)"`
+	Query   string `json:"query"              jsonschema:"Search query matching pipeline name or content (empty returns all)"`
 	Page    *int   `json:"page,omitempty"     jsonschema:"Page number 1-based (default 1)"`
 	PerPage *int   `json:"per_page,omitempty" jsonschema:"Results per page (default 20)"`
 }

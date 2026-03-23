@@ -16,10 +16,10 @@ import (
 // Resource command for executing native resource operations.
 // This allows the ci binary to act as a resource executor in containers.
 type Resource struct {
-	Type      string        `arg:"" help:"Resource type (e.g., git, mock)"`
-	Operation string        `arg:"" enum:"check,in,out" help:"Operation to perform (check, in, out)"`
-	Path      string        `arg:"" optional:"" help:"Path for in/out operations"`
-	Timeout   time.Duration `default:"10m" env:"CI_TIMEOUT" help:"Timeout for the operation"`
+	Type      string        `arg:""        help:"Resource type (e.g., git, mock)"`
+	Operation string        `arg:""        enum:"check,in,out"                    help:"Operation to perform (check, in, out)"`
+	Path      string        `arg:""        help:"Path for in/out operations"      optional:""`
+	Timeout   time.Duration `default:"10m" env:"CI_TIMEOUT"                       help:"Timeout for the operation"`
 }
 
 func (r *Resource) Run(logger *slog.Logger) error {

@@ -41,54 +41,54 @@ import (
 )
 
 type Server struct {
-	Port int `default:"8080"             env:"CI_PORT"                 help:"Port to run the server on"`
+	Port int `default:"8080" env:"CI_PORT" help:"Port to run the server on"`
 	// Storage backend: SQLite (default) or S3
-	StorageSQLitePath        string        `name:"storage-sqlite-path"        default:"test.db" env:"CI_STORAGE_SQLITE_PATH" help:"SQLite storage database file path (use ':memory:' for in-memory)"`
-	StorageS3Bucket          string        `name:"storage-s3-bucket"            env:"CI_STORAGE_S3_BUCKET"            help:"S3 bucket name for storage backend"`
-	StorageS3Endpoint        string        `name:"storage-s3-endpoint"          env:"CI_STORAGE_S3_ENDPOINT"          help:"S3-compatible endpoint URL"`
-	StorageS3Region          string        `name:"storage-s3-region"            env:"CI_STORAGE_S3_REGION"            help:"AWS region for S3 storage backend"`
-	StorageS3AccessKeyID     string        `name:"storage-s3-access-key-id"     env:"CI_STORAGE_S3_ACCESS_KEY_ID"     help:"S3 access key ID for storage backend"`
-	StorageS3SecretAccessKey string        `name:"storage-s3-secret-access-key" env:"CI_STORAGE_S3_SECRET_ACCESS_KEY" help:"S3 secret access key for storage backend"`
-	StorageS3Prefix          string        `name:"storage-s3-prefix"            env:"CI_STORAGE_S3_PREFIX"            help:"S3 key prefix for storage backend"`
-	MaxInFlight              int           `default:"10"               env:"CI_MAX_IN_FLIGHT"         help:"Maximum concurrent pipeline executions"`
-	WebhookTimeout           time.Duration `default:"5s"               env:"CI_WEBHOOK_TIMEOUT"       help:"Timeout waiting for pipeline webhook response"`
-	BasicAuth                string        `env:"CI_BASIC_AUTH"         help:"Basic auth credentials in format 'username:password' (optional)"`
-	AllowedDrivers           string        `default:"*"                env:"CI_ALLOWED_DRIVERS"       help:"Comma-separated list of allowed driver names (e.g., 'docker,native,k8s'), or '*' for all"`
-	AllowedFeatures          string        `default:"*"                env:"CI_ALLOWED_FEATURES"      help:"Comma-separated list of allowed features (webhooks,secrets,notifications,fetch,resume), or '*' for all"`
-	FetchTimeout             time.Duration `default:"30s"              env:"CI_FETCH_TIMEOUT"         help:"Default timeout for fetch() calls in pipelines"`
-	FetchMaxResponseMB       int           `name:"fetch-max-response-mb" default:"10"               env:"CI_FETCH_MAX_RESPONSE_MB" help:"Maximum response body size in MB for fetch() calls"`
+	StorageSQLitePath        string        `default:"test.db"                     env:"CI_STORAGE_SQLITE_PATH"                                           help:"SQLite storage database file path (use ':memory:' for in-memory)"                                       name:"storage-sqlite-path"`
+	StorageS3Bucket          string        `env:"CI_STORAGE_S3_BUCKET"            help:"S3 bucket name for storage backend"                              name:"storage-s3-bucket"`
+	StorageS3Endpoint        string        `env:"CI_STORAGE_S3_ENDPOINT"          help:"S3-compatible endpoint URL"                                      name:"storage-s3-endpoint"`
+	StorageS3Region          string        `env:"CI_STORAGE_S3_REGION"            help:"AWS region for S3 storage backend"                               name:"storage-s3-region"`
+	StorageS3AccessKeyID     string        `env:"CI_STORAGE_S3_ACCESS_KEY_ID"     help:"S3 access key ID for storage backend"                            name:"storage-s3-access-key-id"`
+	StorageS3SecretAccessKey string        `env:"CI_STORAGE_S3_SECRET_ACCESS_KEY" help:"S3 secret access key for storage backend"                        name:"storage-s3-secret-access-key"`
+	StorageS3Prefix          string        `env:"CI_STORAGE_S3_PREFIX"            help:"S3 key prefix for storage backend"                               name:"storage-s3-prefix"`
+	MaxInFlight              int           `default:"10"                          env:"CI_MAX_IN_FLIGHT"                                                 help:"Maximum concurrent pipeline executions"`
+	WebhookTimeout           time.Duration `default:"5s"                          env:"CI_WEBHOOK_TIMEOUT"                                               help:"Timeout waiting for pipeline webhook response"`
+	BasicAuth                string        `env:"CI_BASIC_AUTH"                   help:"Basic auth credentials in format 'username:password' (optional)"`
+	AllowedDrivers           string        `default:"*"                           env:"CI_ALLOWED_DRIVERS"                                               help:"Comma-separated list of allowed driver names (e.g., 'docker,native,k8s'), or '*' for all"`
+	AllowedFeatures          string        `default:"*"                           env:"CI_ALLOWED_FEATURES"                                              help:"Comma-separated list of allowed features (webhooks,secrets,notifications,fetch,resume), or '*' for all"`
+	FetchTimeout             time.Duration `default:"30s"                         env:"CI_FETCH_TIMEOUT"                                                 help:"Default timeout for fetch() calls in pipelines"`
+	FetchMaxResponseMB       int           `default:"10"                          env:"CI_FETCH_MAX_RESPONSE_MB"                                         help:"Maximum response body size in MB for fetch() calls"                                                     name:"fetch-max-response-mb"`
 	// SQLite secrets backend
-	SecretsSQLitePath       string `name:"secrets-sqlite-path"       default:"test.db" env:"CI_SECRETS_SQLITE_PATH"       help:"SQLite secrets database file path (use ':memory:' for in-memory)"`
-	SecretsSQLitePassphrase string `name:"secrets-sqlite-passphrase" default:"testing"  env:"CI_SECRETS_SQLITE_PASSPHRASE" help:"Encryption passphrase for SQLite secrets backend"`
+	SecretsSQLitePath       string `default:"test.db" env:"CI_SECRETS_SQLITE_PATH"       help:"SQLite secrets database file path (use ':memory:' for in-memory)" name:"secrets-sqlite-path"`
+	SecretsSQLitePassphrase string `default:"testing" env:"CI_SECRETS_SQLITE_PASSPHRASE" help:"Encryption passphrase for SQLite secrets backend"                 name:"secrets-sqlite-passphrase"`
 	// S3 secrets backend (takes precedence over SQLite when Bucket is set)
-	SecretsS3Bucket          string   `name:"secrets-s3-bucket"            env:"CI_SECRETS_S3_BUCKET"            help:"S3 bucket name for secrets backend"`
-	SecretsS3Endpoint        string   `name:"secrets-s3-endpoint"          env:"CI_SECRETS_S3_ENDPOINT"          help:"S3-compatible endpoint URL (e.g., 'https://s3.amazonaws.com')"`
-	SecretsS3Region          string   `name:"secrets-s3-region"            env:"CI_SECRETS_S3_REGION"            help:"AWS region for S3 secrets backend"`
-	SecretsS3AccessKeyID     string   `name:"secrets-s3-access-key-id"     env:"CI_SECRETS_S3_ACCESS_KEY_ID"     help:"S3 access key ID"`
-	SecretsS3SecretAccessKey string   `name:"secrets-s3-secret-access-key" env:"CI_SECRETS_S3_SECRET_ACCESS_KEY" help:"S3 secret access key"`
-	SecretsS3Passphrase      string   `name:"secrets-s3-passphrase"        env:"CI_SECRETS_S3_PASSPHRASE"        help:"Encryption passphrase for S3 secrets backend (application-layer AES-256-GCM)"`
-	SecretsS3Encrypt         string   `name:"secrets-s3-encrypt"           env:"CI_SECRETS_S3_ENCRYPT"           help:"S3 server-side encryption mode: sse-s3, sse-kms, or sse-c"`
-	SecretsS3Prefix          string   `name:"secrets-s3-prefix"            env:"CI_SECRETS_S3_PREFIX"            help:"S3 key prefix for secrets"`
+	SecretsS3Bucket          string   `env:"CI_SECRETS_S3_BUCKET"                                help:"S3 bucket name for secrets backend"                                           name:"secrets-s3-bucket"`
+	SecretsS3Endpoint        string   `env:"CI_SECRETS_S3_ENDPOINT"                              help:"S3-compatible endpoint URL (e.g., 'https://s3.amazonaws.com')"                name:"secrets-s3-endpoint"`
+	SecretsS3Region          string   `env:"CI_SECRETS_S3_REGION"                                help:"AWS region for S3 secrets backend"                                            name:"secrets-s3-region"`
+	SecretsS3AccessKeyID     string   `env:"CI_SECRETS_S3_ACCESS_KEY_ID"                         help:"S3 access key ID"                                                             name:"secrets-s3-access-key-id"`
+	SecretsS3SecretAccessKey string   `env:"CI_SECRETS_S3_SECRET_ACCESS_KEY"                     help:"S3 secret access key"                                                         name:"secrets-s3-secret-access-key"`
+	SecretsS3Passphrase      string   `env:"CI_SECRETS_S3_PASSPHRASE"                            help:"Encryption passphrase for S3 secrets backend (application-layer AES-256-GCM)" name:"secrets-s3-passphrase"`
+	SecretsS3Encrypt         string   `env:"CI_SECRETS_S3_ENCRYPT"                               help:"S3 server-side encryption mode: sse-s3, sse-kms, or sse-c"                    name:"secrets-s3-encrypt"`
+	SecretsS3Prefix          string   `env:"CI_SECRETS_S3_PREFIX"                                help:"S3 key prefix for secrets"                                                    name:"secrets-s3-prefix"`
 	Secret                   []string `help:"Set a global secret as KEY=VALUE (can be repeated)" short:"e"`
-	PosthogAPIKey            string   `name:"posthog-api-key"     env:"CI_POSTHOG_API_KEY"     help:"PostHog API key (e.g., 'phc_abc123')"`
-	PosthogEndpoint          string   `env:"CI_POSTHOG_ENDPOINT"    help:"PostHog ingestion endpoint URL (defaults to PostHog cloud)"`
-	HoneybadgerAPIKey        string   `name:"honeybadger-api-key" env:"CI_HONEYBADGER_API_KEY" help:"Honeybadger API key"`
-	HoneybadgerEnv           string   `env:"CI_HONEYBADGER_ENV"     help:"Honeybadger environment name (e.g., 'production')"`
+	PosthogAPIKey            string   `env:"CI_POSTHOG_API_KEY"                                  help:"PostHog API key (e.g., 'phc_abc123')"                                         name:"posthog-api-key"`
+	PosthogEndpoint          string   `env:"CI_POSTHOG_ENDPOINT"                                 help:"PostHog ingestion endpoint URL (defaults to PostHog cloud)"`
+	HoneybadgerAPIKey        string   `env:"CI_HONEYBADGER_API_KEY"                              help:"Honeybadger API key"                                                          name:"honeybadger-api-key"`
+	HoneybadgerEnv           string   `env:"CI_HONEYBADGER_ENV"                                  help:"Honeybadger environment name (e.g., 'production')"`
 
 	// OAuth provider configuration
-	OAuthGithubClientID        string `name:"oauth-github-client-id"        env:"CI_OAUTH_GITHUB_CLIENT_ID"        help:"GitHub OAuth application client ID"`
-	OAuthGithubClientSecret    string `name:"oauth-github-client-secret"    env:"CI_OAUTH_GITHUB_CLIENT_SECRET"    help:"GitHub OAuth application client secret"`
-	OAuthGitlabClientID        string `name:"oauth-gitlab-client-id"        env:"CI_OAUTH_GITLAB_CLIENT_ID"        help:"GitLab OAuth application client ID"`
-	OAuthGitlabClientSecret    string `name:"oauth-gitlab-client-secret"    env:"CI_OAUTH_GITLAB_CLIENT_SECRET"    help:"GitLab OAuth application client secret"`
-	OAuthGitlabURL             string `name:"oauth-gitlab-url"              env:"CI_OAUTH_GITLAB_URL"              help:"Self-hosted GitLab URL (defaults to https://gitlab.com)"`
-	OAuthMicrosoftClientID     string `name:"oauth-microsoft-client-id"     env:"CI_OAUTH_MICROSOFT_CLIENT_ID"     help:"Microsoft/Azure AD OAuth client ID"`
-	OAuthMicrosoftClientSecret string `name:"oauth-microsoft-client-secret" env:"CI_OAUTH_MICROSOFT_CLIENT_SECRET" help:"Microsoft/Azure AD OAuth client secret"`
-	OAuthMicrosoftTenant       string `name:"oauth-microsoft-tenant"        env:"CI_OAUTH_MICROSOFT_TENANT"        help:"Azure AD tenant ID (defaults to 'common')"`
-	OAuthSessionSecret         string `name:"oauth-session-secret"          env:"CI_OAUTH_SESSION_SECRET"          help:"Secret key for encrypting OAuth session cookies"`
-	OAuthCallbackURL           string `name:"oauth-callback-url"            env:"CI_OAUTH_CALLBACK_URL"            help:"Base URL for OAuth callbacks (e.g., 'https://ci.example.com')"`
+	OAuthGithubClientID        string `env:"CI_OAUTH_GITHUB_CLIENT_ID"        help:"GitHub OAuth application client ID"                            name:"oauth-github-client-id"`
+	OAuthGithubClientSecret    string `env:"CI_OAUTH_GITHUB_CLIENT_SECRET"    help:"GitHub OAuth application client secret"                        name:"oauth-github-client-secret"`
+	OAuthGitlabClientID        string `env:"CI_OAUTH_GITLAB_CLIENT_ID"        help:"GitLab OAuth application client ID"                            name:"oauth-gitlab-client-id"`
+	OAuthGitlabClientSecret    string `env:"CI_OAUTH_GITLAB_CLIENT_SECRET"    help:"GitLab OAuth application client secret"                        name:"oauth-gitlab-client-secret"`
+	OAuthGitlabURL             string `env:"CI_OAUTH_GITLAB_URL"              help:"Self-hosted GitLab URL (defaults to https://gitlab.com)"       name:"oauth-gitlab-url"`
+	OAuthMicrosoftClientID     string `env:"CI_OAUTH_MICROSOFT_CLIENT_ID"     help:"Microsoft/Azure AD OAuth client ID"                            name:"oauth-microsoft-client-id"`
+	OAuthMicrosoftClientSecret string `env:"CI_OAUTH_MICROSOFT_CLIENT_SECRET" help:"Microsoft/Azure AD OAuth client secret"                        name:"oauth-microsoft-client-secret"`
+	OAuthMicrosoftTenant       string `env:"CI_OAUTH_MICROSOFT_TENANT"        help:"Azure AD tenant ID (defaults to 'common')"                     name:"oauth-microsoft-tenant"`
+	OAuthSessionSecret         string `env:"CI_OAUTH_SESSION_SECRET"          help:"Secret key for encrypting OAuth session cookies"               name:"oauth-session-secret"`
+	OAuthCallbackURL           string `env:"CI_OAUTH_CALLBACK_URL"            help:"Base URL for OAuth callbacks (e.g., 'https://ci.example.com')" name:"oauth-callback-url"`
 
 	// RBAC configuration
-	ServerRBAC string `name:"server-rbac" env:"CI_SERVER_RBAC" help:"Expr expression for server-level access control (e.g., 'Email endsWith \"@company.com\"')"`
+	ServerRBAC string `env:"CI_SERVER_RBAC" help:"Expr expression for server-level access control (e.g., 'Email endsWith \"@company.com\"')" name:"server-rbac"`
 
 	// Docker driver
 	DockerHost string `env:"CI_DOCKER_HOST" help:"Docker daemon host URL (e.g., 'tcp://host:2376', 'ssh://user@host')"`
@@ -117,25 +117,25 @@ type Server struct {
 	FlySize   string `env:"CI_FLY_SIZE"   help:"Fly.io machine size"`
 
 	// Kubernetes driver
-	K8sKubeconfig string `name:"k8s-kubeconfig" env:"CI_K8S_KUBECONFIG" help:"Path to kubeconfig file (uses in-cluster config if empty)"`
-	K8sNamespace  string `name:"k8s-namespace"  env:"CI_K8S_NAMESPACE"  help:"Kubernetes namespace for jobs (default: default)"`
+	K8sKubeconfig string `env:"CI_K8S_KUBECONFIG" help:"Path to kubeconfig file (uses in-cluster config if empty)" name:"k8s-kubeconfig"`
+	K8sNamespace  string `env:"CI_K8S_NAMESPACE"  help:"Kubernetes namespace for jobs (default: default)"          name:"k8s-namespace"`
 
 	// QEMU driver
-	QEMUMemory   string `name:"qemu-memory"    env:"CI_QEMU_MEMORY"    help:"QEMU VM memory (e.g., '2048')"`
-	QEMUCPUs     string `name:"qemu-cpus"      env:"CI_QEMU_CPUS"      help:"QEMU VM CPU count"`
-	QEMUAccel    string `name:"qemu-accel"     env:"CI_QEMU_ACCEL"     help:"QEMU acceleration: hvf, kvm, tcg, or auto"`
-	QEMUImage    string `name:"qemu-image"     env:"CI_QEMU_IMAGE"     help:"QEMU boot image path or URL"`
-	QEMUBinary   string `name:"qemu-binary"    env:"CI_QEMU_BINARY"    help:"Path to qemu-system binary"`
-	QEMUCacheDir string `name:"qemu-cache-dir" env:"CI_QEMU_CACHE_DIR" help:"Directory for QEMU image cache"`
+	QEMUMemory   string `env:"CI_QEMU_MEMORY"    help:"QEMU VM memory (e.g., '2048')"             name:"qemu-memory"`
+	QEMUCPUs     string `env:"CI_QEMU_CPUS"      help:"QEMU VM CPU count"                         name:"qemu-cpus"`
+	QEMUAccel    string `env:"CI_QEMU_ACCEL"     help:"QEMU acceleration: hvf, kvm, tcg, or auto" name:"qemu-accel"`
+	QEMUImage    string `env:"CI_QEMU_IMAGE"     help:"QEMU boot image path or URL"               name:"qemu-image"`
+	QEMUBinary   string `env:"CI_QEMU_BINARY"    help:"Path to qemu-system binary"                name:"qemu-binary"`
+	QEMUCacheDir string `env:"CI_QEMU_CACHE_DIR" help:"Directory for QEMU image cache"            name:"qemu-cache-dir"`
 
 	// Cache (optional, wraps the driver)
-	CacheS3Bucket          string        `name:"cache-s3-bucket"            env:"CI_CACHE_S3_BUCKET"            help:"S3 bucket for cache backend"`
-	CacheS3Prefix          string        `name:"cache-s3-prefix"            env:"CI_CACHE_S3_PREFIX"            help:"S3 key prefix for cache"`
-	CacheS3Endpoint        string        `name:"cache-s3-endpoint"          env:"CI_CACHE_S3_ENDPOINT"          help:"S3-compatible endpoint URL for cache"`
-	CacheS3Region          string        `name:"cache-s3-region"            env:"CI_CACHE_S3_REGION"            help:"AWS region for cache S3 backend"`
-	CacheS3AccessKeyID     string        `name:"cache-s3-access-key-id"     env:"CI_CACHE_S3_ACCESS_KEY_ID"     help:"S3 access key ID for cache"`
-	CacheS3SecretAccessKey string        `name:"cache-s3-secret-access-key" env:"CI_CACHE_S3_SECRET_ACCESS_KEY" help:"S3 secret access key for cache"`
-	CacheS3TTL             time.Duration `name:"cache-s3-ttl"               env:"CI_CACHE_S3_TTL"               help:"Cache object TTL (0 = no expiry)"`
+	CacheS3Bucket          string        `env:"CI_CACHE_S3_BUCKET"            help:"S3 bucket for cache backend"                            name:"cache-s3-bucket"`
+	CacheS3Prefix          string        `env:"CI_CACHE_S3_PREFIX"            help:"S3 key prefix for cache"                                name:"cache-s3-prefix"`
+	CacheS3Endpoint        string        `env:"CI_CACHE_S3_ENDPOINT"          help:"S3-compatible endpoint URL for cache"                   name:"cache-s3-endpoint"`
+	CacheS3Region          string        `env:"CI_CACHE_S3_REGION"            help:"AWS region for cache S3 backend"                        name:"cache-s3-region"`
+	CacheS3AccessKeyID     string        `env:"CI_CACHE_S3_ACCESS_KEY_ID"     help:"S3 access key ID for cache"                             name:"cache-s3-access-key-id"`
+	CacheS3SecretAccessKey string        `env:"CI_CACHE_S3_SECRET_ACCESS_KEY" help:"S3 secret access key for cache"                         name:"cache-s3-secret-access-key"`
+	CacheS3TTL             time.Duration `env:"CI_CACHE_S3_TTL"               help:"Cache object TTL (0 = no expiry)"                       name:"cache-s3-ttl"`
 	CacheCompression       string        `env:"CI_CACHE_COMPRESSION"          help:"Cache compression: zstd, gzip, or none (default: zstd)"`
 	CacheKeyPrefix         string        `env:"CI_CACHE_KEY_PREFIX"           help:"Cache key prefix"`
 }
