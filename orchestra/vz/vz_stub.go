@@ -3,6 +3,7 @@
 package vz
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
@@ -29,6 +30,6 @@ type Config struct {
 
 // New returns an error on non-darwin platforms since Apple Virtualization
 // framework is only available on macOS.
-func New(_ Config, _ *slog.Logger) (orchestra.Driver, error) {
+func New(_ context.Context, _ Config, _ *slog.Logger) (orchestra.Driver, error) {
 	return nil, fmt.Errorf("vz driver is only available on macOS (darwin)")
 }
