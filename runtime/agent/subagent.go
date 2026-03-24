@@ -305,6 +305,7 @@ func newCallAgentTool(
 		},
 		func(_ adktool.Context, input callAgentInput) (callAgentOutput, error) {
 			prompt := composePrompt(subCfg.Prompt, input.Request)
+			startedAt := time.Now().UTC()
 
 			subAgentConfig := AgentConfig{
 				Name:        subCfg.Name,
@@ -325,17 +326,7 @@ func newCallAgentTool(
 				return callAgentOutput{}, err
 			}
 
-			// Persist to a nested storage path so the UI tree renders the
-			// sub-agent's result indented under the parent agent step.
-			if subCfg.StorageKeyPrefix != "" && parentConfig.Storage != nil {
-				storageKey := subCfg.StorageKeyPrefix + "/sub-agents/" + subCfg.Name + "/run"
-				_ = parentConfig.Storage.Set(ctx, storageKey, map[string]any{
-					"status":    result.Status,
-					"stdout":    result.Text,
-					"usage":     result.Usage,
-					"audit_log": result.AuditLog,
-				})
-			}
+			persistSubAgentProgress(ctx, subCfg, parentConfig, result.Status, result.Text, result.Usage, result.AuditLog, startedAt)
 
 			return callAgentOutput{
 				Result: result.Text,
