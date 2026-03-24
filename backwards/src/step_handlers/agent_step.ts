@@ -7,6 +7,36 @@ import { processHooks } from "./resource_helpers.ts";
 import type { StepContext } from "./step_context.ts";
 import type { StepHandler } from "./step_handler.ts";
 
+// mergeAgentFileConfig loads a YAML file from a volume and merges it with
+// inline step fields. Inline values override file values (shallow merge).
+// Prompts are concatenated so file-level and inline prompts are both included.
+async function mergeAgentFileConfig(
+  ctx: StepContext,
+  inlineStep: AgentStep,
+  pathContext: string,
+): Promise<AgentStep> {
+  const contents = await loadFileFromVolume(ctx, inlineStep.file!, pathContext);
+  const fileConfig = YAML.parse(contents) as Partial<AgentStep>;
+  const merged = {
+    ...fileConfig,
+    ...inlineStep,
+    agent: inlineStep.agent,
+  } as AgentStep;
+  if (fileConfig.prompt && inlineStep.prompt) {
+    merged.prompt = fileConfig.prompt + "\n" + inlineStep.prompt;
+  } else if (!inlineStep.prompt && fileConfig.prompt) {
+    merged.prompt = fileConfig.prompt;
+  }
+  if (!inlineStep.model && fileConfig.model) merged.model = fileConfig.model;
+  if (!inlineStep.config && fileConfig.config) {
+    merged.config = fileConfig.config;
+  }
+  if (!inlineStep.context && fileConfig.context) {
+    merged.context = fileConfig.context;
+  }
+  return merged;
+}
+
 export class AgentStepHandler implements StepHandler {
   getIdentifier(step: Step): string {
     return `agent/${(step as AgentStep).agent}`;
@@ -22,27 +52,7 @@ export class AgentStepHandler implements StepHandler {
     // Load full agent config from a YAML file on a volume.
     // Inline fields on the step override file-loaded values (no deep merge).
     if ("file" in step && step.file) {
-      const contents = await loadFileFromVolume(ctx, step.file, pathContext);
-      const fileConfig = YAML.parse(contents) as Partial<AgentStep>;
-      agentStep = {
-        ...fileConfig,
-        ...step,
-        agent: step.agent,
-      } as AgentStep;
-      // Concatenate file prompt + inline prompt so shared instructions
-      // and step-specific prompts are both included.
-      if (fileConfig.prompt && step.prompt) {
-        agentStep.prompt = fileConfig.prompt + "\n" + step.prompt;
-      } else if (!step.prompt && fileConfig.prompt) {
-        agentStep.prompt = fileConfig.prompt;
-      }
-      if (!step.model && fileConfig.model) agentStep.model = fileConfig.model;
-      if (!step.config && fileConfig.config) {
-        agentStep.config = fileConfig.config;
-      }
-      if (!step.context && fileConfig.context) {
-        agentStep.context = fileConfig.context;
-      }
+      agentStep = await mergeAgentFileConfig(ctx, step, pathContext);
     } else if ("prompt_file" in step && step.prompt_file) {
       // Load just the prompt text from a plain text file on a volume.
       const contents = await loadFileFromVolume(
@@ -72,25 +82,7 @@ export class AgentStepHandler implements StepHandler {
         // Agent tool — resolve from file if needed.
         let subStep = rawTool as AgentStep;
         if ("file" in rawTool && rawTool.file) {
-          const contents = await loadFileFromVolume(
-            ctx,
-            rawTool.file,
-            pathContext,
-          );
-          const fileConfig = YAML.parse(contents) as Partial<AgentStep>;
-          subStep = {
-            ...fileConfig,
-            ...rawTool,
-            agent: rawTool.agent,
-          } as AgentStep;
-          if (fileConfig.prompt && rawTool.prompt) {
-            subStep.prompt = fileConfig.prompt + "\n" + rawTool.prompt;
-          } else if (!rawTool.prompt && fileConfig.prompt) {
-            subStep.prompt = fileConfig.prompt;
-          }
-          if (!rawTool.model && fileConfig.model) {
-            subStep.model = fileConfig.model;
-          }
+          subStep = await mergeAgentFileConfig(ctx, rawTool as AgentStep, pathContext);
         }
         const subImage = subStep.config?.image ??
           subStep.config?.image_resource?.source?.repository ?? "";
