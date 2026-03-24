@@ -93,6 +93,21 @@ func buildSubAgentTool(
 		return nil, fmt.Errorf("read_file tool: %w", err)
 	}
 
+	subGrep, err := newGrepTool(sandbox, parentConfig.OnOutput) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	if err != nil {
+		return nil, fmt.Errorf("grep tool: %w", err)
+	}
+
+	subGlob, err := newGlobTool(sandbox, parentConfig.OnOutput) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	if err != nil {
+		return nil, fmt.Errorf("glob tool: %w", err)
+	}
+
+	subWriteFile, err := newWriteFileTool(sandbox, parentConfig.OnOutput) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	if err != nil {
+		return nil, fmt.Errorf("write_file tool: %w", err)
+	}
+
 	subListTasks, err := newListTasksTool(ctx, parentConfig)
 	if err != nil {
 		return nil, fmt.Errorf("list_tasks tool: %w", err)
@@ -108,7 +123,7 @@ func buildSubAgentTool(
 		Model:       subLLM,
 		Description: fmt.Sprintf("Specialist sub-agent: %s. Call this when you need its expertise.", subCfg.Name),
 		Instruction: subCfg.Prompt,
-		Tools:       []adktool.Tool{subRunScript, subReadFile, subListTasks, subGetTaskResult},
+		Tools:       []adktool.Tool{subRunScript, subReadFile, subGrep, subGlob, subWriteFile, subListTasks, subGetTaskResult},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create sub-agent: %w", err)

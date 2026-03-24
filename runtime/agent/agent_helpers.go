@@ -43,6 +43,21 @@ func buildAgentTools(
 		return nil, fmt.Errorf("agent: failed to create read_file tool: %w", err)
 	}
 
+	grepTool, err := newGrepTool(sandbox, config.OnOutput) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	if err != nil {
+		return nil, fmt.Errorf("agent: failed to create grep tool: %w", err)
+	}
+
+	globTool, err := newGlobTool(sandbox, config.OnOutput) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	if err != nil {
+		return nil, fmt.Errorf("agent: failed to create glob tool: %w", err)
+	}
+
+	writeFileTool, err := newWriteFileTool(sandbox, config.OnOutput) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	if err != nil {
+		return nil, fmt.Errorf("agent: failed to create write_file tool: %w", err)
+	}
+
 	listTasksTool, err := newListTasksTool(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("agent: failed to create list_tasks tool: %w", err)
@@ -53,7 +68,7 @@ func buildAgentTools(
 		return nil, fmt.Errorf("agent: failed to create get_task_result tool: %w", err)
 	}
 
-	tools := []adktool.Tool{runScript, readFileTool, listTasksTool, getTaskResultTool}
+	tools := []adktool.Tool{runScript, readFileTool, grepTool, globTool, writeFileTool, listTasksTool, getTaskResultTool}
 
 	for _, subCfg := range config.SubAgents {
 		subTool, subErr := buildSubAgentTool(ctx, sandbox, sandboxRunner, sm, pipelineID, subCfg, config)

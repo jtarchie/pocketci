@@ -41,12 +41,6 @@ func buildSystemInstruction(config AgentConfig, maxTurns int) string {
 		}
 	}
 
-	b.WriteString("\nTools available:\n")
-	b.WriteString("  - run_script: run a multi-line /bin/sh script\n")
-	b.WriteString("  - read_file: read a volume file by path without a shell (e.g. \"diff/pr.diff\")\n")
-	b.WriteString("  - list_tasks: list all tasks in the current run with their statuses (pre-fetched at start)\n")
-	b.WriteString("  - get_task_result: retrieve stdout, stderr, and exit code for a specific task by name\n")
-
 	b.WriteString("\nEfficiency rules:\n")
 	b.WriteString("  - Each tool call costs one full LLM round-trip. Minimise calls.\n")
 	b.WriteString("  - When you need multiple sequential shell steps, combine them into ONE run_script call (use 'set -e' so failures abort early).\n")
