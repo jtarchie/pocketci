@@ -14,6 +14,7 @@ import (
 	"google.golang.org/genai"
 
 	agentmodel "github.com/jtarchie/pocketci/runtime/agent/model"
+	"github.com/jtarchie/pocketci/runtime/agent/schema"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
 	"github.com/jtarchie/pocketci/secrets"
 )
@@ -158,12 +159,42 @@ func evaluateValidation(config AgentConfig, resultBuilder *strings.Builder, audi
 	followUpText := "You have not provided a final text response yet. " +
 		"Please produce your complete response now based on the information you have gathered."
 
+	if resultBuilder.Len() == 0 {
+		return true, followUpText
+	}
+
+	text := resultBuilder.String()
+
+	// Check output schema conformance first (structural validation).
+	if config.OutputSchema != nil {
+		expanded := schema.ExpandOutputSchema(config.OutputSchema)
+		if expanded != nil {
+			if err := schema.ValidateJSON(text, expanded); err != nil {
+				schemaFollowUp := fmt.Sprintf(
+					"Your response is not valid JSON conforming to the required schema. Error: %s. "+
+						"Please output ONLY a valid JSON object matching the schema, with no surrounding text.",
+					err.Error(),
+				)
+
+				AppendAuditEvent(auditEvents, AuditEvent{
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+					Author:    "system",
+					Type:      "schema_validation_error",
+					Text:      schemaFollowUp,
+				}, config.OnAuditEvent)
+
+				return true, schemaFollowUp
+			}
+		}
+	}
+
+	// Then check expr-based validation (semantic validation).
 	if config.Validation == nil || config.Validation.Expr == "" {
-		return resultBuilder.Len() == 0, followUpText
+		return false, ""
 	}
 
 	env := map[string]any{
-		"text":   resultBuilder.String(),
+		"text":   text,
 		"status": "success",
 	}
 

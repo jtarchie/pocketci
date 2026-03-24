@@ -10,6 +10,163 @@ import (
 	"github.com/jtarchie/pocketci/runtime/agent/schema"
 )
 
+func TestValidateJSON(t *testing.T) {
+	t.Parallel()
+
+	reviewSchema := map[string]interface{}{
+		"summary": "string",
+		"issues[]": map[string]interface{}{
+			"severity":    "critical|high|medium|low",
+			"description": "string",
+			"file?":       "string",
+			"line?":       "int",
+		},
+	}
+
+	t.Run("valid object passes", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		expanded := schema.ExpandOutputSchema(reviewSchema)
+		err := schema.ValidateJSON(`{"summary":"all good","issues":[]}`, expanded)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("valid object with populated array", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		expanded := schema.ExpandOutputSchema(reviewSchema)
+		err := schema.ValidateJSON(`{"summary":"found issues","issues":[{"severity":"high","description":"bug"}]}`, expanded)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("optional fields can be omitted", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		expanded := schema.ExpandOutputSchema(reviewSchema)
+		err := schema.ValidateJSON(`{"summary":"ok","issues":[{"severity":"low","description":"minor"}]}`, expanded)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		expanded := schema.ExpandOutputSchema(reviewSchema)
+		err := schema.ValidateJSON(`not json`, expanded)
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("invalid JSON"))
+	})
+
+	t.Run("missing required field", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		expanded := schema.ExpandOutputSchema(reviewSchema)
+		err := schema.ValidateJSON(`{"issues":[]}`, expanded)
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("missing required field"))
+		assert.Expect(err.Error()).To(ContainSubstring("summary"))
+	})
+
+	t.Run("wrong type string where object expected", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		expanded := schema.ExpandOutputSchema(reviewSchema)
+		err := schema.ValidateJSON(`"just a string"`, expanded)
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("expected object"))
+	})
+
+	t.Run("wrong type in array element", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		expanded := schema.ExpandOutputSchema(reviewSchema)
+		err := schema.ValidateJSON(`{"summary":"ok","issues":["not an object"]}`, expanded)
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("expected object"))
+	})
+
+	t.Run("enum violation", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		expanded := schema.ExpandOutputSchema(reviewSchema)
+		err := schema.ValidateJSON(`{"summary":"ok","issues":[{"severity":"unknown","description":"x"}]}`, expanded)
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("not in enum"))
+	})
+
+	t.Run("integer field with float value fails", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		expanded := schema.ExpandOutputSchema(map[string]interface{}{"count": "int"})
+		err := schema.ValidateJSON(`{"count":3.5}`, expanded)
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("expected integer"))
+	})
+
+	t.Run("integer field with whole number passes", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		expanded := schema.ExpandOutputSchema(map[string]interface{}{"count": "int"})
+		err := schema.ValidateJSON(`{"count":42}`, expanded)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("boolean field with wrong type fails", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		expanded := schema.ExpandOutputSchema(map[string]interface{}{"active": "bool"})
+		err := schema.ValidateJSON(`{"active":"yes"}`, expanded)
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("expected boolean"))
+	})
+
+	t.Run("boolean field with correct type passes", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		expanded := schema.ExpandOutputSchema(map[string]interface{}{"active": "bool"})
+		err := schema.ValidateJSON(`{"active":true}`, expanded)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("number field passes with float", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		expanded := schema.ExpandOutputSchema(map[string]interface{}{"score": "number"})
+		err := schema.ValidateJSON(`{"score":9.5}`, expanded)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("number field with string fails", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		expanded := schema.ExpandOutputSchema(map[string]interface{}{"score": "number"})
+		err := schema.ValidateJSON(`{"score":"high"}`, expanded)
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("expected number"))
+	})
+
+	t.Run("nil schema passes", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		err := schema.ValidateJSON(`{"anything":"goes"}`, nil)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+}
+
 func TestExpandOutputSchema(t *testing.T) {
 	t.Parallel()
 

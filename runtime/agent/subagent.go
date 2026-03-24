@@ -83,27 +83,29 @@ func buildSubAgentTool(
 	}
 
 	// Sub-agent reuses the same sandbox tools as the parent.
-	subRunScript, err := newRunScriptTool(sandbox, parentConfig.OnOutput) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	toolTimeout, scriptTimeout := EffectiveToolTimeouts(parentConfig.ToolTimeout)
+
+	subRunScript, err := newRunScriptTool(sandbox, parentConfig.OnOutput, scriptTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
 	if err != nil {
 		return nil, fmt.Errorf("run_script tool: %w", err)
 	}
 
-	subReadFile, err := newReadFileTool(sandbox, parentConfig.OnOutput) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	subReadFile, err := newReadFileTool(sandbox, parentConfig.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
 	if err != nil {
 		return nil, fmt.Errorf("read_file tool: %w", err)
 	}
 
-	subGrep, err := newGrepTool(sandbox, parentConfig.OnOutput) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	subGrep, err := newGrepTool(sandbox, parentConfig.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
 	if err != nil {
 		return nil, fmt.Errorf("grep tool: %w", err)
 	}
 
-	subGlob, err := newGlobTool(sandbox, parentConfig.OnOutput) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	subGlob, err := newGlobTool(sandbox, parentConfig.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
 	if err != nil {
 		return nil, fmt.Errorf("glob tool: %w", err)
 	}
 
-	subWriteFile, err := newWriteFileTool(sandbox, parentConfig.OnOutput) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	subWriteFile, err := newWriteFileTool(sandbox, parentConfig.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
 	if err != nil {
 		return nil, fmt.Errorf("write_file tool: %w", err)
 	}

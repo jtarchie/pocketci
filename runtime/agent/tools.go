@@ -16,6 +16,13 @@ import (
 	"github.com/jtarchie/pocketci/storage"
 )
 
+const (
+	DefaultToolTimeout      = "60s"
+	DefaultRunScriptTimeout = "300s"
+
+	writeFilePreviousContentMaxBytes = 4096
+)
+
 // runCommandOutput is the tool result schema for run_script.
 type runCommandOutput struct {
 	Stdout   string `json:"stdout"`
@@ -137,7 +144,7 @@ func loadTaskSummaries(ctx context.Context, st storage.Driver, runID string) ([]
 }
 
 // newRunScriptTool creates the run_script tool backed by a sandbox.
-func newRunScriptTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.OutputCallback) (adktool.Tool, error) {
+func newRunScriptTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.OutputCallback, timeout string) (adktool.Tool, error) {
 	return functiontool.New[runScriptInput, runCommandOutput](
 		functiontool.Config{
 			Name:        "run_script",
@@ -148,10 +155,15 @@ func newRunScriptTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelineru
 			execInput.Command.Path = "/bin/sh"
 			execInput.Command.Args = []string{"-c", input.Script}
 			execInput.OnOutput = onOutput
+			execInput.Timeout = timeout
 
 			result, execErr := sandbox.Exec(ctx, execInput)
 			if execErr != nil {
 				return runCommandOutput{}, execErr
+			}
+
+			if result.Status == pipelinerunner.RunAbort {
+				return runCommandOutput{}, fmt.Errorf("run_script timed out after %s", timeout)
 			}
 
 			return runCommandOutput{
@@ -164,7 +176,7 @@ func newRunScriptTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelineru
 }
 
 // newReadFileTool creates the read_file tool backed by a sandbox.
-func newReadFileTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.OutputCallback) (adktool.Tool, error) {
+func newReadFileTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.OutputCallback, timeout string) (adktool.Tool, error) {
 	return functiontool.New[readFileInput, readFileOutput](
 		functiontool.Config{
 			Name:        "read_file",
@@ -189,10 +201,15 @@ func newReadFileTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerun
 			execInput.Command.Path = "/bin/sh"
 			execInput.Command.Args = []string{"-c", script}
 			execInput.OnOutput = onOutput
+			execInput.Timeout = timeout
 
 			result, execErr := sandbox.Exec(ctx, execInput)
 			if execErr != nil {
 				return readFileOutput{}, execErr
+			}
+
+			if result.Status == pipelinerunner.RunAbort {
+				return readFileOutput{}, fmt.Errorf("read_file timed out after %s", timeout)
 			}
 
 			if result.Code != 0 {
@@ -318,7 +335,7 @@ type grepOutput struct {
 }
 
 // newGrepTool creates the grep tool backed by a sandbox.
-func newGrepTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.OutputCallback) (adktool.Tool, error) {
+func newGrepTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.OutputCallback, timeout string) (adktool.Tool, error) {
 	return functiontool.New[grepInput, grepOutput](
 		functiontool.Config{
 			Name:        "grep",
@@ -354,10 +371,15 @@ func newGrepTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.
 			execInput.Command.Path = "/bin/sh"
 			execInput.Command.Args = []string{"-c", script}
 			execInput.OnOutput = onOutput
+			execInput.Timeout = timeout
 
 			result, execErr := sandbox.Exec(ctx, execInput)
 			if execErr != nil {
 				return grepOutput{}, execErr
+			}
+
+			if result.Status == pipelinerunner.RunAbort {
+				return grepOutput{}, fmt.Errorf("grep timed out after %s", timeout)
 			}
 
 			// Exit code 1 means no matches — not an error.
@@ -392,7 +414,7 @@ type globOutput struct {
 }
 
 // newGlobTool creates the glob tool backed by a sandbox.
-func newGlobTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.OutputCallback) (adktool.Tool, error) {
+func newGlobTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.OutputCallback, timeout string) (adktool.Tool, error) {
 	return functiontool.New[globInput, globOutput](
 		functiontool.Config{
 			Name:        "glob",
@@ -410,10 +432,15 @@ func newGlobTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.
 			execInput.Command.Path = "/bin/sh"
 			execInput.Command.Args = []string{"-c", script}
 			execInput.OnOutput = onOutput
+			execInput.Timeout = timeout
 
 			result, execErr := sandbox.Exec(ctx, execInput)
 			if execErr != nil {
 				return globOutput{}, execErr
+			}
+
+			if result.Status == pipelinerunner.RunAbort {
+				return globOutput{}, fmt.Errorf("glob timed out after %s", timeout)
 			}
 
 			if result.Code != 0 {
@@ -470,18 +497,38 @@ type writeFileInput struct {
 
 // writeFileOutput is the tool result schema for write_file.
 type writeFileOutput struct {
-	Path    string `json:"path"`
-	Written bool   `json:"written"`
+	Path            string `json:"path"`
+	Written         bool   `json:"written"`
+	PreviousContent string `json:"previous_content,omitempty"`
+	IsNew           bool   `json:"is_new"`
 }
 
 // newWriteFileTool creates the write_file tool backed by a sandbox.
-func newWriteFileTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.OutputCallback) (adktool.Tool, error) {
+func newWriteFileTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.OutputCallback, timeout string) (adktool.Tool, error) {
 	return functiontool.New[writeFileInput, writeFileOutput](
 		functiontool.Config{
 			Name:        "write_file",
-			Description: "Create or overwrite a file. Content is delivered safely via base64 encoding. Parent directories are created automatically.",
+			Description: "Create or overwrite a file. Returns the previous file content (if any) for context. Content is delivered safely via base64 encoding. Parent directories are created automatically.",
 		},
 		func(ctx adktool.Context, input writeFileInput) (writeFileOutput, error) {
+			// Read existing content before writing.
+			var previousContent string
+			isNew := true
+
+			readScript := fmt.Sprintf("cat '%s' 2>/dev/null", input.FilePath)
+
+			var readExec pipelinerunner.ExecInput
+			readExec.Command.Path = "/bin/sh"
+			readExec.Command.Args = []string{"-c", readScript}
+			readExec.Timeout = timeout
+
+			readResult, readErr := sandbox.Exec(ctx, readExec)
+			if readErr == nil && readResult.Status != pipelinerunner.RunAbort && readResult.Code == 0 && readResult.Stdout != "" {
+				previousContent, _ = helpers.TruncateStr(readResult.Stdout, writeFilePreviousContentMaxBytes)
+				isNew = false
+			}
+
+			// Write the file.
 			encoded := base64.StdEncoding.EncodeToString([]byte(input.Content))
 			script := fmt.Sprintf("mkdir -p \"$(dirname '%s')\" && printf '%%s' '%s' | base64 -d > '%s'",
 				input.FilePath, encoded, input.FilePath)
@@ -490,10 +537,15 @@ func newWriteFileTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelineru
 			execInput.Command.Path = "/bin/sh"
 			execInput.Command.Args = []string{"-c", script}
 			execInput.OnOutput = onOutput
+			execInput.Timeout = timeout
 
 			result, execErr := sandbox.Exec(ctx, execInput)
 			if execErr != nil {
 				return writeFileOutput{}, execErr
+			}
+
+			if result.Status == pipelinerunner.RunAbort {
+				return writeFileOutput{}, fmt.Errorf("write_file timed out after %s", timeout)
 			}
 
 			if result.Code != 0 {
@@ -501,11 +553,29 @@ func newWriteFileTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelineru
 			}
 
 			return writeFileOutput{
-				Path:    input.FilePath,
-				Written: true,
+				Path:            input.FilePath,
+				Written:         true,
+				PreviousContent: previousContent,
+				IsNew:           isNew,
 			}, nil
 		},
 	)
+}
+
+// EffectiveToolTimeouts returns the resolved timeouts for regular tools and
+// run_script. If the config timeout is empty, defaults are used.
+func EffectiveToolTimeouts(configTimeout string) (toolTimeout, scriptTimeout string) {
+	toolTimeout = configTimeout
+	if toolTimeout == "" {
+		toolTimeout = DefaultToolTimeout
+	}
+
+	scriptTimeout = configTimeout
+	if scriptTimeout == "" {
+		scriptTimeout = DefaultRunScriptTimeout
+	}
+
+	return toolTimeout, scriptTimeout
 }
 
 // ShellJoinArgs joins shell arguments with proper quoting.

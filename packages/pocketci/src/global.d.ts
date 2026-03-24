@@ -356,6 +356,7 @@ declare global {
     context?: AgentContext;
     validation?: AgentValidationConfig;
     output_schema?: Record<string, unknown>;
+    tool_timeout?: string; // Per-tool timeout duration (e.g. "60s", "5m")
     sub_agents?: SubAgentConfig[]; // Sub-agents registered as callable tools
   }
 
@@ -794,6 +795,7 @@ declare global {
     context?: AgentContext;
     validation?: AgentValidationConfig;
     output_schema?: Record<string, unknown>; // JSON Schema for structured output (OpenRouter/Gemini)
+    tool_timeout?: string; // Per-tool timeout duration (e.g. "60s", "5m")
     sub_agents?: AgentStep[]; // Sub-agents available as callable tools to the parent LLM
     attempts?: number;
     across?: AcrossVar[];

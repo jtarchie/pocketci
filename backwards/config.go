@@ -145,6 +145,7 @@ type Step struct {
 	AgentLimits       *agent.AgentLimitsConfig       `yaml:"limits,omitempty"`
 	AgentContext      *agent.AgentContext            `yaml:"context,omitempty"`
 	AgentValidation   *agent.AgentValidationConfig   `yaml:"validation,omitempty"`
+	AgentToolTimeout  string                         `yaml:"tool_timeout,omitempty"`
 	SubAgents         Steps                          `yaml:"sub_agents,omitempty"`
 
 	Get       string    `yaml:"get,omitempty"`

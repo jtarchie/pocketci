@@ -180,6 +180,7 @@ export class AgentStepHandler implements StepHandler {
         context: agentStep.context,
         validation: agentStep.validation,
         output_schema: agentStep.output_schema,
+        tool_timeout: agentStep.tool_timeout,
         sub_agents: subAgents.length > 0 ? subAgents : undefined,
         onUsage: (usage: AgentUsage) => {
           latestUsage = usage;

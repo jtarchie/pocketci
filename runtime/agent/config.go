@@ -43,6 +43,7 @@ type AgentConfig struct {
 	Validation       *AgentValidationConfig                 `json:"validation,omitempty"`
 	SubAgents        []SubAgentConfig                       `json:"sub_agents,omitempty"`
 	OutputSchema     map[string]interface{}                 `json:"output_schema,omitempty"`
+	ToolTimeout      string                                 `json:"tool_timeout,omitempty"`
 	// OnOutput is called with streaming chunks. Not serialised from JS.
 	OnOutput pipelinerunner.OutputCallback `json:"-"`
 	// OnAuditEvent is called every time an audit event is appended.
