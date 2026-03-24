@@ -77,7 +77,7 @@ func buildAgentTools(
 		var toolErr error
 
 		if toolDef.IsTask {
-			tool, toolErr = newTaskTool(sandbox, sandboxRunner, toolDef, config, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+			tool, toolErr = newTaskTool(sandbox, toolDef, config, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
 		} else {
 			tool, toolErr = buildSubAgentTool(ctx, sandbox, sandboxRunner, sm, pipelineID, toolDef, config)
 		}

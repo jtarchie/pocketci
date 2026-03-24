@@ -23,6 +23,63 @@ const (
 	writeFilePreviousContentMaxBytes = 4096
 )
 
+// execScript runs a shell script in the sandbox and returns the result.
+// It handles the common exec+timeout pattern shared by all sandbox-backed tools.
+func execScript(
+	ctx adktool.Context,
+	sandbox *pipelinerunner.SandboxHandle,
+	script string,
+	onOutput pipelinerunner.OutputCallback,
+	timeout string,
+	toolName string,
+) (*pipelinerunner.RunResult, error) {
+	var execInput pipelinerunner.ExecInput
+	execInput.Command.Path = "/bin/sh"
+	execInput.Command.Args = []string{"-c", script}
+	execInput.OnOutput = onOutput
+	execInput.Timeout = timeout
+
+	result, err := sandbox.Exec(ctx, execInput)
+	if err != nil {
+		return nil, err
+	}
+
+	if result.Status == pipelinerunner.RunAbort {
+		return nil, fmt.Errorf("%s timed out after %s", toolName, timeout)
+	}
+
+	return result, nil
+}
+
+// execScriptWithEnv runs a shell script with additional environment variables.
+func execScriptWithEnv(
+	ctx adktool.Context,
+	sandbox *pipelinerunner.SandboxHandle,
+	script string,
+	onOutput pipelinerunner.OutputCallback,
+	timeout string,
+	toolName string,
+	env map[string]string,
+) (*pipelinerunner.RunResult, error) {
+	var execInput pipelinerunner.ExecInput
+	execInput.Command.Path = "/bin/sh"
+	execInput.Command.Args = []string{"-c", script}
+	execInput.OnOutput = onOutput
+	execInput.Timeout = timeout
+	execInput.Env = env
+
+	result, err := sandbox.Exec(ctx, execInput)
+	if err != nil {
+		return nil, err
+	}
+
+	if result.Status == pipelinerunner.RunAbort {
+		return nil, fmt.Errorf("%s timed out after %s", toolName, timeout)
+	}
+
+	return result, nil
+}
+
 // runCommandOutput is the tool result schema for run_script.
 type runCommandOutput struct {
 	Stdout   string `json:"stdout"`
@@ -151,19 +208,9 @@ func newRunScriptTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelineru
 			Description: "Run a multi-line shell script via /bin/sh. Add 'set -e' at the top to abort on the first failure. Volume paths are accessible as relative paths from the working directory.",
 		},
 		func(ctx adktool.Context, input runScriptInput) (runCommandOutput, error) {
-			var execInput pipelinerunner.ExecInput
-			execInput.Command.Path = "/bin/sh"
-			execInput.Command.Args = []string{"-c", input.Script}
-			execInput.OnOutput = onOutput
-			execInput.Timeout = timeout
-
-			result, execErr := sandbox.Exec(ctx, execInput)
-			if execErr != nil {
-				return runCommandOutput{}, execErr
-			}
-
-			if result.Status == pipelinerunner.RunAbort {
-				return runCommandOutput{}, fmt.Errorf("run_script timed out after %s", timeout)
+			result, err := execScript(ctx, sandbox, input.Script, onOutput, timeout, "run_script")
+			if err != nil {
+				return runCommandOutput{}, err
 			}
 
 			return runCommandOutput{
@@ -197,19 +244,9 @@ func newReadFileTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerun
 			script := fmt.Sprintf("awk 'NR>=%d && NR<=%d {printf \"%%6d\\t%%s\\n\", NR, $0}' %s",
 				offset, end, input.Path)
 
-			var execInput pipelinerunner.ExecInput
-			execInput.Command.Path = "/bin/sh"
-			execInput.Command.Args = []string{"-c", script}
-			execInput.OnOutput = onOutput
-			execInput.Timeout = timeout
-
-			result, execErr := sandbox.Exec(ctx, execInput)
-			if execErr != nil {
-				return readFileOutput{}, execErr
-			}
-
-			if result.Status == pipelinerunner.RunAbort {
-				return readFileOutput{}, fmt.Errorf("read_file timed out after %s", timeout)
+			result, err := execScript(ctx, sandbox, script, onOutput, timeout, "read_file")
+			if err != nil {
+				return readFileOutput{}, err
 			}
 
 			if result.Code != 0 {
@@ -367,19 +404,9 @@ func newGrepTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.
 
 			script := fmt.Sprintf("grep %s | head -n %d", ShellJoinArgs(args), maxResults)
 
-			var execInput pipelinerunner.ExecInput
-			execInput.Command.Path = "/bin/sh"
-			execInput.Command.Args = []string{"-c", script}
-			execInput.OnOutput = onOutput
-			execInput.Timeout = timeout
-
-			result, execErr := sandbox.Exec(ctx, execInput)
-			if execErr != nil {
-				return grepOutput{}, execErr
-			}
-
-			if result.Status == pipelinerunner.RunAbort {
-				return grepOutput{}, fmt.Errorf("grep timed out after %s", timeout)
+			result, err := execScript(ctx, sandbox, script, onOutput, timeout, "grep")
+			if err != nil {
+				return grepOutput{}, err
 			}
 
 			// Exit code 1 means no matches — not an error.
@@ -428,19 +455,9 @@ func newGlobTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelinerunner.
 
 			script := BuildFindCommand(input.Pattern, path)
 
-			var execInput pipelinerunner.ExecInput
-			execInput.Command.Path = "/bin/sh"
-			execInput.Command.Args = []string{"-c", script}
-			execInput.OnOutput = onOutput
-			execInput.Timeout = timeout
-
-			result, execErr := sandbox.Exec(ctx, execInput)
-			if execErr != nil {
-				return globOutput{}, execErr
-			}
-
-			if result.Status == pipelinerunner.RunAbort {
-				return globOutput{}, fmt.Errorf("glob timed out after %s", timeout)
+			result, err := execScript(ctx, sandbox, script, onOutput, timeout, "glob")
+			if err != nil {
+				return globOutput{}, err
 			}
 
 			if result.Code != 0 {
@@ -517,13 +534,8 @@ func newWriteFileTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelineru
 
 			readScript := fmt.Sprintf("cat '%s' 2>/dev/null", input.FilePath)
 
-			var readExec pipelinerunner.ExecInput
-			readExec.Command.Path = "/bin/sh"
-			readExec.Command.Args = []string{"-c", readScript}
-			readExec.Timeout = timeout
-
-			readResult, readErr := sandbox.Exec(ctx, readExec)
-			if readErr == nil && readResult.Status != pipelinerunner.RunAbort && readResult.Code == 0 && readResult.Stdout != "" {
+			readResult, readErr := execScript(ctx, sandbox, readScript, nil, timeout, "write_file_read")
+			if readErr == nil && readResult.Code == 0 && readResult.Stdout != "" {
 				previousContent, _ = helpers.TruncateStr(readResult.Stdout, writeFilePreviousContentMaxBytes)
 				isNew = false
 			}
@@ -533,19 +545,9 @@ func newWriteFileTool(sandbox *pipelinerunner.SandboxHandle, onOutput pipelineru
 			script := fmt.Sprintf("mkdir -p \"$(dirname '%s')\" && printf '%%s' '%s' | base64 -d > '%s'",
 				input.FilePath, encoded, input.FilePath)
 
-			var execInput pipelinerunner.ExecInput
-			execInput.Command.Path = "/bin/sh"
-			execInput.Command.Args = []string{"-c", script}
-			execInput.OnOutput = onOutput
-			execInput.Timeout = timeout
-
-			result, execErr := sandbox.Exec(ctx, execInput)
-			if execErr != nil {
-				return writeFileOutput{}, execErr
-			}
-
-			if result.Status == pipelinerunner.RunAbort {
-				return writeFileOutput{}, fmt.Errorf("write_file timed out after %s", timeout)
+			result, err := execScript(ctx, sandbox, script, onOutput, timeout, "write_file")
+			if err != nil {
+				return writeFileOutput{}, err
 			}
 
 			if result.Code != 0 {
@@ -595,7 +597,6 @@ type taskToolOutput struct {
 // the agent's sandbox. The command, args, and env come from the ToolDef.
 func newTaskTool(
 	sandbox *pipelinerunner.SandboxHandle,
-	_ pipelinerunner.Runner,
 	toolDef ToolDef,
 	parentConfig AgentConfig,
 	timeout string,
@@ -617,12 +618,6 @@ func newTaskTool(
 				script += " " + ShellJoinArgs(toolDef.CommandArgs)
 			}
 
-			var execInput pipelinerunner.ExecInput
-			execInput.Command.Path = "/bin/sh"
-			execInput.Command.Args = []string{"-c", script}
-			execInput.OnOutput = parentConfig.OnOutput
-			execInput.Timeout = timeout
-
 			// Merge tool env + optional request from the LLM.
 			env := make(map[string]string, len(toolDef.Env)+1)
 			for k, v := range toolDef.Env {
@@ -633,15 +628,9 @@ func newTaskTool(
 				env["TOOL_REQUEST"] = input.Request
 			}
 
-			execInput.Env = env
-
-			result, execErr := sandbox.Exec(ctx, execInput)
-			if execErr != nil {
-				return taskToolOutput{}, execErr
-			}
-
-			if result.Status == pipelinerunner.RunAbort {
-				return taskToolOutput{}, fmt.Errorf("%s timed out after %s", toolDef.Name, timeout)
+			result, err := execScriptWithEnv(ctx, sandbox, script, parentConfig.OnOutput, timeout, toolDef.Name, env)
+			if err != nil {
+				return taskToolOutput{}, err
 			}
 
 			return taskToolOutput{
