@@ -242,7 +242,7 @@ jobs:
 		assert.Expect(err).NotTo(HaveOccurred())
 	})
 
-	t.Run("agent with sub_agents passes validation", func(t *testing.T) {
+	t.Run("agent with tools passes validation", func(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
@@ -269,7 +269,7 @@ jobs:
           image: alpine/git
           inputs:
             - name: repo
-        sub_agents:
+        tools:
           - agent: code-quality
             prompt: Review quality
           - agent: security
@@ -279,7 +279,7 @@ jobs:
 		assert.Expect(err).NotTo(HaveOccurred())
 	})
 
-	t.Run("agent with sub_agents with own container passes validation", func(t *testing.T) {
+	t.Run("agent with tools with own container passes validation", func(t *testing.T) {
 		t.Parallel()
 		assert := NewGomegaWithT(t)
 
@@ -306,7 +306,7 @@ jobs:
           image: alpine/git
           inputs:
             - name: repo
-        sub_agents:
+        tools:
           - agent: shared-reviewer
             prompt: Uses parent container
           - agent: custom-reviewer

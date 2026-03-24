@@ -23,20 +23,20 @@ const result = await runtime.agent(options);
 
 ### Optional
 
-| Field              | Type   | Description                                                              |
-| ------------------ | ------ | ------------------------------------------------------------------------ |
-| `mounts`           | object | Volume mounts: `{ "name": volumeHandle }`                                |
-| `outputVolumePath` | string | Path inside the container to write `result.json`                         |
-| `llm`              | object | LLM generation overrides (see [LLM Config](#llm))                        |
-| `thinking`         | object | Extended thinking config (see [Thinking](#thinking))                     |
-| `safety`           | object | Safety filter overrides (see [Safety](#safety))                          |
-| `context_guard`    | object | Context window management (see [Context Guard](#context-guard))          |
-| `limits`           | object | Hard turn/token limits (see [Limits](#limits))                           |
-| `context`          | object | Pre-inject prior task outputs into session (see [Context](#context))     |
-| `validation`       | object | Output validation via Expr expressions (see [Validation](#validation))   |
-| `output_schema`    | object | JSON schema for structured output (see [Output Schema](#output-schema))  |
+| Field              | Type   | Description                                                                         |
+| ------------------ | ------ | ----------------------------------------------------------------------------------- |
+| `mounts`           | object | Volume mounts: `{ "name": volumeHandle }`                                           |
+| `outputVolumePath` | string | Path inside the container to write `result.json`                                    |
+| `llm`              | object | LLM generation overrides (see [LLM Config](#llm))                                   |
+| `thinking`         | object | Extended thinking config (see [Thinking](#thinking))                                |
+| `safety`           | object | Safety filter overrides (see [Safety](#safety))                                     |
+| `context_guard`    | object | Context window management (see [Context Guard](#context-guard))                     |
+| `limits`           | object | Hard turn/token limits (see [Limits](#limits))                                      |
+| `context`          | object | Pre-inject prior task outputs into session (see [Context](#context))                |
+| `validation`       | object | Output validation via Expr expressions (see [Validation](#validation))              |
+| `output_schema`    | object | JSON schema for structured output (see [Output Schema](#output-schema))             |
 | `tool_timeout`     | string | Per-tool timeout duration, e.g. `"60s"`, `"5m"` (see [Tool Timeout](#tool-timeout)) |
-| `sub_agents`       | array  | Specialist sub-agents callable as tools (see [Sub-agents](#sub-agents))  |
+| `tools`            | array  | Agent + task tools callable by the LLM (see [Tools](#tools))                        |
 
 ## Providers
 
@@ -220,7 +220,7 @@ Hard limits that stop agent execution to prevent runaway agents.
 
 ```yaml
 limits:
-  max_turns: 50       # max LLM round-trips (default: 50)
+  max_turns: 50 # max LLM round-trips (default: 50)
   max_total_tokens: 0 # total token budget; 0 = unlimited
 ```
 
@@ -237,8 +237,8 @@ the agent is stopped and `result.status` is `"limit_exceeded"`.
 ## Validation {#validation}
 
 Validate the agent's final text output using an [Expr](https://expr-lang.org/)
-boolean expression. If the expression returns `false`, a follow-up prompt is sent
-asking the model to correct its output.
+boolean expression. If the expression returns `false`, a follow-up prompt is
+sent asking the model to correct its output.
 
 ```yaml
 validation:
@@ -275,39 +275,39 @@ output_schema:
 
 ### Compact DSL
 
-| Syntax           | Meaning                                |
-| ---------------- | -------------------------------------- |
-| `"string"`       | Required string field                  |
-| `"int"`          | Required integer field                 |
-| `"number"`       | Required number (float) field          |
-| `"bool"`         | Required boolean field                 |
-| `"a\|b\|c"`     | Required string enum                   |
-| `"field?"`       | Optional field (suffix `?` on key)     |
-| `"field[]"`      | Required array (suffix `[]` on key)    |
-| `{ nested: ... }`| Nested object                          |
+| Syntax            | Meaning                             |
+| ----------------- | ----------------------------------- |
+| `"string"`        | Required string field               |
+| `"int"`           | Required integer field              |
+| `"number"`        | Required number (float) field       |
+| `"bool"`          | Required boolean field              |
+| `"a\|b\|c"`       | Required string enum                |
+| `"field?"`        | Optional field (suffix `?` on key)  |
+| `"field[]"`       | Required array (suffix `[]` on key) |
+| `{ nested: ... }` | Nested object                       |
 
 Schema validation checks: JSON parse, required fields, types, enums, array
-items, and nested objects. If validation fails, the error message is sent to
-the agent so it can retry.
+items, and nested objects. If validation fails, the error message is sent to the
+agent so it can retry.
 
 ## Tool Timeout {#tool-timeout}
 
-Set a per-tool execution timeout for all sandbox-backed tools. If a tool
-exceeds the timeout, an error is returned to the agent so it can adjust its
-approach (e.g., break a large operation into smaller steps).
+Set a per-tool execution timeout for all sandbox-backed tools. If a tool exceeds
+the timeout, an error is returned to the agent so it can adjust its approach
+(e.g., break a large operation into smaller steps).
 
 ```yaml
-tool_timeout: "120s"  # applies to all tools except run_script
+tool_timeout: "120s" # applies to all tools except run_script
 ```
 
 ```typescript
 tool_timeout?: string; // Go duration format: "60s", "5m", etc.
 ```
 
-| Tool           | Default timeout                                   |
-| -------------- | ------------------------------------------------- |
-| `run_script`   | 5 minutes (`300s`)                                |
-| All other tools| 1 minute (`60s`)                                  |
+| Tool            | Default timeout    |
+| --------------- | ------------------ |
+| `run_script`    | 5 minutes (`300s`) |
+| All other tools | 1 minute (`60s`)   |
 
 When `tool_timeout` is set, it overrides the default for **all** tools
 (including `run_script`). If you need long-running scripts but fast tool
@@ -406,59 +406,83 @@ input. There is no need to list it in `config.inputs`.
       - name: code-reviewer
 ```
 
-## Sub-agents {#sub-agents}
+## Tools {#tools}
 
-An agent step can delegate to specialist sub-agents that the parent LLM calls as
-tools. The parent orchestrates when and how to call each sub-agent; their
-findings are returned as tool responses directly into the parent's context.
+The `tools` array lets you give an agent additional capabilities beyond the
+built-in sandbox tools. Each entry is either an **agent tool** (LLM sub-agent)
+or a **task tool** (container command), distinguished by field presence.
+
+### Agent tools
+
+An entry with an `agent:` field creates an LLM sub-agent that the parent can
+call as a tool. The sub-agent gets its own prompt, model, and optionally its own
+container image.
 
 ```yaml
 - agent: orchestrator
   file: repo/agents/orchestrator.yml
   config:
     platform: linux
-    image_resource:
-      type: registry-image
-      source: { repository: alpine/git }
+    image: alpine/git
     inputs:
       - name: repo
       - name: diff
-  sub_agents:
+  tools:
     - agent: code-quality-reviewer
       file: repo/agents/code-quality.yml
     - agent: security-reviewer
       file: repo/agents/security.yml
-    - agent: maintainability-reviewer
-      file: repo/agents/maintainability.yml
 ```
 
-Each entry in `sub_agents` is a full agent step definition. Fields can be
-provided inline or loaded from a `file:` path.
+| Field    | Type   | Description                                                        |
+| -------- | ------ | ------------------------------------------------------------------ |
+| `agent`  | string | **Required.** Tool name the parent LLM uses to call this agent     |
+| `file`   | string | Load prompt, model, and config from a YAML file in the repo volume |
+| `prompt` | string | Agent instruction (concatenated with `file:` prompt if both exist) |
+| `model`  | string | Model specifier; defaults to the parent's model if omitted         |
 
-### Sub-agent fields
+**Shared-container** (agent image matches the parent's or is omitted): the
+sub-agent runs inside the parent's ADK session, sharing the same sandbox,
+mounts, and tool set.
 
-| Field    | Type   | Description                                                         |
-| -------- | ------ | ------------------------------------------------------------------- |
-| `agent`  | string | **Required.** Tool name the parent LLM uses to call this sub-agent  |
-| `file`   | string | Load prompt, model, and config from a YAML file in the repo volume  |
-| `prompt` | string | Sub-agent's instruction (overrides `file:` prompt if both provided) |
-| `model`  | string | Model specifier; defaults to the parent's model if omitted          |
-
-### Container modes
-
-**Shared-container** (sub-agent image matches the parent's): the sub-agent runs
-inside the parent's ADK session as an `agenttool`. It shares the same sandbox,
-mounts, and tool set. No extra container is started.
-
-**Own-container** (sub-agent declares a different image): a separate sandbox is
-spun up for the sub-agent's image. The sub-agent runs to completion and returns
-its final text to the parent as a tool response. Own-container sub-agents also
-persist their result at a nested storage path, so the UI displays them indented
-under the parent agent step:
+**Own-container** (agent declares a different `config.image`): a separate
+sandbox is spun up. The agent runs to completion and returns its final text to
+the parent. Results are persisted at a nested storage path:
 
 ```
-jobs/{job}/N/agent/{orchestrator-name}/sub-agents/{sub-agent-name}/run
+jobs/{job}/N/agent/{parent}/sub-agents/{tool-name}/run
 ```
+
+### Task tools
+
+An entry with a `task:` field creates a container command the LLM can call as a
+tool. The command runs in the parent's sandbox and returns stdout/stderr/exit
+code.
+
+```yaml
+tools:
+  - task: run-linter
+    description: "Run the project linter and return results"
+    config:
+      run:
+        path: golangci-lint
+        args: ["run", "./..."]
+      env:
+        GOPROXY: "off"
+  - task: post-comment
+    description: "Post a GitHub PR comment"
+    file: repo/tasks/post-comment.yml
+```
+
+| Field         | Type   | Description                                                   |
+| ------------- | ------ | ------------------------------------------------------------- |
+| `task`        | string | **Required.** Tool name the parent LLM uses to call this task |
+| `description` | string | Description shown to the LLM (defaults to "Run task: {name}") |
+| `config`      | object | Task config with `run.path`, `run.args`, `env`, `image`       |
+| `file`        | string | Load task config from a YAML file on a volume                 |
+
+When the LLM calls a task tool, it can pass a `request` string that is set as
+the `TOOL_REQUEST` environment variable, allowing dynamic input.
 
 ### YAML example — pr-review pipeline
 
@@ -470,13 +494,11 @@ Below is a simplified version of the multi-reviewer PR analysis pipeline from
   file: repo/examples/agent/agents/final-reviewer.yml
   config:
     platform: linux
-    image_resource:
-      type: registry-image
-      source: { repository: alpine/git }
+    image: alpine/git
     inputs:
       - name: diff
       - name: repo
-  sub_agents:
+  tools:
     - agent: code-quality-reviewer
       file: repo/examples/agent/agents/code-quality.yml
     - agent: security-reviewer
@@ -490,9 +512,7 @@ Below is a simplified version of the multi-reviewer PR analysis pipeline from
 ```
 
 The orchestrator's prompt (in `final-reviewer.yml`) instructs it to call all
-three specialist sub-agents and synthesize their findings into JSON. The
-specialist prompts, models, and container images come from their own agent YAML
-files.
+three specialist agent tools and synthesize their findings into JSON.
 
 ## Return Value
 

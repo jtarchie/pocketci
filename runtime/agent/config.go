@@ -15,15 +15,20 @@ type AgentThinkingConfig = agentmodel.ThinkingConfig
 // DefaultBaseURLs maps providers to their base URLs.
 var DefaultBaseURLs = agentmodel.DefaultBaseURLs
 
-// SubAgentConfig describes a sub-agent that the parent LLM can call as a tool.
-// Sub-agents sharing the parent's container image use ADK's agenttool;
-// sub-agents with a different image spin up their own sandbox via a custom tool.
-type SubAgentConfig struct {
-	Name             string `json:"name"`
-	Prompt           string `json:"prompt"`
-	Model            string `json:"model"`
-	Image            string `json:"image"`
-	StorageKeyPrefix string `json:"storageKeyPrefix"` // parent storage key for nested path persistence
+// ToolDef describes a tool available to the parent agent. Covers both
+// agent tools (LLM sub-agents) and task tools (container commands).
+// Distinguish by the IsTask flag.
+type ToolDef struct {
+	Name             string            `json:"name"`
+	Prompt           string            `json:"prompt,omitempty"`
+	Model            string            `json:"model,omitempty"`
+	Image            string            `json:"image,omitempty"`
+	StorageKeyPrefix string            `json:"storageKeyPrefix,omitempty"` // parent storage key for nested path persistence
+	IsTask           bool              `json:"is_task,omitempty"`
+	Description      string            `json:"description,omitempty"`
+	CommandPath      string            `json:"command_path,omitempty"`
+	CommandArgs      []string          `json:"command_args,omitempty"`
+	Env              map[string]string `json:"env,omitempty"`
 }
 
 // AgentConfig is the configuration passed from JavaScript to runtime.agent().
@@ -41,7 +46,7 @@ type AgentConfig struct {
 	Limits           *AgentLimitsConfig                     `json:"limits,omitempty"`
 	Context          *AgentContext                          `json:"context,omitempty"`
 	Validation       *AgentValidationConfig                 `json:"validation,omitempty"`
-	SubAgents        []SubAgentConfig                       `json:"sub_agents,omitempty"`
+	Tools            []ToolDef                              `json:"tools,omitempty"`
 	OutputSchema     map[string]interface{}                 `json:"output_schema,omitempty"`
 	ToolTimeout      string                                 `json:"tool_timeout,omitempty"`
 	// OnOutput is called with streaming chunks. Not serialised from JS.

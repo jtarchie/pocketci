@@ -578,6 +578,81 @@ func EffectiveToolTimeouts(configTimeout string) (toolTimeout, scriptTimeout str
 	return toolTimeout, scriptTimeout
 }
 
+// taskToolInput is the tool input schema for task tools.
+// The LLM passes an optional request string that is set as TOOL_REQUEST env var.
+type taskToolInput struct {
+	Request string `json:"request"`
+}
+
+// taskToolOutput is the tool result schema for task tools.
+type taskToolOutput struct {
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	ExitCode int    `json:"exit_code"`
+}
+
+// newTaskTool creates a functiontool that runs a container command inside
+// the agent's sandbox. The command, args, and env come from the ToolDef.
+func newTaskTool(
+	sandbox *pipelinerunner.SandboxHandle,
+	_ pipelinerunner.Runner,
+	toolDef ToolDef,
+	parentConfig AgentConfig,
+	timeout string,
+) (adktool.Tool, error) {
+	desc := toolDef.Description
+	if desc == "" {
+		desc = "Run task: " + toolDef.Name
+	}
+
+	return functiontool.New[taskToolInput, taskToolOutput](
+		functiontool.Config{
+			Name:        toolDef.Name,
+			Description: desc,
+		},
+		func(ctx adktool.Context, input taskToolInput) (taskToolOutput, error) {
+			// Build the shell command from config.run fields.
+			script := toolDef.CommandPath
+			if len(toolDef.CommandArgs) > 0 {
+				script += " " + ShellJoinArgs(toolDef.CommandArgs)
+			}
+
+			var execInput pipelinerunner.ExecInput
+			execInput.Command.Path = "/bin/sh"
+			execInput.Command.Args = []string{"-c", script}
+			execInput.OnOutput = parentConfig.OnOutput
+			execInput.Timeout = timeout
+
+			// Merge tool env + optional request from the LLM.
+			env := make(map[string]string, len(toolDef.Env)+1)
+			for k, v := range toolDef.Env {
+				env[k] = v
+			}
+
+			if input.Request != "" {
+				env["TOOL_REQUEST"] = input.Request
+			}
+
+			execInput.Env = env
+
+			result, execErr := sandbox.Exec(ctx, execInput)
+			if execErr != nil {
+				return taskToolOutput{}, execErr
+			}
+
+			if result.Status == pipelinerunner.RunAbort {
+				return taskToolOutput{}, fmt.Errorf("%s timed out after %s", toolDef.Name, timeout)
+			}
+
+			return taskToolOutput{
+				Stdout:   result.Stdout,
+				Stderr:   result.Stderr,
+				ExitCode: result.Code,
+			}, nil
+		},
+	)
+}
+
 // ShellJoinArgs joins shell arguments with proper quoting.
 func ShellJoinArgs(args []string) string {
 	quoted := make([]string, len(args))

@@ -3,6 +3,7 @@
 import { TaskFailure } from "../task_runner.ts";
 import { errorMessage, formatElapsed } from "../utils.ts";
 import { loadFileFromVolume } from "./file_loader.ts";
+import { processHooks } from "./resource_helpers.ts";
 import type { StepContext } from "./step_context.ts";
 import type { StepHandler } from "./step_handler.ts";
 
@@ -52,7 +53,8 @@ export class AgentStepHandler implements StepHandler {
       agentStep = { ...step, prompt: contents };
     }
 
-    const storageKey = `${ctx.paths.getBaseStorageKey()}/${pathContext}/run`;
+    const hooksStorageKey = `${ctx.paths.getBaseStorageKey()}/${pathContext}`;
+    const storageKey = `${hooksStorageKey}/run`;
     const auditBaseKey =
       `/agent-audit/${ctx.buildID}/jobs/${ctx.jobName}/${pathContext}/events`;
 
@@ -60,42 +62,70 @@ export class AgentStepHandler implements StepHandler {
       agentStep.config?.image_resource?.source?.repository ??
       "busybox";
 
-    // Resolve sub-agent configs (loading from file if needed).
-    // Each sub-agent is passed to the Go runtime as a SubAgentConfig so the
-    // parent LLM can call them as tools.
-    const subAgents: SubAgentConfig[] = [];
-    for (const rawSub of (agentStep.sub_agents ?? [])) {
-      let subStep = rawSub;
-      if ("file" in rawSub && rawSub.file) {
-        const contents = await loadFileFromVolume(
-          ctx,
-          rawSub.file,
-          pathContext,
-        );
-        const fileConfig = YAML.parse(contents) as Partial<AgentStep>;
-        subStep = {
-          ...fileConfig,
-          ...rawSub,
-          agent: rawSub.agent,
-        } as AgentStep;
-        // Concatenate file prompt + inline prompt so shared rules and
-        // per-agent task descriptions are both included.
-        if (fileConfig.prompt && rawSub.prompt) {
-          subStep.prompt = fileConfig.prompt + "\n" + rawSub.prompt;
-        } else if (!rawSub.prompt && fileConfig.prompt) {
-          subStep.prompt = fileConfig.prompt;
+    // Resolve tool definitions (agent tools and task tools) from the unified
+    // `tools` array. Each entry is distinguished by field presence:
+    //   - `agent:` field → LLM sub-agent tool
+    //   - `task:` field → container command tool
+    const tools: ToolDef[] = [];
+    for (const rawTool of (agentStep.tools ?? [])) {
+      if ("agent" in rawTool && rawTool.agent) {
+        // Agent tool — resolve from file if needed.
+        let subStep = rawTool as AgentStep;
+        if ("file" in rawTool && rawTool.file) {
+          const contents = await loadFileFromVolume(
+            ctx,
+            rawTool.file,
+            pathContext,
+          );
+          const fileConfig = YAML.parse(contents) as Partial<AgentStep>;
+          subStep = {
+            ...fileConfig,
+            ...rawTool,
+            agent: rawTool.agent,
+          } as AgentStep;
+          if (fileConfig.prompt && rawTool.prompt) {
+            subStep.prompt = fileConfig.prompt + "\n" + rawTool.prompt;
+          } else if (!rawTool.prompt && fileConfig.prompt) {
+            subStep.prompt = fileConfig.prompt;
+          }
+          if (!rawTool.model && fileConfig.model) {
+            subStep.model = fileConfig.model;
+          }
         }
-        if (!rawSub.model && fileConfig.model) subStep.model = fileConfig.model;
+        const subImage = subStep.config?.image ??
+          subStep.config?.image_resource?.source?.repository ?? "";
+        tools.push({
+          name: subStep.agent,
+          prompt: subStep.prompt ?? "",
+          model: subStep.model ?? "",
+          image: subImage,
+          storageKeyPrefix: storageKey.replace(/\/run$/, ""),
+        });
+      } else if ("task" in rawTool && rawTool.task) {
+        // Task tool — container command exposed as a tool.
+        const taskTool = rawTool as TaskToolStep;
+        let taskConfig = taskTool.config;
+        if ("file" in taskTool && taskTool.file) {
+          const contents = await loadFileFromVolume(
+            ctx,
+            taskTool.file,
+            pathContext,
+          );
+          const fileConfig = YAML.parse(contents) as Partial<TaskConfig>;
+          taskConfig = { ...fileConfig, ...taskConfig } as TaskConfig;
+        }
+        tools.push({
+          name: taskTool.task,
+          is_task: true,
+          description: taskTool.description ?? "",
+          image: taskConfig?.image ??
+            taskConfig?.image_resource?.source?.repository ?? "",
+          command_path: taskConfig?.run?.path ?? "",
+          command_args: taskConfig?.run?.args ?? [],
+          env: taskConfig?.env ?? {},
+          storageKeyPrefix: storageKey.replace(/\/run$/, ""),
+        });
       }
-      const subImage = subStep.config?.image ??
-        subStep.config?.image_resource?.source?.repository ?? "";
-      subAgents.push({
-        name: subStep.agent,
-        prompt: subStep.prompt ?? "",
-        model: subStep.model ?? "",
-        image: subImage,
-        storageKeyPrefix: storageKey.replace(/\/run$/, ""),
-      });
     }
 
     // Collect input and output mounts from earlier get/put steps and volumes.
@@ -164,6 +194,8 @@ export class AgentStepHandler implements StepHandler {
       doPersist();
     };
 
+    let failure: unknown = undefined;
+
     try {
       const result = await runtime.agent({
         name: agentStep.agent,
@@ -181,7 +213,7 @@ export class AgentStepHandler implements StepHandler {
         validation: agentStep.validation,
         output_schema: agentStep.output_schema,
         tool_timeout: agentStep.tool_timeout,
-        sub_agents: subAgents.length > 0 ? subAgents : undefined,
+        tools: tools.length > 0 ? tools : undefined,
         onUsage: (usage: AgentUsage) => {
           latestUsage = usage;
           persistRunningState();
@@ -217,6 +249,7 @@ export class AgentStepHandler implements StepHandler {
         ctx.taskRunner.getKnownMounts()[output.name] = mounts[output.name];
       }
     } catch (error) {
+      failure = error;
       const errMsg = errorMessage(error);
       storage.set(storageKey, {
         status: "failure",
@@ -227,6 +260,12 @@ export class AgentStepHandler implements StepHandler {
         usage: latestUsage,
         audit_log: auditLog,
       });
+    }
+
+    await processHooks(ctx, step, pathContext, hooksStorageKey, failure);
+
+    if (failure) {
+      const errMsg = errorMessage(failure);
       throw new TaskFailure(`Agent ${agentStep.agent} failed: ${errMsg}`);
     }
   }

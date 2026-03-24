@@ -72,13 +72,21 @@ func buildAgentTools(
 
 	tools := []adktool.Tool{runScript, readFileTool, grepTool, globTool, writeFileTool, listTasksTool, getTaskResultTool}
 
-	for _, subCfg := range config.SubAgents {
-		subTool, subErr := buildSubAgentTool(ctx, sandbox, sandboxRunner, sm, pipelineID, subCfg, config)
-		if subErr != nil {
-			return nil, fmt.Errorf("agent: sub-agent %q: %w", subCfg.Name, subErr)
+	for _, toolDef := range config.Tools {
+		var tool adktool.Tool
+		var toolErr error
+
+		if toolDef.IsTask {
+			tool, toolErr = newTaskTool(sandbox, sandboxRunner, toolDef, config, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+		} else {
+			tool, toolErr = buildSubAgentTool(ctx, sandbox, sandboxRunner, sm, pipelineID, toolDef, config)
 		}
 
-		tools = append(tools, subTool)
+		if toolErr != nil {
+			return nil, fmt.Errorf("agent: tool %q: %w", toolDef.Name, toolErr)
+		}
+
+		tools = append(tools, tool)
 	}
 
 	return tools, nil

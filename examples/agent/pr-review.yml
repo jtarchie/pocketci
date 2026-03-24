@@ -48,11 +48,11 @@ jobs:
       - task: generate-diff
         file: repo/examples/agent/tasks/generate-diff.yml
 
-      # Orchestrator calls three specialist sub-agents as tools, then
+      # Orchestrator calls three specialist tools, then
       # synthesises findings into structured JSON.
       - agent: final-review
         file: repo/examples/agent/agents/final-reviewer.yml
-        sub_agents:
+        tools:
           - agent: code-quality-reviewer
             file: repo/examples/agent/agents/specialist-reviewer.yml
             prompt: "Review for code quality — readability, naming, structure, DRY violations."

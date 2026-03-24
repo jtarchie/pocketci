@@ -146,7 +146,7 @@ type Step struct {
 	AgentContext      *agent.AgentContext            `yaml:"context,omitempty"`
 	AgentValidation   *agent.AgentValidationConfig   `yaml:"validation,omitempty"`
 	AgentToolTimeout  string                         `yaml:"tool_timeout,omitempty"`
-	SubAgents         Steps                          `yaml:"sub_agents,omitempty"`
+	Tools             Steps                          `yaml:"tools,omitempty"`
 
 	Get       string    `yaml:"get,omitempty"`
 	GetConfig GetConfig `yaml:",inline,omitempty"`

@@ -10,20 +10,20 @@ import (
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
 )
 
-func TestSubAgentConfigJSON(t *testing.T) {
+func TestToolDefJSON(t *testing.T) {
 	t.Parallel()
 
-	t.Run("sub_agents field roundtrips through JSON", func(t *testing.T) {
+	t.Run("tools field roundtrips through JSON", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
 
 		config := agent.AgentConfig{
 			Name:   "orchestrator",
-			Prompt: "call your sub-agents",
+			Prompt: "call your tools",
 			Model:  "anthropic/claude-sonnet-4-20250514",
 			Image:  "alpine/git",
-			SubAgents: []agent.SubAgentConfig{
+			Tools: []agent.ToolDef{
 				{
 					Name:             "code-quality-reviewer",
 					Prompt:           "Review for code quality",
@@ -45,14 +45,14 @@ func TestSubAgentConfigJSON(t *testing.T) {
 		var decoded agent.AgentConfig
 		assert.Expect(json.Unmarshal(data, &decoded)).To(Succeed())
 
-		assert.Expect(decoded.SubAgents).To(HaveLen(2))
-		assert.Expect(decoded.SubAgents[0].Name).To(Equal("code-quality-reviewer"))
-		assert.Expect(decoded.SubAgents[0].Prompt).To(Equal("Review for code quality"))
-		assert.Expect(decoded.SubAgents[0].StorageKeyPrefix).To(Equal("/pipeline/run-1/jobs/review-pr/2/agent/orchestrator"))
-		assert.Expect(decoded.SubAgents[1].Name).To(Equal("security-reviewer"))
+		assert.Expect(decoded.Tools).To(HaveLen(2))
+		assert.Expect(decoded.Tools[0].Name).To(Equal("code-quality-reviewer"))
+		assert.Expect(decoded.Tools[0].Prompt).To(Equal("Review for code quality"))
+		assert.Expect(decoded.Tools[0].StorageKeyPrefix).To(Equal("/pipeline/run-1/jobs/review-pr/2/agent/orchestrator"))
+		assert.Expect(decoded.Tools[1].Name).To(Equal("security-reviewer"))
 	})
 
-	t.Run("sub_agents uses snake_case JSON key", func(t *testing.T) {
+	t.Run("tools uses snake_case JSON key", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
@@ -60,7 +60,7 @@ func TestSubAgentConfigJSON(t *testing.T) {
 		config := agent.AgentConfig{
 			Name:  "parent",
 			Image: "alpine",
-			SubAgents: []agent.SubAgentConfig{
+			Tools: []agent.ToolDef{
 				{Name: "child", Image: "alpine"},
 			},
 		}
@@ -70,13 +70,13 @@ func TestSubAgentConfigJSON(t *testing.T) {
 
 		raw := make(map[string]json.RawMessage)
 		assert.Expect(json.Unmarshal(data, &raw)).To(Succeed())
-		_, found := raw["sub_agents"]
-		assert.Expect(found).To(BeTrue(), "sub_agents key must appear in JSON")
-		_, wrongKey := raw["SubAgents"]
-		assert.Expect(wrongKey).To(BeFalse(), "SubAgents (Go name) must not appear in JSON")
+		_, found := raw["tools"]
+		assert.Expect(found).To(BeTrue(), "tools key must appear in JSON")
+		_, wrongKey := raw["Tools"]
+		assert.Expect(wrongKey).To(BeFalse(), "Tools (Go name) must not appear in JSON")
 	})
 
-	t.Run("sub_agents omitted from JSON when empty", func(t *testing.T) {
+	t.Run("tools omitted from JSON when empty", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
@@ -88,11 +88,11 @@ func TestSubAgentConfigJSON(t *testing.T) {
 
 		raw := make(map[string]json.RawMessage)
 		assert.Expect(json.Unmarshal(data, &raw)).To(Succeed())
-		_, found := raw["sub_agents"]
-		assert.Expect(found).To(BeFalse(), "sub_agents must be omitted when empty")
+		_, found := raw["tools"]
+		assert.Expect(found).To(BeFalse(), "tools must be omitted when empty")
 	})
 
-	t.Run("SubAgentConfig image field roundtrips for own-container mode", func(t *testing.T) {
+	t.Run("ToolDef image field roundtrips for own-container mode", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
@@ -100,7 +100,7 @@ func TestSubAgentConfigJSON(t *testing.T) {
 		config := agent.AgentConfig{
 			Name:  "orchestrator",
 			Image: "alpine/git",
-			SubAgents: []agent.SubAgentConfig{
+			Tools: []agent.ToolDef{
 				{Name: "shared-reviewer", Prompt: "Uses parent container"},
 				{Name: "custom-reviewer", Prompt: "Uses own container", Image: "python:3.12"},
 			},
@@ -112,33 +112,70 @@ func TestSubAgentConfigJSON(t *testing.T) {
 		var decoded agent.AgentConfig
 		assert.Expect(json.Unmarshal(data, &decoded)).To(Succeed())
 
-		assert.Expect(decoded.SubAgents).To(HaveLen(2))
+		assert.Expect(decoded.Tools).To(HaveLen(2))
 
 		// Shared: image empty, will default to parent at runtime.
-		assert.Expect(decoded.SubAgents[0].Name).To(Equal("shared-reviewer"))
-		assert.Expect(decoded.SubAgents[0].Image).To(BeEmpty())
+		assert.Expect(decoded.Tools[0].Name).To(Equal("shared-reviewer"))
+		assert.Expect(decoded.Tools[0].Image).To(BeEmpty())
 
 		// Own-container: image preserved through roundtrip.
-		assert.Expect(decoded.SubAgents[1].Name).To(Equal("custom-reviewer"))
-		assert.Expect(decoded.SubAgents[1].Image).To(Equal("python:3.12"))
+		assert.Expect(decoded.Tools[1].Name).To(Equal("custom-reviewer"))
+		assert.Expect(decoded.Tools[1].Image).To(Equal("python:3.12"))
 	})
 
-	t.Run("SubAgentConfig storageKeyPrefix roundtrips", func(t *testing.T) {
+	t.Run("ToolDef storageKeyPrefix roundtrips", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
 
-		sub := agent.SubAgentConfig{
+		tool := agent.ToolDef{
 			Name:             "my-reviewer",
 			StorageKeyPrefix: "/pipeline/run-42/jobs/review-pr/3/agent/orchestrator",
 		}
 
-		data, err := json.Marshal(sub)
+		data, err := json.Marshal(tool)
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		var decoded agent.SubAgentConfig
+		var decoded agent.ToolDef
 		assert.Expect(json.Unmarshal(data, &decoded)).To(Succeed())
-		assert.Expect(decoded.StorageKeyPrefix).To(Equal(sub.StorageKeyPrefix))
+		assert.Expect(decoded.StorageKeyPrefix).To(Equal(tool.StorageKeyPrefix))
+	})
+
+	t.Run("task tool roundtrips through JSON", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		config := agent.AgentConfig{
+			Name:  "orchestrator",
+			Image: "alpine/git",
+			Tools: []agent.ToolDef{
+				{
+					Name:        "run-linter",
+					IsTask:      true,
+					Description: "Run the project linter",
+					Image:       "golangci/golangci-lint",
+					CommandPath: "golangci-lint",
+					CommandArgs: []string{"run", "./..."},
+					Env:         map[string]string{"GOPROXY": "off"},
+				},
+			},
+		}
+
+		data, err := json.Marshal(config)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		var decoded agent.AgentConfig
+		assert.Expect(json.Unmarshal(data, &decoded)).To(Succeed())
+
+		assert.Expect(decoded.Tools).To(HaveLen(1))
+		tool := decoded.Tools[0]
+		assert.Expect(tool.Name).To(Equal("run-linter"))
+		assert.Expect(tool.IsTask).To(BeTrue())
+		assert.Expect(tool.Description).To(Equal("Run the project linter"))
+		assert.Expect(tool.CommandPath).To(Equal("golangci-lint"))
+		assert.Expect(tool.CommandArgs).To(Equal([]string{"run", "./..."}))
+		assert.Expect(tool.Env).To(HaveKeyWithValue("GOPROXY", "off"))
 	})
 }
 

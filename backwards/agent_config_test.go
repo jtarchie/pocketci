@@ -344,7 +344,7 @@ jobs:
 		}
 	})
 
-	t.Run("parses agent step with sub_agents field", func(t *testing.T) {
+	t.Run("parses agent step with tools field", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
@@ -363,7 +363,7 @@ jobs:
             source: { repository: alpine/git }
           inputs:
             - name: repo
-        sub_agents:
+        tools:
           - agent: code-quality-reviewer
             file: repo/agents/code-quality.yml
           - agent: security-reviewer
@@ -374,14 +374,14 @@ jobs:
 
 		step := config.Jobs[0].Plan[0]
 		assert.Expect(step.Agent).To(Equal("orchestrator"))
-		assert.Expect(step.SubAgents).To(HaveLen(2))
-		assert.Expect(step.SubAgents[0].Agent).To(Equal("code-quality-reviewer"))
-		assert.Expect(step.SubAgents[0].File).To(Equal("repo/agents/code-quality.yml"))
-		assert.Expect(step.SubAgents[1].Agent).To(Equal("security-reviewer"))
-		assert.Expect(step.SubAgents[1].Prompt).To(Equal("Check for security issues"))
+		assert.Expect(step.Tools).To(HaveLen(2))
+		assert.Expect(step.Tools[0].Agent).To(Equal("code-quality-reviewer"))
+		assert.Expect(step.Tools[0].File).To(Equal("repo/agents/code-quality.yml"))
+		assert.Expect(step.Tools[1].Agent).To(Equal("security-reviewer"))
+		assert.Expect(step.Tools[1].Prompt).To(Equal("Check for security issues"))
 	})
 
-	t.Run("parses sub_agent with own container image", func(t *testing.T) {
+	t.Run("parses tool with own container image", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
@@ -397,7 +397,7 @@ jobs:
         config:
           platform: linux
           image: alpine/git
-        sub_agents:
+        tools:
           - agent: shared-reviewer
             prompt: Uses parent container
           - agent: custom-reviewer
@@ -409,19 +409,19 @@ jobs:
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		step := config.Jobs[0].Plan[0]
-		assert.Expect(step.SubAgents).To(HaveLen(2))
+		assert.Expect(step.Tools).To(HaveLen(2))
 
 		// Shared: no config block, will default to parent image at runtime.
-		assert.Expect(step.SubAgents[0].Agent).To(Equal("shared-reviewer"))
-		assert.Expect(step.SubAgents[0].TaskConfig).To(BeNil())
+		assert.Expect(step.Tools[0].Agent).To(Equal("shared-reviewer"))
+		assert.Expect(step.Tools[0].TaskConfig).To(BeNil())
 
 		// Own container: has config.image set.
-		assert.Expect(step.SubAgents[1].Agent).To(Equal("custom-reviewer"))
-		assert.Expect(step.SubAgents[1].TaskConfig).NotTo(BeNil())
-		assert.Expect(step.SubAgents[1].TaskConfig.Image).To(Equal("python:3.12"))
+		assert.Expect(step.Tools[1].Agent).To(Equal("custom-reviewer"))
+		assert.Expect(step.Tools[1].TaskConfig).NotTo(BeNil())
+		assert.Expect(step.Tools[1].TaskConfig.Image).To(Equal("python:3.12"))
 	})
 
-	t.Run("transpiles sub_agent with own container image to JS", func(t *testing.T) {
+	t.Run("transpiles tool with own container image to JS", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
@@ -436,7 +436,7 @@ jobs:
         config:
           platform: linux
           image: alpine/git
-        sub_agents:
+        tools:
           - agent: shared-reviewer
             prompt: Uses parent container
           - agent: custom-reviewer
@@ -451,7 +451,7 @@ jobs:
 		assert.Expect(js).To(ContainSubstring("python:3.12"))
 	})
 
-	t.Run("transpiles agent step with sub_agents to JS", func(t *testing.T) {
+	t.Run("transpiles agent step with tools to JS", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
@@ -469,7 +469,7 @@ jobs:
             source: { repository: alpine/git }
           inputs:
             - name: repo
-        sub_agents:
+        tools:
           - agent: code-quality-reviewer
             file: repo/agents/code-quality.yml
           - agent: security-reviewer
@@ -478,7 +478,7 @@ jobs:
 `)
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(js).To(ContainSubstring("orchestrator"))
-		assert.Expect(js).To(ContainSubstring("sub_agents"))
+		assert.Expect(js).To(ContainSubstring("tools"))
 		assert.Expect(js).To(ContainSubstring("code-quality-reviewer"))
 		assert.Expect(js).To(ContainSubstring("security-reviewer"))
 	})

@@ -48,7 +48,7 @@ func buildSubAgentTool(
 	sandboxRunner pipelinerunner.Runner,
 	sm secrets.Manager,
 	pipelineID string,
-	subCfg SubAgentConfig,
+	subCfg ToolDef,
 	parentConfig AgentConfig,
 ) (adktool.Tool, error) {
 	subImage := subCfg.Image
@@ -141,7 +141,7 @@ func buildSubAgentTool(
 // each sub-agent's results individually.
 func newSharedContainerSubAgentTool(
 	ctx context.Context,
-	subCfg SubAgentConfig,
+	subCfg ToolDef,
 	subAgent agent.Agent,
 	parentConfig AgentConfig,
 ) (adktool.Tool, error) {
@@ -161,7 +161,7 @@ func newSharedContainerSubAgentTool(
 // to storage.
 func executeSharedSubAgent(
 	ctx context.Context,
-	subCfg SubAgentConfig,
+	subCfg ToolDef,
 	subAgent agent.Agent,
 	parentConfig AgentConfig,
 	input callAgentInput,
@@ -327,7 +327,7 @@ func processSubAgentEvent(
 // the UI and MCP tools can display progress or final results.
 func persistSubAgentProgress(
 	ctx context.Context,
-	subCfg SubAgentConfig,
+	subCfg ToolDef,
 	parentConfig AgentConfig,
 	status string,
 	text string,
@@ -359,7 +359,7 @@ func runSubAgentFollowUp(
 	textBuilder, resultBuilder *strings.Builder,
 	auditEvents *[]AuditEvent,
 	usage *AgentUsage,
-	subCfg SubAgentConfig,
+	subCfg ToolDef,
 	parentConfig AgentConfig,
 	startedAt time.Time,
 ) {
@@ -389,7 +389,7 @@ func newCallAgentTool(
 	sandboxRunner pipelinerunner.Runner,
 	sm secrets.Manager,
 	pipelineID string,
-	subCfg SubAgentConfig,
+	subCfg ToolDef,
 	subModel string,
 	parentConfig AgentConfig,
 ) (adktool.Tool, error) {

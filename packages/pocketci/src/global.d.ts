@@ -328,13 +328,29 @@ declare global {
     max_bytes?: number;
   }
 
-  // Minimal config for a sub-agent passed to runtime.agent().
-  interface SubAgentConfig {
+  // Unified tool definition passed to runtime.agent(). Covers both
+  // agent tools (LLM sub-agents) and task tools (container commands).
+  // Distinguish by the `is_task` flag.
+  interface ToolDef {
     name: string;
     prompt?: string;
     model?: string;
     image?: string;
     storageKeyPrefix?: string; // Parent storage key for nested path persistence
+    // Task-specific fields (present when is_task is true)
+    is_task?: boolean;
+    description?: string;
+    command_path?: string;
+    command_args?: string[];
+    env?: { [key: string]: string };
+  }
+
+  // Task tool step: runs a container command exposed as a tool to the agent.
+  interface TaskToolStep extends StepHooks {
+    task: string; // Tool name
+    description?: string;
+    config?: TaskConfig;
+    file?: string; // Load task config from a YAML file on a volume
   }
 
   // Input to runtime.agent().
@@ -357,7 +373,7 @@ declare global {
     validation?: AgentValidationConfig;
     output_schema?: Record<string, unknown>;
     tool_timeout?: string; // Per-tool timeout duration (e.g. "60s", "5m")
-    sub_agents?: SubAgentConfig[]; // Sub-agents registered as callable tools
+    tools?: ToolDef[]; // Agent + task tools registered as callable tools
   }
 
   /**
@@ -796,7 +812,7 @@ declare global {
     validation?: AgentValidationConfig;
     output_schema?: Record<string, unknown>; // JSON Schema for structured output (OpenRouter/Gemini)
     tool_timeout?: string; // Per-tool timeout duration (e.g. "60s", "5m")
-    sub_agents?: AgentStep[]; // Sub-agents available as callable tools to the parent LLM
+    tools?: (AgentStep | TaskToolStep)[]; // Agent + task tools available to the parent LLM
     attempts?: number;
     across?: AcrossVar[];
     fail_fast?: boolean;
