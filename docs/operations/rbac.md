@@ -75,11 +75,17 @@ curl -X PUT http://localhost:8080/api/pipelines/my-pipeline \
 Pipeline RBAC controls:
 
 - Viewing the pipeline and its runs
+- Editing/updating the pipeline (`set-pipeline` or `PUT`)
 - Triggering the pipeline
 - Deleting the pipeline
 - Executing `pocketci run` against the pipeline
 
 Pipelines without an RBAC expression are accessible to all authenticated users.
+
+> **Note:** Pipeline RBAC expressions require OAuth authentication. Setting an
+> RBAC expression via basic auth is rejected — the server cannot evaluate
+> expressions without an OAuth user. If a pipeline already has an RBAC expression,
+> basic auth users will receive `403 Forbidden` when accessing it.
 
 ### Expression Examples
 
@@ -116,3 +122,19 @@ expressions. Common operators:
 
 Expressions are validated at configuration time — invalid syntax causes an
 immediate error rather than a runtime failure.
+
+## Audit Logging
+
+All pipeline mutations are logged via `slog` with the actor identity:
+
+| Log Message             | When                                      |
+| ----------------------- | ----------------------------------------- |
+| `pipeline.upsert`       | Pipeline created or updated               |
+| `pipeline.delete`       | Pipeline deleted                          |
+| `pipeline.paused`       | Pipeline paused                           |
+| `pipeline.unpaused`     | Pipeline unpaused                         |
+| `pipeline.rbac.update`  | RBAC expression changed (logs old → new)  |
+
+Each log entry includes `pipeline` (name), `pipeline_id`, and `actor`
+(formatted as `provider:user`, e.g. `github:alice@example.com` or
+`basic:admin`).

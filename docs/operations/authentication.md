@@ -28,6 +28,10 @@ pocketci set-pipeline my-pipeline.ts \
   --server http://admin:secret123@localhost:8080
 ```
 
+> **Limitation:** Basic auth does not support pipeline-level RBAC expressions.
+> RBAC requires OAuth so that user attributes (email, organizations, groups) can
+> be evaluated. See [Authorization (RBAC)](./rbac.md) for details.
+
 ## OAuth
 
 OAuth delegates authentication to an external identity provider (GitHub, GitLab,
