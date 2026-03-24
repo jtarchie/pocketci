@@ -60,7 +60,13 @@ func RunAgent(
 	}
 
 	maxTurns, maxTotalTokens := EffectiveLimits(config.Limits)
-	instruction := BuildSystemInstruction(config, maxTurns)
+
+	var expandedSchema *genai.Schema
+	if config.OutputSchema != nil {
+		expandedSchema = schema.ExpandOutputSchema(config.OutputSchema)
+	}
+
+	instruction := BuildSystemInstruction(config, maxTurns, expandedSchema)
 	genCfg := agentmodel.BuildGenerateContentConfig(provider, config.LLM, config.Thinking, config.Safety)
 
 	myAgent, err := llmagent.New(llmagent.Config{
@@ -95,7 +101,7 @@ func RunAgent(
 
 	if !result.limitExceeded {
 		if runErr := runValidationFollowUp(
-			ctx, runnr, sessResp.Session.ID(), config,
+			ctx, runnr, sessResp.Session.ID(), config, expandedSchema,
 			&result.resultBuilder, &result.textBuilder, &result.usage, &auditEvents,
 		); runErr != nil {
 			return nil, fmt.Errorf("agent: follow-up run failed: %w", runErr)
@@ -112,11 +118,12 @@ func runValidationFollowUp(
 	runnr *runner.Runner,
 	sessionID string,
 	config AgentConfig,
+	expandedSchema *genai.Schema,
 	resultBuilder, textBuilder *strings.Builder,
 	usage *AgentUsage,
 	auditEvents *[]AuditEvent,
 ) error {
-	needsFollowUp, followUpText := evaluateValidation(config, resultBuilder, auditEvents)
+	needsFollowUp, followUpText := evaluateValidation(config, expandedSchema, resultBuilder, auditEvents)
 	if !needsFollowUp {
 		return nil
 	}
@@ -155,7 +162,7 @@ func runValidationFollowUp(
 }
 
 // evaluateValidation checks whether the agent output passes validation.
-func evaluateValidation(config AgentConfig, resultBuilder *strings.Builder, auditEvents *[]AuditEvent) (bool, string) {
+func evaluateValidation(config AgentConfig, expandedSchema *genai.Schema, resultBuilder *strings.Builder, auditEvents *[]AuditEvent) (bool, string) {
 	followUpText := "You have not provided a final text response yet. " +
 		"Please produce your complete response now based on the information you have gathered."
 
@@ -166,25 +173,22 @@ func evaluateValidation(config AgentConfig, resultBuilder *strings.Builder, audi
 	text := resultBuilder.String()
 
 	// Check output schema conformance first (structural validation).
-	if config.OutputSchema != nil {
-		expanded := schema.ExpandOutputSchema(config.OutputSchema)
-		if expanded != nil {
-			if err := schema.ValidateJSON(text, expanded); err != nil {
-				schemaFollowUp := fmt.Sprintf(
-					"Your response is not valid JSON conforming to the required schema. Error: %s. "+
-						"Please output ONLY a valid JSON object matching the schema, with no surrounding text.",
-					err.Error(),
-				)
+	if expandedSchema != nil {
+		if err := schema.ValidateJSON(text, expandedSchema); err != nil {
+			schemaFollowUp := fmt.Sprintf(
+				"Your response is not valid JSON conforming to the required schema. Error: %s. "+
+					"Please output ONLY a valid JSON object matching the schema, with no surrounding text.",
+				err.Error(),
+			)
 
-				AppendAuditEvent(auditEvents, AuditEvent{
-					Timestamp: time.Now().UTC().Format(time.RFC3339),
-					Author:    "system",
-					Type:      "schema_validation_error",
-					Text:      schemaFollowUp,
-				}, config.OnAuditEvent)
+			AppendAuditEvent(auditEvents, AuditEvent{
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+				Author:    "system",
+				Type:      "schema_validation_error",
+				Text:      schemaFollowUp,
+			}, config.OnAuditEvent)
 
-				return true, schemaFollowUp
-			}
+			return true, schemaFollowUp
 		}
 	}
 

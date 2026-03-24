@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/jtarchie/pocketci/runtime/agent"
+	"github.com/jtarchie/pocketci/runtime/agent/schema"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
 
 	. "github.com/onsi/gomega"
@@ -16,7 +17,7 @@ func TestBuildSystemInstruction(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		result := agent.BuildSystemInstruction(agent.AgentConfig{}, 50)
+		result := agent.BuildSystemInstruction(agent.AgentConfig{}, 50, nil)
 
 		assert.Expect(result).To(ContainSubstring("You are an AI agent operating inside a CI/CD pipeline run."))
 		assert.Expect(result).To(ContainSubstring("<tools>"))
@@ -37,7 +38,7 @@ func TestBuildSystemInstruction(t *testing.T) {
 			RunID:       "run-123",
 			PipelineID:  "pipe-456",
 			TriggeredBy: "webhook",
-		}, 50)
+		}, 50, nil)
 
 		assert.Expect(result).To(ContainSubstring("<environment>"))
 		assert.Expect(result).To(ContainSubstring("Container image: alpine/git"))
@@ -56,7 +57,7 @@ func TestBuildSystemInstruction(t *testing.T) {
 				"repo": {},
 				"diff": {},
 			},
-		}, 50)
+		}, 50, nil)
 
 		assert.Expect(result).To(ContainSubstring("<volumes>"))
 		assert.Expect(result).To(ContainSubstring("- repo/"))
@@ -68,7 +69,7 @@ func TestBuildSystemInstruction(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		result := agent.BuildSystemInstruction(agent.AgentConfig{}, 50)
+		result := agent.BuildSystemInstruction(agent.AgentConfig{}, 50, nil)
 
 		assert.Expect(result).To(ContainSubstring("<tools>"))
 		assert.Expect(result).To(ContainSubstring("read_file instead of cat"))
@@ -83,7 +84,7 @@ func TestBuildSystemInstruction(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
-		result := agent.BuildSystemInstruction(agent.AgentConfig{}, 30)
+		result := agent.BuildSystemInstruction(agent.AgentConfig{}, 30, nil)
 
 		assert.Expect(result).To(ContainSubstring("<efficiency>"))
 		assert.Expect(result).To(ContainSubstring("Budget: 30 turns."))
@@ -95,14 +96,12 @@ func TestBuildSystemInstruction(t *testing.T) {
 
 		assert := NewGomegaWithT(t)
 
-		withoutSchema := agent.BuildSystemInstruction(agent.AgentConfig{}, 50)
+		withoutSchema := agent.BuildSystemInstruction(agent.AgentConfig{}, 50, nil)
 		assert.Expect(withoutSchema).NotTo(ContainSubstring("<output_format>"))
 
-		withSchema := agent.BuildSystemInstruction(agent.AgentConfig{
-			OutputSchema: map[string]any{
-				"summary": "string",
-			},
-		}, 50)
+		outputSchema := map[string]any{"summary": "string"}
+		expanded := schema.ExpandOutputSchema(outputSchema)
+		withSchema := agent.BuildSystemInstruction(agent.AgentConfig{}, 50, expanded)
 		assert.Expect(withSchema).To(ContainSubstring("<output_format>"))
 		assert.Expect(withSchema).To(ContainSubstring("valid JSON"))
 		assert.Expect(withSchema).To(ContainSubstring("</output_format>"))

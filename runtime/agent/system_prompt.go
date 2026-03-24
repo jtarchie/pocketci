@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jtarchie/pocketci/runtime/agent/schema"
+	"google.golang.org/genai"
 )
 
 // BuildSystemInstruction constructs the system instruction describing the
 // agent's environment. The user's task prompt is sent separately as a user
 // message so the model receives it in the correct context-window slot.
-func BuildSystemInstruction(config AgentConfig, maxTurns int) string {
+func BuildSystemInstruction(config AgentConfig, maxTurns int, expandedSchema *genai.Schema) string {
 	var b strings.Builder
 
 	b.WriteString("You are an AI agent operating inside a CI/CD pipeline run. Use the tools available to you to complete the task described in the user message.\n")
@@ -71,17 +71,14 @@ func BuildSystemInstruction(config AgentConfig, maxTurns int) string {
 	b.WriteString("</efficiency>\n")
 
 	// <output_format> — only when output_schema is configured
-	if config.OutputSchema != nil {
-		expanded := schema.ExpandOutputSchema(config.OutputSchema)
-		if expanded != nil {
-			schemaJSON, err := json.Marshal(expanded)
-			if err == nil {
-				b.WriteString("\n<output_format>\n")
-				b.WriteString("Your FINAL response must be valid JSON conforming to this schema:\n")
-				fmt.Fprintf(&b, "%s\n", schemaJSON)
-				b.WriteString("Do not include any text outside the JSON object.\n")
-				b.WriteString("</output_format>\n")
-			}
+	if expandedSchema != nil {
+		schemaJSON, err := json.Marshal(expandedSchema)
+		if err == nil {
+			b.WriteString("\n<output_format>\n")
+			b.WriteString("Your FINAL response must be valid JSON conforming to this schema:\n")
+			fmt.Fprintf(&b, "%s\n", schemaJSON)
+			b.WriteString("Do not include any text outside the JSON object.\n")
+			b.WriteString("</output_format>\n")
 		}
 	}
 

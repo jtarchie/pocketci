@@ -82,7 +82,11 @@ export class AgentStepHandler implements StepHandler {
         // Agent tool — resolve from file if needed.
         let subStep = rawTool as AgentStep;
         if ("file" in rawTool && rawTool.file) {
-          subStep = await mergeAgentFileConfig(ctx, rawTool as AgentStep, pathContext);
+          subStep = await mergeAgentFileConfig(
+            ctx,
+            rawTool as AgentStep,
+            pathContext,
+          );
         }
         const subImage = subStep.config?.image ??
           subStep.config?.image_resource?.source?.repository ?? "";
