@@ -21,6 +21,20 @@ import (
 	"github.com/jtarchie/pocketci/secrets"
 )
 
+// composePrompt combines a base prompt with a specific request. If both are
+// non-empty, the request is appended. If only one is set, it is used as-is.
+func composePrompt(base, request string) string {
+	if request == "" {
+		return base
+	}
+
+	if base != "" {
+		return base + "\n\nSpecific request: " + request
+	}
+
+	return request
+}
+
 // callAgentInput is the tool input schema for sub-agent tools (both modes).
 // The LLM passes a plain-text request to the sub-agent.
 type callAgentInput struct {
@@ -134,14 +148,7 @@ func executeSharedSubAgent(
 	parentConfig AgentConfig,
 	input callAgentInput,
 ) (callAgentOutput, error) {
-	prompt := subCfg.Prompt
-	if input.Request != "" {
-		if prompt != "" {
-			prompt = prompt + "\n\nSpecific request: " + input.Request
-		} else {
-			prompt = input.Request
-		}
-	}
+	prompt := composePrompt(subCfg.Prompt, input.Request)
 
 	startedAt := time.Now().UTC()
 
@@ -297,14 +304,7 @@ func newCallAgentTool(
 			Description: fmt.Sprintf("Specialist sub-agent: %s. Call this when you need its expertise.", subCfg.Name),
 		},
 		func(_ adktool.Context, input callAgentInput) (callAgentOutput, error) {
-			prompt := subCfg.Prompt
-			if input.Request != "" {
-				if prompt != "" {
-					prompt = prompt + "\n\nSpecific request: " + input.Request
-				} else {
-					prompt = input.Request
-				}
-			}
+			prompt := composePrompt(subCfg.Prompt, input.Request)
 
 			subAgentConfig := AgentConfig{
 				Name:        subCfg.Name,
