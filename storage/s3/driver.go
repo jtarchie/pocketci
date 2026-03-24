@@ -345,15 +345,18 @@ func (s *S3) UpdatePipelineRBACExpression(ctx context.Context, pipelineID, expre
 
 // ─── Pipeline Run operations ────────────────────────────────────────────────
 
-func (s *S3) SaveRun(ctx context.Context, pipelineID string) (*storage.PipelineRun, error) {
+func (s *S3) SaveRun(ctx context.Context, pipelineID string, triggerType storage.TriggerType, triggeredBy string, triggerInput storage.TriggerInput) (*storage.PipelineRun, error) {
 	id := support.UniqueID()
 	now := time.Now().UTC()
 
 	run := &storage.PipelineRun{
-		ID:         id,
-		PipelineID: pipelineID,
-		Status:     storage.RunStatusQueued,
-		CreatedAt:  now,
+		ID:           id,
+		PipelineID:   pipelineID,
+		Status:       storage.RunStatusQueued,
+		TriggerType:  triggerType,
+		TriggeredBy:  triggeredBy,
+		TriggerInput: triggerInput,
+		CreatedAt:    now,
 	}
 
 	data, err := json.Marshal(run)
@@ -728,7 +731,9 @@ func runMatchesQuery(run *storage.PipelineRun, query string) bool {
 
 	return strings.Contains(strings.ToLower(run.ID), lower) ||
 		strings.Contains(strings.ToLower(string(run.Status)), lower) ||
-		strings.Contains(strings.ToLower(run.ErrorMessage), lower)
+		strings.Contains(strings.ToLower(run.ErrorMessage), lower) ||
+		strings.Contains(strings.ToLower(string(run.TriggerType)), lower) ||
+		strings.Contains(strings.ToLower(run.TriggeredBy), lower)
 }
 
 func pipelineMatchesQuery(p *storage.Pipeline, query string) bool {

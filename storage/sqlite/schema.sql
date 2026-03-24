@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
   started_at    INTEGER,
   completed_at  INTEGER,
   error_message TEXT,
+  trigger_type  TEXT    NOT NULL DEFAULT '',
+  triggered_by  TEXT    NOT NULL DEFAULT '',
+  trigger_input TEXT    NOT NULL DEFAULT '{}',
   created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
   FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
 ) STRICT;
@@ -73,6 +76,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS pipeline_runs_fts USING fts5(
   id,
   status,
   error_message,
+  trigger_type,
+  triggered_by,
   content     = pipeline_runs,
   content_rowid = rowid,
   tokenize    = 'unicode61'
@@ -81,24 +86,24 @@ CREATE VIRTUAL TABLE IF NOT EXISTS pipeline_runs_fts USING fts5(
 -- Populate FTS when a run is created.
 CREATE TRIGGER IF NOT EXISTS pipeline_runs_fts_insert
 AFTER INSERT ON pipeline_runs BEGIN
-  INSERT INTO pipeline_runs_fts(rowid, id, status, error_message)
-  VALUES (NEW.rowid, NEW.id, NEW.status, COALESCE(NEW.error_message, ''));
+  INSERT INTO pipeline_runs_fts(rowid, id, status, error_message, trigger_type, triggered_by)
+  VALUES (NEW.rowid, NEW.id, NEW.status, COALESCE(NEW.error_message, ''), NEW.trigger_type, NEW.triggered_by);
 END;
 
 -- Keep FTS in sync when a run's status or error_message changes.
 CREATE TRIGGER IF NOT EXISTS pipeline_runs_fts_update
 AFTER UPDATE ON pipeline_runs BEGIN
-  INSERT INTO pipeline_runs_fts(pipeline_runs_fts, rowid, id, status, error_message)
-  VALUES ('delete', OLD.rowid, OLD.id, OLD.status, COALESCE(OLD.error_message, ''));
-  INSERT INTO pipeline_runs_fts(rowid, id, status, error_message)
-  VALUES (NEW.rowid, NEW.id, NEW.status, COALESCE(NEW.error_message, ''));
+  INSERT INTO pipeline_runs_fts(pipeline_runs_fts, rowid, id, status, error_message, trigger_type, triggered_by)
+  VALUES ('delete', OLD.rowid, OLD.id, OLD.status, COALESCE(OLD.error_message, ''), OLD.trigger_type, OLD.triggered_by);
+  INSERT INTO pipeline_runs_fts(rowid, id, status, error_message, trigger_type, triggered_by)
+  VALUES (NEW.rowid, NEW.id, NEW.status, COALESCE(NEW.error_message, ''), NEW.trigger_type, NEW.triggered_by);
 END;
 
 -- Remove FTS entries when a run is deleted.
 CREATE TRIGGER IF NOT EXISTS pipeline_runs_fts_delete
 AFTER DELETE ON pipeline_runs BEGIN
-  INSERT INTO pipeline_runs_fts(pipeline_runs_fts, rowid, id, status, error_message)
-  VALUES ('delete', OLD.rowid, OLD.id, OLD.status, COALESCE(OLD.error_message, ''));
+  INSERT INTO pipeline_runs_fts(pipeline_runs_fts, rowid, id, status, error_message, trigger_type, triggered_by)
+  VALUES ('delete', OLD.rowid, OLD.id, OLD.status, COALESCE(OLD.error_message, ''), OLD.trigger_type, OLD.triggered_by);
 END;
 
 -- Remove task data stored under .../{namespace}/pipeline/{run_id}/... when a pipeline run is deleted.

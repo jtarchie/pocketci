@@ -69,7 +69,7 @@ func TestMCPGetRun(t *testing.T) {
 	pipeline, err := store.SavePipeline(ctx, "test-pipeline", "export const pipeline = async () => {};", "native", "")
 	NewWithT(t).Expect(err).NotTo(HaveOccurred())
 
-	run, err := store.SaveRun(ctx, pipeline.ID)
+	run, err := store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 	NewWithT(t).Expect(err).NotTo(HaveOccurred())
 
 	t.Run("returns run details for a valid run ID", func(t *testing.T) {
@@ -115,7 +115,7 @@ func TestMCPListRunTasks(t *testing.T) {
 	pipeline, err := store.SavePipeline(ctx, "tasks-pipeline", "export const pipeline = async () => {};", "native", "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
-	run, err := store.SaveRun(ctx, pipeline.ID)
+	run, err := store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	err = store.Set(ctx, "/pipeline/"+run.ID+"/tasks/echo", map[string]any{
@@ -156,7 +156,7 @@ func TestMCPGetRunTask(t *testing.T) {
 	pipeline, err := store.SavePipeline(ctx, "single-task-pipeline", "export const pipeline = async () => {};", "native", "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
-	run, err := store.SaveRun(ctx, pipeline.ID)
+	run, err := store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	taskPath := "/pipeline/" + run.ID + "/jobs/review-pr/1/agent/code-quality-reviewer"
@@ -230,7 +230,7 @@ func TestMCPSearchTasks(t *testing.T) {
 	pipeline, err := store.SavePipeline(ctx, "search-pipeline", "export const pipeline = async () => {};", "native", "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
-	run, err := store.SaveRun(ctx, pipeline.ID)
+	run, err := store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	err = store.Set(ctx, "/pipeline/"+run.ID+"/tasks/echo", map[string]any{
@@ -270,7 +270,7 @@ func TestMCPSearchTasks(t *testing.T) {
 		assert := NewWithT(t)
 
 		// create a second run with a distinct error so it shows up in search
-		run2, err := store.SaveRun(ctx, pipeline.ID)
+		run2, err := store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 		err = store.UpdateRunStatus(ctx, run2.ID, storage.RunStatusFailed, "unique-pipeline-error-token")
 		assert.Expect(err).NotTo(HaveOccurred())

@@ -116,7 +116,7 @@ func TestPipelineStorage(t *testing.T) {
 				pipeline, err := client.SavePipeline(ctx, "cascade-test", "export { pipeline };", "native", "")
 				assert.Expect(err).NotTo(HaveOccurred())
 
-				run, err := client.SaveRun(ctx, pipeline.ID)
+				run, err := client.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				taskPath := "/pipeline/" + run.ID + "/tasks/0-echo-task"

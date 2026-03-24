@@ -69,15 +69,24 @@ type pipelineRunScan struct {
 	StartedAt    sql.NullInt64  `db:"started_at"`
 	CompletedAt  sql.NullInt64  `db:"completed_at"`
 	ErrorMessage sql.NullString `db:"error_message"`
+	TriggerType  string         `db:"trigger_type"`
+	TriggeredBy  string         `db:"triggered_by"`
+	TriggerInput string         `db:"trigger_input"`
 	CreatedAt    int64          `db:"created_at"`
 }
 
 func (p pipelineRunScan) toStorage() storage.PipelineRun {
 	run := storage.PipelineRun{
-		ID:         p.ID,
-		PipelineID: p.PipelineID,
-		Status:     storage.RunStatus(p.Status),
-		CreatedAt:  time.Unix(p.CreatedAt, 0).UTC(),
+		ID:          p.ID,
+		PipelineID:  p.PipelineID,
+		Status:      storage.RunStatus(p.Status),
+		TriggerType: storage.TriggerType(p.TriggerType),
+		TriggeredBy: p.TriggeredBy,
+		CreatedAt:   time.Unix(p.CreatedAt, 0).UTC(),
+	}
+
+	if p.TriggerInput != "" {
+		_ = json.Unmarshal([]byte(p.TriggerInput), &run.TriggerInput)
 	}
 
 	if p.StartedAt.Valid {
@@ -572,23 +581,31 @@ func (s *Sqlite) UpdatePipelineRBACExpression(ctx context.Context, pipelineID, e
 }
 
 // SaveRun creates a new pipeline run record.
-func (s *Sqlite) SaveRun(ctx context.Context, pipelineID string) (*storage.PipelineRun, error) {
+func (s *Sqlite) SaveRun(ctx context.Context, pipelineID string, triggerType storage.TriggerType, triggeredBy string, triggerInput storage.TriggerInput) (*storage.PipelineRun, error) {
 	id := support.UniqueID()
 	now := time.Now().UTC()
 
-	_, err := s.writer.ExecContext(ctx, `
-		INSERT INTO pipeline_runs (id, pipeline_id, status, created_at)
-		VALUES (?, ?, ?, ?)
-	`, id, pipelineID, storage.RunStatusQueued, now.Unix())
+	inputJSON, err := json.Marshal(triggerInput)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal trigger input: %w", err)
+	}
+
+	_, err = s.writer.ExecContext(ctx, `
+		INSERT INTO pipeline_runs (id, pipeline_id, status, trigger_type, triggered_by, trigger_input, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, id, pipelineID, storage.RunStatusQueued, string(triggerType), triggeredBy, string(inputJSON), now.Unix())
 	if err != nil {
 		return nil, fmt.Errorf("failed to save run: %w", err)
 	}
 
 	return &storage.PipelineRun{
-		ID:         id,
-		PipelineID: pipelineID,
-		Status:     storage.RunStatusQueued,
-		CreatedAt:  now,
+		ID:           id,
+		PipelineID:   pipelineID,
+		Status:       storage.RunStatusQueued,
+		TriggerType:  triggerType,
+		TriggeredBy:  triggeredBy,
+		TriggerInput: triggerInput,
+		CreatedAt:    now,
 	}, nil
 }
 
@@ -597,7 +614,7 @@ func (s *Sqlite) GetRun(ctx context.Context, runID string) (*storage.PipelineRun
 	var row pipelineRunScan
 
 	err := sqlscan.Get(ctx, s.writer, &row, `
-		SELECT id, pipeline_id, status, started_at, completed_at, error_message, created_at
+		SELECT id, pipeline_id, status, started_at, completed_at, error_message, trigger_type, triggered_by, trigger_input, created_at
 		FROM pipeline_runs WHERE id = ?
 	`, runID)
 	if err != nil {
@@ -618,7 +635,7 @@ func (s *Sqlite) GetRunsByStatus(ctx context.Context, status storage.RunStatus) 
 	var rows []pipelineRunScan
 
 	err := sqlscan.Select(ctx, s.writer, &rows, `
-		SELECT id, pipeline_id, status, started_at, completed_at, error_message, created_at
+		SELECT id, pipeline_id, status, started_at, completed_at, error_message, trigger_type, triggered_by, trigger_input, created_at
 		FROM pipeline_runs WHERE status = ?
 		ORDER BY created_at DESC
 	`, string(status))
@@ -661,7 +678,7 @@ func (s *Sqlite) GetRecentRunsByStatus(ctx context.Context, status storage.RunSt
 	var rows []pipelineRunScan
 
 	err := sqlscan.Select(ctx, s.writer, &rows, `
-		SELECT id, pipeline_id, status, started_at, completed_at, error_message, created_at
+		SELECT id, pipeline_id, status, started_at, completed_at, error_message, trigger_type, triggered_by, trigger_input, created_at
 		FROM pipeline_runs WHERE status = ?
 		ORDER BY created_at DESC
 		LIMIT ?
@@ -701,7 +718,7 @@ func (s *Sqlite) SearchRunsByPipeline(ctx context.Context, pipelineID, query str
 
 		var rows []pipelineRunScan
 		err = sqlscan.Select(ctx, s.writer, &rows, `
-			SELECT id, pipeline_id, status, started_at, completed_at, error_message, created_at
+			SELECT id, pipeline_id, status, started_at, completed_at, error_message, trigger_type, triggered_by, trigger_input, created_at
 			FROM pipeline_runs WHERE pipeline_id = ?
 			ORDER BY created_at DESC
 			LIMIT ? OFFSET ?
@@ -742,7 +759,7 @@ func (s *Sqlite) SearchRunsByPipeline(ctx context.Context, pipelineID, query str
 	var rows []pipelineRunScan
 
 	err = sqlscan.Select(ctx, s.writer, &rows, `
-		SELECT id, pipeline_id, status, started_at, completed_at, error_message, created_at
+		SELECT id, pipeline_id, status, started_at, completed_at, error_message, trigger_type, triggered_by, trigger_input, created_at
 		FROM pipeline_runs
 		WHERE pipeline_id = ?
 		  AND id IN (SELECT id FROM pipeline_runs_fts WHERE pipeline_runs_fts MATCH ?)

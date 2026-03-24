@@ -574,10 +574,13 @@ func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
 	}
 
 	return ctx.JSON(http.StatusAccepted, map[string]any{
-		"run_id":      run.ID,
-		"pipeline_id": pipeline.ID,
-		"status":      run.Status,
-		"message":     "pipeline execution started",
+		"run_id":        run.ID,
+		"pipeline_id":   pipeline.ID,
+		"status":        run.Status,
+		"trigger_type":  run.TriggerType,
+		"triggered_by":  run.TriggeredBy,
+		"trigger_input": run.TriggerInput,
+		"message":       "pipeline execution started",
 	})
 }
 

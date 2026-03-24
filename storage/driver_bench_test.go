@@ -154,7 +154,7 @@ func BenchmarkStorage_SaveAndGetRun(b *testing.B) {
 	b.ResetTimer()
 
 	for b.Loop() {
-		run, err := driver.SaveRun(ctx, pipeline.ID)
+		run, err := driver.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -182,7 +182,7 @@ func BenchmarkStorage_UpdateRunStatus_Allowed(b *testing.B) {
 	b.ResetTimer()
 
 	for b.Loop() {
-		run, err := driver.SaveRun(ctx, pipeline.ID)
+		run, err := driver.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -209,7 +209,7 @@ func BenchmarkStorage_UpdateRunStatus_Blocked(b *testing.B) {
 	}
 
 	// Pre-create a run in terminal state
-	run, err := driver.SaveRun(ctx, pipeline.ID)
+	run, err := driver.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 	if err != nil {
 		b.Fatal(err)
 	}

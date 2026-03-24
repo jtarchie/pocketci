@@ -60,7 +60,7 @@ func TestWebShareController(t *testing.T) {
 		pipeline, err := client.SavePipeline(context.Background(), "share-test-pipeline", "export const pipeline = async () => {};", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-build", map[string]any{"status": "success"})
@@ -190,7 +190,7 @@ func TestWebShareController(t *testing.T) {
 		pipeline, err := client.SavePipeline(context.Background(), "normal-css-pipeline", "export const pipeline = async () => {};", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
@@ -245,7 +245,7 @@ func TestWebShareController(t *testing.T) {
 		err = mgr.Set(context.Background(), "pipeline/"+pipeline.ID, "api_key", secretValue)
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		// Task output contains the secret value.
@@ -335,7 +335,7 @@ func TestWebShareController(t *testing.T) {
 		err = mgr.Set(context.Background(), "global", "token", globalSecretValue)
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-deploy", map[string]any{
@@ -383,7 +383,7 @@ func TestWebShareController(t *testing.T) {
 		pipeline, err := client.SavePipeline(context.Background(), "normal-view-pipeline", "export const pipeline = async () => {};", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
@@ -414,7 +414,7 @@ func TestWebShareController(t *testing.T) {
 		pipeline, err := client.SavePipeline(context.Background(), "share-button-pipeline", "export const pipeline = async () => {};", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
@@ -448,7 +448,7 @@ func TestAPIShareController(t *testing.T) {
 		pipeline, err := client.SavePipeline(context.Background(), "api-share-pipeline", "export const pipeline = async () => {};", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
@@ -507,7 +507,7 @@ func TestAPIShareController(t *testing.T) {
 		pipeline, err := client.SavePipeline(context.Background(), "roundtrip-pipeline", "export const pipeline = async () => {};", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusSuccess, "")
@@ -583,7 +583,7 @@ func newShareTestSetup(t *testing.T) (*server.Router, string, string) {
 	pipeline, err := client.SavePipeline(context.Background(), "setup-pipeline-"+t.Name(), "export const pipeline = async () => {};", "docker", "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
-	run, err := client.SaveRun(context.Background(), pipeline.ID)
+	run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-step", map[string]any{

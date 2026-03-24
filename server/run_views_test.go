@@ -36,7 +36,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "test-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Store some task data at the expected path
@@ -73,7 +73,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "test-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Store some task data at the expected path
@@ -109,7 +109,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "error-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusFailed, "failed to create volume: unauthorized")
@@ -143,7 +143,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "graph-error-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.Set(context.Background(), "/pipeline/"+run.ID+"/jobs/test-job", map[string]any{"status": "failure", "dependsOn": []string{}})
@@ -205,7 +205,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "test-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
@@ -237,7 +237,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "test-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
@@ -270,7 +270,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "k6-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Single task - mirrors the k6 pipeline structure
@@ -309,7 +309,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "multi-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-task-a", map[string]any{"status": "success"})
@@ -347,7 +347,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "test-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
@@ -378,7 +378,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "agent-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Agent task payload includes a usage sub-object plus timing fields
@@ -429,7 +429,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "regular-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Regular task — no usage field
@@ -470,7 +470,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "active-run-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-build", map[string]any{"status": "success"})
@@ -513,7 +513,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "completed-run-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-build", map[string]any{"status": "success"})
@@ -561,7 +561,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "agent-pipeline-show", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-agent", map[string]any{
@@ -610,7 +610,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "regular-pipeline-show", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Regular task — no usage field
@@ -651,7 +651,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "stderr-only-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-lint", map[string]any{
@@ -689,7 +689,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "skipped-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.Set(context.Background(), "/pipeline/"+run.ID+"/jobs/build/0/tasks/step-a", map[string]any{"status": "failure"})
@@ -727,7 +727,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "oob-error-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-build", map[string]any{"status": "failure"})
@@ -764,7 +764,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "oob-no-error-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-build", map[string]any{"status": "running"})
@@ -798,7 +798,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "status-badge-success-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusSuccess, "")
@@ -832,7 +832,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "status-badge-failed-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusFailed, "")
@@ -866,7 +866,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "status-badge-active-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Run starts as queued (active) — no explicit status update needed
@@ -899,7 +899,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "graph-badge-success-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusSuccess, "")
@@ -932,7 +932,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "graph-badge-failed-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusFailed, "")
@@ -965,7 +965,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "oob-badge-success-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-build", map[string]any{"status": "success"})
@@ -1001,7 +1001,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "oob-badge-active-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-build", map[string]any{"status": "running"})
@@ -1036,7 +1036,7 @@ func TestRunViews(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "graph-data-badge-failed-pipeline", "export const pipeline = async () => {};", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.Set(context.Background(), "/pipeline/"+run.ID+"/jobs/test-job", map[string]any{"status": "failure", "dependsOn": []string{}})

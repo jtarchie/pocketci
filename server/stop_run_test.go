@@ -242,7 +242,7 @@ export const pipeline = async () => {
 				"export const pipeline = async () => {};", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusRunning, "")

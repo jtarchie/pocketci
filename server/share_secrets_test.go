@@ -42,7 +42,7 @@ func TestRedactSecretValuesViaShareView(t *testing.T) {
 		err = mgr.Set(context.Background(), secrets.PipelineScope(pipeline.ID), "api_key", "my-super-secret-token")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		// Task output contains the secret value
@@ -103,7 +103,7 @@ func TestRedactSecretValuesViaShareView(t *testing.T) {
 		err = mgr.Set(context.Background(), secrets.PipelineScope(pipeline.ID), "token_b", "token-B-value")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-step", map[string]any{
@@ -156,7 +156,7 @@ func TestRedactSecretValuesViaShareView(t *testing.T) {
 		pipeline, err := client.SavePipeline(context.Background(), "no-secret-pipeline", "export const pipeline = async () => {};", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-step", map[string]any{

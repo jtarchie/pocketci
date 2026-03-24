@@ -71,13 +71,13 @@ func TestMetricsDashboard(t *testing.T) {
 
 			// 2 success runs for pipeline-alpha
 			for range 2 {
-				run, runErr := client.SaveRun(ctx, p1.ID)
+				run, runErr := client.SaveRun(ctx, p1.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 				assert.Expect(runErr).NotTo(HaveOccurred())
 				assert.Expect(client.UpdateRunStatus(ctx, run.ID, storage.RunStatusSuccess, "")).NotTo(HaveOccurred())
 			}
 
 			// 1 failed run for pipeline-beta
-			run, err := client.SaveRun(ctx, p2.ID)
+			run, err := client.SaveRun(ctx, p2.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(client.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "something went wrong")).NotTo(HaveOccurred())
 
@@ -136,7 +136,7 @@ func TestMetricsDashboard(t *testing.T) {
 				storage.RunStatusSkipped,
 			}
 			for _, status := range statuses {
-				run, runErr := client.SaveRun(ctx, p.ID)
+				run, runErr := client.SaveRun(ctx, p.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 				assert.Expect(runErr).NotTo(HaveOccurred())
 				assert.Expect(client.UpdateRunStatus(ctx, run.ID, status, "")).NotTo(HaveOccurred())
 			}
@@ -161,7 +161,7 @@ func TestMetricsDashboard(t *testing.T) {
 
 			// Create 5 failed runs
 			for range 5 {
-				run, runErr := client.SaveRun(ctx, p.ID)
+				run, runErr := client.SaveRun(ctx, p.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 				assert.Expect(runErr).NotTo(HaveOccurred())
 				assert.Expect(client.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "err")).NotTo(HaveOccurred())
 			}

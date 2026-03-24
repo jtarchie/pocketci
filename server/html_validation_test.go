@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jtarchie/pocketci/server"
+	"github.com/jtarchie/pocketci/storage"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
 )
@@ -31,7 +32,7 @@ func TestHTMLEndpointsAreStrictlyValid(t *testing.T) {
 		pipeline, err := client.SavePipeline(context.Background(), "html-validation-pipeline", "export const pipeline = async () => {};", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-build", map[string]any{

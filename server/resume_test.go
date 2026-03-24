@@ -169,7 +169,7 @@ func TestOrphanRecovery(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Create a run and set its status to "running" to simulate a crash
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 			err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusRunning, "")
 			assert.Expect(err).NotTo(HaveOccurred())
@@ -216,7 +216,7 @@ export const pipeline = async () => {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Create a run and set its status to "running" to simulate a crash
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 			err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusRunning, "")
 			assert.Expect(err).NotTo(HaveOccurred())
@@ -256,7 +256,7 @@ export const pipeline = async () => {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Create a run and set its status to "running" to simulate a crash
-			run, err := client.SaveRun(context.Background(), pipeline.ID)
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 			err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusRunning, "")
 			assert.Expect(err).NotTo(HaveOccurred())
@@ -333,17 +333,17 @@ func TestResumeEnabled(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Create some runs with different statuses
-			run1, err := client.SaveRun(context.Background(), pipeline.ID)
+			run1, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 			err = client.UpdateRunStatus(context.Background(), run1.ID, storage.RunStatusRunning, "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run2, err := client.SaveRun(context.Background(), pipeline.ID)
+			run2, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 			err = client.UpdateRunStatus(context.Background(), run2.ID, storage.RunStatusFailed, "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run3, err := client.SaveRun(context.Background(), pipeline.ID)
+			run3, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 			err = client.UpdateRunStatus(context.Background(), run3.ID, storage.RunStatusRunning, "")
 			assert.Expect(err).NotTo(HaveOccurred())

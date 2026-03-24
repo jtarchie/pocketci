@@ -26,7 +26,7 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 		pipeline, err := client.SavePipeline(context.Background(), "test-pipeline", "console.log('hello');", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(run).NotTo(BeNil())
 		assert.Expect(run.ID).NotTo(BeEmpty())
@@ -46,7 +46,7 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 		pipeline, err := client.SavePipeline(context.Background(), "my-pipeline", "export { pipeline };", "native", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		saved, err := client.SaveRun(context.Background(), pipeline.ID)
+		saved, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		retrieved, err := client.GetRun(context.Background(), saved.ID)
@@ -73,7 +73,7 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 		pipeline, err := client.SavePipeline(context.Background(), "pipeline", "content", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusRunning, "")
@@ -94,7 +94,7 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 		pipeline, err := client.SavePipeline(context.Background(), "pipeline", "content", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusRunning, "")
@@ -118,7 +118,7 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 		pipeline, err := client.SavePipeline(context.Background(), "pipeline", "content", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusRunning, "")
@@ -142,7 +142,7 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 		pipeline, err := client.SavePipeline(context.Background(), "pipeline", "content", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID)
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusRunning, "")
@@ -177,7 +177,7 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			for range 5 {
-				_, err := client.SaveRun(ctx, pipeline.ID)
+				_, err := client.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 				assert.Expect(err).NotTo(HaveOccurred())
 			}
 
@@ -198,7 +198,7 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			for range 2 {
-				_, err := client.SaveRun(ctx, pipeline.ID)
+				_, err := client.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 				assert.Expect(err).NotTo(HaveOccurred())
 			}
 
@@ -219,7 +219,7 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			for range 3 {
-				_, err := client.SaveRun(ctx, pipeline.ID)
+				_, err := client.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 				assert.Expect(err).NotTo(HaveOccurred())
 			}
 
@@ -242,7 +242,7 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			for range 3 {
-				_, err := client.SaveRun(ctx, pipeline.ID)
+				_, err := client.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 				assert.Expect(err).NotTo(HaveOccurred())
 			}
 
@@ -265,11 +265,11 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			for range 5 {
-				_, err := client.SaveRun(ctx, pipA.ID)
+				_, err := client.SaveRun(ctx, pipA.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 				assert.Expect(err).NotTo(HaveOccurred())
 			}
 			for range 3 {
-				_, err := client.SaveRun(ctx, pipB.ID)
+				_, err := client.SaveRun(ctx, pipB.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 				assert.Expect(err).NotTo(HaveOccurred())
 			}
 
@@ -295,9 +295,9 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 			pipeline, err := client.SavePipeline(context.Background(), "search-test", "content", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			_, err = client.SaveRun(context.Background(), pipeline.ID)
+			_, err = client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
-			_, err = client.SaveRun(context.Background(), pipeline.ID)
+			_, err = client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			result, err := client.SearchRunsByPipeline(context.Background(), pipeline.ID, "", 1, 20)
@@ -313,14 +313,14 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 			pipeline, err := client.SavePipeline(context.Background(), "status-pipeline", "content", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run1, err := client.SaveRun(context.Background(), pipeline.ID)
+			run1, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 			err = client.UpdateRunStatus(context.Background(), run1.ID, storage.RunStatusRunning, "")
 			assert.Expect(err).NotTo(HaveOccurred())
 			err = client.UpdateRunStatus(context.Background(), run1.ID, storage.RunStatusSuccess, "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			_, err = client.SaveRun(context.Background(), pipeline.ID) // queued
+			_, err = client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}) // queued
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			result, err := client.SearchRunsByPipeline(context.Background(), pipeline.ID, "success", 1, 20)
@@ -337,14 +337,14 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 			pipeline, err := client.SavePipeline(context.Background(), "err-pipeline", "content", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run1, err := client.SaveRun(context.Background(), pipeline.ID)
+			run1, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 			err = client.UpdateRunStatus(context.Background(), run1.ID, storage.RunStatusRunning, "")
 			assert.Expect(err).NotTo(HaveOccurred())
 			err = client.UpdateRunStatus(context.Background(), run1.ID, storage.RunStatusFailed, "timeout exceeded")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			_, err = client.SaveRun(context.Background(), pipeline.ID) // queued, no error
+			_, err = client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}) // queued, no error
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			result, err := client.SearchRunsByPipeline(context.Background(), pipeline.ID, "timeout", 1, 20)
@@ -361,7 +361,7 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 			pipeline, err := client.SavePipeline(context.Background(), "nomatch-pipeline", "content", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			_, err = client.SaveRun(context.Background(), pipeline.ID)
+			_, err = client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			result, err := client.SearchRunsByPipeline(context.Background(), pipeline.ID, "zzznomatch", 1, 20)
@@ -379,14 +379,14 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 			pipB, err := client.SavePipeline(context.Background(), "pipeline-b", "other", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			runA, err := client.SaveRun(context.Background(), pipA.ID)
+			runA, err := client.SaveRun(context.Background(), pipA.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 			err = client.UpdateRunStatus(context.Background(), runA.ID, storage.RunStatusRunning, "")
 			assert.Expect(err).NotTo(HaveOccurred())
 			err = client.UpdateRunStatus(context.Background(), runA.ID, storage.RunStatusFailed, "unique-error-alpha")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			runB, err := client.SaveRun(context.Background(), pipB.ID)
+			runB, err := client.SaveRun(context.Background(), pipB.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
 			assert.Expect(err).NotTo(HaveOccurred())
 			err = client.UpdateRunStatus(context.Background(), runB.ID, storage.RunStatusRunning, "")
 			assert.Expect(err).NotTo(HaveOccurred())
@@ -399,5 +399,103 @@ func testPipelineRunStorageDriver(t *testing.T, df driverFactory) {
 			assert.Expect(result.Items).To(HaveLen(1))
 			assert.Expect(result.Items[0].PipelineID).To(Equal(pipA.ID))
 		})
+	})
+
+	t.Run("SaveRun stores trigger metadata", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		client := df.new(t, "namespace")
+
+		pipeline, err := client.SavePipeline(context.Background(), "trigger-test", "content", "docker", "")
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeWebhook, "github:push", storage.TriggerInput{
+			Webhook: &storage.TriggerWebhookInput{
+				Provider:  "github",
+				EventType: "push",
+				Method:    "POST",
+				Headers:   map[string]string{"X-GitHub-Event": "push"},
+				Body:      `{"ref":"refs/heads/main"}`,
+			},
+		})
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(run.TriggerType).To(Equal(storage.TriggerTypeWebhook))
+		assert.Expect(run.TriggeredBy).To(Equal("github:push"))
+		assert.Expect(run.TriggerInput.Webhook).NotTo(BeNil())
+		assert.Expect(run.TriggerInput.Webhook.Provider).To(Equal("github"))
+		assert.Expect(run.TriggerInput.Webhook.Body).To(Equal(`{"ref":"refs/heads/main"}`))
+
+		retrieved, err := client.GetRun(context.Background(), run.ID)
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(retrieved.TriggerType).To(Equal(storage.TriggerTypeWebhook))
+		assert.Expect(retrieved.TriggeredBy).To(Equal("github:push"))
+		assert.Expect(retrieved.TriggerInput.Webhook).NotTo(BeNil())
+		assert.Expect(retrieved.TriggerInput.Webhook.Provider).To(Equal("github"))
+		assert.Expect(retrieved.TriggerInput.Webhook.Method).To(Equal("POST"))
+		assert.Expect(retrieved.TriggerInput.Webhook.Headers).To(HaveKeyWithValue("X-GitHub-Event", "push"))
+		assert.Expect(retrieved.TriggerInput.Webhook.Body).To(Equal(`{"ref":"refs/heads/main"}`))
+	})
+
+	t.Run("SaveRun stores CLI trigger with args", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		client := df.new(t, "namespace")
+
+		pipeline, err := client.SavePipeline(context.Background(), "cli-test", "content", "docker", "")
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeCLI, "github:jdoe", storage.TriggerInput{
+			Args: []string{"--env", "production"},
+		})
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(run.TriggerType).To(Equal(storage.TriggerTypeCLI))
+		assert.Expect(run.TriggeredBy).To(Equal("github:jdoe"))
+		assert.Expect(run.TriggerInput.Args).To(Equal([]string{"--env", "production"}))
+
+		retrieved, err := client.GetRun(context.Background(), run.ID)
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(retrieved.TriggerType).To(Equal(storage.TriggerTypeCLI))
+		assert.Expect(retrieved.TriggeredBy).To(Equal("github:jdoe"))
+		assert.Expect(retrieved.TriggerInput.Args).To(Equal([]string{"--env", "production"}))
+	})
+
+	t.Run("SaveRun with empty trigger input", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		client := df.new(t, "namespace")
+
+		pipeline, err := client.SavePipeline(context.Background(), "empty-trigger", "content", "docker", "")
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(run.TriggerType).To(Equal(storage.TriggerTypeManual))
+		assert.Expect(run.TriggeredBy).To(BeEmpty())
+		assert.Expect(run.TriggerInput.Args).To(BeNil())
+		assert.Expect(run.TriggerInput.Webhook).To(BeNil())
+
+		retrieved, err := client.GetRun(context.Background(), run.ID)
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(retrieved.TriggerType).To(Equal(storage.TriggerTypeManual))
+		assert.Expect(retrieved.TriggeredBy).To(BeEmpty())
+	})
+
+	t.Run("SearchRunsByPipeline filters by trigger type", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		client := df.new(t, "namespace")
+
+		pipeline, err := client.SavePipeline(context.Background(), "search-trigger", "content", "native", "")
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		_, err = client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeWebhook, "github:push", storage.TriggerInput{})
+		assert.Expect(err).NotTo(HaveOccurred())
+		_, err = client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "user@example.com", storage.TriggerInput{})
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		result, err := client.SearchRunsByPipeline(context.Background(), pipeline.ID, "webhook", 1, 20)
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(result.Items).To(HaveLen(1))
+		assert.Expect(result.Items[0].TriggerType).To(Equal(storage.TriggerTypeWebhook))
 	})
 }

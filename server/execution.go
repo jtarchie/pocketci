@@ -18,6 +18,7 @@ import (
 	"github.com/jtarchie/pocketci/runtime"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/secrets"
+	"github.com/jtarchie/pocketci/server/auth"
 	"github.com/jtarchie/pocketci/storage"
 )
 
@@ -128,7 +129,7 @@ func (s *ExecutionService) TriggerPipeline(ctx context.Context, pipeline *storag
 	actor, _ := RequestActorFromContext(ctx)
 
 	// Create run record with queued status
-	run, err := s.store.SaveRun(ctx, pipeline.ID)
+	run, err := s.store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, formatTriggeredBy(actor), storage.TriggerInput{Args: args})
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +159,10 @@ func (s *ExecutionService) TriggerWebhookPipeline(
 	actor, _ := RequestActorFromContext(ctx)
 
 	// Create run record with queued status
-	run, err := s.store.SaveRun(ctx, pipeline.ID)
+	triggeredBy := formatWebhookTriggeredBy(webhookData)
+	triggerInput := storage.TriggerInput{Webhook: toTriggerWebhookInput(webhookData)}
+
+	run, err := s.store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeWebhook, triggeredBy, triggerInput)
 	if err != nil {
 		return nil, err
 	}
@@ -258,6 +262,46 @@ type execOptions struct {
 	requestID    string
 	authProvider string
 	user         string
+}
+
+func formatTriggeredBy(actor auth.RequestActor) string {
+	if actor.Provider != "" && actor.User != "" {
+		return actor.Provider + ":" + actor.User
+	}
+
+	if actor.User != "" {
+		return actor.User
+	}
+
+	return ""
+}
+
+func formatWebhookTriggeredBy(data *jsapi.WebhookData) string {
+	if data == nil {
+		return ""
+	}
+
+	if data.EventType != "" {
+		return data.Provider + ":" + data.EventType
+	}
+
+	return data.Provider
+}
+
+func toTriggerWebhookInput(data *jsapi.WebhookData) *storage.TriggerWebhookInput {
+	if data == nil {
+		return nil
+	}
+
+	return &storage.TriggerWebhookInput{
+		Provider:  data.Provider,
+		EventType: data.EventType,
+		Method:    data.Method,
+		URL:       data.URL,
+		Headers:   data.Headers,
+		Body:      data.Body,
+		Query:     data.Query,
+	}
 }
 
 // buildExecutorOptions builds the runtime.ExecutorOptions for async pipeline execution.
@@ -493,7 +537,9 @@ func (s *ExecutionService) RunByNameSync(
 		return storage.ErrPipelinePaused
 	}
 
-	run, err := s.store.SaveRun(ctx, pipeline.ID)
+	actor, _ := RequestActorFromContext(ctx)
+
+	run, err := s.store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeCLI, formatTriggeredBy(actor), storage.TriggerInput{Args: args})
 	if err != nil {
 		return fmt.Errorf("failed to save run: %w", err)
 	}
