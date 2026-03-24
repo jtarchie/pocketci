@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/server/auth"
 	"github.com/jtarchie/pocketci/storage"
 	"github.com/labstack/echo/v5"
@@ -44,6 +45,7 @@ func buildPipelineRows(ctx context.Context, store storage.Driver, pipelines []st
 // WebPipelinesController handles HTML view endpoints for pipelines.
 type WebPipelinesController struct {
 	BaseController
+	secretsMgr secrets.Manager
 }
 
 // filterRowsByRBAC removes pipeline rows the current user is not allowed to see.
@@ -185,12 +187,22 @@ func (c *WebPipelinesController) Show(ctx *echo.Context) error {
 	if driverName == "" {
 		driverName = c.execService.DefaultDriver
 	}
+
+	hasWebhookSecret := false
+	if c.secretsMgr != nil {
+		secret, err := c.secretsMgr.Get(ctx.Request().Context(), secrets.PipelineScope(pipeline.ID), "webhook_secret")
+		if err == nil && secret != "" {
+			hasWebhookSecret = true
+		}
+	}
+
 	return ctx.Render(http.StatusOK, "pipeline_detail.html", map[string]any{
-		"Pipeline":   pipeline,
-		"DriverName": driverName,
-		"Runs":       result.Items,
-		"Pagination": result,
-		"Query":      q,
+		"Pipeline":         pipeline,
+		"DriverName":       driverName,
+		"Runs":             result.Items,
+		"Pagination":       result,
+		"Query":            q,
+		"HasWebhookSecret": hasWebhookSecret,
 	})
 }
 

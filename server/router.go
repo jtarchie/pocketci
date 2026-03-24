@@ -350,7 +350,7 @@ func registerRoutes(
 	(&APIWebhooksController{BaseController: base, allowedFeatures: allowedFeatures, webhookTimeout: webhookTimeout, logger: logger.WithGroup("webhook"), secretsMgr: secretsMgr, providers: webhookProviders}).RegisterRoutes(router)
 
 	// Web controllers (HTML responses)
-	(&WebPipelinesController{BaseController: base}).RegisterRoutes(web)
+	(&WebPipelinesController{BaseController: base, secretsMgr: secretsMgr}).RegisterRoutes(web)
 	(&WebRunsController{BaseController: base}).RegisterRoutes(web)
 	(&WebMetricsController{BaseController: base}).RegisterRoutes(web)
 

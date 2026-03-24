@@ -11,12 +11,15 @@ async function createPipeline(
   name: string,
   content: string,
   driver: string = "native",
+  webhookSecret?: string,
 ): Promise<string> {
+  const body: Record<string, unknown> = { content, driver };
+  if (webhookSecret !== undefined) {
+    body.webhook_secret = webhookSecret;
+  }
   const response = await request.put(
     `/api/pipelines/${encodeURIComponent(name)}`,
-    {
-      data: { content, driver: driver },
-    },
+    { data: body },
   );
   expect(response.ok()).toBeTruthy();
   const data = await response.json();
@@ -291,6 +294,8 @@ test.describe("Pipeline Management UI", () => {
         request,
         pipelineName,
         `export const pipeline = async () => { console.log("webhook test"); };`,
+        "native",
+        "test-secret",
       );
 
       await page.goto("/pipelines/");
@@ -356,6 +361,8 @@ test.describe("Pipeline Management UI", () => {
         request,
         pipelineName,
         `export const pipeline = async () => { console.log("headers test"); };`,
+        "native",
+        "test-secret",
       );
 
       await page.goto("/pipelines/");
@@ -387,6 +394,56 @@ test.describe("Pipeline Management UI", () => {
       await expect(page.locator("#trigger-webhook-headers > div")).toHaveCount(
         0,
       );
+    });
+
+    test("webhook option hidden when no webhook secret configured", async ({ page, request }) => {
+      const pipelineName = uniqueName("no-webhook-secret-test");
+      await createPipeline(
+        request,
+        pipelineName,
+        `export const pipeline = async () => { console.log("no secret"); };`,
+      );
+
+      await page.goto("/pipelines/");
+      await page.getByRole("link", { name: pipelineName }).click();
+
+      // Open the split-button dropdown
+      await page.getByLabel("More trigger options").click();
+
+      // Args should be visible
+      await expect(
+        page.getByRole("menuitem", { name: /trigger with args/i }),
+      ).toBeVisible();
+
+      // Webhook should NOT be visible
+      await expect(
+        page.getByRole("menuitem", { name: /trigger with webhook/i }),
+      ).not.toBeVisible();
+    });
+
+    test("webhook option visible when webhook secret is configured", async ({ page, request }) => {
+      const pipelineName = uniqueName("has-webhook-secret-test");
+      await createPipeline(
+        request,
+        pipelineName,
+        `export const pipeline = async () => { console.log("has secret"); };`,
+        "native",
+        "my-secret",
+      );
+
+      await page.goto("/pipelines/");
+      await page.getByRole("link", { name: pipelineName }).click();
+
+      // Open the split-button dropdown
+      await page.getByLabel("More trigger options").click();
+
+      // Both options should be visible
+      await expect(
+        page.getByRole("menuitem", { name: /trigger with args/i }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("menuitem", { name: /trigger with webhook/i }),
+      ).toBeVisible();
     });
 
     test("clicking Tasks link navigates to /runs/:id/tasks", async ({ page, request }) => {

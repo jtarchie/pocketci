@@ -89,6 +89,7 @@
                   role="menuitem">
                   Trigger with Args&hellip;
                 </button>
+                {{ if .HasWebhookSecret }}
                 <button
                   type="button"
                   onclick="document.getElementById('trigger-webhook-dialog').showModal(); this.closest('details').removeAttribute('open');"
@@ -96,6 +97,7 @@
                   role="menuitem">
                   Trigger with Webhook&hellip;
                 </button>
+                {{ end }}
               </div>
             </details>
           </div>
@@ -195,6 +197,7 @@
   </form>
 </dialog>
 
+{{ if .HasWebhookSecret }}
 <!-- Trigger with Webhook dialog -->
 <dialog id="trigger-webhook-dialog"
   class="trigger-dialog rounded-lg shadow-xl p-0 w-full max-w-lg backdrop:bg-black/50 dark:bg-gray-800 dark:text-white"
@@ -250,5 +253,6 @@
     </div>
   </form>
 </dialog>
+{{ end }}
 
 {{ template "end" }}
