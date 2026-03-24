@@ -688,10 +688,7 @@ func (c *PipelineRunner) readStreamChunks(
 		if n > 0 {
 			chunk := string(buf[:n])
 			builder.WriteString(chunk)
-
-			if ctx.Err() == nil {
-				callback(stream, chunk)
-			}
+			callback(stream, chunk)
 		}
 
 		if err != nil {

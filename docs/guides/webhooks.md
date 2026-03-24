@@ -20,11 +20,10 @@ omitted, those webhook requests are accepted without signature validation.
 Honeybadger webhooks always require `--webhook-secret` and a matching
 `Honeybadger-Token` header.
 
-::: tip Web UI
-The **Trigger with Webhook** option in the pipeline detail page dropdown is only
-shown when a webhook secret is configured for the pipeline. Without a secret,
-only **Trigger** (manual) and **Trigger with Args** are available.
-:::
+::: tip Web UI The **Trigger with Webhook** option in the pipeline detail page
+dropdown is only shown when a webhook secret is configured for the pipeline.
+Without a secret, only **Trigger** (manual) and **Trigger with Args** are
+available. :::
 
 ### 2. Configure the server
 
