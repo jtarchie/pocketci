@@ -28,8 +28,11 @@ export class AgentStepHandler implements StepHandler {
         ...step,
         agent: step.agent,
       } as AgentStep;
-      // Use file-loaded values as defaults; inline values take precedence.
-      if (!step.prompt && fileConfig.prompt) {
+      // Concatenate file prompt + inline prompt so shared instructions
+      // and step-specific prompts are both included.
+      if (fileConfig.prompt && step.prompt) {
+        agentStep.prompt = fileConfig.prompt + "\n" + step.prompt;
+      } else if (!step.prompt && fileConfig.prompt) {
         agentStep.prompt = fileConfig.prompt;
       }
       if (!step.model && fileConfig.model) agentStep.model = fileConfig.model;
@@ -75,7 +78,11 @@ export class AgentStepHandler implements StepHandler {
           ...rawSub,
           agent: rawSub.agent,
         } as AgentStep;
-        if (!rawSub.prompt && fileConfig.prompt) {
+        // Concatenate file prompt + inline prompt so shared rules and
+        // per-agent task descriptions are both included.
+        if (fileConfig.prompt && rawSub.prompt) {
+          subStep.prompt = fileConfig.prompt + "\n" + rawSub.prompt;
+        } else if (!rawSub.prompt && fileConfig.prompt) {
           subStep.prompt = fileConfig.prompt;
         }
         if (!rawSub.model && fileConfig.model) subStep.model = fileConfig.model;
