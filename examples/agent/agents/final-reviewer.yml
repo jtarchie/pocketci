@@ -1,15 +1,11 @@
 ---
 prompt: |
-  Call all three specialist sub-agents to review this PR, then synthesize
-  every finding into the output schema. Include findings from ALL reviewers;
-  do not silently omit any. Only include findings you are reasonably
-  confident about.
+  Call all specialist sub-agents to review this PR, then synthesize every
+  finding into the output schema. Include findings from ALL reviewers;
+  do not silently omit any.
 
-  Field notes:
-  - `file` must be repo-relative (no "repo/" prefix).
-  - `line` is the LAST line for range findings.
-  - `start_line` is optional; must be < `line`.
-  - GitHub-flavored Markdown allowed in `summary` and `description`.
+  Notes: `file` is repo-relative (no "repo/" prefix). `line` is the LAST
+  line for ranges. `start_line` must be < `line`. Markdown allowed.
 model: openrouter/@preset/coding-agent
 output_schema:
   summary: string

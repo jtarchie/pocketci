@@ -1,24 +1,16 @@
 ---
 # Multi-agent GitHub PR review pipeline.
 #
-# Triggered by a GitHub pull_request webhook. Three specialist agents review
-# the code sequentially; a final aggregator agent synthesises their feedback
-# and a task step posts a batched inline GitHub review via the `gh` CLI.
+# Triggered by a GitHub pull_request webhook. An orchestrator agent fans out
+# to three specialist sub-agents, synthesises their findings into JSON, and
+# a task step posts batched inline GitHub review comments.
 #
 # Required secrets:
-#   GITHUB_TOKEN — Personal access token with repo + pull_request:write scope.
-#              Set via: pocketci run --secret GITHUB_TOKEN=<token>
+#   GITHUB_TOKEN — repo + pull_request:write scope.
 #
 # Required setup:
-#   Register a webhook in your GitHub repo pointing to:
-#     http://<pocketci-host>/api/webhooks/<webhook-id>
-#   with Content-Type: application/json and a shared secret configured in pocketci.
-#
-# Agent and task configs are extracted into separate files under agents/ and
-# tasks/. Each agent step uses `file:` to load its full config (prompt, model,
-# context, container image) from a YAML file in the cloned repo volume.
-# The post-comment task also uses `file:` for its TaskConfig.
-# Inline fields override file-loaded values (no deep merge).
+#   Register a webhook pointing to http://<host>/api/webhooks/<id>
+#   with Content-Type: application/json and a shared secret.
 jobs:
   - name: review-pr
     triggers:
@@ -35,10 +27,7 @@ jobs:
           GH_REPO: "payload.repository.full_name"
           PR_DESCRIPTION: "string(payload.pull_request.body || '')"
     plan:
-      # ── 1a. Clone the PR branch ─────────────────────────────────────────
-      #
-      # Minimal inline step that bootstraps the repo volume. Must stay
-      # inline because all subsequent file: references depend on repo/.
+      # Clone the PR branch (must be inline — file: refs depend on repo/).
       - task: checkout
         config:
           platform: linux
@@ -56,41 +45,29 @@ jobs:
                   cd repo
                   git checkout "$PR_HEAD_REF"
 
-      # ── 1b. Generate the diff ───────────────────────────────────────────
       - task: generate-diff
         file: repo/examples/agent/tasks/generate-diff.yml
 
-      # ── 2. Fan-out review + synthesize ────────────────────────────────────
-      #
-      # A single orchestrator agent is given three specialist sub-agents as
-      # callable tools. The orchestrator calls them (in any order or in
-      # parallel if the model supports it), collects their findings, and
-      # synthesizes into the final JSON output.
-      #
-      # Sub-agents that share the parent's image run inside the same sandbox
-      # via ADK's agenttool. Their results flow back as tool responses
-      # directly into the orchestrator's context — no result.json wiring
-      # needed. Results are also persisted at nested storage paths so the UI
-      # shows them indented under this step.
+      # Orchestrator calls three specialist sub-agents as tools, then
+      # synthesises findings into structured JSON.
       - agent: final-review
         file: repo/examples/agent/agents/final-reviewer.yml
         sub_agents:
           - agent: code-quality-reviewer
-            file: repo/examples/agent/agents/code-quality.yml
+            file: repo/examples/agent/agents/specialist-reviewer.yml
+            prompt: "Review for code quality — readability, naming, structure, DRY violations."
           - agent: security-reviewer
-            file: repo/examples/agent/agents/security.yml
+            file: repo/examples/agent/agents/specialist-reviewer.yml
+            prompt: "Audit for security issues — injection, authentication, data exposure, OWASP Top 10."
           - agent: maintainability-reviewer
-            file: repo/examples/agent/agents/maintainability.yml
+            file: repo/examples/agent/agents/specialist-reviewer.yml
+            prompt: "Evaluate for maintainability — test coverage, cyclomatic complexity, documentation."
         validation:
           expr: 'text != "" && text contains "summary"'
           prompt: >-
             You must output valid JSON containing a "summary" field and an
             "issues" array. Do not include prose outside the JSON object.
 
-      # ── 4. Post batched inline review comments ────────────────────────────
-      #
-      # Uses denoland/deno:alpine — TypeScript with native fetch().
-      # No gh CLI, no jq, no awk: all logic is expressed as typed TS.
       - task: post-comment
         attempts: 2
         file: repo/examples/agent/tasks/post-comment.yml

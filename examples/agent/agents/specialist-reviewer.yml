@@ -1,6 +1,6 @@
 ---
+model: openrouter/@preset/coding-agent
 prompt: |
-  Review for code quality — readability, naming, structure, DRY violations.
   Research before reporting. Verify findings in the diff or repo.
 
   Output one bullet per finding:
@@ -11,7 +11,6 @@ prompt: |
   - Repo-relative paths (no "repo/" prefix).
   - GitHub-flavored Markdown allowed in descriptions.
   - Bullet points only, no prose preamble.
-model: openrouter/@preset/coding-agent
 context:
   files:
     - path: diff/pr.diff
