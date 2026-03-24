@@ -453,3 +453,246 @@ func TestOAuthLoginPageAccessible(t *testing.T) {
 	assert.Expect(rec.Code).To(gomega.Equal(http.StatusOK))
 	assert.Expect(rec.Body.String()).To(gomega.ContainSubstring("Login"))
 }
+
+// --- Pipeline-level RBAC on mutations ---
+
+// createPipelineWithRBAC creates a pipeline via the API using the given token,
+// then sets an RBAC expression on it. Returns the pipeline ID.
+func createPipelineWithRBAC(t *testing.T, router *server.Router, token, name, rbacExpr string) string {
+	t.Helper()
+
+	// Create the pipeline.
+	body, _ := json.Marshal(map[string]any{
+		"content":         `const pipeline = async () => {}; export { pipeline };`,
+		"driver":          "native",
+		"rbac_expression": rbacExpr,
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/pipelines/"+name, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("failed to create pipeline %s: %d %s", name, rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("bad response JSON: %v", err)
+	}
+
+	id, _ := resp["id"].(string)
+
+	return id
+}
+
+func TestOAuthPipelineRBACBlocksUpsert(t *testing.T) {
+	assert := gomega.NewWithT(t)
+	router := setupRouterWithOAuth(t, "")
+
+	// Alice creates a pipeline with RBAC restricting to her only.
+	alice := &auth.User{Email: "alice@example.com", NickName: "alice", Provider: "github", UserID: "1"}
+	aliceToken := generateTestToken(t, alice)
+	createPipelineWithRBAC(t, router, aliceToken, "restricted", `Email == "alice@example.com"`)
+
+	// Bob tries to update the pipeline — should be denied.
+	bob := &auth.User{Email: "bob@example.com", NickName: "bob", Provider: "github", UserID: "2"}
+	bobToken := generateTestToken(t, bob)
+
+	body, _ := json.Marshal(map[string]string{
+		"content": `const pipeline = async () => { console.log("hacked"); }; export { pipeline };`,
+		"driver":  "native",
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/pipelines/restricted", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+bobToken)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Expect(rec.Code).To(gomega.Equal(http.StatusForbidden))
+}
+
+func TestOAuthPipelineRBACAllowsUpsertForAuthorizedUser(t *testing.T) {
+	assert := gomega.NewWithT(t)
+	router := setupRouterWithOAuth(t, "")
+
+	alice := &auth.User{Email: "alice@example.com", NickName: "alice", Provider: "github", UserID: "1"}
+	aliceToken := generateTestToken(t, alice)
+	createPipelineWithRBAC(t, router, aliceToken, "my-pipeline", `Email == "alice@example.com"`)
+
+	// Alice updates her own pipeline — should succeed.
+	body, _ := json.Marshal(map[string]string{
+		"content": `const pipeline = async () => { console.log("updated"); }; export { pipeline };`,
+		"driver":  "native",
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/pipelines/my-pipeline", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+aliceToken)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Expect(rec.Code).To(gomega.Equal(http.StatusOK))
+}
+
+func TestOAuthPipelineRBACAllowsNewPipelineCreate(t *testing.T) {
+	assert := gomega.NewWithT(t)
+	router := setupRouterWithOAuth(t, "")
+
+	// Any authenticated user can create a new pipeline (no existing RBAC to check).
+	bob := &auth.User{Email: "bob@example.com", NickName: "bob", Provider: "github", UserID: "2"}
+	bobToken := generateTestToken(t, bob)
+
+	body, _ := json.Marshal(map[string]string{
+		"content": `const pipeline = async () => {}; export { pipeline };`,
+		"driver":  "native",
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/pipelines/new-pipeline", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+bobToken)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Expect(rec.Code).To(gomega.Equal(http.StatusOK))
+}
+
+func TestOAuthServerRBACBlocksMutations(t *testing.T) {
+	assert := gomega.NewWithT(t)
+	// Server RBAC only allows "admin" nickname.
+	router := setupRouterWithOAuth(t, `NickName == "admin"`)
+
+	user := &auth.User{Email: "alice@example.com", NickName: "alice", Provider: "github", UserID: "1"}
+	token := generateTestToken(t, user)
+
+	// Upsert should be denied by server RBAC.
+	body, _ := json.Marshal(map[string]string{
+		"content": `const pipeline = async () => {}; export { pipeline };`,
+		"driver":  "native",
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/pipelines/test", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Expect(rec.Code).To(gomega.Equal(http.StatusForbidden))
+
+	// Delete should be denied by server RBAC.
+	req = httptest.NewRequest(http.MethodDelete, "/api/pipelines/some-id", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Expect(rec.Code).To(gomega.Equal(http.StatusForbidden))
+
+	// Trigger should be denied by server RBAC.
+	req = httptest.NewRequest(http.MethodPost, "/api/pipelines/some-id/trigger", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Expect(rec.Code).To(gomega.Equal(http.StatusForbidden))
+}
+
+// --- Audit logging tests ---
+
+func TestPipelineMutationAuditLogs(t *testing.T) {
+	assert := gomega.NewWithT(t)
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
+	router := setupRouterWithOAuthLogger(t, "", logger)
+
+	alice := &auth.User{Email: "alice@example.com", NickName: "alice", Provider: "github", UserID: "1"}
+	token := generateTestToken(t, alice)
+
+	// Create pipeline — should log pipeline.upsert with created=true.
+	body, _ := json.Marshal(map[string]string{
+		"content": `const pipeline = async () => {}; export { pipeline };`,
+		"driver":  "native",
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/pipelines/audit-test", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Expect(rec.Code).To(gomega.Equal(http.StatusOK))
+
+	var resp map[string]any
+	err := json.Unmarshal(rec.Body.Bytes(), &resp)
+	assert.Expect(err).NotTo(gomega.HaveOccurred())
+	pipelineID, _ := resp["id"].(string)
+
+	logs := logBuf.String()
+	assert.Expect(logs).To(gomega.ContainSubstring("pipeline.upsert"))
+	assert.Expect(logs).To(gomega.ContainSubstring("github:alice@example.com"))
+	assert.Expect(logs).To(gomega.ContainSubstring(`"created":true`))
+
+	// Update pipeline — should log pipeline.upsert with created=false.
+	logBuf.Reset()
+	body, _ = json.Marshal(map[string]string{
+		"content": `const pipeline = async () => { console.log("v2"); }; export { pipeline };`,
+		"driver":  "native",
+	})
+	req = httptest.NewRequest(http.MethodPut, "/api/pipelines/audit-test", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Expect(rec.Code).To(gomega.Equal(http.StatusOK))
+
+	logs = logBuf.String()
+	assert.Expect(logs).To(gomega.ContainSubstring("pipeline.upsert"))
+	assert.Expect(logs).To(gomega.ContainSubstring(`"created":false`))
+
+	// Pause — should log pipeline.paused.
+	logBuf.Reset()
+	req = httptest.NewRequest(http.MethodPost, "/api/pipelines/"+pipelineID+"/pause", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Expect(rec.Code).To(gomega.Equal(http.StatusOK))
+
+	logs = logBuf.String()
+	assert.Expect(logs).To(gomega.ContainSubstring("pipeline.paused"))
+	assert.Expect(logs).To(gomega.ContainSubstring("github:alice@example.com"))
+
+	// Unpause — should log pipeline.unpaused.
+	logBuf.Reset()
+	req = httptest.NewRequest(http.MethodPost, "/api/pipelines/"+pipelineID+"/unpause", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Expect(rec.Code).To(gomega.Equal(http.StatusOK))
+
+	logs = logBuf.String()
+	assert.Expect(logs).To(gomega.ContainSubstring("pipeline.unpaused"))
+
+	// Set RBAC expression — should log pipeline.rbac.update.
+	logBuf.Reset()
+	rbacExpr := `Email == "alice@example.com"`
+	body, _ = json.Marshal(map[string]any{
+		"content":         `const pipeline = async () => {}; export { pipeline };`,
+		"driver":          "native",
+		"rbac_expression": rbacExpr,
+	})
+	req = httptest.NewRequest(http.MethodPut, "/api/pipelines/audit-test", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Expect(rec.Code).To(gomega.Equal(http.StatusOK))
+
+	logs = logBuf.String()
+	assert.Expect(logs).To(gomega.ContainSubstring("pipeline.rbac.update"))
+	assert.Expect(logs).To(gomega.ContainSubstring("github:alice@example.com"))
+
+	// Delete — should log pipeline.delete.
+	logBuf.Reset()
+	req = httptest.NewRequest(http.MethodDelete, "/api/pipelines/"+pipelineID, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	assert.Expect(rec.Code).To(gomega.Equal(http.StatusNoContent))
+
+	logs = logBuf.String()
+	assert.Expect(logs).To(gomega.ContainSubstring("pipeline.delete"))
+	assert.Expect(logs).To(gomega.ContainSubstring("github:alice@example.com"))
+}

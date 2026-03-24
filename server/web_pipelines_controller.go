@@ -49,13 +49,15 @@ type WebPipelinesController struct {
 // filterRowsByRBAC removes pipeline rows the current user is not allowed to see.
 func filterRowsByRBAC(ctx *echo.Context, rows []PipelineRow) []PipelineRow {
 	user := auth.GetUser(ctx)
-	if user == nil {
-		return rows
-	}
 
 	filtered := rows[:0]
 	for _, row := range rows {
 		if row.Pipeline.RBACExpression != "" {
+			// No OAuth user means RBAC cannot be evaluated — hide the pipeline.
+			if user == nil {
+				continue
+			}
+
 			allowed, err := auth.EvaluateAccess(row.Pipeline.RBACExpression, *user)
 			if err != nil || !allowed {
 				continue

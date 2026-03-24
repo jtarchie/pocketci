@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sort"
 	"time"
@@ -65,9 +66,24 @@ func toPipelineAPIResponse(pipeline *storage.Pipeline) PipelineAPIResponse {
 // APIPipelinesController handles JSON API endpoints for pipelines.
 type APIPipelinesController struct {
 	BaseController
+	logger          *slog.Logger
 	allowedDrivers  []string
 	allowedFeatures []Feature
 	secretsMgr      secrets.Manager
+}
+
+// formatActor extracts the authenticated actor identity from the request context for audit logging.
+func formatActor(ctx *echo.Context) string {
+	actor, ok := auth.RequestActorFromContext(ctx.Request().Context())
+	if !ok {
+		return "unknown"
+	}
+
+	if actor.Provider != "" {
+		return actor.Provider + ":" + actor.User
+	}
+
+	return actor.User
 }
 
 const pipelineDriverSecretKey = "driver"
@@ -93,8 +109,10 @@ func checkPipelineRBAC(ctx *echo.Context, pipeline *storage.Pipeline) error {
 
 	user := auth.GetUser(ctx)
 	if user == nil {
-		// No user in context means no OAuth configured — allow access.
-		return nil
+		// No OAuth user in context — basic auth cannot satisfy RBAC expressions.
+		return respondJSON(ctx, http.StatusForbidden, map[string]string{
+			"error": "pipeline requires OAuth authentication for RBAC evaluation",
+		})
 	}
 
 	allowed, err := auth.EvaluateAccess(pipeline.RBACExpression, *user)
@@ -141,14 +159,17 @@ func (c *APIPipelinesController) Index(ctx *echo.Context) error {
 	for i := range result.Items {
 		item := result.Items[i]
 
-		// Filter by pipeline-level RBAC if a user is present.
+		// Filter by pipeline-level RBAC.
 		if item.RBACExpression != "" {
 			user := auth.GetUser(ctx)
-			if user != nil {
-				allowed, err := auth.EvaluateAccess(item.RBACExpression, *user)
-				if err != nil || !allowed {
-					continue
-				}
+			if user == nil {
+				// No OAuth user — RBAC cannot be evaluated; hide the pipeline.
+				continue
+			}
+
+			allowed, err := auth.EvaluateAccess(item.RBACExpression, *user)
+			if err != nil || !allowed {
+				continue
 			}
 		}
 
@@ -363,12 +384,20 @@ func (c *APIPipelinesController) upsertPostSave(ctx *echo.Context, pipeline *sto
 
 	if req.RBACExpression != nil {
 		if *req.RBACExpression != "" {
+			if auth.GetUser(ctx) == nil {
+				return respondJSON(ctx, http.StatusBadRequest, map[string]string{
+					"error": "pipeline RBAC expressions require OAuth authentication; basic auth cannot evaluate RBAC",
+				})
+			}
+
 			if err := auth.ValidateExpression(*req.RBACExpression); err != nil {
 				return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 					"error": fmt.Sprintf("invalid RBAC expression: %v", err),
 				})
 			}
 		}
+
+		oldExpression := pipeline.RBACExpression
 
 		if err := c.store.UpdatePipelineRBACExpression(ctx.Request().Context(), pipeline.ID, *req.RBACExpression); err != nil {
 			return respondJSON(ctx, http.StatusInternalServerError, map[string]string{
@@ -377,6 +406,14 @@ func (c *APIPipelinesController) upsertPostSave(ctx *echo.Context, pipeline *sto
 		}
 
 		pipeline.RBACExpression = *req.RBACExpression
+
+		c.logger.Info("pipeline.rbac.update",
+			slog.String("pipeline", pipeline.Name),
+			slog.String("pipeline_id", pipeline.ID),
+			slog.String("actor", formatActor(ctx)),
+			slog.String("old_expression", oldExpression),
+			slog.String("new_expression", *req.RBACExpression),
+		)
 	}
 
 	return nil
@@ -397,6 +434,20 @@ func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
 		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
+	// For updates, check RBAC on the existing pipeline before allowing the save.
+	existing, err := c.store.GetPipelineByName(ctx.Request().Context(), name)
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": fmt.Sprintf("failed to check existing pipeline: %v", err),
+		})
+	}
+
+	if existing != nil {
+		if err := checkPipelineRBAC(ctx, existing); err != nil {
+			return nil //nolint:nilerr // helper already wrote the HTTP response
+		}
+	}
+
 	pipeline, err := c.store.SavePipeline(ctx.Request().Context(), name, req.Content, req.Driver, req.ContentType)
 	if err != nil {
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{
@@ -413,6 +464,13 @@ func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
 	if err := c.upsertPostSave(ctx, pipeline, req); err != nil {
 		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
+
+	c.logger.Info("pipeline.upsert",
+		slog.String("pipeline", pipeline.Name),
+		slog.String("pipeline_id", pipeline.ID),
+		slog.String("actor", formatActor(ctx)),
+		slog.Bool("created", existing == nil),
+	)
 
 	return ctx.JSON(http.StatusOK, toPipelineAPIResponse(pipeline))
 }
@@ -449,6 +507,12 @@ func (c *APIPipelinesController) Destroy(ctx *echo.Context) error {
 	if c.secretsMgr != nil {
 		_ = c.secretsMgr.DeleteByScope(ctx.Request().Context(), secrets.PipelineScope(id))
 	}
+
+	c.logger.Info("pipeline.delete",
+		slog.String("pipeline", pipeline.Name),
+		slog.String("pipeline_id", pipeline.ID),
+		slog.String("actor", formatActor(ctx)),
+	)
 
 	return ctx.NoContent(http.StatusNoContent)
 }
@@ -729,6 +793,12 @@ func (c *APIPipelinesController) setPaused(ctx *echo.Context, paused bool) error
 	if !paused {
 		action = "unpaused"
 	}
+
+	c.logger.Info("pipeline."+action,
+		slog.String("pipeline", pipeline.Name),
+		slog.String("pipeline_id", pipeline.ID),
+		slog.String("actor", formatActor(ctx)),
+	)
 
 	if isHtmxRequest(ctx) {
 		ctx.Response().Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast":{"message":"%s %s successfully","type":"success"}}`, pipeline.Name, action))

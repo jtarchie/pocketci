@@ -341,7 +341,7 @@ func registerRoutes(
 	base := BaseController{store: store, execService: execService}
 
 	// API controllers (JSON responses)
-	(&APIPipelinesController{BaseController: base, allowedDrivers: allowedDrivers, allowedFeatures: allowedFeatures, secretsMgr: secretsMgr}).RegisterRoutes(api)
+	(&APIPipelinesController{BaseController: base, logger: logger, allowedDrivers: allowedDrivers, allowedFeatures: allowedFeatures, secretsMgr: secretsMgr}).RegisterRoutes(api)
 	(&APIRunsController{BaseController: base, allowedFeatures: allowedFeatures}).RegisterRoutes(api)
 	(&APIDriversController{allowedDrivers: allowedDrivers, configuredDrivers: configuredDrivers}).RegisterRoutes(api)
 	(&APIFeaturesController{allowedFeatures: allowedFeatures}).RegisterRoutes(api)
