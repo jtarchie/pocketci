@@ -183,7 +183,11 @@ func executeSharedSubAgent(
 			return callAgentOutput{}, fmt.Errorf("sub-agent run: %w", err)
 		}
 
-		processSubAgentEvent(event, &textBuilder, &resultBuilder, &auditEvents, &usage)
+		if event.UsageMetadata != nil {
+			accumulateUsage(&usage, event.UsageMetadata, nil)
+		}
+
+		processEventParts(event, &usage, &auditEvents, &textBuilder, &resultBuilder, AgentConfig{}, nil)
 
 		if event.UsageMetadata != nil {
 			persistSubAgentProgress(ctx, subCfg, parentConfig, "running", textBuilder.String(), usage, auditEvents, startedAt)
@@ -211,84 +215,6 @@ func executeSharedSubAgent(
 		Result: finalText,
 		Status: status,
 	}, nil
-}
-
-// processSubAgentEvent handles a single event from the sub-agent runner,
-// accumulating text, audit events, and usage statistics.
-func processSubAgentEvent(
-	event *session.Event,
-	textBuilder, resultBuilder *strings.Builder,
-	auditEvents *[]AuditEvent,
-	usage *AgentUsage,
-) {
-	if event.UsageMetadata != nil {
-		accumulateUsage(usage, event.UsageMetadata, nil)
-	}
-
-	if event.Content == nil {
-		return
-	}
-
-	ts := time.Now().UTC().Format(time.RFC3339)
-	if !event.Timestamp.IsZero() {
-		ts = event.Timestamp.UTC().Format(time.RFC3339)
-	}
-
-	isFinal := event.IsFinalResponse()
-
-	for _, part := range event.Content.Parts {
-		if part.FunctionCall != nil {
-			fc := part.FunctionCall
-			usage.ToolCallCount++
-
-			AppendAuditEvent(auditEvents, AuditEvent{
-				Timestamp:    ts,
-				InvocationID: event.InvocationID,
-				Author:       event.Author,
-				Type:         "tool_call",
-				ToolName:     fc.Name,
-				ToolCallID:   fc.ID,
-				ToolArgs:     fc.Args,
-			}, nil)
-		}
-
-		if part.FunctionResponse != nil {
-			fr := part.FunctionResponse
-
-			AppendAuditEvent(auditEvents, AuditEvent{
-				Timestamp:    ts,
-				InvocationID: event.InvocationID,
-				Author:       event.Author,
-				Type:         "tool_response",
-				ToolName:     fr.Name,
-				ToolCallID:   fr.ID,
-				ToolResult:   fr.Response,
-			}, nil)
-		}
-
-		if part.Text == "" {
-			continue
-		}
-
-		eventType := "model_text"
-		if isFinal {
-			eventType = "model_final"
-		}
-
-		AppendAuditEvent(auditEvents, AuditEvent{
-			Timestamp:    ts,
-			InvocationID: event.InvocationID,
-			Author:       event.Author,
-			Type:         eventType,
-			Text:         part.Text,
-		}, nil)
-
-		textBuilder.WriteString(part.Text)
-
-		if isFinal {
-			resultBuilder.WriteString(part.Text)
-		}
-	}
 }
 
 // persistSubAgentProgress writes the sub-agent's current state to storage so
@@ -340,7 +266,11 @@ func runSubAgentFollowUp(
 			break
 		}
 
-		processSubAgentEvent(event, textBuilder, resultBuilder, auditEvents, usage)
+		if event.UsageMetadata != nil {
+			accumulateUsage(usage, event.UsageMetadata, nil)
+		}
+
+		processEventParts(event, usage, auditEvents, textBuilder, resultBuilder, AgentConfig{}, nil)
 
 		if event.UsageMetadata != nil {
 			persistSubAgentProgress(ctx, subCfg, parentConfig, "running", textBuilder.String(), *usage, *auditEvents, startedAt)

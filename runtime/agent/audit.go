@@ -51,8 +51,8 @@ func processTextOutput(
 }
 
 // processEventParts handles FunctionCall, FunctionResponse, and Text parts
-// from an ADK event. Used by both the main run loop and the validation
-// follow-up loop so tool calls are always tracked.
+// from an ADK event. Used by the main run loop, validation follow-up, and
+// sub-agent event processing. Callbacks in config are nil-safe.
 func processEventParts(
 	event *session.Event,
 	usage *AgentUsage,
@@ -62,6 +62,10 @@ func processEventParts(
 	config AgentConfig,
 	eventUsage *AuditUsage,
 ) {
+	if event.Content == nil {
+		return
+	}
+
 	ts := time.Now().UTC().Format(time.RFC3339)
 	if !event.Timestamp.IsZero() {
 		ts = event.Timestamp.UTC().Format(time.RFC3339)

@@ -239,10 +239,6 @@ func executeAgentLoop(
 			}
 		}
 
-		if event.Content == nil {
-			continue
-		}
-
 		processEventParts(event, &result.usage, auditEvents, &result.textBuilder, &result.resultBuilder, config, eventUsage)
 	}
 
