@@ -303,9 +303,7 @@ jobs:
 		assert := NewGomegaWithT(t)
 
 		agentFiles := []string{
-			"../examples/agent/agents/code-quality.yml",
-			"../examples/agent/agents/security.yml",
-			"../examples/agent/agents/maintainability.yml",
+			"../examples/agent/agents/specialist-reviewer.yml",
 			"../examples/agent/agents/final-reviewer.yml",
 		}
 
