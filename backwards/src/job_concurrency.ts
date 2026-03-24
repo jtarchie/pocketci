@@ -1,3 +1,4 @@
+import pMap from "p-map";
 import { TaskAbort, TaskErrored, TaskFailure } from "./task_runner.ts";
 
 export interface ConcurrencyResult {
@@ -46,59 +47,39 @@ export class JobConcurrency {
       return { failed: false };
     }
 
-    const maxInFlight = Math.max(
+    const concurrency = Math.max(
       1,
       Math.min(this.resolveMaxInFlight(localLimit), items.length),
     );
 
-    let nextIndex = 0;
-    let activeCount = 0;
-    let failed = false;
     const allErrors: unknown[] = [];
 
-    await new Promise<void>((resolve) => {
-      const launch = (): void => {
-        if (nextIndex >= items.length && activeCount === 0) {
-          resolve();
-          return;
-        }
+    try {
+      await pMap(
+        items,
+        async (item, index) => {
+          try {
+            await worker(item, index);
+          } catch (error) {
+            allErrors.push(error);
+            throw error;
+          }
+        },
+        { concurrency, stopOnError: failFast },
+      );
+    } catch {
+      // errors already collected in allErrors
+    }
 
-        while (
-          activeCount < maxInFlight &&
-          nextIndex < items.length &&
-          !(failFast && failed)
-        ) {
-          const currentIndex = nextIndex;
-          nextIndex += 1;
-          activeCount += 1;
-
-          Promise.resolve(worker(items[currentIndex], currentIndex))
-            .catch((error) => {
-              failed = true;
-              allErrors.push(error);
-            })
-            .finally(() => {
-              activeCount -= 1;
-              launch();
-            });
-        }
-
-        if (
-          (failFast && failed || nextIndex >= items.length) &&
-          activeCount === 0
-        ) {
-          resolve();
-        }
-      };
-
-      launch();
-    });
+    if (allErrors.length === 0) {
+      return { failed: false };
+    }
 
     const firstError = allErrors.find((error) => error instanceof TaskAbort) ??
       allErrors.find((error) => error instanceof TaskErrored) ??
       allErrors.find((error) => error instanceof TaskFailure) ??
       allErrors[0];
 
-    return { failed, firstError };
+    return { failed: true, firstError };
   }
 }

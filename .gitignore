@@ -193,6 +193,7 @@ dist
 server/docs/site/
 site/docs/
 backwards/bundle.js
+backwards/deno.lock
 
 # wrangler files
 .wrangler

@@ -5,6 +5,7 @@ tasks:
     cmds:
       - task: build:static
       - task: build:docs
+      - task: build:backwards
       - go generate ./...
   build:static:
     dir: server/static
@@ -16,11 +17,16 @@ tasks:
     cmds:
       - npm install
       - npm run build
+  build:backwards:
+    dir: backwards
+    cmds:
+      - npm install
   fmt:
     cmds:
-      - deno fmt --ignore=server/templates/,server/docs/,backwards/bundle.js,server/static/dist/bundle.js .
-      - deno lint --rules-exclude=no-window,no-process-global,no-node-globals --ignore=server/static/dist/,server/templates/,server/docs/,backwards/bundle.js .
-      - deno check backwards/src/ examples/both/*.ts examples/run/*.ts examples/both/hello-world.js
+      - deno fmt --ignore=server/templates/,server/docs/,backwards/bundle.js,backwards/node_modules/,server/static/dist/bundle.js .
+      - deno lint --rules-exclude=no-window,no-process-global,no-node-globals --ignore=server/static/dist/,server/templates/,server/docs/,backwards/bundle.js,backwards/node_modules/ .
+      - cd backwards && deno check src/
+      - deno check examples/both/*.ts examples/run/*.ts examples/both/hello-world.js
       - shellcheck bin/*.sh
       - shfmt -w bin/
       - gofmt -w .
@@ -118,6 +124,8 @@ tasks:
       - cd packages/pocketci && npx npm-check-updates -u && npm install
       - echo "Bumping npm dependencies in examples..."
       - cd examples && npx npm-check-updates -u && npm install
+      - echo "Bumping npm dependencies in backwards..."
+      - cd backwards && npx npm-check-updates -u && npm install
       - echo "Bumping npm dependencies in server/static..."
       - cd server/static && npx npm-check-updates -u && npm install
       - echo "Bumping npm dependencies in docs..."
