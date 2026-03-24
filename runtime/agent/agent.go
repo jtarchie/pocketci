@@ -59,7 +59,7 @@ func RunAgent(
 	}
 
 	maxTurns, maxTotalTokens := EffectiveLimits(config.Limits)
-	instruction := buildSystemInstruction(config, maxTurns)
+	instruction := BuildSystemInstruction(config, maxTurns)
 	genCfg := agentmodel.BuildGenerateContentConfig(provider, config.LLM, config.Thinking, config.Safety)
 
 	myAgent, err := llmagent.New(llmagent.Config{
