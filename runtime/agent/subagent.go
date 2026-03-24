@@ -83,41 +83,9 @@ func buildSubAgentTool(
 	}
 
 	// Sub-agent reuses the same sandbox tools as the parent.
-	toolTimeout, scriptTimeout := EffectiveToolTimeouts(parentConfig.ToolTimeout)
-
-	subRunScript, err := newRunScriptTool(sandbox, parentConfig.OnOutput, scriptTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	subTools, err := buildSandboxTools(ctx, sandbox, parentConfig)
 	if err != nil {
-		return nil, fmt.Errorf("run_script tool: %w", err)
-	}
-
-	subReadFile, err := newReadFileTool(sandbox, parentConfig.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
-	if err != nil {
-		return nil, fmt.Errorf("read_file tool: %w", err)
-	}
-
-	subGrep, err := newGrepTool(sandbox, parentConfig.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
-	if err != nil {
-		return nil, fmt.Errorf("grep tool: %w", err)
-	}
-
-	subGlob, err := newGlobTool(sandbox, parentConfig.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
-	if err != nil {
-		return nil, fmt.Errorf("glob tool: %w", err)
-	}
-
-	subWriteFile, err := newWriteFileTool(sandbox, parentConfig.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
-	if err != nil {
-		return nil, fmt.Errorf("write_file tool: %w", err)
-	}
-
-	subListTasks, err := newListTasksTool(ctx, parentConfig)
-	if err != nil {
-		return nil, fmt.Errorf("list_tasks tool: %w", err)
-	}
-
-	subGetTaskResult, err := newGetTaskResultTool(ctx, parentConfig)
-	if err != nil {
-		return nil, fmt.Errorf("get_task_result tool: %w", err)
+		return nil, fmt.Errorf("sub-agent tools: %w", err)
 	}
 
 	subAgent, err := llmagent.New(llmagent.Config{
@@ -125,7 +93,7 @@ func buildSubAgentTool(
 		Model:       subLLM,
 		Description: fmt.Sprintf("Specialist sub-agent: %s. Call this when you need its expertise.", subCfg.Name),
 		Instruction: subCfg.Prompt,
-		Tools:       []adktool.Tool{subRunScript, subReadFile, subGrep, subGlob, subWriteFile, subListTasks, subGetTaskResult},
+		Tools:       subTools,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create sub-agent: %w", err)

@@ -23,6 +23,53 @@ import (
 	"github.com/jtarchie/pocketci/secrets"
 )
 
+// buildSandboxTools creates the base set of sandbox-backed and storage tools
+// shared by both parent agents and shared-container sub-agents.
+func buildSandboxTools(
+	ctx context.Context,
+	sandbox *pipelinerunner.SandboxHandle,
+	config AgentConfig,
+) ([]adktool.Tool, error) {
+	toolTimeout, scriptTimeout := EffectiveToolTimeouts(config.ToolTimeout)
+
+	runScript, err := newRunScriptTool(sandbox, config.OnOutput, scriptTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	if err != nil {
+		return nil, fmt.Errorf("failed to create run_script tool: %w", err)
+	}
+
+	readFileTool, err := newReadFileTool(sandbox, config.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	if err != nil {
+		return nil, fmt.Errorf("failed to create read_file tool: %w", err)
+	}
+
+	grepTool, err := newGrepTool(sandbox, config.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	if err != nil {
+		return nil, fmt.Errorf("failed to create grep tool: %w", err)
+	}
+
+	globTool, err := newGlobTool(sandbox, config.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	if err != nil {
+		return nil, fmt.Errorf("failed to create glob tool: %w", err)
+	}
+
+	writeFileTool, err := newWriteFileTool(sandbox, config.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	if err != nil {
+		return nil, fmt.Errorf("failed to create write_file tool: %w", err)
+	}
+
+	listTasksTool, err := newListTasksTool(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create list_tasks tool: %w", err)
+	}
+
+	getTaskResultTool, err := newGetTaskResultTool(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create get_task_result tool: %w", err)
+	}
+
+	return []adktool.Tool{runScript, readFileTool, grepTool, globTool, writeFileTool, listTasksTool, getTaskResultTool}, nil
+}
+
 // buildAgentTools creates all the tools available to the agent, including
 // sandbox tools, storage tools, and sub-agent tools.
 func buildAgentTools(
@@ -33,44 +80,12 @@ func buildAgentTools(
 	pipelineID string,
 	config AgentConfig,
 ) ([]adktool.Tool, error) {
-	toolTimeout, scriptTimeout := EffectiveToolTimeouts(config.ToolTimeout)
-
-	runScript, err := newRunScriptTool(sandbox, config.OnOutput, scriptTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
+	tools, err := buildSandboxTools(ctx, sandbox, config)
 	if err != nil {
-		return nil, fmt.Errorf("agent: failed to create run_script tool: %w", err)
+		return nil, fmt.Errorf("agent: %w", err)
 	}
 
-	readFileTool, err := newReadFileTool(sandbox, config.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
-	if err != nil {
-		return nil, fmt.Errorf("agent: failed to create read_file tool: %w", err)
-	}
-
-	grepTool, err := newGrepTool(sandbox, config.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
-	if err != nil {
-		return nil, fmt.Errorf("agent: failed to create grep tool: %w", err)
-	}
-
-	globTool, err := newGlobTool(sandbox, config.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
-	if err != nil {
-		return nil, fmt.Errorf("agent: failed to create glob tool: %w", err)
-	}
-
-	writeFileTool, err := newWriteFileTool(sandbox, config.OnOutput, toolTimeout) //nolint:contextcheck // ctx flows via adktool.Context at execution time
-	if err != nil {
-		return nil, fmt.Errorf("agent: failed to create write_file tool: %w", err)
-	}
-
-	listTasksTool, err := newListTasksTool(ctx, config)
-	if err != nil {
-		return nil, fmt.Errorf("agent: failed to create list_tasks tool: %w", err)
-	}
-
-	getTaskResultTool, err := newGetTaskResultTool(ctx, config)
-	if err != nil {
-		return nil, fmt.Errorf("agent: failed to create get_task_result tool: %w", err)
-	}
-
-	tools := []adktool.Tool{runScript, readFileTool, grepTool, globTool, writeFileTool, listTasksTool, getTaskResultTool}
+	toolTimeout, _ := EffectiveToolTimeouts(config.ToolTimeout)
 
 	for _, toolDef := range config.Tools {
 		var tool adktool.Tool
