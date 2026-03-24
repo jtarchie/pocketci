@@ -76,13 +76,13 @@ See [pocketci run](../cli/run.md) for client-side usage.
 
 Fire-and-forget trigger used by the web UI. Accepts an optional JSON body:
 
-| Field              | Type       | Description                                              |
-| ------------------ | ---------- | -------------------------------------------------------- |
-| `mode`             | `string`   | `"manual"` (default), `"args"`, or `"webhook"`           |
-| `args`             | `string[]` | Arguments passed to `pipelineContext.args` (mode `args`)  |
-| `webhook.method`   | `string`   | HTTP method for simulated webhook (mode `webhook`)        |
-| `webhook.headers`  | `object`   | Headers for simulated webhook                             |
-| `webhook.body`     | `string`   | JSON body for simulated webhook                           |
+| Field             | Type       | Description                                              |
+| ----------------- | ---------- | -------------------------------------------------------- |
+| `mode`            | `string`   | `"manual"` (default), `"args"`, or `"webhook"`           |
+| `args`            | `string[]` | Arguments passed to `pipelineContext.args` (mode `args`) |
+| `webhook.method`  | `string`   | HTTP method for simulated webhook (mode `webhook`)       |
+| `webhook.headers` | `object`   | Headers for simulated webhook                            |
+| `webhook.body`    | `string`   | JSON body for simulated webhook                          |
 
 Webhook mode requires a `webhook_secret` configured on the pipeline; returns
 `403` otherwise.

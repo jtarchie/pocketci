@@ -84,8 +84,8 @@ Pipelines without an RBAC expression are accessible to all authenticated users.
 
 > **Note:** Pipeline RBAC expressions require OAuth authentication. Setting an
 > RBAC expression via basic auth is rejected — the server cannot evaluate
-> expressions without an OAuth user. If a pipeline already has an RBAC expression,
-> basic auth users will receive `403 Forbidden` when accessing it.
+> expressions without an OAuth user. If a pipeline already has an RBAC
+> expression, basic auth users will receive `403 Forbidden` when accessing it.
 
 ### Expression Examples
 
@@ -127,14 +127,13 @@ immediate error rather than a runtime failure.
 
 All pipeline mutations are logged via `slog` with the actor identity:
 
-| Log Message             | When                                      |
-| ----------------------- | ----------------------------------------- |
-| `pipeline.upsert`       | Pipeline created or updated               |
-| `pipeline.delete`       | Pipeline deleted                          |
-| `pipeline.paused`       | Pipeline paused                           |
-| `pipeline.unpaused`     | Pipeline unpaused                         |
-| `pipeline.rbac.update`  | RBAC expression changed (logs old → new)  |
+| Log Message            | When                                     |
+| ---------------------- | ---------------------------------------- |
+| `pipeline.upsert`      | Pipeline created or updated              |
+| `pipeline.delete`      | Pipeline deleted                         |
+| `pipeline.paused`      | Pipeline paused                          |
+| `pipeline.unpaused`    | Pipeline unpaused                        |
+| `pipeline.rbac.update` | RBAC expression changed (logs old → new) |
 
-Each log entry includes `pipeline` (name), `pipeline_id`, and `actor`
-(formatted as `provider:user`, e.g. `github:alice@example.com` or
-`basic:admin`).
+Each log entry includes `pipeline` (name), `pipeline_id`, and `actor` (formatted
+as `provider:user`, e.g. `github:alice@example.com` or `basic:admin`).

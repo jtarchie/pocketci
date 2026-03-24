@@ -305,6 +305,74 @@ func TestMCPSearchTasks(t *testing.T) {
 	})
 }
 
+func TestMCPStatelessSurvivesRestart(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	assert := NewWithT(t)
+
+	buildFile, err := os.CreateTemp(t.TempDir(), "")
+	assert.Expect(err).NotTo(HaveOccurred())
+	t.Cleanup(func() { _ = buildFile.Close() })
+
+	store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+	assert.Expect(err).NotTo(HaveOccurred())
+	t.Cleanup(func() { _ = store.Close() })
+
+	// Seed data before any server starts.
+	pipeline, err := store.SavePipeline(ctx, "restart-pipeline", "export const pipeline = async () => {};", "native", "")
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	run, err := store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	// First server — verify tools work.
+	router1, err := server.NewRouter(slog.Default(), store, server.RouterOptions{})
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	ts1 := httptest.NewServer(router1)
+
+	c1 := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1.0"}, nil)
+	session1, err := c1.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: ts1.URL + "/mcp"}, nil)
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	result, err := session1.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "get_run",
+		Arguments: map[string]any{"run_id": run.ID},
+	})
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result.IsError).To(BeFalse())
+
+	// Shut down first server (simulates restart).
+	_ = session1.Close()
+	ts1.Close()
+
+	// Second server — same store, new handler.
+	router2, err := server.NewRouter(slog.Default(), store, server.RouterOptions{})
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	ts2 := httptest.NewServer(router2)
+	t.Cleanup(ts2.Close)
+
+	c2 := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1.0"}, nil)
+	session2, err := c2.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: ts2.URL + "/mcp"}, nil)
+	assert.Expect(err).NotTo(HaveOccurred())
+	t.Cleanup(func() { _ = session2.Close() })
+
+	// Same data accessible on the new server.
+	result2, err := session2.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "get_run",
+		Arguments: map[string]any{"run_id": run.ID},
+	})
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result2.IsError).To(BeFalse())
+
+	text := result2.Content[0].(*mcp.TextContent).Text
+	var gotRun storage.PipelineRun
+	assert.Expect(json.Unmarshal([]byte(text), &gotRun)).NotTo(HaveOccurred())
+	assert.Expect(gotRun.ID).To(Equal(run.ID))
+}
+
 func TestMCPSearchPipelines(t *testing.T) {
 	t.Parallel()
 

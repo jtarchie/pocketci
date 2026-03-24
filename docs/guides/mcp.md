@@ -89,6 +89,17 @@ like:
 - _"Show me the stdout of the last task in this run."_
 - _"Find pipelines that use the `busybox` image."_
 
+## Session persistence
+
+The MCP endpoint runs in **stateless mode** — there is no server-side session
+tracking. Each request is authenticated independently via the `Authorization`
+header (Bearer token or Basic Auth). This means:
+
+- Clients **survive server restarts** without re-authenticating, as long as they
+  hold a valid token.
+- If a token expires (30 days for OAuth), the client re-registers and
+  re-authorizes automatically via the standard OAuth flow.
+
 ## Available tools
 
 ### `get_run`

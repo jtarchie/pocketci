@@ -3,7 +3,12 @@
 The server exposes a Model Context Protocol endpoint for AI assistants and LLM
 integrations.
 
-`POST /mcp` or WebSocket `/mcp`
+`POST /mcp`
+
+The MCP endpoint is **stateless** — each request is independent and
+authenticated via the `Authorization` header (Bearer token or Basic Auth). There
+is no server-side session tracking, so clients survive server restarts
+seamlessly as long as they hold a valid token.
 
 Inspect and search pipeline runs programmatically using MCP tools:
 

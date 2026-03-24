@@ -244,5 +244,5 @@ func newMCPHandler(store storage.Driver) http.Handler {
 
 	return mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server {
 		return mcpServer
-	}, nil)
+	}, &mcp.StreamableHTTPOptions{Stateless: true})
 }

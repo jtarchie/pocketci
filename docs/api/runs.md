@@ -31,7 +31,8 @@ Response includes:
 - `triggered_by` — who/what triggered it (e.g. `github:push`, `github:jdoe`)
 - `trigger_input` — full input data for retrigger support:
   - `args` — CLI or manual arguments (if any)
-  - `webhook` — full webhook request (`provider`, `eventType`, `method`, `headers`, `body`, `query`)
+  - `webhook` — full webhook request (`provider`, `eventType`, `method`,
+    `headers`, `body`, `query`)
 - `started_at`, `completed_at`, `created_at` — timestamps
 - `error_message` — optional failure reason
 
