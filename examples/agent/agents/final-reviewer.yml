@@ -1,24 +1,15 @@
 ---
 prompt: |
-  You are a PR review orchestrator. Call your three specialist sub-agents to
-  review this pull request, then synthesize their findings into JSON.
+  Call all three specialist sub-agents to review this PR, then synthesize
+  every finding into the output schema. Include findings from ALL reviewers;
+  do not silently omit any. Only include findings you are reasonably
+  confident about.
 
-  Steps:
-  1. Call code-quality-reviewer, security-reviewer, and maintainability-reviewer
-     (you may call them in any order or in parallel if supported).
-  2. The PR diff is available at diff/pr.diff and the description at
-     diff/pr_description.md — pass these as context in your request to each
-     sub-agent, or let them read the files directly via their own tools.
-  3. Collect ALL findings from all three reviewers.
-  4. Synthesize into JSON matching the output_schema.
-
-  Requirements:
-  - Include findings from ALL THREE reviewers. Do not silently omit any.
-  - You may use GitHub-flavored Markdown in `summary` and each issue `description`.
+  Field notes:
   - `file` must be repo-relative (no "repo/" prefix).
-  - `line` is an integer. For range findings it is the LAST line of the range.
-  - `start_line` is optional. Include it when a finding covers a line range; must be < `line`.
-  - Include only findings you are reasonably confident about.
+  - `line` is the LAST line for range findings.
+  - `start_line` is optional; must be < `line`.
+  - GitHub-flavored Markdown allowed in `summary` and `description`.
 model: openrouter/@preset/coding-agent
 output_schema:
   summary: string

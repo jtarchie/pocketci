@@ -191,15 +191,15 @@ This behavior is transparent to pipeline code. The `result` returned by
 Every agent run has these tools available automatically — no configuration
 required.
 
-| Tool              | Description                                                                          |
-| ----------------- | ------------------------------------------------------------------------------------ |
-| `run_script`      | Run a multi-line shell script inside the sandbox container                            |
-| `read_file`       | Read file contents with optional line `offset` and `limit` (default: 2 000 lines)    |
-| `grep`            | Search file contents with regex patterns. Supports `glob_filter` and `max_results`   |
-| `glob`            | Find files by name pattern (e.g. `**/*.go`). Returns matching paths sorted           |
-| `write_file`      | Create or overwrite a file. Parent directories are created automatically              |
-| `list_tasks`      | List all tasks in the current pipeline run with their status and timing               |
-| `get_task_result` | Fetch the stdout, stderr, and exit code for a specific task by name                  |
+| Tool              | Description                                                                        |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| `run_script`      | Run a multi-line shell script inside the sandbox container                         |
+| `read_file`       | Read file contents with optional line `offset` and `limit` (default: 2 000 lines)  |
+| `grep`            | Search file contents with regex patterns. Supports `glob_filter` and `max_results` |
+| `glob`            | Find files by name pattern (e.g. `**/*.go`). Returns matching paths sorted         |
+| `write_file`      | Create or overwrite a file. Parent directories are created automatically           |
+| `list_tasks`      | List all tasks in the current pipeline run with their status and timing            |
+| `get_task_result` | Fetch the stdout, stderr, and exit code for a specific task by name                |
 
 `list_tasks` is **always pre-fetched** and injected into the session before the
 agent's first turn, so the agent knows the run state immediately without
