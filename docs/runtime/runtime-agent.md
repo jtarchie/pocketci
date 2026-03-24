@@ -490,29 +490,29 @@ Below is a simplified version of the multi-reviewer PR analysis pipeline from
 [`examples/agent/pr-review.yml`](../../examples/agent/pr-review.yml):
 
 ```yaml
-- agent: pr-reviewer
+- agent: final-review
   file: repo/examples/agent/agents/final-reviewer.yml
-  config:
-    platform: linux
-    image: alpine/git
-    inputs:
-      - name: diff
-      - name: repo
   tools:
     - agent: code-quality-reviewer
-      file: repo/examples/agent/agents/code-quality.yml
+      file: repo/examples/agent/agents/specialist-reviewer.yml
+      prompt: "Review for code quality — readability, naming, structure, DRY violations."
     - agent: security-reviewer
-      file: repo/examples/agent/agents/security.yml
+      file: repo/examples/agent/agents/specialist-reviewer.yml
+      prompt: "Audit for security issues — injection, authentication, data exposure, OWASP Top 10."
     - agent: maintainability-reviewer
-      file: repo/examples/agent/agents/maintainability.yml
+      file: repo/examples/agent/agents/specialist-reviewer.yml
+      prompt: "Evaluate for maintainability — test coverage, cyclomatic complexity, documentation."
   validation:
     expr: 'text != "" && text contains "summary"'
     prompt: >-
-      Output valid JSON with a "summary" field and an "issues" array.
+      You must output valid JSON containing a "summary" field and an
+      "issues" array. Do not include prose outside the JSON object.
 ```
 
-The orchestrator's prompt (in `final-reviewer.yml`) instructs it to call all
-three specialist agent tools and synthesize their findings into JSON.
+All three specialist tools share a single `specialist-reviewer.yml` template,
+differentiated by the inline `prompt` field. The orchestrator's prompt (in
+`final-reviewer.yml`) instructs it to call all three and synthesize their
+findings into JSON.
 
 ## Return Value
 
