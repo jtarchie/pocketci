@@ -351,6 +351,7 @@ declare global {
     description?: string;
     config?: TaskConfig;
     file?: string; // Load task config from a YAML file on a volume
+    uri?: string; // Load task config from a URI (http://, https://, file://)
   }
 
   // Input to runtime.agent().
@@ -732,6 +733,7 @@ declare global {
     config: TaskConfig;
     container_limits?: ContainerLimits;
     file?: string;
+    uri?: string; // Load task config from a URI (http://, https://, file://)
     image?: string;
     privileged?: boolean;
     assert?: TaskAssertion;
@@ -802,6 +804,7 @@ declare global {
     model: string; // "provider/model-name", e.g. "openrouter/google/gemini-3"
     config?: TaskConfig; // image_resource, inputs, outputs
     file?: string; // Load full agent config from a YAML file on a volume
+    uri?: string; // Load full agent config from a URI (http://, https://, file://)
     prompt_file?: string; // Load prompt text from a file on a volume
     llm?: AgentLLMConfig;
     thinking?: AgentThinkingConfig;

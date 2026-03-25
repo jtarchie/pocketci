@@ -808,4 +808,19 @@ func TestVersionEveryWithMock(t *testing.T) {
 		assert.Expect(pipeline).NotTo(BeEmpty())
 	})
 
+	t.Run("task with file URI loads config from volume", func(t *testing.T) {
+		t.Parallel()
+
+		_, logger := createLogger()
+		assert := NewGomegaWithT(t)
+
+		runner := testhelpers.Runner{
+			Pipeline:          "steps/task_uri.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
+		}
+		err := runner.Run(logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
 }

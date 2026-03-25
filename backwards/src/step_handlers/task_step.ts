@@ -1,7 +1,7 @@
 /// <reference path="../../../packages/pocketci/src/global.d.ts" />
 
 import { TaskFailure } from "../task_runner.ts";
-import { loadFileFromVolume } from "./file_loader.ts";
+import { loadFileFromVolume, loadFromURI } from "./file_loader.ts";
 import type { StepContext } from "./step_context.ts";
 import type { StepHandler } from "./step_handler.ts";
 
@@ -17,8 +17,8 @@ export class TaskStepHandler implements StepHandler {
   ): Promise<void> {
     let taskStep = step;
 
-    if ("file" in step) {
-      const contents = await loadFileFromVolume(ctx, step.file!, pathContext);
+    if ("file" in step && step.file) {
+      const contents = await loadFileFromVolume(ctx, step.file, pathContext);
       const taskConfig = YAML.parse(contents) as TaskConfig;
       taskStep = {
         task: step.task,
@@ -34,6 +34,22 @@ export class TaskStepHandler implements StepHandler {
       };
       // Re-inject job params now that config is available from the file.
       // injectJobParams runs before dispatch but skips steps without config.
+      taskStep = ctx.variableResolver.injectJobParams(taskStep) as Task;
+    } else if ("uri" in step && step.uri) {
+      const contents = await loadFromURI(ctx, step.uri, pathContext);
+      const taskConfig = YAML.parse(contents) as TaskConfig;
+      taskStep = {
+        task: step.task,
+        parallelism: step.parallelism,
+        config: taskConfig,
+        assert: step.assert,
+        ensure: step.ensure,
+        on_success: step.on_success,
+        on_failure: step.on_failure,
+        on_error: step.on_error,
+        on_abort: step.on_abort,
+        timeout: step.timeout,
+      };
       taskStep = ctx.variableResolver.injectJobParams(taskStep) as Task;
     }
 

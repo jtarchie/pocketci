@@ -3,6 +3,76 @@
 import type { StepContext } from "./step_context.ts";
 import { formatElapsed } from "../utils.ts";
 
+// loadFromURI loads file contents from a URI. Supported schemes:
+//   - file:// — reads from a known volume mount (same path format as `file` field)
+//   - http:// and https:// — fetches via the global fetch() API
+// Throws on unsupported schemes, network errors, or non-OK HTTP responses.
+export async function loadFromURI(
+  ctx: StepContext,
+  uri: string,
+  pathContext: string,
+): Promise<string> {
+  if (uri.startsWith("file://")) {
+    const volumePath = uri.slice("file://".length);
+    if (volumePath.split("/").includes("..")) {
+      throw new Error(
+        `file:// URI must not contain ".." path segments: "${uri}"`,
+      );
+    }
+    return loadFileFromVolume(ctx, volumePath, pathContext);
+  }
+
+  if (uri.startsWith("http://") || uri.startsWith("https://")) {
+    const storageKey =
+      `${ctx.paths.getBaseStorageKey()}/${pathContext}/load-uri`;
+    const startedAt = new Date().toISOString();
+    storage.set(storageKey, {
+      status: "pending",
+      uri,
+      started_at: startedAt,
+    });
+
+    try {
+      const response = await fetch(uri);
+      if (!response.ok) {
+        throw new Error(
+          `HTTP ${response.status} fetching ${uri}`,
+        );
+      }
+      const content = await response.text();
+
+      storage.set(storageKey, {
+        status: "success",
+        uri,
+        started_at: startedAt,
+        elapsed: formatElapsed(startedAt),
+        logs: [
+          {
+            type: "stdout",
+            content: `loaded config from ${uri}`,
+          },
+        ],
+      });
+      return content;
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      storage.set(storageKey, {
+        status: "failure",
+        uri,
+        started_at: startedAt,
+        elapsed: formatElapsed(startedAt),
+        errorMessage: errMsg,
+        logs: [{ type: "stderr", content: errMsg }],
+      });
+      throw error;
+    }
+  }
+
+  throw new Error(
+    `unsupported URI scheme in "${uri}"; supported: file://, http://, https://`,
+  );
+}
+
 // loadFileFromVolume reads a file from a volume mount using the runtime's
 // direct volume access API. The file path must start with the mount name
 // (e.g. "repo/path/to/file.yml"). Returns the file contents as a string.

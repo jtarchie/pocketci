@@ -50,6 +50,27 @@ if (result.code !== 0) {
 
 See [Secrets](../operations/secrets.md) for secret injection details.
 
+## YAML External Task Config
+
+In Concourse-compatible YAML, a task step can load its config from an external
+source instead of inlining it:
+
+- **`file`** — load from a volume mount (path format: `mountname/relative/path`)
+- **`uri`** — load from a URI (`file://`, `http://`, `https://`)
+
+`file` and `uri` are mutually exclusive. See
+[Loading config from a URI](runtime-agent.md#uri) for full details and examples.
+
+```yaml
+# Load from a volume
+- task: build
+  file: repo/tasks/build.yml
+
+# Load from a remote URL
+- task: build
+  uri: "https://example.com/tasks/build.yml"
+```
+
 ## YAML Parallelism And Throttling
 
 When using Concourse-compatible YAML, task fan-out and throttling are available

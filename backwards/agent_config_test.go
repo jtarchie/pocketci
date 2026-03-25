@@ -237,7 +237,7 @@ jobs:
 `)
 		assert.Expect(err).To(HaveOccurred())
 		assert.Expect(err.Error()).To(ContainSubstring("agent step"))
-		assert.Expect(err.Error()).To(ContainSubstring("requires prompt, prompt_file, or file"))
+		assert.Expect(err.Error()).To(ContainSubstring("requires prompt, prompt_file, file, or uri"))
 	})
 
 	t.Run("validation accepts agent step with only file", func(t *testing.T) {

@@ -348,3 +348,91 @@ jobs:
 		assert.Expect(err).NotTo(HaveOccurred())
 	})
 }
+
+func TestValidateURIField(t *testing.T) {
+	t.Parallel()
+
+	t.Run("task with uri skips run.path requirement", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		content := `---
+jobs:
+  - name: uri-test
+    plan:
+      - task: remote-task
+        uri: "https://example.com/task.yml"`
+
+		err := backwards.ValidatePipeline([]byte(content))
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("agent with uri skips prompt requirement", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		content := `---
+jobs:
+  - name: uri-test
+    plan:
+      - agent: remote-agent
+        uri: "https://example.com/agent.yml"
+        model: openrouter/google/gemini`
+
+		err := backwards.ValidatePipeline([]byte(content))
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("file and uri are mutually exclusive", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		content := `---
+jobs:
+  - name: uri-test
+    plan:
+      - task: bad-task
+        file: repo/task.yml
+        uri: "https://example.com/task.yml"`
+
+		err := backwards.ValidatePipeline([]byte(content))
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("cannot have both file and uri"))
+	})
+
+	t.Run("uri field parses correctly", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		content := `---
+jobs:
+  - name: uri-test
+    plan:
+      - task: local-task
+        uri: "file://repo/task.yml"`
+
+		err := backwards.ValidatePipeline([]byte(content))
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("uri skips input wiring validation", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		content := `---
+jobs:
+  - name: uri-test
+    plan:
+      - task: remote-task
+        uri: "https://example.com/task.yml"
+        config:
+          platform: linux
+          inputs:
+            - name: some-input
+          run:
+            path: echo`
+
+		err := backwards.ValidatePipeline([]byte(content))
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+}

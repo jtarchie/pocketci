@@ -129,6 +129,7 @@ type Step struct {
 	TaskConfig      *TaskConfig      `yaml:"config,omitempty"`
 	ContainerLimits *ContainerLimits `yaml:"container_limits,omitempty"`
 	File            string           `yaml:"file,omitempty"`
+	URI             string           `yaml:"uri,omitempty"`
 	Image           string           `yaml:"image,omitempty"`
 	Privileged      bool             `yaml:"privileged,omitempty"`
 

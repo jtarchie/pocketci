@@ -406,6 +406,52 @@ input. There is no need to list it in `config.inputs`.
       - name: code-reviewer
 ```
 
+## Loading config from a URI {#uri}
+
+Both task steps and agent steps accept a `uri` field as an alternative to
+`file`. The `uri` field supports three schemes:
+
+| Scheme     | Description                                           |
+| ---------- | ----------------------------------------------------- |
+| `file://`  | Load from a volume mount (same path format as `file`) |
+| `http://`  | Fetch config over HTTP                                |
+| `https://` | Fetch config over HTTPS                               |
+
+`file` and `uri` are **mutually exclusive** — specifying both is a validation
+error.
+
+### `file://` URIs
+
+A `file://` URI resolves against known volume mounts, using the same
+`mountname/relative/path` format as the `file` field. Path traversal with `..`
+is not allowed.
+
+```yaml
+# These two are equivalent:
+- task: my-task
+  file: repo/tasks/build.yml
+
+- task: my-task
+  uri: "file://repo/tasks/build.yml"
+```
+
+### `http://` and `https://` URIs
+
+HTTP URIs fetch the YAML config from a remote server. The response must return a
+2xx status code; non-OK responses are treated as errors.
+
+```yaml
+- task: my-task
+  uri: "https://example.com/tasks/build.yml"
+
+- agent: code-reviewer
+  uri: "https://example.com/agents/reviewer.yml"
+  model: openrouter/google/gemini-2.0-flash
+```
+
+The fetched content is parsed as YAML and merged with any inline fields on the
+step (inline values override fetched values, prompts are concatenated).
+
 ## Tools {#tools}
 
 The `tools` array lets you give an agent additional capabilities beyond the
@@ -434,12 +480,13 @@ container image.
       file: repo/agents/security.yml
 ```
 
-| Field    | Type   | Description                                                        |
-| -------- | ------ | ------------------------------------------------------------------ |
-| `agent`  | string | **Required.** Tool name the parent LLM uses to call this agent     |
-| `file`   | string | Load prompt, model, and config from a YAML file in the repo volume |
-| `prompt` | string | Agent instruction (concatenated with `file:` prompt if both exist) |
-| `model`  | string | Model specifier; defaults to the parent's model if omitted         |
+| Field    | Type   | Description                                                               |
+| -------- | ------ | ------------------------------------------------------------------------- |
+| `agent`  | string | **Required.** Tool name the parent LLM uses to call this agent            |
+| `file`   | string | Load prompt, model, and config from a YAML file on a volume               |
+| `uri`    | string | Load config from a URI (`file://`, `http://`, `https://`)                 |
+| `prompt` | string | Agent instruction (concatenated with `file:`/`uri:` prompt if both exist) |
+| `model`  | string | Model specifier; defaults to the parent's model if omitted                |
 
 **Shared-container** (agent image matches the parent's or is omitted): the
 sub-agent runs inside the parent's ADK session, sharing the same sandbox,
@@ -474,12 +521,13 @@ tools:
     file: repo/tasks/post-comment.yml
 ```
 
-| Field         | Type   | Description                                                   |
-| ------------- | ------ | ------------------------------------------------------------- |
-| `task`        | string | **Required.** Tool name the parent LLM uses to call this task |
-| `description` | string | Description shown to the LLM (defaults to "Run task: {name}") |
-| `config`      | object | Task config with `run.path`, `run.args`, `env`, `image`       |
-| `file`        | string | Load task config from a YAML file on a volume                 |
+| Field         | Type   | Description                                                    |
+| ------------- | ------ | -------------------------------------------------------------- |
+| `task`        | string | **Required.** Tool name the parent LLM uses to call this task  |
+| `description` | string | Description shown to the LLM (defaults to "Run task: {name}")  |
+| `config`      | object | Task config with `run.path`, `run.args`, `env`, `image`        |
+| `file`        | string | Load task config from a YAML file on a volume                  |
+| `uri`         | string | Load task config from a URI (`file://`, `http://`, `https://`) |
 
 When the LLM calls a task tool, it can pass a `request` string that is set as
 the `TOOL_REQUEST` environment variable, allowing dynamic input.

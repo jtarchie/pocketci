@@ -159,18 +159,27 @@ func ValidatePipeline(content []byte) error {
 	return nil
 }
 
-// validateSteps checks that task steps have a required run.path field (unless using file:).
+// hasExternalConfig returns true when the step loads config from a file or URI.
+func hasExternalConfig(step Step) bool {
+	return step.File != "" || step.URI != ""
+}
+
+// validateSteps checks that task steps have a required run.path field (unless using file: or uri:).
 func validateSteps(jobs Jobs) error {
 	for _, job := range jobs {
 		for i, step := range job.Plan {
-			if step.Task != "" && step.File == "" {
+			if step.File != "" && step.URI != "" {
+				return fmt.Errorf("step in job %q (index %d) cannot have both file and uri", job.Name, i)
+			}
+
+			if step.Task != "" && !hasExternalConfig(step) {
 				if step.TaskConfig == nil || step.TaskConfig.Run == nil || step.TaskConfig.Run.Path == "" {
 					return fmt.Errorf("task step %q in job %q (index %d) requires config.run.path", step.Task, job.Name, i)
 				}
 			}
 
-			if step.Agent != "" && step.File == "" && step.Prompt == "" && step.PromptFile == "" {
-				return fmt.Errorf("agent step %q in job %q (index %d) requires prompt, prompt_file, or file", step.Agent, job.Name, i)
+			if step.Agent != "" && !hasExternalConfig(step) && step.Prompt == "" && step.PromptFile == "" {
+				return fmt.Errorf("agent step %q in job %q (index %d) requires prompt, prompt_file, file, or uri", step.Agent, job.Name, i)
 			}
 		}
 	}
@@ -307,7 +316,7 @@ func checkStepInputs(step Step, available map[string]bool, jobName string) []err
 	// Only validate when we have inline inputs to check.
 	// Skip steps that use file: or prompt_file: — their inputs bootstrap
 	// volumes for runtime file loading, not prior-step output consumption.
-	if stepName != "" && step.TaskConfig != nil && step.File == "" && step.PromptFile == "" {
+	if stepName != "" && step.TaskConfig != nil && step.File == "" && step.URI == "" && step.PromptFile == "" {
 		for _, in := range step.TaskConfig.Inputs {
 			if !available[in.Name] {
 				errs = append(errs, fmt.Errorf(
