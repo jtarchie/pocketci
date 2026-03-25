@@ -70,7 +70,7 @@ const pipeline = async () => {
         },
       });
 
-      assert.containsString("Hello World", verifyResult.stdout);
+      assert.containsString(verifyResult.stdout, "Hello World");
       console.log("Successfully cloned and verified repository!");
     }
   } else {

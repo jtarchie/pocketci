@@ -505,16 +505,16 @@ declare global {
    */
   namespace assert {
     function containsElement<T>(
-      element: T,
       array: T[],
+      element: T,
       message?: string,
     ): void;
     function containsString(
-      substr: string,
       str: string,
+      substr: string,
       message?: string,
     ): void;
-    function equal<T>(expected: T, actual: T, message?: string): void;
+    function equal<T>(actual: T, expected: T, message?: string): void;
     function eventuallyContainsString(
       getter: () => unknown,
       substr: string,
@@ -522,7 +522,7 @@ declare global {
       intervalMs?: number,
       message?: string,
     ): void;
-    function notEqual<T>(expected: T, actual: T, message?: string): void;
+    function notEqual<T>(actual: T, expected: T, message?: string): void;
     function truthy(value: unknown, message?: string): void;
   }
 

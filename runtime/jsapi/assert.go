@@ -37,17 +37,17 @@ func NewAssert(vm *goja.Runtime, logger *slog.Logger) *Assert {
 
 var ErrAssertion = errors.New("assertion failed")
 
-func (a *Assert) Equal(expected, actual any, message ...string) {
+func (a *Assert) Equal(actual, expected any, message ...string) {
 	a.logger.Debug("equality.checking",
 		"expected_type", fmt.Sprintf("%T", expected),
 		"actual_type", fmt.Sprintf("%T", actual))
 
 	if !reflect.DeepEqual(actual, expected) {
 		diff := diff(expected, actual)
-		expected, actual = formatUnequalValues(expected, actual)
+		expectedFmt, actualFmt := formatUnequalValues(expected, actual)
 		msg := fmt.Sprintf("Not equal: \n"+
 			"expected: %s\n"+
-			"actual  : %s%s", expected, actual, diff)
+			"actual  : %s%s", expectedFmt, actualFmt, diff)
 
 		if len(message) > 0 {
 			msg = message[0] + "\n" + msg
@@ -57,7 +57,7 @@ func (a *Assert) Equal(expected, actual any, message ...string) {
 	}
 }
 
-func (a *Assert) NotEqual(expected, actual any, message ...string) {
+func (a *Assert) NotEqual(actual, expected any, message ...string) {
 	a.logger.Debug("inequality.checking",
 		"expected_type", fmt.Sprintf("%T", expected),
 		"actual_type", fmt.Sprintf("%T", actual))

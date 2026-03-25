@@ -190,7 +190,7 @@ export class TaskRunner {
     }
 
     if (typeof step.assert?.code === "number") {
-      assert.equal(step.assert.code, result.code);
+      assert.equal(result.code, step.assert.code);
     }
   }
 

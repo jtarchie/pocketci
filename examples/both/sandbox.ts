@@ -16,13 +16,13 @@ const pipeline = async () => {
         args: ["-c", "echo hello-from-sandbox > /tmp/msg.txt"],
       },
     });
-    assert.equal(0, result.code);
+    assert.equal(result.code, 0);
 
     // Second command: read the file back — proves state is preserved.
     result = await sandbox.exec({
       command: { path: "cat", args: ["/tmp/msg.txt"] },
     });
-    assert.equal(0, result.code);
+    assert.equal(result.code, 0);
     assert.containsString(result.stdout, "hello-from-sandbox");
 
     // Third command: use per-exec env vars and workdir.
@@ -31,7 +31,7 @@ const pipeline = async () => {
       env: { GREET: "hey-world" },
       work_dir: "/tmp",
     });
-    assert.equal(0, result.code);
+    assert.equal(result.code, 0);
     assert.containsString(result.stdout, "hey-world");
     assert.containsString(result.stdout, "/tmp");
 
@@ -39,7 +39,7 @@ const pipeline = async () => {
     result = await sandbox.exec({
       command: { path: "sh", args: ["-c", "exit 2"] },
     });
-    assert.equal(2, result.code);
+    assert.equal(result.code, 2);
   } finally {
     await sandbox.close();
   }
