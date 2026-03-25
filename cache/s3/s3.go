@@ -15,12 +15,27 @@ import (
 // Config configures an S3-backed cache store.
 type Config struct {
 	s3config.Config
+
+	// PartSize is the size of each multipart upload part in bytes.
+	// Defaults to 10MB if zero.
+	PartSize int64
+
+	// Concurrency is the number of parts to upload in parallel.
+	// Defaults to 3 if zero.
+	Concurrency int
 }
+
+const (
+	defaultPartSize    = 10 * 1024 * 1024
+	defaultConcurrency = 3
+)
 
 // S3Store implements CacheStore using AWS S3.
 type S3Store struct {
 	*s3config.Client
-	ttl time.Duration
+	ttl         time.Duration
+	partSize    int64
+	concurrency int
 }
 
 // New creates a new S3-backed cache store from the given Config.
@@ -30,9 +45,21 @@ func New(ctx context.Context, cfg Config) (*S3Store, error) {
 		return nil, fmt.Errorf("failed to create S3 client: %w", err)
 	}
 
+	partSize := cfg.PartSize
+	if partSize <= 0 {
+		partSize = defaultPartSize
+	}
+
+	concurrency := cfg.Concurrency
+	if concurrency <= 0 {
+		concurrency = defaultConcurrency
+	}
+
 	return &S3Store{
-		Client: client,
-		ttl:    cfg.TTL,
+		Client:      client,
+		ttl:         cfg.TTL,
+		partSize:    partSize,
+		concurrency: concurrency,
 	}, nil
 }
 
@@ -72,10 +99,8 @@ func (s *S3Store) Persist(ctx context.Context, key string, reader io.Reader) err
 	fullKey := s.FullKey(key)
 
 	err := s.PutStream(ctx, fullKey, reader, func(u *transfermanager.Options) {
-		// Use 10MB part size for efficient streaming
-		u.PartSizeBytes = 10 * 1024 * 1024
-		// Upload 3 parts concurrently
-		u.Concurrency = 3
+		u.PartSizeBytes = s.partSize
+		u.Concurrency = s.concurrency
 	})
 	if err != nil {
 		return fmt.Errorf("failed to upload to S3: %w", err)

@@ -137,6 +137,8 @@ type Server struct {
 	CacheS3AccessKeyID     string        `env:"CI_CACHE_S3_ACCESS_KEY_ID"     help:"S3 access key ID for cache"                             name:"cache-s3-access-key-id"`
 	CacheS3SecretAccessKey string        `env:"CI_CACHE_S3_SECRET_ACCESS_KEY" help:"S3 secret access key for cache"                         name:"cache-s3-secret-access-key"`
 	CacheS3TTL             time.Duration `env:"CI_CACHE_S3_TTL"               help:"Cache object TTL (0 = no expiry)"                       name:"cache-s3-ttl"`
+	CacheS3PartSize        int64         `env:"CI_CACHE_S3_PART_SIZE"         help:"S3 multipart upload part size in bytes (default: 10MB)"  name:"cache-s3-part-size"`
+	CacheS3Concurrency     int           `env:"CI_CACHE_S3_CONCURRENCY"       help:"S3 multipart upload concurrency (default: 3)"            name:"cache-s3-concurrency"`
 	CacheFilesystemDir     string        `env:"CI_CACHE_FILESYSTEM_DIR"       help:"Directory for filesystem cache backend"                 name:"cache-filesystem-dir"`
 	CacheFilesystemTTL     time.Duration `env:"CI_CACHE_FILESYSTEM_TTL"       help:"Filesystem cache TTL (0 = no expiry)"                   name:"cache-filesystem-ttl"`
 	CacheCompression       string        `env:"CI_CACHE_COMPRESSION"          help:"Cache compression: zstd, gzip, or none (default: zstd)"`
@@ -494,16 +496,20 @@ func (c *Server) initCacheStore() (cache.CacheStore, error) {
 		return nil, nil
 	}
 
-	store, err := cacheplugins3.New(context.Background(), cacheplugins3.Config{Config: s3config.Config{
-		Bucket:          c.CacheS3Bucket,
-		Prefix:          c.CacheS3Prefix,
-		Endpoint:        c.CacheS3Endpoint,
-		Region:          c.CacheS3Region,
-		AccessKeyID:     c.CacheS3AccessKeyID,
-		SecretAccessKey: c.CacheS3SecretAccessKey,
-		ForcePathStyle:  c.CacheS3Endpoint != "",
-		TTL:             c.CacheS3TTL,
-	}})
+	store, err := cacheplugins3.New(context.Background(), cacheplugins3.Config{
+		Config: s3config.Config{
+			Bucket:          c.CacheS3Bucket,
+			Prefix:          c.CacheS3Prefix,
+			Endpoint:        c.CacheS3Endpoint,
+			Region:          c.CacheS3Region,
+			AccessKeyID:     c.CacheS3AccessKeyID,
+			SecretAccessKey: c.CacheS3SecretAccessKey,
+			ForcePathStyle:  c.CacheS3Endpoint != "",
+			TTL:             c.CacheS3TTL,
+		},
+		PartSize:    c.CacheS3PartSize,
+		Concurrency: c.CacheS3Concurrency,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("could not create cache store: %w", err)
 	}
