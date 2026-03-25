@@ -156,8 +156,8 @@ export class AgentStepHandler implements StepHandler {
       ? declaredOutputs
       : [{ name: agentStep.agent }];
     for (const output of outputs) {
-      ctx.taskRunner.getKnownMounts()[output.name] ||= await runtime
-        .createVolume({ name: output.name });
+      ctx.taskRunner.getKnownMounts()[output.name] ||= await volumes
+        .create({ name: output.name });
       mounts[output.name] = ctx.taskRunner.getKnownMounts()[output.name];
     }
 

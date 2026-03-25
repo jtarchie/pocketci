@@ -135,4 +135,3 @@ func (ar *AgentRuntime) installAgentFunc(ctx context.Context, config *agent.Agen
 		return resultJSON, nil
 	})
 }
-

@@ -75,7 +75,7 @@ export async function loadFromURI(
 
 // loadConfig loads YAML config from a step's file or URI field.
 // Returns the file contents as a string, or null if neither field is set.
-export async function loadConfig(
+export function loadConfig(
   ctx: StepContext,
   step: { file?: string; uri?: string },
   pathContext: string,
@@ -88,7 +88,7 @@ export async function loadConfig(
     return loadFromURI(ctx, step.uri, pathContext);
   }
 
-  return null;
+  return Promise.resolve(null);
 }
 
 // loadFileFromVolume reads a file from a volume mount using the runtime's
