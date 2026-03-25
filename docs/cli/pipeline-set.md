@@ -1,9 +1,9 @@
-# pocketci set-pipeline
+# pocketci pipeline set
 
 Store a pipeline on a remote CI server.
 
 ```bash
-pocketci set-pipeline <pipeline-file> --server <url> [options]
+pocketci pipeline set <pipeline-file> --server <url> [options]
 ```
 
 ## Options
@@ -38,17 +38,17 @@ pocketci set-pipeline <pipeline-file> --server <url> [options]
 ## Example
 
 ```bash
-pocketci set-pipeline my-pipeline.ts \
+pocketci pipeline set my-pipeline.ts \
   --server http://localhost:8080 \
   --name my-pipeline \
   --driver docker \
   --webhook-secret my-secret-key
 ```
 
-Once stored, trigger with `pocketci run`:
+Once stored, trigger with `pocketci pipeline run`:
 
 ```bash
-pocketci run my-pipeline --server-url http://localhost:8080
+pocketci pipeline run my-pipeline --server-url http://localhost:8080
 ```
 
 ## Authentication
@@ -57,13 +57,13 @@ With OAuth-enabled servers, authenticate first with `pocketci login`:
 
 ```bash
 pocketci login -s https://ci.example.com
-pocketci set-pipeline my-pipeline.ts -s https://ci.example.com
+pocketci pipeline set my-pipeline.ts -s https://ci.example.com
 ```
 
 Or provide a token directly:
 
 ```bash
-pocketci set-pipeline my-pipeline.ts \
+pocketci pipeline set my-pipeline.ts \
   --server https://ci.example.com \
   --auth-token eyJhbGciOiJIUzI1NiIs...
 ```
@@ -73,7 +73,7 @@ pocketci set-pipeline my-pipeline.ts \
 Restrict who can access a pipeline:
 
 ```bash
-pocketci set-pipeline my-pipeline.ts \
+pocketci pipeline set my-pipeline.ts \
   --server https://ci.example.com \
   --rbac '"deploy-team" in Organizations'
 ```

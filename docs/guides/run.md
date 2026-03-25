@@ -1,18 +1,18 @@
-# pocketci run
+# pocketci pipeline run
 
 Execute a stored pipeline by name on a remote CI server. The server runs the
 pipeline; the client is a thin HTTP layer that streams output back to your
 terminal in real time.
 
 **Nothing runs locally.** Drivers, secrets, and configuration all live on the
-server. `pocketci run` is just a phone call to `pocketci server`.
+server. `pocketci pipeline run` is just a phone call to `pocketci server`.
 
 ## Quick start
 
 Register a pipeline once:
 
 ```bash
-pocketci set-pipeline k6.ts \
+pocketci pipeline set k6.ts \
   --name k6 \
   --server-url http://localhost:8080 \
   --driver docker
@@ -22,14 +22,14 @@ Run it — everything after the pipeline name is forwarded to the pipeline as
 `pipelineContext.args`:
 
 ```bash
-pocketci run k6 run --vus=10 --duration=30s script.js \
+pocketci pipeline run k6 run --vus=10 --duration=30s script.js \
   --server-url http://localhost:8080
 ```
 
 ## CLI syntax
 
 ```
-pocketci run <name> [args...] --server-url <url> [--timeout <duration>]
+pocketci pipeline run <name> [args...] --server-url <url> [--timeout <duration>]
 ```
 
 | Flag / Env var                   | Default      | Description                              |
@@ -99,14 +99,14 @@ Register it and run your load test from the directory containing `script.js`:
 
 ```bash
 # Register once
-pocketci set-pipeline k6.ts --name k6 --server-url http://localhost:8080 --driver docker
+pocketci pipeline set k6.ts --name k6 --server-url http://localhost:8080 --driver docker
 
 # Run from any directory — the current directory is available at /workspace
-pocketci run k6 run --vus=10 --duration=30s /workspace/script.js \
+pocketci pipeline run k6 run --vus=10 --duration=30s /workspace/script.js \
   --server-url http://localhost:8080
 ```
 
-The driver is a server concern — the same `pocketci run` command works whether
+The driver is a server concern — the same `pocketci pipeline run` command works whether
 the server uses Docker, Kubernetes, Hetzner, or any other configured driver.
 
 ## Server configuration
@@ -125,7 +125,7 @@ pocketci server \
 
 Secrets are resolved server-side using the credentials stored with
 `pocketci server`. The client has no access to secrets — pass them via
-`pocketci set-pipeline` or the server's secrets backend, not as arguments to
-`pocketci run`.
+`pocketci pipeline set` or the server's secrets backend, not as arguments to
+`pocketci pipeline run`.
 
 See [secrets](../operations/secrets.md) for details.

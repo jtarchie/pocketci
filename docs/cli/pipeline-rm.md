@@ -1,9 +1,9 @@
-# pocketci delete-pipeline
+# pocketci pipeline rm
 
 Remove a pipeline from a remote CI server.
 
 ```bash
-pocketci delete-pipeline <name> --server <url> [options]
+pocketci pipeline rm <name> --server <url> [options]
 ```
 
 ## Options
@@ -20,7 +20,7 @@ pocketci delete-pipeline <name> --server <url> [options]
 ## Example
 
 ```bash
-pocketci delete-pipeline my-pipeline \
+pocketci pipeline rm my-pipeline \
   --server http://localhost:8080
 ```
 
@@ -30,13 +30,13 @@ With OAuth-enabled servers, authenticate first with `pocketci login`:
 
 ```bash
 pocketci login -s https://ci.example.com
-pocketci delete-pipeline old-pipeline -s https://ci.example.com
+pocketci pipeline rm old-pipeline -s https://ci.example.com
 ```
 
 Or provide a token directly:
 
 ```bash
-pocketci delete-pipeline old-pipeline \
+pocketci pipeline rm old-pipeline \
   --server https://ci.example.com \
   --auth-token eyJhbGciOiJIUzI1NiIs...
 ```

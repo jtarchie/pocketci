@@ -22,13 +22,13 @@ storage.
 Secrets can be set at two scopes: **pipeline** (only visible to one pipeline) or
 **global** (visible to all pipelines, used as a fallback).
 
-### Pipeline-Scoped Secrets (`pocketci set-pipeline --secret`)
+### Pipeline-Scoped Secrets (`pocketci pipeline set --secret`)
 
 Pass secrets when uploading a pipeline using `--secret KEY=VALUE` (or
 `-e KEY=VALUE`). These are scoped to that pipeline only.
 
 ```bash
-pocketci set-pipeline pipeline.ts \
+pocketci pipeline set pipeline.ts \
   --secret API_KEY=sk-1234567890 \
   --secret DB_PASSWORD=hunter2
 ```
@@ -237,10 +237,10 @@ export { pipeline };
 
 Secrets are scoped to limit access:
 
-- **Pipeline scope** (`pipeline/<id>`): Set via `pocketci run --secret`. Each
+- **Pipeline scope** (`pipeline/<id>`): Set via `pocketci pipeline set --secret`. Each
   pipeline only sees its own pipeline-scoped secrets.
 - **Global scope** (`global`): Set via `pocketci server --secret` or
-  `pocketci run --global-secret`. Shared across all pipelines.
+  `pocketci pipeline run --global-secret`. Shared across all pipelines.
 
 The system checks pipeline scope first, then falls back to global. A
 pipeline-scoped secret with the same key overrides its global counterpart.
@@ -264,7 +264,7 @@ pocketci server \
   --secret REGISTRY_TOKEN=ghp-abc123
 
 # Upload pipeline with a pipeline-scoped secret
-pocketci set-pipeline examples/both/secrets-basic.ts \
+pocketci pipeline set examples/both/secrets-basic.ts \
   --server http://localhost:8080 \
   --secret API_KEY=sk-live-abc123
 ```

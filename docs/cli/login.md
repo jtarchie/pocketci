@@ -43,9 +43,9 @@ automatically:
 
 ```bash
 # No --auth-token needed — resolved from ~/.pocketci/auth.config
-pocketci run my-pipeline -s https://ci.example.com
-pocketci set-pipeline deploy.ts -s https://ci.example.com
-pocketci delete-pipeline old-pipe -s https://ci.example.com
+pocketci pipeline run my-pipeline -s https://ci.example.com
+pocketci pipeline set deploy.ts -s https://ci.example.com
+pocketci pipeline rm old-pipe -s https://ci.example.com
 ```
 
 ## Multiple Servers

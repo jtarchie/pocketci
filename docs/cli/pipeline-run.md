@@ -1,9 +1,9 @@
-# pocketci run
+# pocketci pipeline run
 
 Execute a stored pipeline by name on a remote CI server.
 
 ```bash
-pocketci run <name> [args...] --server-url <url> [options]
+pocketci pipeline run <name> [args...] --server-url <url> [options]
 ```
 
 ## Options
@@ -22,7 +22,7 @@ All positional arguments after `<name>` are passed to the pipeline as
 ## Example
 
 ```bash
-pocketci run my-pipeline arg1 arg2 --server-url http://localhost:8080
+pocketci pipeline run my-pipeline arg1 arg2 --server-url http://localhost:8080
 ```
 
 Inside the pipeline, `pipelineContext.args === ["arg1", "arg2"]`.
@@ -33,13 +33,13 @@ With OAuth-enabled servers, authenticate first with `pocketci login`:
 
 ```bash
 pocketci login -s https://ci.example.com
-pocketci run my-pipeline --server-url https://ci.example.com
+pocketci pipeline run my-pipeline --server-url https://ci.example.com
 ```
 
 Or provide a token directly:
 
 ```bash
-pocketci run my-pipeline \
+pocketci pipeline run my-pipeline \
   --server-url https://ci.example.com \
   --auth-token eyJhbGciOiJIUzI1NiIs...
 ```

@@ -24,7 +24,7 @@ pocketci server \
 CLI commands embed credentials in the server URL:
 
 ```bash
-pocketci set-pipeline my-pipeline.ts \
+pocketci pipeline set my-pipeline.ts \
   --server http://admin:secret123@localhost:8080
 ```
 
@@ -141,7 +141,7 @@ Or via environment variable for CLI commands:
 
 ```bash
 export CI_AUTH_TOKEN=<token>
-pocketci run my-pipeline -s http://localhost:8080
+pocketci pipeline run my-pipeline -s http://localhost:8080
 ```
 
 ## CLI Login

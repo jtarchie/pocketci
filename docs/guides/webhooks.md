@@ -9,7 +9,7 @@ background.
 ### 1. Create a pipeline with a webhook secret
 
 ```bash
-pocketci set-pipeline my-pipeline.ts \
+pocketci pipeline set my-pipeline.ts \
   --server http://localhost:8080 \
   --webhook-secret "my-secret-key"
 ```

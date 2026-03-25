@@ -36,9 +36,12 @@ pipelines and supports Concourse-style YAML compatibility.
 - [Runner](cli/runner)
 - [Server](cli/server)
 - [Login](cli/login)
-- [Set Pipeline](cli/set-pipeline)
-- [Run](cli/run)
-- [Delete Pipeline](cli/delete-pipeline)
+- [Pipeline Set](cli/pipeline-set)
+- [Pipeline Run](cli/pipeline-run)
+- [Pipeline Rm](cli/pipeline-rm)
+- [Pipeline Ls](cli/pipeline-ls)
+- [Pipeline Pause](cli/pipeline-pause)
+- [Pipeline Unpause](cli/pipeline-unpause)
 
 ## Runtime
 

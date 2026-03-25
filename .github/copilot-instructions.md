@@ -47,7 +47,7 @@ Single package: `go test -race ./storage/... -count=1 -parallel=1`. No
 | Path           | Purpose                                                                                                              |
 | -------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `main.go`      | CLI entry (kong). Blank imports register all plugins                                                                 |
-| `commands/`    | CLI subcommands: server, run, set-pipeline, delete-pipeline, resource, login                                         |
+| `commands/`    | CLI subcommands: server, pipeline (set/rm/ls/run/pause/unpause), resource, login                                     |
 | `runtime/`     | Goja VM engine. `js.go` (TS→JS), `runtime.go` (API), `jsapi/` (helpers), `runner/`                                   |
 | `orchestra/`   | Container layer. `orchestrator.go` (interfaces), `drivers.go` (registry), `docker/`, `native/`, `k8s/`, `fly/`, etc. |
 | `storage/`     | Persistence. `storage.go` (Driver interface), `sqlite/` (schema.sql embedded)                                        |

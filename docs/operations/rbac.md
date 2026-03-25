@@ -51,10 +51,10 @@ response.
 ## Pipeline-Level RBAC
 
 Each pipeline can have its own access control expression, set via the `--rbac`
-flag on `pocketci set-pipeline`:
+flag on `pocketci pipeline set`:
 
 ```bash
-pocketci set-pipeline my-pipeline.ts \
+pocketci pipeline set my-pipeline.ts \
   --server http://localhost:8080 \
   --rbac '"deploy-team" in Organizations'
 ```
@@ -75,10 +75,10 @@ curl -X PUT http://localhost:8080/api/pipelines/my-pipeline \
 Pipeline RBAC controls:
 
 - Viewing the pipeline and its runs
-- Editing/updating the pipeline (`set-pipeline` or `PUT`)
+- Editing/updating the pipeline (`pipeline set` or `PUT`)
 - Triggering the pipeline
 - Deleting the pipeline
-- Executing `pocketci run` against the pipeline
+- Executing `pocketci pipeline run` against the pipeline
 
 Pipelines without an RBAC expression are accessible to all authenticated users.
 

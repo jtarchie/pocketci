@@ -119,7 +119,7 @@ func NewPipelineFromContent(content string) (string, error) {
 
 // ValidatePipeline validates that the given YAML content is a well-formed
 // pipeline definition without producing any output. It is suitable for early
-// error checking at set-pipeline time without performing transpilation.
+// error checking at pipeline-set time without performing transpilation.
 func ValidatePipeline(content []byte) error {
 	var config Config
 

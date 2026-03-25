@@ -36,8 +36,8 @@ compatible).
 4. The rendered output is validated and executed as normal YAML
 
 This preprocessing happens at **pipeline validation time** (when you run
-`pocketci set-pipeline`) and at **execution time** (when you run
-`pocketci run`), ensuring the latest template rendering is always used.
+`pocketci pipeline set`) and at **execution time** (when you run
+`pocketci pipeline run`), ensuring the latest template rendering is always used.
 
 ## Available Functions
 

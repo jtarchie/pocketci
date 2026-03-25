@@ -33,7 +33,7 @@ done
 # Upload all pipelines
 for yaml_file in "$SCRIPT_DIR"/*.yml; do
     [ -f "$yaml_file" ] || continue
-    go run . set-pipeline --server-url "$SERVER_URL" --name "$(basename "$yaml_file" .yml)" --driver "$DRIVER" "$yaml_file"
+    go run . pipeline set --server-url "$SERVER_URL" --name "$(basename "$yaml_file" .yml)" --driver "$DRIVER" "$yaml_file"
 done
 
 wait "$SERVER_PID"
