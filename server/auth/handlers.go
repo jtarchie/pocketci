@@ -13,6 +13,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
+	"golang.org/x/sync/singleflight"
 )
 
 // RegisterRoutes adds OAuth authentication routes to the Echo router.
@@ -62,8 +63,9 @@ type authHandler struct {
 	logger   *slog.Logger
 	oauthSrv *OAuthServer
 
-	mu       sync.Mutex
-	cliCodes map[string]*cliLoginState
+	mu           sync.RWMutex
+	cleanupGroup singleflight.Group
+	cliCodes     map[string]*cliLoginState
 }
 
 func (h *authHandler) LoginPage(c *echo.Context) error {
@@ -186,8 +188,8 @@ func (h *authHandler) CLIBegin(c *echo.Context) error {
 	}
 	h.mu.Unlock()
 
-	// Clean up expired codes periodically.
-	go h.cleanupExpiredCodes()
+	// Clean up expired codes in background, coalescing concurrent calls.
+	go h.cleanupGroup.Do("cleanup", func() (any, error) { h.cleanupExpiredCodes(); return nil, nil }) //nolint:errcheck
 
 	loginURL := fmt.Sprintf("%s/auth/cli/approve?code=%s", h.cfg.CallbackURL, code)
 
@@ -201,9 +203,9 @@ func (h *authHandler) CLIBegin(c *echo.Context) error {
 func (h *authHandler) CLIApprove(c *echo.Context) error {
 	code := c.QueryParam("code")
 
-	h.mu.Lock()
+	h.mu.RLock()
 	state, ok := h.cliCodes[code]
-	h.mu.Unlock()
+	h.mu.RUnlock()
 
 	if !ok || time.Now().After(state.ExpiresAt) {
 		return c.String(http.StatusBadRequest, "Invalid or expired login code")
@@ -234,9 +236,9 @@ func (h *authHandler) CLIApprove(c *echo.Context) error {
 func (h *authHandler) CLIPoll(c *echo.Context) error {
 	code := c.QueryParam("code")
 
-	h.mu.Lock()
+	h.mu.RLock()
 	state, ok := h.cliCodes[code]
-	h.mu.Unlock()
+	h.mu.RUnlock()
 
 	if !ok {
 		return c.JSON(http.StatusNotFound, map[string]string{

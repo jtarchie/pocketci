@@ -31,7 +31,6 @@ type ExecutionService struct {
 	logger                *slog.Logger
 	maxInFlight           int
 	inFlight              atomic.Int32
-	mu                    sync.Mutex
 	wg                    sync.WaitGroup
 	DefaultDriver         string
 	DriverConfigs         map[string]orchestra.DriverConfig
@@ -123,9 +122,6 @@ func (s *ExecutionService) MaxInFlight() int {
 // and returns the run ID immediately. Optional args are passed through
 // to pipelineContext.args in the runtime.
 func (s *ExecutionService) TriggerPipeline(ctx context.Context, pipeline *storage.Pipeline, args []string) (*storage.PipelineRun, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	requestID, _ := RequestIDFromContext(ctx)
 	actor, _ := RequestActorFromContext(ctx)
 
@@ -153,9 +149,6 @@ func (s *ExecutionService) TriggerWebhookPipeline(
 	webhookData *jsapi.WebhookData,
 	responseChan chan *jsapi.HTTPResponse,
 ) (*storage.PipelineRun, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	requestID, _ := RequestIDFromContext(ctx)
 	actor, _ := RequestActorFromContext(ctx)
 
@@ -190,9 +183,6 @@ func (s *ExecutionService) TriggerWebhookPipeline(
 // It reuses the existing run ID so that the ResumableRunner can load
 // previous state and skip completed steps.
 func (s *ExecutionService) ResumePipeline(ctx context.Context, pipeline *storage.Pipeline, run *storage.PipelineRun) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	requestID, _ := RequestIDFromContext(ctx)
 	actor, _ := RequestActorFromContext(ctx)
 

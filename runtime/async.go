@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -18,12 +19,17 @@ import (
 func asyncTask[T any](
 	r *Runtime,
 	label string,
-	work func() (T, error),
+	work func(context.Context) (T, error),
 	transform func(T) (any, error),
 ) *goja.Promise {
 	promise, resolve, reject := r.jsVM.NewPromise()
 
 	r.promises.Add(1)
+
+	ctx := r.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	go func() {
 		defer func() {
@@ -38,7 +44,7 @@ func asyncTask[T any](
 			}
 		}()
 
-		result, err := work()
+		result, err := work(ctx)
 
 		r.tasks <- func() error {
 			defer r.promises.Done()

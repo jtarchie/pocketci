@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -28,7 +29,7 @@ func (v *Volumes) Create(input runner.VolumeInput) *goja.Promise {
 		input.Name = support.DeterministicVolumeID(r.namespace, fmt.Sprintf("%s-%s", r.runID, volumeID))
 	}
 
-	return asyncTask(r, "volumes.create", func() (*runner.VolumeResult, error) {
+	return asyncTask(r, "volumes.create", func(_ context.Context) (*runner.VolumeResult, error) {
 		return r.runner.CreateVolume(input)
 	}, func(result *runner.VolumeResult) (any, error) {
 		return v.buildVolumeObject(result), nil
@@ -62,7 +63,7 @@ func (v *Volumes) volumeReadFilesFunc(volumeName string) func(goja.FunctionCall)
 			return r.rejectImmediate(errors.New("readFiles expects an array of file paths"))
 		}
 
-		return r.jsVM.ToValue(asyncTask(r, "volume.readFiles", func() (map[string]string, error) {
+		return r.jsVM.ToValue(asyncTask(r, "volume.readFiles", func(_ context.Context) (map[string]string, error) {
 			return r.runner.ReadFilesFromVolume(volumeName, filePaths...)
 		}, identity))
 	}
@@ -90,7 +91,7 @@ func (v *Volumes) ReadFiles(call goja.FunctionCall) goja.Value {
 		}
 	}
 
-	return r.jsVM.ToValue(asyncTask(r, "volumes.readFiles", func() (map[string]string, error) {
+	return r.jsVM.ToValue(asyncTask(r, "volumes.readFiles", func(_ context.Context) (map[string]string, error) {
 		return r.runner.ReadFilesFromVolume(volumeName, filePaths...)
 	}, identity))
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/sessions"
+	"golang.org/x/sync/singleflight"
 )
 
 // authCode represents an in-flight authorization code awaiting exchange.
@@ -40,9 +41,10 @@ type OAuthServer struct {
 	store  *sessions.CookieStore
 	logger *slog.Logger
 
-	mu      sync.Mutex
-	codes   map[string]*authCode
-	clients map[string]*registeredClient
+	mu           sync.RWMutex
+	cleanupGroup singleflight.Group
+	codes        map[string]*authCode
+	clients      map[string]*registeredClient
 }
 
 // NewOAuthServer creates an OAuthServer with the given config.
@@ -94,9 +96,9 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate client_id and redirect_uri against registered clients.
-	s.mu.Lock()
+	s.mu.RLock()
 	client, registered := s.clients[clientID]
-	s.mu.Unlock()
+	s.mu.RUnlock()
 
 	if !registered {
 		jsonError(w, "invalid_client", "client_id is not registered", http.StatusUnauthorized)
@@ -298,8 +300,8 @@ func (s *OAuthServer) issueCodeAndRedirect(w http.ResponseWriter, user *User, re
 	}
 	s.mu.Unlock()
 
-	// Clean up expired codes in background.
-	go s.cleanupExpiredCodes()
+	// Clean up expired codes in background, coalescing concurrent calls.
+	go s.cleanupGroup.Do("cleanup", func() (any, error) { s.cleanupExpiredCodes(); return nil, nil }) //nolint:errcheck
 
 	dest := redirectURI + "?code=" + code
 	if state != "" {

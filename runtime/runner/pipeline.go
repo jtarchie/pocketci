@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/runtime/support"
@@ -482,11 +484,12 @@ func (c *PipelineRunner) waitAndFinalizeRun(
 	defer cancelStream()
 
 	stdout, stderr := &strings.Builder{}, &strings.Builder{}
-	var streamWg sync.WaitGroup
+	var streamWg errgroup.Group
 
 	if input.OnOutput != nil {
-		streamWg.Go(func() {
+		streamWg.Go(func() error {
 			c.streamLogsWithCallback(streamCtx, container, streamCallback, stdout, stderr)
+			return nil
 		})
 	}
 
@@ -499,7 +502,7 @@ func (c *PipelineRunner) waitAndFinalizeRun(
 	}
 
 	cancelStream()
-	streamWg.Wait()
+	_ = streamWg.Wait()
 
 	finalStdout, finalStderr := &strings.Builder{}, &strings.Builder{}
 	err = container.Logs(ctx, finalStdout, finalStderr, false)
@@ -645,30 +648,34 @@ func (c *PipelineRunner) streamLogsWithCallback(
 	stdoutPR, stdoutPW := io.Pipe()
 	stderrPR, stderrPW := io.Pipe()
 
-	var wg sync.WaitGroup
+	g, gCtx := errgroup.WithContext(ctx)
 
 	// Stream logs from the container into the two pipes.
-	wg.Go(func() {
+	g.Go(func() error {
 		defer func() { _ = stdoutPW.Close() }()
 		defer func() { _ = stderrPW.Close() }()
 
-		err := container.Logs(ctx, stdoutPW, stderrPW, true)
-		if err != nil && ctx.Err() == nil {
+		err := container.Logs(gCtx, stdoutPW, stderrPW, true)
+		if err != nil && gCtx.Err() == nil {
 			logger.Debug("container.streamLogs.error", "err", err)
 		}
+
+		return nil
 	})
 
 	// Read stdout chunks and invoke callback.
-	wg.Go(func() {
-		c.readStreamChunks(ctx, stdoutPR, "stdout", stdout, callback, logger)
+	g.Go(func() error {
+		c.readStreamChunks(gCtx, stdoutPR, "stdout", stdout, callback, logger)
+		return nil
 	})
 
 	// Read stderr chunks and invoke callback.
-	wg.Go(func() {
-		c.readStreamChunks(ctx, stderrPR, "stderr", stderr, callback, logger)
+	g.Go(func() error {
+		c.readStreamChunks(gCtx, stderrPR, "stderr", stderr, callback, logger)
+		return nil
 	})
 
-	wg.Wait()
+	_ = g.Wait()
 }
 
 // readStreamChunks reads from r in 4 KiB chunks, appends to builder,

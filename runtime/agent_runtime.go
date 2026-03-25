@@ -36,12 +36,7 @@ func (ar *AgentRuntime) Run(call goja.FunctionCall) goja.Value {
 
 	ar.extractAgentCallbacks(inputObj, &config)
 
-	return r.jsVM.ToValue(asyncTask(r, "agent.run", func() (json.RawMessage, error) {
-		ctx := r.ctx
-		if ctx == nil {
-			ctx = context.Background()
-		}
-
+	return r.jsVM.ToValue(asyncTask(r, "agent.run", func(ctx context.Context) (json.RawMessage, error) {
 		ar.prepareAgentConfig(&config)
 		ar.installAgentFunc(ctx, &config)
 

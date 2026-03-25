@@ -80,7 +80,7 @@ func (r *Runtime) Run(call goja.FunctionCall) goja.Value {
 		}
 	}
 
-	return r.jsVM.ToValue(asyncTask(r, "run", func() (*runner.RunResult, error) {
+	return r.jsVM.ToValue(asyncTask(r, "run", func(_ context.Context) (*runner.RunResult, error) {
 		return r.runner.Run(input)
 	}, identity))
 }
@@ -99,7 +99,7 @@ func (r *Runtime) StartSandbox(call goja.FunctionCall) goja.Value {
 		return r.rejectImmediate(fmt.Errorf("invalid startSandbox input: %w", err))
 	}
 
-	return r.jsVM.ToValue(asyncTask(r, "startSandbox", func() (*runner.SandboxHandle, error) {
+	return r.jsVM.ToValue(asyncTask(r, "startSandbox", func(_ context.Context) (*runner.SandboxHandle, error) {
 		return r.runner.StartSandbox(input)
 	}, func(handle *runner.SandboxHandle) (any, error) {
 		return r.buildSandboxObject(handle), nil
@@ -140,8 +140,8 @@ func (r *Runtime) sandboxExecFunc(handle *runner.SandboxHandle) func(goja.Functi
 			}
 		}
 
-		return r.jsVM.ToValue(asyncTask(r, "sandbox.exec", func() (*runner.RunResult, error) {
-			return handle.Exec(r.ctx, execInput)
+		return r.jsVM.ToValue(asyncTask(r, "sandbox.exec", func(ctx context.Context) (*runner.RunResult, error) {
+			return handle.Exec(ctx, execInput)
 		}, identity))
 	}
 }
@@ -149,7 +149,7 @@ func (r *Runtime) sandboxExecFunc(handle *runner.SandboxHandle) func(goja.Functi
 // sandboxCloseFunc returns the JS-callable close method for a sandbox handle.
 func (r *Runtime) sandboxCloseFunc(handle *runner.SandboxHandle) func(goja.FunctionCall) goja.Value {
 	return func(_ goja.FunctionCall) goja.Value {
-		return r.jsVM.ToValue(asyncTask(r, "sandbox.close", func() (struct{}, error) {
+		return r.jsVM.ToValue(asyncTask(r, "sandbox.close", func(_ context.Context) (struct{}, error) {
 			return struct{}{}, handle.Close()
 		}, func(_ struct{}) (any, error) {
 			return goja.Undefined(), nil
