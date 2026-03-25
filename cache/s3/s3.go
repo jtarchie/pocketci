@@ -1,6 +1,7 @@
 package s3
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -36,6 +37,7 @@ func New(ctx context.Context, cfg Config) (*S3Store, error) {
 }
 
 var _ cache.CacheStore = (*S3Store)(nil)
+var _ cache.HashAwareCacheStore = (*S3Store)(nil)
 
 // Restore downloads cached content from S3.
 func (s *S3Store) Restore(ctx context.Context, key string) (io.ReadCloser, error) {
@@ -103,6 +105,48 @@ func (s *S3Store) Exists(ctx context.Context, key string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// GetHash returns the stored content hash for a cache key.
+// The hash is stored in a sidecar object at <key>.hash.
+func (s *S3Store) GetHash(ctx context.Context, key string) (string, error) {
+	hashKey := s.FullKey(key) + ".hash"
+
+	result, err := s.GetStream(ctx, hashKey)
+	if err != nil {
+		if s3config.IsNotFound(err) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("failed to get hash from S3: %w", err)
+	}
+
+	defer func() {
+		_ = result.Body.Close()
+	}()
+
+	data, err := io.ReadAll(result.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read hash from S3: %w", err)
+	}
+
+	return string(data), nil
+}
+
+// PersistWithHash uploads content to S3 and stores the content hash in a sidecar object.
+func (s *S3Store) PersistWithHash(ctx context.Context, key string, reader io.Reader, hash string) error {
+	if err := s.Persist(ctx, key, reader); err != nil {
+		return err
+	}
+
+	hashKey := s.FullKey(key) + ".hash"
+
+	err := s.PutStream(ctx, hashKey, bytes.NewReader([]byte(hash)))
+	if err != nil {
+		return fmt.Errorf("failed to store hash in S3: %w", err)
+	}
+
+	return nil
 }
 
 // Delete removes a cache entry from S3.

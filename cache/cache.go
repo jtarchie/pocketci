@@ -34,6 +34,20 @@ type CacheOptions struct {
 	Compression string
 }
 
+// HashAwareCacheStore extends CacheStore with content-hash awareness.
+// Stores implementing this interface can skip redundant uploads when
+// the volume content has not changed.
+type HashAwareCacheStore interface {
+	CacheStore
+
+	// GetHash returns the stored content hash for a cache key.
+	// Returns "" if no hash is stored or the key doesn't exist.
+	GetHash(ctx context.Context, key string) (string, error)
+
+	// PersistWithHash uploads content and stores the associated content hash.
+	PersistWithHash(ctx context.Context, key string, reader io.Reader, hash string) error
+}
+
 // VolumeDataAccessor provides methods to copy data to/from a volume.
 // Drivers that support this interface can participate in caching.
 type VolumeDataAccessor interface {

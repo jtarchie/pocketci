@@ -41,6 +41,7 @@ func New(cfg Config) (*FilesystemStore, error) {
 }
 
 var _ cache.CacheStore = (*FilesystemStore)(nil)
+var _ cache.HashAwareCacheStore = (*FilesystemStore)(nil)
 
 func (s *FilesystemStore) fullPath(key string) string {
 	return filepath.Join(s.directory, key)
@@ -127,6 +128,38 @@ func (s *FilesystemStore) Delete(_ context.Context, key string) error {
 
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("failed to delete cache file: %w", err)
+	}
+
+	return nil
+}
+
+// GetHash returns the stored content hash for a cache key.
+// The hash is stored in a sidecar file at <key>.hash.
+func (s *FilesystemStore) GetHash(_ context.Context, key string) (string, error) {
+	hashPath := s.fullPath(key) + ".hash"
+
+	data, err := os.ReadFile(hashPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("failed to read hash file: %w", err)
+	}
+
+	return string(data), nil
+}
+
+// PersistWithHash writes content to the filesystem and stores the content hash in a sidecar file.
+func (s *FilesystemStore) PersistWithHash(ctx context.Context, key string, reader io.Reader, hash string) error {
+	if err := s.Persist(ctx, key, reader); err != nil {
+		return err
+	}
+
+	hashPath := s.fullPath(key) + ".hash"
+
+	if err := os.WriteFile(hashPath, []byte(hash), 0o640); err != nil {
+		return fmt.Errorf("failed to write hash file: %w", err)
 	}
 
 	return nil
