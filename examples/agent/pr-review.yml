@@ -28,6 +28,7 @@ jobs:
           PR_DESCRIPTION: "string(payload.pull_request.body || '')"
     plan:
       # Clone the PR branch (must be inline — file: refs depend on repo/).
+      # Caches .git so subsequent runs fetch incrementally instead of full clone.
       - task: checkout
         config:
           platform: linux
@@ -36,14 +37,22 @@ jobs:
             source: { repository: alpine/git }
           outputs:
             - name: repo
+          caches:
+            - path: repo/.git
           run:
             path: sh
             args:
               - -c
               - |
-                  git clone "$PR_REPO" repo
-                  cd repo
-                  git checkout "$PR_HEAD_REF"
+                  if [ -d repo/.git ]; then
+                    cd repo
+                    git fetch origin "$PR_HEAD_REF"
+                    git checkout FETCH_HEAD
+                  else
+                    git clone "$PR_REPO" repo
+                    cd repo
+                    git checkout "$PR_HEAD_REF"
+                  fi
 
       - task: generate-diff
         file: repo/examples/agent/tasks/generate-diff.yml
