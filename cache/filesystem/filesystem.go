@@ -27,7 +27,7 @@ type FilesystemStore struct {
 // New creates a new filesystem-backed cache store.
 func New(cfg Config) (*FilesystemStore, error) {
 	if cfg.Directory == "" {
-		return nil, fmt.Errorf("cache directory must be specified")
+		return nil, errors.New("cache directory must be specified")
 	}
 
 	if err := os.MkdirAll(cfg.Directory, 0o750); err != nil {

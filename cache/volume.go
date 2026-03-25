@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"hash"
 	"io"
 	"log/slog"
 
@@ -204,52 +205,72 @@ func (v *CachingVolume) PersistToCache(ctx context.Context) error {
 	hashStore, isHashAware := v.store.(HashAwareCacheStore)
 
 	if isHashAware {
-		// Buffer the compressed data so we can compute the hash before uploading
-		compressed, err := io.ReadAll(pipeReader)
-		if err != nil {
-			return fmt.Errorf("failed to read compressed data: %w", err)
-		}
-
-		if compressErr := <-errChan; compressErr != nil {
-			return fmt.Errorf("compression failed: %w", compressErr)
-		}
-
-		newHash := hex.EncodeToString(hasher.Sum(nil))
-
-		storedHash, err := hashStore.GetHash(ctx, v.cacheKey)
-		if err != nil {
-			v.logger.Warn("volume.persist.hash.check.failed",
-				"volume", v.inner.Name(),
-				"error", err,
-			)
-			// Fall through to upload
-		} else if storedHash == newHash {
-			v.logger.Info("volume.persist.skipped",
-				"volume", v.inner.Name(),
-				"reason", "content unchanged",
-			)
-
-			return nil
-		}
-
-		err = hashStore.PersistWithHash(ctx, v.cacheKey, bytes.NewReader(compressed), newHash)
-		if err != nil {
-			return fmt.Errorf("failed to persist to cache: %w", err)
-		}
+		err = v.persistWithHashCheck(ctx, hashStore, pipeReader, hasher, errChan)
 	} else {
-		// Upload compressed data to cache store
-		err = v.store.Persist(ctx, v.cacheKey, pipeReader)
-		if err != nil {
-			return fmt.Errorf("failed to persist to cache: %w", err)
-		}
+		err = v.persistDirect(ctx, pipeReader, errChan)
+	}
 
-		// Check for compression errors
-		if compressErr := <-errChan; compressErr != nil {
-			return fmt.Errorf("compression failed: %w", compressErr)
-		}
+	if err != nil {
+		return err
 	}
 
 	v.logger.Info("volume.persisted.success", "volume", v.inner.Name())
+
+	return nil
+}
+
+func (v *CachingVolume) persistWithHashCheck(
+	ctx context.Context,
+	hashStore HashAwareCacheStore,
+	pipeReader *io.PipeReader,
+	hasher hash.Hash,
+	errChan <-chan error,
+) error {
+	compressed, err := io.ReadAll(pipeReader)
+	if err != nil {
+		return fmt.Errorf("failed to read compressed data: %w", err)
+	}
+
+	if compressErr := <-errChan; compressErr != nil {
+		return fmt.Errorf("compression failed: %w", compressErr)
+	}
+
+	newHash := hex.EncodeToString(hasher.Sum(nil))
+
+	storedHash, err := hashStore.GetHash(ctx, v.cacheKey)
+	if err != nil {
+		v.logger.Warn("volume.persist.hash.check.failed",
+			"volume", v.inner.Name(),
+			"error", err,
+		)
+	} else if storedHash == newHash {
+		v.logger.Info("volume.persist.skipped",
+			"volume", v.inner.Name(),
+			"reason", "content unchanged",
+		)
+
+		return nil
+	}
+
+	if err := hashStore.PersistWithHash(ctx, v.cacheKey, bytes.NewReader(compressed), newHash); err != nil {
+		return fmt.Errorf("failed to persist to cache: %w", err)
+	}
+
+	return nil
+}
+
+func (v *CachingVolume) persistDirect(
+	ctx context.Context,
+	pipeReader *io.PipeReader,
+	errChan <-chan error,
+) error {
+	if err := v.store.Persist(ctx, v.cacheKey, pipeReader); err != nil {
+		return fmt.Errorf("failed to persist to cache: %w", err)
+	}
+
+	if compressErr := <-errChan; compressErr != nil {
+		return fmt.Errorf("compression failed: %w", compressErr)
+	}
 
 	return nil
 }

@@ -223,7 +223,7 @@ func TestMockCacheStore(t *testing.T) {
 
 type hashAwareMockCacheStore struct {
 	*trackingMockCacheStore
-	hashes              map[string]string
+	hashes               map[string]string
 	persistWithHashCalls int
 	getHashCalls         int
 }
