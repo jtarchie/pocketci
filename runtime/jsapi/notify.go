@@ -52,6 +52,13 @@ type NotifyInput struct {
 	Async   bool   `json:"async"`   // Fire-and-forget mode
 }
 
+// SendMultipleInput is the input for sending to multiple notification backends.
+type SendMultipleInput struct {
+	Names   []string `json:"names"`
+	Message string   `json:"message"`
+	Async   bool     `json:"async"`
+}
+
 // NotifyResult is the result of a notification attempt.
 type NotifyResult struct {
 	Success bool   `json:"success"`
@@ -437,7 +444,10 @@ func (nr *NotifyRuntime) Send(input NotifyInput) *goja.Promise {
 }
 
 // SendMultiple sends to multiple notification configs.
-func (nr *NotifyRuntime) SendMultiple(names []string, message string, async bool) *goja.Promise {
+func (nr *NotifyRuntime) SendMultiple(input SendMultipleInput) *goja.Promise {
+	names := input.Names
+	message := input.Message
+	async := input.Async
 	promise, resolve, reject := nr.jsVM.NewPromise()
 
 	nr.promises.Add(1)

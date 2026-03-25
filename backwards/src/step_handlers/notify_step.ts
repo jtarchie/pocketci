@@ -41,7 +41,11 @@ export class NotifyStepHandler implements StepHandler {
             async: false,
           });
         } else {
-          await notify.sendMultiple(names, step.message, false);
+          await notify.sendMultiple({
+            names,
+            message: step.message,
+            async: false,
+          });
         }
         storage.set(storageKey, { status: "success" });
       }

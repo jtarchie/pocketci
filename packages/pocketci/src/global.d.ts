@@ -620,11 +620,11 @@ declare global {
     /** Send a notification via the named backend configuration. */
     function send(input: NotifyInput): Promise<NotifyResult>;
     /** Send the same message to multiple named backends in one call. */
-    function sendMultiple(
-      names: string[],
-      message: string,
-      async?: boolean,
-    ): Promise<NotifyResult>;
+    function sendMultiple(input: {
+      names: string[];
+      message: string;
+      async?: boolean;
+    }): Promise<NotifyResult>;
   }
 
   // Native Resources types
