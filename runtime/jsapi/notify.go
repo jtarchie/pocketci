@@ -368,6 +368,23 @@ func NewNotifyRuntime(
 	}
 }
 
+// ConfigureInput is the input for notify.configure().
+type ConfigureInput struct {
+	Backends map[string]NotifyConfig `json:"backends"`
+	Context  *NotifyContext          `json:"context"`
+}
+
+// Configure sets both notification backends and context in a single call.
+func (nr *NotifyRuntime) Configure(input ConfigureInput) {
+	if input.Backends != nil {
+		nr.notifier.SetConfigs(input.Backends)
+	}
+
+	if input.Context != nil {
+		nr.notifier.SetContext(*input.Context)
+	}
+}
+
 // SetConfigs sets notification configurations from JavaScript.
 func (nr *NotifyRuntime) SetConfigs(configs map[string]NotifyConfig) {
 	nr.notifier.SetConfigs(configs)
@@ -376,6 +393,44 @@ func (nr *NotifyRuntime) SetConfigs(configs map[string]NotifyConfig) {
 // SetContext sets the pipeline context from JavaScript.
 func (nr *NotifyRuntime) SetContext(ctx NotifyContext) {
 	nr.notifier.SetContext(ctx)
+}
+
+// UpdateContext applies a partial update to the current notification context.
+// Only non-zero fields in the input are applied.
+func (nr *NotifyRuntime) UpdateContext(partial NotifyContext) {
+	nr.notifier.UpdateContext(func(c *NotifyContext) {
+		if partial.Status != "" {
+			c.Status = partial.Status
+		}
+
+		if partial.JobName != "" {
+			c.JobName = partial.JobName
+		}
+
+		if partial.PipelineName != "" {
+			c.PipelineName = partial.PipelineName
+		}
+
+		if partial.BuildID != "" {
+			c.BuildID = partial.BuildID
+		}
+
+		if partial.EndTime != "" {
+			c.EndTime = partial.EndTime
+		}
+
+		if partial.Duration != "" {
+			c.Duration = partial.Duration
+		}
+
+		if partial.Environment != nil {
+			c.Environment = partial.Environment
+		}
+
+		if partial.TaskResults != nil {
+			c.TaskResults = partial.TaskResults
+		}
+	})
 }
 
 // UpdateStatus updates the status in the current context.

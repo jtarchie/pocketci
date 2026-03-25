@@ -617,13 +617,30 @@ declare global {
    * ```
    */
   namespace notify {
-    /** Register one or more named notification backends. Call once at pipeline start. */
+    /**
+     * Configure notification backends and context in a single call.
+     *
+     * @example
+     * ```typescript
+     * notify.configure({
+     *   backends: { slack: { type: "slack", token: "xoxb-...", channels: ["#builds"] } },
+     *   context: { pipelineName: "my-pipeline", jobName: "build", ... },
+     * });
+     * ```
+     */
+    function configure(input: {
+      backends?: Record<string, NotifyConfig>;
+      context?: NotifyContext;
+    }): void;
+    /** @deprecated Use `configure()` instead. */
     function setConfigs(configs: Record<string, NotifyConfig>): void;
-    /** Set the context object used to render notification message templates. */
+    /** @deprecated Use `configure()` instead. */
     function setContext(ctx: NotifyContext): void;
-    /** Update the `status` field of the current context (e.g. after tasks complete). */
+    /** Apply a partial update to the current notification context. */
+    function updateContext(partial: Partial<NotifyContext>): void;
+    /** @deprecated Use `updateContext({ status })` instead. */
     function updateStatus(status: string): void;
-    /** Update the `jobName` field of the current context. */
+    /** @deprecated Use `updateContext({ jobName })` instead. */
     function updateJobName(jobName: string): void;
     /** Send a notification via the named backend configuration. */
     function send(input: NotifyInput): Promise<NotifyResult>;
