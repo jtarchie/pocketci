@@ -173,6 +173,7 @@
 
     <!-- Search and Stats Bar -->
     <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+      {{ if not .ReadOnly }}
       <!-- Search Box -->
       <div class="relative flex-1 max-w-md">
         <svg
@@ -189,13 +190,14 @@
           placeholder="Search task output…"
           aria-label="Search task output"
           autocomplete="off"
-          {{ if and .RunID (not .ReadOnly) }}
+          {{ if .RunID }}
           hx-get="/runs/{{ .RunID }}/tasks-partial/"
           hx-trigger="input changed delay:400ms, search"
           hx-target="#tasks-container"
           hx-swap="morph:outerHTML"
           {{ end }}>
       </div>
+      {{ end }}
       <!-- Summary Stats -->
       <div class="flex items-center gap-3 text-sm" role="status"
         aria-live="polite" aria-label="Task statistics">
@@ -261,9 +263,11 @@
               <dt class="text-gray-500 dark:text-gray-400"><kbd
                   class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">Enter</kbd></dt>
               <dd class="m-0">Toggle task</dd>
+              {{ if not .ReadOnly }}
               <dt class="text-gray-500 dark:text-gray-400"><kbd
                   class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">/</kbd></dt>
               <dd class="m-0">Search</dd>
+              {{ end }}
               <dt class="text-gray-500 dark:text-gray-400"><kbd
                   class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">e</kbd></dt>
               <dd class="m-0">Expand all</dd>
@@ -273,9 +277,11 @@
               <dt class="text-gray-500 dark:text-gray-400"><kbd
                   class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">f</kbd></dt>
               <dd class="m-0">Jump to first failure</dd>
+              {{ if not .ReadOnly }}
               <dt class="text-gray-500 dark:text-gray-400"><kbd
                   class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-xs">Esc</kbd></dt>
               <dd class="m-0">Clear search</dd>
+              {{ end }}
             </dl>
           </div>
         </div>
