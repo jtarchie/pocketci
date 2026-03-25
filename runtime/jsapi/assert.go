@@ -96,13 +96,56 @@ func (a *Assert) ContainsString(str, substr string, message ...string) {
 	}
 }
 
-func (a *Assert) EventuallyContainsString(
-	getter goja.Value,
-	substr string,
-	timeoutMs int64,
-	intervalMs int64,
-	message ...string,
-) {
+// EventuallyContainsStringOptions configures the polling behavior.
+type EventuallyContainsStringOptions struct {
+	TimeoutMs  int64  `json:"timeoutMs"`
+	IntervalMs int64  `json:"intervalMs"`
+	Message    string `json:"message"`
+}
+
+// EventuallyContainsString polls a getter function until the returned string
+// matches substr or the timeout expires.
+//
+// Accepts two calling conventions:
+//
+//	eventuallyContainsString(getter, substr, { timeoutMs, intervalMs, message })
+//	eventuallyContainsString(getter, substr, timeoutMs, intervalMs, message)  // deprecated
+func (a *Assert) EventuallyContainsString(call goja.FunctionCall) goja.Value {
+	if len(call.Arguments) < 2 {
+		a.fail("eventuallyContainsString requires at least getter and substr arguments")
+		return goja.Undefined()
+	}
+
+	getter := call.Arguments[0]
+	substr := call.Arguments[1].String()
+
+	var timeoutMs, intervalMs int64
+	var message string
+
+	// Detect options object vs positional args
+	if len(call.Arguments) >= 3 && !goja.IsUndefined(call.Arguments[2]) && !goja.IsNull(call.Arguments[2]) {
+		if obj := call.Arguments[2].ToObject(a.vm); obj != nil {
+			// Check if it's an options object (has a known key) vs a number
+			if obj.Get("timeoutMs") != nil || obj.Get("intervalMs") != nil || obj.Get("message") != nil {
+				var opts EventuallyContainsStringOptions
+				if err := a.vm.ExportTo(call.Arguments[2], &opts); err == nil {
+					timeoutMs = opts.TimeoutMs
+					intervalMs = opts.IntervalMs
+					message = opts.Message
+				}
+			} else {
+				// Deprecated positional form
+				timeoutMs = call.Arguments[2].ToInteger()
+				if len(call.Arguments) >= 4 {
+					intervalMs = call.Arguments[3].ToInteger()
+				}
+				if len(call.Arguments) >= 5 {
+					message = call.Arguments[4].String()
+				}
+			}
+		}
+	}
+
 	a.logger.Debug("substring.eventually.checking",
 		"pattern_length", len(substr),
 		"timeout_ms", timeoutMs,
@@ -113,14 +156,14 @@ func (a *Assert) EventuallyContainsString(
 		a.logger.Debug("regex.failed", "err", err)
 		a.fail(fmt.Sprintf("invalid regular expression: %s", err))
 
-		return
+		return goja.Undefined()
 	}
 
 	getterFunc, ok := goja.AssertFunction(getter)
 	if !ok {
 		a.fail("expected getter to be a function")
 
-		return
+		return goja.Undefined()
 	}
 
 	if timeoutMs <= 0 {
@@ -140,12 +183,12 @@ func (a *Assert) EventuallyContainsString(
 		if callErr != nil {
 			a.fail(fmt.Sprintf("eventually getter failed: %v", callErr))
 
-			return
+			return goja.Undefined()
 		}
 
 		last = fmt.Sprintf("%v", value.Export())
 		if matcher.MatchString(last) {
-			return
+			return goja.Undefined()
 		}
 
 		if !time.Now().Before(deadline) {
@@ -155,17 +198,18 @@ func (a *Assert) EventuallyContainsString(
 		time.Sleep(interval)
 	}
 
-	msg := fmt.Sprintf(
-		"expected %q to eventually contain %q within %s",
-		last,
-		substr,
-		time.Duration(timeoutMs)*time.Millisecond,
-	)
-	if len(message) > 0 {
-		msg = message[0]
+	if message == "" {
+		message = fmt.Sprintf(
+			"expected %q to eventually contain %q within %s",
+			last,
+			substr,
+			time.Duration(timeoutMs)*time.Millisecond,
+		)
 	}
 
-	a.fail(msg)
+	a.fail(message)
+
+	return goja.Undefined()
 }
 
 func (a *Assert) Truthy(value bool, message ...string) {

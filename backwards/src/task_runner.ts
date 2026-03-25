@@ -203,8 +203,7 @@ export class TaskRunner {
     assert.eventuallyContainsString(
       () => this.getLatestTaskOutput(stream, result, taskStorageKey),
       expected,
-      defaultAssertOutputTimeoutMs,
-      50,
+      { timeoutMs: defaultAssertOutputTimeoutMs, intervalMs: 50 },
     );
   }
 

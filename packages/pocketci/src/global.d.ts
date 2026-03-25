@@ -518,9 +518,11 @@ declare global {
     function eventuallyContainsString(
       getter: () => unknown,
       substr: string,
-      timeoutMs?: number,
-      intervalMs?: number,
-      message?: string,
+      options?: {
+        timeoutMs?: number;
+        intervalMs?: number;
+        message?: string;
+      },
     ): void;
     function notEqual<T>(actual: T, expected: T, message?: string): void;
     function truthy(value: unknown, message?: string): void;
