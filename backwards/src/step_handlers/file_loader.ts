@@ -73,6 +73,24 @@ export async function loadFromURI(
   );
 }
 
+// loadConfig loads YAML config from a step's file or URI field.
+// Returns the file contents as a string, or null if neither field is set.
+export async function loadConfig(
+  ctx: StepContext,
+  step: { file?: string; uri?: string },
+  pathContext: string,
+): Promise<string | null> {
+  if ("file" in step && step.file) {
+    return loadFileFromVolume(ctx, step.file, pathContext);
+  }
+
+  if ("uri" in step && step.uri) {
+    return loadFromURI(ctx, step.uri, pathContext);
+  }
+
+  return null;
+}
+
 // loadFileFromVolume reads a file from a volume mount using the runtime's
 // direct volume access API. The file path must start with the mount name
 // (e.g. "repo/path/to/file.yml"). Returns the file contents as a string.

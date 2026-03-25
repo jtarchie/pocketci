@@ -2,7 +2,7 @@
 
 import { TaskFailure } from "../task_runner.ts";
 import { errorMessage, formatElapsed } from "../utils.ts";
-import { loadFileFromVolume, loadFromURI } from "./file_loader.ts";
+import { loadConfig, loadFileFromVolume } from "./file_loader.ts";
 import { processHooks } from "./resource_helpers.ts";
 import type { StepContext } from "./step_context.ts";
 import type { StepHandler } from "./step_handler.ts";
@@ -35,25 +35,17 @@ function mergeAgentFromContents(
   return merged;
 }
 
-// mergeAgentFileConfig loads a YAML file from a volume and merges it with
-// inline step fields.
-async function mergeAgentFileConfig(
+// mergeAgentExternalConfig loads a YAML config from the step's file or URI
+// field and merges it with inline step fields. Returns the step unchanged if
+// neither field is set.
+async function mergeAgentExternalConfig(
   ctx: StepContext,
   inlineStep: AgentStep,
   pathContext: string,
 ): Promise<AgentStep> {
-  const contents = await loadFileFromVolume(ctx, inlineStep.file!, pathContext);
-  return mergeAgentFromContents(contents, inlineStep);
-}
+  const contents = await loadConfig(ctx, inlineStep, pathContext);
+  if (!contents) return inlineStep;
 
-// mergeAgentURIConfig loads a YAML config from a URI and merges it with
-// inline step fields.
-async function mergeAgentURIConfig(
-  ctx: StepContext,
-  inlineStep: AgentStep,
-  pathContext: string,
-): Promise<AgentStep> {
-  const contents = await loadFromURI(ctx, inlineStep.uri!, pathContext);
   return mergeAgentFromContents(contents, inlineStep);
 }
 
@@ -71,10 +63,8 @@ export class AgentStepHandler implements StepHandler {
 
     // Load full agent config from a YAML file on a volume or from a URI.
     // Inline fields on the step override file-loaded values (no deep merge).
-    if ("file" in step && step.file) {
-      agentStep = await mergeAgentFileConfig(ctx, step, pathContext);
-    } else if ("uri" in step && step.uri) {
-      agentStep = await mergeAgentURIConfig(ctx, step, pathContext);
+    if (("file" in step && step.file) || ("uri" in step && step.uri)) {
+      agentStep = await mergeAgentExternalConfig(ctx, step, pathContext);
     } else if ("prompt_file" in step && step.prompt_file) {
       // Load just the prompt text from a plain text file on a volume.
       const contents = await loadFileFromVolume(
@@ -102,20 +92,11 @@ export class AgentStepHandler implements StepHandler {
     for (const rawTool of (agentStep.tools ?? [])) {
       if ("agent" in rawTool && rawTool.agent) {
         // Agent tool — resolve from file or uri if needed.
-        let subStep = rawTool as AgentStep;
-        if ("file" in rawTool && rawTool.file) {
-          subStep = await mergeAgentFileConfig(
-            ctx,
-            rawTool as AgentStep,
-            pathContext,
-          );
-        } else if ("uri" in rawTool && (rawTool as AgentStep).uri) {
-          subStep = await mergeAgentURIConfig(
-            ctx,
-            rawTool as AgentStep,
-            pathContext,
-          );
-        }
+        const subStep = await mergeAgentExternalConfig(
+          ctx,
+          rawTool as AgentStep,
+          pathContext,
+        );
         const subImage = subStep.config?.image ??
           subStep.config?.image_resource?.source?.repository ?? "";
         tools.push({
@@ -129,21 +110,9 @@ export class AgentStepHandler implements StepHandler {
         // Task tool — container command exposed as a tool.
         const taskTool = rawTool as TaskToolStep;
         let taskConfig = taskTool.config;
-        if ("file" in taskTool && taskTool.file) {
-          const contents = await loadFileFromVolume(
-            ctx,
-            taskTool.file,
-            pathContext,
-          );
-          const fileConfig = yaml.parse(contents) as Partial<TaskConfig>;
-          taskConfig = { ...fileConfig, ...taskConfig } as TaskConfig;
-        } else if ("uri" in taskTool && taskTool.uri) {
-          const contents = await loadFromURI(
-            ctx,
-            taskTool.uri,
-            pathContext,
-          );
-          const fileConfig = yaml.parse(contents) as Partial<TaskConfig>;
+        const toolContents = await loadConfig(ctx, taskTool, pathContext);
+        if (toolContents) {
+          const fileConfig = yaml.parse(toolContents) as Partial<TaskConfig>;
           taskConfig = { ...fileConfig, ...taskConfig } as TaskConfig;
         }
         tools.push({
