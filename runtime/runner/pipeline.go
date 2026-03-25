@@ -608,6 +608,13 @@ func (c *PipelineRunner) buildFinalResult(
 		for idx := range logs {
 			logs[idx].Content = support.RedactSecrets(logs[idx].Content, c.secretValues)
 		}
+
+		// Zero and release decrypted secret material now that redaction is done.
+		for i := range c.secretValues {
+			c.secretValues[i] = ""
+		}
+
+		c.secretValues = c.secretValues[:0]
 	}
 
 	logs = reconcileTaskLogs(logs, stdoutStr, stderrStr)

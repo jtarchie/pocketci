@@ -124,6 +124,13 @@ func (h *SandboxHandle) Exec(ctx context.Context, input ExecInput) (*RunResult, 
 	if len(h.runner.secretValues) > 0 {
 		stdoutStr = support.RedactSecrets(stdoutStr, h.runner.secretValues)
 		stderrStr = support.RedactSecrets(stderrStr, h.runner.secretValues)
+
+		// Zero and release decrypted secret material now that redaction is done.
+		for i := range h.runner.secretValues {
+			h.runner.secretValues[i] = ""
+		}
+
+		h.runner.secretValues = h.runner.secretValues[:0]
 	}
 
 	return &RunResult{
