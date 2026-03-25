@@ -214,6 +214,17 @@ func (j *JS) setupJSVM(
 		return fmt.Errorf("could not set YAML: %w", err)
 	}
 
+	// Register new focused namespaces
+	volumesNS := runtime.Volumes()
+	if err := jsVM.Set("volumes", volumesNS); err != nil {
+		return fmt.Errorf("could not set volumes: %w", err)
+	}
+
+	agentNS := runtime.AgentRT()
+	if err := jsVM.Set("agent", agentNS); err != nil {
+		return fmt.Errorf("could not set agent: %w", err)
+	}
+
 	if err := jsVM.Set("runtime", runtime); err != nil {
 		return fmt.Errorf("could not set runtime: %w", err)
 	}

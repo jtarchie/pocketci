@@ -1,5 +1,5 @@
 const pipeline = async () => {
-  const volume = await runtime.createVolume();
+  const volume = await volumes.create();
   let result = await runtime.run({
     name: "simple-task",
     image: "busybox",

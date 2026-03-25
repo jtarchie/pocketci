@@ -44,7 +44,7 @@ export class GetStepHandler implements StepHandler {
     );
 
     if (isNative) {
-      const volume = await runtime.createVolume({ name: resource.name });
+      const volume = await volumes.create({ name: resource.name });
       ctx.taskRunner.getKnownMounts()[resource.name!] = volume;
 
       const storageKey = `${ctx.paths.getBaseStorageKey()}/${pathContext}`;

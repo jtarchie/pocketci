@@ -130,12 +130,12 @@ export class TaskRunner {
     const caches = step.config.caches || [];
 
     for (const mount of inputs) {
-      this.knownMounts[mount.name] ||= await runtime.createVolume();
+      this.knownMounts[mount.name] ||= await volumes.create();
       mounts[mount.name] = this.knownMounts[mount.name];
     }
 
     for (const mount of outputs) {
-      this.knownMounts[mount.name] ||= await runtime.createVolume();
+      this.knownMounts[mount.name] ||= await volumes.create();
       mounts[mount.name] = this.knownMounts[mount.name];
     }
 
@@ -144,7 +144,7 @@ export class TaskRunner {
     for (const cache of caches) {
       const cacheName = this.pathToCacheName(cache.path);
       // Use a global cache registry to share caches across tasks
-      this.knownMounts[cacheName] ||= await runtime.createVolume({
+      this.knownMounts[cacheName] ||= await volumes.create({
         name: cacheName,
       });
       // Mount at the cache path - strip leading slash as mounts are relative to workdir

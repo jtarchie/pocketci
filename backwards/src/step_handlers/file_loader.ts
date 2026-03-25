@@ -105,7 +105,7 @@ export async function loadFileFromVolume(
   });
 
   try {
-    const result = await runtime.readFilesFromVolume(volume.name, relativePath);
+    const result = await volumes.readFiles(volume.name, [relativePath]);
     const content = result[relativePath];
     if (content === undefined) {
       const errMsg =

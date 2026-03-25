@@ -71,7 +71,7 @@ declare global {
    * **Mounts**: The keys of `mounts` are the directory names used *inside*
    * the container, resolved relative to the container's working directory
    * (or absolute if the key starts with `/`). Each value is a `VolumeResult`
-   * returned by `runtime.createVolume()`. Volumes persist data between tasks.
+   * returned by `volumes.create()`. Volumes persist data between tasks.
    *
    * **Commands**: `command.path` is the executable; `command.args` are its
    * arguments (each as a separate string, not shell-split).
@@ -79,7 +79,7 @@ declare global {
    * @example
    * ```typescript
    * // Share data between two tasks via a named volume
-   * const src = await runtime.createVolume();
+   * const src = await volumes.create();
    *
    * await runtime.run({
    *   name: "git-clone",
@@ -232,7 +232,7 @@ declare global {
     toolCallCount: number;
   }
 
-  // Result returned by runtime.agent().
+  // Result returned by agent.run().
   interface AgentResult {
     text: string;
     status: "success" | "failure" | "limit_exceeded";
@@ -328,7 +328,7 @@ declare global {
     max_bytes?: number;
   }
 
-  // Unified tool definition passed to runtime.agent(). Covers both
+  // Unified tool definition passed to agent.run(). Covers both
   // agent tools (LLM sub-agents) and task tools (container commands).
   // Distinguish by the `is_task` flag.
   interface ToolDef {
@@ -354,7 +354,7 @@ declare global {
     uri?: string; // Load task config from a URI (http://, https://, file://)
   }
 
-  // Input to runtime.agent().
+  // Input to agent.run().
   interface AgentRunConfig {
     name: string;
     prompt: string;
@@ -377,50 +377,35 @@ declare global {
     tools?: ToolDef[]; // Agent + task tools registered as callable tools
   }
 
-  /**
-   * Core container execution API. All functions are async and must be
-   * `await`-ed. Volumes created here persist for the lifetime of the run.
-   */
-  namespace runtime {
+  /** Volume management API. */
+  namespace volumes {
     /**
      * Creates an ephemeral volume that can be shared between tasks via `mounts`.
      * Returns a `VolumeResult` with a `path` (absolute host path) and `name`.
      *
      * @example
      * ```typescript
-     * const output = await runtime.createVolume();
-     * // pass output as a mount key to runtime.run() or runtime.agent()
+     * const src = await volumes.create();
+     * // pass src as a mount value to runtime.run() or agent.run()
      * ```
      */
-    function createVolume(volume?: VolumeConfig): Promise<VolumeResult>;
+    function create(volume?: VolumeConfig): Promise<VolumeResult>;
 
     /**
-     * Runs a container task to completion and returns its stdout, stderr, and
-     * exit code. Throws if the container cannot be started.
+     * Reads specific files from a named volume without spawning a container.
+     * Returns a map of relative path to file content string.
      *
-     * The task `name` is used for display in the UI and must be unique within
-     * a pipeline run.
-     *
-     * @example
-     * ```typescript
-     * const result = await runtime.run({
-     *   name: "build",
-     *   image: "golang:1.24",
-     *   command: { path: "go", args: ["build", "./..."] },
-     *   env: { CGO_ENABLED: "0" },
-     * });
-     * if (result.code !== 0) throw new Error(result.stderr);
-     * ```
+     * @param volumeName - The name of the volume to read from.
+     * @param filePaths - Paths relative to the volume root.
      */
-    function run(task: RunTaskConfig): Promise<RunTaskResult>;
+    function readFiles(
+      volumeName: string,
+      filePaths: string[],
+    ): Promise<Record<string, string>>;
+  }
 
-    /**
-     * Starts a long-lived sandbox container kept alive with "tail -f /dev/null".
-     * Requires an image that has `tail` available (not distroless/scratch).
-     * Call `close()` on the returned handle when done to remove the container.
-     */
-    function startSandbox(config: SandboxConfig): Promise<SandboxHandle>;
-
+  /** LLM agent execution API. */
+  namespace agent {
     /**
      * Runs an LLM agent that can execute shell commands inside a sandbox
      * container. The agent iterates tool calls until it produces a final text
@@ -432,7 +417,7 @@ declare global {
      *
      * @example
      * ```typescript
-     * const repo = await runtime.createVolume();
+     * const repo = await volumes.create();
      * await runtime.run({
      *   name: "clone",
      *   image: "alpine/git",
@@ -440,7 +425,7 @@ declare global {
      *   mounts: { repo },
      * });
      *
-     * const review = await runtime.agent({
+     * const review = await agent.run({
      *   name: "code-review",
      *   prompt: "Review the last commit and summarise any issues.",
      *   model: "openrouter/google/gemini-2.5-flash",
@@ -450,15 +435,34 @@ declare global {
      * console.log(review.text);
      * ```
      */
-    function agent(config: AgentRunConfig): Promise<AgentResult>;
+    function run(config: AgentRunConfig): Promise<AgentResult>;
+  }
+
+  /**
+   * Core container execution API. All functions are async and must be
+   * `await`-ed.
+   */
+  namespace runtime {
+    /** @deprecated Use `volumes.create()` instead. */
+    function createVolume(volume?: VolumeConfig): Promise<VolumeResult>;
 
     /**
-     * Reads specific files from a named volume without spawning a container.
-     * Returns a map of relative path to file content string.
-     *
-     * @param volumeName - The name of the volume to read from.
-     * @param filePaths - Paths relative to the volume root.
+     * Runs a container task to completion and returns its stdout, stderr, and
+     * exit code. Throws if the container cannot be started.
      */
+    function run(task: RunTaskConfig): Promise<RunTaskResult>;
+
+    /**
+     * Starts a long-lived sandbox container kept alive with "tail -f /dev/null".
+     * Requires an image that has `tail` available (not distroless/scratch).
+     * Call `close()` on the returned handle when done to remove the container.
+     */
+    function startSandbox(config: SandboxConfig): Promise<SandboxHandle>;
+
+    /** @deprecated Use `agent.run()` instead. */
+    function agent(config: AgentRunConfig): Promise<AgentResult>;
+
+    /** @deprecated Use `volumes.readFiles()` instead. */
     function readFilesFromVolume(
       volumeName: string,
       filePaths: string[],

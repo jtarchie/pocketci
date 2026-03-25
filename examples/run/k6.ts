@@ -9,7 +9,7 @@
 // /workspace inside the container, so any local script files are available.
 
 const pipeline = async () => {
-  const workdir = await runtime.createVolume({ name: "workdir", size: 200 });
+  const workdir = await volumes.create({ name: "workdir", size: 200 });
 
   const result = await runtime.run({
     name: "k6",

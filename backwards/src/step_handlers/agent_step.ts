@@ -229,7 +229,7 @@ export class AgentStepHandler implements StepHandler {
     let failure: unknown = undefined;
 
     try {
-      const result = await runtime.agent({
+      const result = await agent.run({
         name: agentStep.agent,
         prompt: agentStep.prompt,
         model: agentStep.model,

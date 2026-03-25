@@ -31,7 +31,7 @@ const pipeline = async () => {
       console.log(`Latest version: ${latestVersion.ref}`);
 
       // Create a volume for the git checkout
-      const volume = await runtime.createVolume({ name: "git-checkout" });
+      const volume = await volumes.create({ name: "git-checkout" });
 
       // For a real implementation, you'd use the native In operation
       // For now, we'll just verify we can run a container with the volume
