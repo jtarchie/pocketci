@@ -58,7 +58,9 @@ func (v *Volumes) Create(input runner.VolumeInput) *goja.Promise {
 				return nil
 			}
 
-			err := resolve(result)
+			volObj := v.buildVolumeObject(result)
+
+			err := resolve(volObj)
 			if err != nil {
 				return fmt.Errorf("could not resolve create volume: %w", err)
 			}
@@ -68,6 +70,81 @@ func (v *Volumes) Create(input runner.VolumeInput) *goja.Promise {
 	}()
 
 	return promise
+}
+
+// buildVolumeObject constructs a JS object with name, path, and a readFiles()
+// method, following the same pattern as buildSandboxObject.
+func (v *Volumes) buildVolumeObject(result *runner.VolumeResult) *goja.Object {
+	r := v.rt
+	obj := r.jsVM.NewObject()
+	_ = obj.Set("name", result.Name)
+	_ = obj.Set("path", result.Path)
+	_ = obj.Set("readFiles", v.volumeReadFilesFunc(result.Name))
+
+	return obj
+}
+
+// volumeReadFilesFunc returns a JS-callable function that reads files from the
+// given volume name.
+func (v *Volumes) volumeReadFilesFunc(volumeName string) func(goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		r := v.rt
+		promise, resolve, reject := r.jsVM.NewPromise()
+
+		if len(call.Arguments) < 1 {
+			_ = reject(r.jsVM.NewGoError(errors.New("readFiles requires a filePaths array")))
+			return r.jsVM.ToValue(promise)
+		}
+
+		var filePaths []string
+		if arr, ok := call.Arguments[0].Export().([]interface{}); ok {
+			filePaths = make([]string, 0, len(arr))
+			for _, val := range arr {
+				filePaths = append(filePaths, fmt.Sprintf("%v", val))
+			}
+		} else {
+			_ = reject(r.jsVM.NewGoError(errors.New("readFiles expects an array of file paths")))
+			return r.jsVM.ToValue(promise)
+		}
+
+		r.promises.Add(1)
+
+		go func() {
+			defer func() {
+				if p := recover(); p != nil {
+					slog.Error("volume.readFiles.panic", "panic", p, "stack", string(debug.Stack()))
+					r.tasks <- func() error {
+						defer r.promises.Done()
+						return reject(r.jsVM.NewGoError(fmt.Errorf("panic in readFiles: %v", p)))
+					}
+				}
+			}()
+
+			result, err := r.runner.ReadFilesFromVolume(volumeName, filePaths...)
+
+			r.tasks <- func() error {
+				defer r.promises.Done()
+
+				if err != nil {
+					err = reject(r.jsVM.NewGoError(err))
+					if err != nil {
+						return fmt.Errorf("could not reject readFiles: %w", err)
+					}
+
+					return nil
+				}
+
+				err = resolve(result)
+				if err != nil {
+					return fmt.Errorf("could not resolve readFiles: %w", err)
+				}
+
+				return nil
+			}
+		}()
+
+		return r.jsVM.ToValue(promise)
+	}
 }
 
 // ReadFiles reads specific files from a named volume.

@@ -132,6 +132,8 @@ declare global {
     error: string;
     name: string;
     path: string; // Absolute path to the volume directory
+    /** Read files directly from this volume without spawning a container. */
+    readFiles(filePaths: string[]): Promise<Record<string, string>>;
   }
 
   type KnownMounts = Record<string, VolumeResult>;
