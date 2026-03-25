@@ -4,12 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"os"
 	"strings"
 	"text/tabwriter"
 
-	"github.com/go-resty/resty/v2"
 	"github.com/jtarchie/pocketci/storage"
 )
 
@@ -21,21 +19,7 @@ type ListPipelines struct {
 
 func (c *ListPipelines) Run(_ *slog.Logger) error {
 	serverURL := strings.TrimSuffix(c.ServerURL, "/")
-	endpoint := serverURL + "/api/pipelines"
-
-	client := resty.New()
-
-	if parsed, err := url.Parse(serverURL); err == nil && parsed.User != nil {
-		password, _ := parsed.User.Password()
-		client.SetBasicAuth(parsed.User.Username(), password)
-		parsed.User = nil
-		endpoint = parsed.String() + "/api/pipelines"
-	}
-
-	token := ResolveAuthToken(c.AuthToken, c.ConfigFile, c.ServerURL)
-	if token != "" {
-		client.SetAuthToken(token)
-	}
+	client, endpoint := setupAPIClient(serverURL, c.AuthToken, c.ConfigFile)
 
 	resp, err := client.R().Get(endpoint)
 	if err != nil {

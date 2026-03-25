@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-resty/resty/v2"
 	"github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/orchestra/digitalocean"
@@ -176,23 +175,10 @@ func (c *SetPipeline) buildRequestBody(content, contentType string, secretsMap m
 
 func (c *SetPipeline) uploadPipeline(logger *slog.Logger, name string, reqBody pipelineRequest) (storage.Pipeline, error) {
 	serverURL := strings.TrimSuffix(c.ServerURL, "/")
-	endpoint := serverURL + "/api/pipelines/" + url.PathEscape(name)
+	client, baseEndpoint := setupAPIClient(serverURL, c.AuthToken, c.ConfigFile)
+	endpoint := baseEndpoint + "/" + url.PathEscape(name)
 
 	logger.Info("pipeline.upload", "url", RedactURL(endpoint))
-
-	client := resty.New()
-
-	if parsed, err := url.Parse(serverURL); err == nil && parsed.User != nil {
-		password, _ := parsed.User.Password()
-		client.SetBasicAuth(parsed.User.Username(), password)
-		parsed.User = nil
-		endpoint = parsed.String() + "/api/pipelines/" + url.PathEscape(name)
-	}
-
-	token := ResolveAuthToken(c.AuthToken, c.ConfigFile, c.ServerURL)
-	if token != "" {
-		client.SetAuthToken(token)
-	}
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").

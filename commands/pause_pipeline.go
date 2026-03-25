@@ -1,14 +1,9 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"strings"
-
-	"github.com/go-resty/resty/v2"
-	"github.com/jtarchie/pocketci/storage"
 )
 
 type PausePipeline struct {
@@ -31,53 +26,6 @@ type UnpausePipeline struct {
 
 func (c *UnpausePipeline) Run(logger *slog.Logger) error {
 	return setPipelinePaused(logger, c.Name, c.ServerURL, c.AuthToken, c.ConfigFile, false)
-}
-
-func setupAPIClient(serverURL, authToken, configFile string) (*resty.Client, string) {
-	endpoint := serverURL + "/api/pipelines"
-	client := resty.New()
-
-	if parsed, err := url.Parse(serverURL); err == nil && parsed.User != nil {
-		password, _ := parsed.User.Password()
-		client.SetBasicAuth(parsed.User.Username(), password)
-		parsed.User = nil
-		endpoint = parsed.String() + "/api/pipelines"
-	}
-
-	token := ResolveAuthToken(authToken, configFile, serverURL)
-	if token != "" {
-		client.SetAuthToken(token)
-	}
-
-	return client, endpoint
-}
-
-func findPipelineByNameOrID(client *resty.Client, endpoint, serverURL, name string) (*storage.Pipeline, error) {
-	listResp, err := client.R().Get(endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("could not list pipelines: %w", err)
-	}
-
-	if err := checkAuthStatus(listResp.StatusCode(), serverURL); err != nil {
-		return nil, err
-	}
-
-	if listResp.StatusCode() != 200 {
-		return nil, fmt.Errorf("server error listing pipelines (%d): %s", listResp.StatusCode(), listResp.String())
-	}
-
-	var result storage.PaginationResult[storage.Pipeline]
-	if err := json.Unmarshal(listResp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("could not parse pipeline list: %w", err)
-	}
-
-	for _, p := range result.Items {
-		if p.ID == name || p.Name == name {
-			return &p, nil
-		}
-	}
-
-	return nil, fmt.Errorf("no pipeline found with name or ID %q", name)
 }
 
 func setPipelinePaused(logger *slog.Logger, name, serverURL, authToken, configFile string, paused bool) error {

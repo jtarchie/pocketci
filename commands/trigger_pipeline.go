@@ -6,11 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
-
-	"github.com/go-resty/resty/v2"
-	"github.com/jtarchie/pocketci/storage"
 )
 
 type TriggerPipeline struct {
@@ -28,9 +24,9 @@ func (c *TriggerPipeline) Run(logger *slog.Logger) error {
 	logger = logger.WithGroup("pipeline.trigger")
 
 	serverURL := strings.TrimSuffix(c.ServerURL, "/")
-	client, endpoint := c.setupClient(serverURL)
+	client, endpoint := setupAPIClient(serverURL, c.AuthToken, c.ConfigFile)
 
-	pipeline, err := c.resolvePipeline(client, endpoint, serverURL)
+	pipeline, err := findPipelineByNameOrID(client, endpoint, serverURL, c.Name)
 	if err != nil {
 		return err
 	}
@@ -82,53 +78,6 @@ func (c *TriggerPipeline) Run(logger *slog.Logger) error {
 	fmt.Printf("Pipeline '%s' triggered successfully (run: %s)\n", pipeline.Name, result.RunID)
 
 	return nil
-}
-
-func (c *TriggerPipeline) setupClient(serverURL string) (*resty.Client, string) {
-	endpoint := serverURL + "/api/pipelines"
-	client := resty.New()
-
-	if parsed, err := url.Parse(serverURL); err == nil && parsed.User != nil {
-		password, _ := parsed.User.Password()
-		client.SetBasicAuth(parsed.User.Username(), password)
-		parsed.User = nil
-		endpoint = parsed.String() + "/api/pipelines"
-	}
-
-	token := ResolveAuthToken(c.AuthToken, c.ConfigFile, c.ServerURL)
-	if token != "" {
-		client.SetAuthToken(token)
-	}
-
-	return client, endpoint
-}
-
-func (c *TriggerPipeline) resolvePipeline(client *resty.Client, endpoint, serverURL string) (*storage.Pipeline, error) {
-	listResp, err := client.R().Get(endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("could not list pipelines: %w", err)
-	}
-
-	if err := checkAuthStatus(listResp.StatusCode(), serverURL); err != nil {
-		return nil, err
-	}
-
-	if listResp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("server error listing pipelines (%d): %s", listResp.StatusCode(), listResp.String())
-	}
-
-	var result storage.PaginationResult[storage.Pipeline]
-	if err := json.Unmarshal(listResp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("could not parse pipeline list: %w", err)
-	}
-
-	for _, p := range result.Items {
-		if p.ID == c.Name || p.Name == c.Name {
-			return &p, nil
-		}
-	}
-
-	return nil, fmt.Errorf("no pipeline found with name or ID %q", c.Name)
 }
 
 type triggerRequestBody struct {

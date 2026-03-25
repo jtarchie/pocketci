@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"mime/multipart"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -70,7 +69,11 @@ func (c *Run) Run(logger *slog.Logger) error {
 
 	logger.Info("pipeline.run.trigger", "name", c.Name, "url", RedactURL(endpoint), "args", c.Args, "upload_bytes", bodySize)
 
-	client, endpoint := c.configureClient(endpoint)
+	client, _ := setupAPIClient(serverURL, c.AuthToken, c.ConfigFile)
+
+	if c.Timeout > 0 {
+		client.SetTimeout(c.Timeout)
+	}
 
 	resp, err := c.sendRequest(client, endpoint, tmpFile, contentType, bodySize)
 	if err != nil {
@@ -166,28 +169,6 @@ func (c *Run) writeWorkdirField(mw *multipart.Writer, logger *slog.Logger) error
 	}
 
 	return nil
-}
-
-func (c *Run) configureClient(endpoint string) (*resty.Client, string) {
-	client := resty.New()
-
-	if parsed, err := url.Parse(endpoint); err == nil && parsed.User != nil {
-		password, _ := parsed.User.Password()
-		client.SetBasicAuth(parsed.User.Username(), password)
-		parsed.User = nil
-		endpoint = parsed.String()
-	}
-
-	token := ResolveAuthToken(c.AuthToken, c.ConfigFile, c.ServerURL)
-	if token != "" {
-		client.SetAuthToken(token)
-	}
-
-	if c.Timeout > 0 {
-		client.SetTimeout(c.Timeout)
-	}
-
-	return client, endpoint
 }
 
 func (c *Run) sendRequest(client *resty.Client, endpoint string, body *os.File, contentType string, bodySize int64) (*resty.Response, error) {

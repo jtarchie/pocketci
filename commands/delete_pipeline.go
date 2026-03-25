@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"strings"
 
 	"github.com/go-resty/resty/v2"
@@ -22,7 +21,7 @@ func (c *DeletePipeline) Run(logger *slog.Logger) error {
 	logger = logger.WithGroup("pipeline.delete")
 
 	serverURL := strings.TrimSuffix(c.ServerURL, "/")
-	client, endpoint := c.setupClient(serverURL)
+	client, endpoint := setupAPIClient(serverURL, c.AuthToken, c.ConfigFile)
 
 	// Resolve name → ID: fetch the pipeline list and match by name or ID.
 	logger.Info("pipeline.list")
@@ -43,25 +42,6 @@ func (c *DeletePipeline) Run(logger *slog.Logger) error {
 	}
 
 	return nil
-}
-
-func (c *DeletePipeline) setupClient(serverURL string) (*resty.Client, string) {
-	endpoint := serverURL + "/api/pipelines"
-	client := resty.New()
-
-	if parsed, err := url.Parse(serverURL); err == nil && parsed.User != nil {
-		password, _ := parsed.User.Password()
-		client.SetBasicAuth(parsed.User.Username(), password)
-		parsed.User = nil
-		endpoint = parsed.String() + "/api/pipelines"
-	}
-
-	token := ResolveAuthToken(c.AuthToken, c.ConfigFile, c.ServerURL)
-	if token != "" {
-		client.SetAuthToken(token)
-	}
-
-	return client, endpoint
 }
 
 func (c *DeletePipeline) fetchMatchingPipelines(client *resty.Client, endpoint, serverURL string) ([]storage.Pipeline, error) {
