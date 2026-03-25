@@ -966,3 +966,118 @@ func TestRunAgent_Validation_RealDocker(t *testing.T) {
 		assert.Expect(artifact["text"]).To(ContainSubstring("hello-from-followup"))
 	})
 }
+
+// TestRunAgent_FakeLLM_ParallelToolCalls_RealDocker verifies that when the LLM
+// returns multiple tool_calls in a single response, ADK executes them
+// concurrently and the audit log records each call and response separately.
+func TestRunAgent_FakeLLM_ParallelToolCalls_RealDocker(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	responses := []string{
+		// Turn 1: two tool calls in a single response.
+		`{
+			"id":"chatcmpl-par-1",
+			"object":"chat.completion",
+			"created":1730000200,
+			"model":"fake-model",
+			"choices":[{
+				"index":0,
+				"message":{
+					"role":"assistant",
+					"content":"",
+					"tool_calls":[
+						{
+							"id":"call_read",
+							"type":"function",
+							"function":{
+								"name":"read_file",
+								"arguments":"{\"path\":\"diff/pr.diff\"}"
+							}
+						},
+						{
+							"id":"call_glob",
+							"type":"function",
+							"function":{
+								"name":"glob",
+								"arguments":"{\"pattern\":\"diff/*\"}"
+							}
+						}
+					]
+				},
+				"finish_reason":"tool_calls"
+			}],
+			"usage":{"prompt_tokens":20,"completion_tokens":10,"total_tokens":30}
+		}`,
+		// Turn 2: final text summary.
+		`{
+			"id":"chatcmpl-par-2",
+			"object":"chat.completion",
+			"created":1730000201,
+			"model":"fake-model",
+			"choices":[{
+				"index":0,
+				"message":{
+					"role":"assistant",
+					"content":"Parallel calls succeeded: read the diff and listed files."
+				},
+				"finish_reason":"stop"
+			}],
+			"usage":{"prompt_tokens":40,"completion_tokens":8,"total_tokens":48}
+		}`,
+	}
+
+	llm, reqCount := newSequencedLLMServer(t, responses)
+	configureFakeOpenAI(t, llm.URL)
+
+	runner := newDockerRunner(t, "agent-parallel")
+	diffVol := mustCreateVolume(t, runner, "diff")
+	outVol := mustCreateVolume(t, runner, "final-review")
+	seedDiffVolume(t, runner, diffVol)
+
+	result, err := agent.RunAgent(context.Background(), runner, nil, "", agent.AgentConfig{
+		Name:   "parallel-agent",
+		Prompt: "Use read_file and glob in parallel, then summarize.",
+		Model:  "openai/fake-model",
+		Image:  "busybox",
+		Mounts: map[string]pipelinerunner.VolumeResult{
+			"diff":         diffVol,
+			"final-review": outVol,
+		},
+		OutputVolumePath: outVol.Path,
+	})
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result).NotTo(BeNil())
+	assert.Expect(result.Text).To(ContainSubstring("Parallel calls succeeded"))
+
+	// Only 2 LLM requests: one parallel tool turn, one final answer.
+	assert.Expect(atomic.LoadInt32(reqCount)).To(BeNumerically("==", 2))
+
+	// Audit log must contain both tool_call and both tool_response events.
+	var readCalls, globCalls int
+	var readResponses, globResponses int
+
+	for _, event := range result.AuditLog {
+		switch {
+		case event.Type == "tool_call" && event.ToolName == "read_file":
+			readCalls++
+		case event.Type == "tool_call" && event.ToolName == "glob":
+			globCalls++
+		case event.Type == "tool_response" && event.ToolName == "read_file":
+			readResponses++
+		case event.Type == "tool_response" && event.ToolName == "glob":
+			globResponses++
+		}
+	}
+
+	assert.Expect(readCalls).To(Equal(1), "expected exactly one read_file tool_call")
+	assert.Expect(globCalls).To(Equal(1), "expected exactly one glob tool_call")
+	assert.Expect(readResponses).To(Equal(1), "expected exactly one read_file tool_response")
+	assert.Expect(globResponses).To(Equal(1), "expected exactly one glob tool_response")
+
+	// ToolCallCount must reflect both parallel calls.
+	assert.Expect(result.Usage.ToolCallCount).To(BeNumerically(">=", 2),
+		"expected ToolCallCount >= 2 for two parallel tool calls")
+
+	artifact := readResultArtifact(t, runner, outVol, "read-parallel")
+	assert.Expect(artifact["status"]).To(Equal("success"))
+}
