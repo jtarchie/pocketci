@@ -567,9 +567,20 @@ func (r *Runtime) ReadFilesFromVolume(call goja.FunctionCall) goja.Value {
 
 	volumeName := call.Arguments[0].String()
 
-	filePaths := make([]string, 0, len(call.Arguments)-1)
-	for i := 1; i < len(call.Arguments); i++ {
-		filePaths = append(filePaths, call.Arguments[i].String())
+	// Support both array and variadic string arguments:
+	//   readFilesFromVolume("vol", ["file1", "file2"])  // array form
+	//   readFilesFromVolume("vol", "file1", "file2")    // rest params form (deprecated)
+	var filePaths []string
+	if arr, ok := call.Arguments[1].Export().([]interface{}); ok {
+		filePaths = make([]string, 0, len(arr))
+		for _, v := range arr {
+			filePaths = append(filePaths, fmt.Sprintf("%v", v))
+		}
+	} else {
+		filePaths = make([]string, 0, len(call.Arguments)-1)
+		for i := 1; i < len(call.Arguments); i++ {
+			filePaths = append(filePaths, call.Arguments[i].String())
+		}
 	}
 
 	r.promises.Add(1)

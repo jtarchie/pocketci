@@ -457,11 +457,11 @@ declare global {
      * Returns a map of relative path to file content string.
      *
      * @param volumeName - The name of the volume to read from.
-     * @param filePaths - One or more paths relative to the volume root.
+     * @param filePaths - Paths relative to the volume root.
      */
     function readFilesFromVolume(
       volumeName: string,
-      ...filePaths: string[]
+      filePaths: string[],
     ): Promise<Record<string, string>>;
   }
 
