@@ -10,6 +10,7 @@ The `ci` command-line tool provides these commands:
 - **`pocketci pipeline set`**: Store pipelines on a remote server (requires a
   running `pocketci server`)
 - **`pocketci pipeline run`**: Execute a stored pipeline on a remote server
+- **`pocketci pipeline trigger`**: Trigger async pipeline execution
 - **`pocketci pipeline rm`**: Remove a pipeline from a remote server
 - **`pocketci pipeline ls`**: List all pipelines on a remote server
 - **`pocketci pipeline pause`**: Pause a pipeline to prevent new runs

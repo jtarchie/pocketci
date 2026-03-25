@@ -41,6 +41,7 @@ export default defineConfig({
         { text: "Login", link: "login" },
         { text: "Pipeline Set", link: "pipeline-set" },
         { text: "Pipeline Run", link: "pipeline-run" },
+        { text: "Pipeline Trigger", link: "pipeline-trigger" },
         { text: "Pipeline Rm", link: "pipeline-rm" },
         { text: "Pipeline Ls", link: "pipeline-ls" },
         { text: "Pipeline Pause", link: "pipeline-pause" },

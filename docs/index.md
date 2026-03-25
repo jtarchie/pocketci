@@ -38,6 +38,7 @@ pipelines and supports Concourse-style YAML compatibility.
 - [Login](cli/login)
 - [Pipeline Set](cli/pipeline-set)
 - [Pipeline Run](cli/pipeline-run)
+- [Pipeline Trigger](cli/pipeline-trigger)
 - [Pipeline Rm](cli/pipeline-rm)
 - [Pipeline Ls](cli/pipeline-ls)
 - [Pipeline Pause](cli/pipeline-pause)
