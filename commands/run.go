@@ -306,7 +306,6 @@ func tarDirectory(dir string, w io.Writer, ignorePatterns []string) error {
 		hdr.Gname = ""
 		hdr.AccessTime = time.Time{}
 		hdr.ChangeTime = time.Time{}
-		hdr.Xattrs = nil     //nolint:all // clear macOS xattrs; Xattrs is deprecated but has no replacement
 		hdr.PAXRecords = nil // avoid PAX extensions
 		hdr.Format = tar.FormatGNU
 
