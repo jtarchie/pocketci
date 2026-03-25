@@ -47,13 +47,6 @@ func New(cfg Config, logger *slog.Logger) (secrets.Manager, error) {
 		return nil, errors.New("sqlite secrets backend requires a non-empty Passphrase")
 	}
 
-	key := secrets.DeriveKey(passphrase)
-
-	encryptor, err := secrets.NewEncryptor(key)
-	if err != nil {
-		return nil, fmt.Errorf("could not create encryptor: %w", err)
-	}
-
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("could not open secrets database: %w", err)
@@ -68,6 +61,21 @@ func New(cfg Config, logger *slog.Logger) (secrets.Manager, error) {
 	db.SetMaxIdleConns(1)
 	db.SetMaxOpenConns(1)
 
+	params, err := loadOrInitKDFParams(db)
+	if err != nil {
+		return nil, fmt.Errorf("could not load KDF params: %w", err)
+	}
+
+	key, err := secrets.DeriveKey(passphrase, params)
+	if err != nil {
+		return nil, fmt.Errorf("could not derive key: %w", err)
+	}
+
+	encryptor, err := secrets.NewEncryptor(key)
+	if err != nil {
+		return nil, fmt.Errorf("could not create encryptor: %w", err)
+	}
+
 	logger.Info("secrets.sqlite.initialized", "db", dbPath)
 
 	return &SQLite{
@@ -75,6 +83,49 @@ func New(cfg Config, logger *slog.Logger) (secrets.Manager, error) {
 		encryptor: encryptor,
 		logger:    logger,
 	}, nil
+}
+
+// loadOrInitKDFParams reads the KDF params from the kdf_params table.
+// If no row exists (first startup), it generates a new random salt and stores
+// the params before returning them.
+func loadOrInitKDFParams(db *sql.DB) (secrets.KDFParams, error) {
+	var params secrets.KDFParams
+
+	//nolint: noctx
+	row := db.QueryRow(`SELECT algorithm, salt, time, memory, threads FROM kdf_params WHERE id = 1`)
+
+	err := row.Scan(&params.Algorithm, &params.Salt, &params.Time, &params.Memory, &params.Threads)
+	if err == nil {
+		params.KeyLen = 32
+		return params, nil
+	}
+
+	if !errors.Is(err, sql.ErrNoRows) {
+		return secrets.KDFParams{}, fmt.Errorf("could not read kdf_params: %w", err)
+	}
+
+	// First startup: generate and persist a new salt.
+	params, err = secrets.DefaultKDFParams()
+	if err != nil {
+		return secrets.KDFParams{}, fmt.Errorf("could not generate KDF params: %w", err)
+	}
+
+	//nolint: noctx
+	_, err = db.Exec(
+		`INSERT INTO kdf_params (id, algorithm, salt, time, memory, threads) VALUES (1, ?, ?, ?, ?, ?)`,
+		params.Algorithm, params.Salt, params.Time, params.Memory, params.Threads,
+	)
+	if err != nil {
+		return secrets.KDFParams{}, fmt.Errorf("could not persist KDF params: %w", err)
+	}
+
+	return params, nil
+}
+
+// aadFor returns the additional authenticated data for a given scope and key.
+// This binds each ciphertext to its storage slot, preventing cross-slot swaps.
+func aadFor(scope, key string) []byte {
+	return []byte(scope + "\x00" + key)
 }
 
 func (s *SQLite) Get(ctx context.Context, scope string, key string) (string, error) {
@@ -91,7 +142,7 @@ func (s *SQLite) Get(ctx context.Context, scope string, key string) (string, err
 		return "", fmt.Errorf("could not query secret: %w", err)
 	}
 
-	plaintext, err := s.encryptor.Decrypt(encryptedValue)
+	plaintext, err := s.encryptor.Decrypt(encryptedValue, aadFor(scope, key))
 	if err != nil {
 		return "", fmt.Errorf("could not decrypt secret %q in scope %q: %w", key, scope, err)
 	}
@@ -100,7 +151,7 @@ func (s *SQLite) Get(ctx context.Context, scope string, key string) (string, err
 }
 
 func (s *SQLite) Set(ctx context.Context, scope string, key string, value string) error {
-	encrypted, err := s.encryptor.Encrypt([]byte(value))
+	encrypted, err := s.encryptor.Encrypt([]byte(value), aadFor(scope, key))
 	if err != nil {
 		return fmt.Errorf("could not encrypt secret: %w", err)
 	}

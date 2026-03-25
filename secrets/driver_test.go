@@ -83,6 +83,55 @@ func buildDriverFactories(t *testing.T) []driverFactory {
 	return factories
 }
 
+func TestS3KDFPersistence(t *testing.T) {
+	if _, err := exec.LookPath("minio"); err != nil {
+		t.Skip("minio not found in PATH")
+	}
+
+	logger := slog.New(slog.DiscardHandler)
+	server := testhelpers.StartMinIO(t)
+	t.Cleanup(server.Stop)
+
+	s3cfg := s3config.Config{
+		Bucket:          server.Bucket(),
+		Endpoint:        server.Endpoint(),
+		Region:          "us-east-1",
+		AccessKeyID:     server.AccessKeyID(),
+		SecretAccessKey: server.SecretAccessKey(),
+		ForcePathStyle:  true,
+		Key:             "kdf-persistence-passphrase",
+	}
+
+	ctx := context.Background()
+
+	// First open: generates KDF params, writes a secret.
+	mgr1, err := secretss3.New(secretss3.Config{Config: s3cfg}, logger)
+	if err != nil {
+		t.Fatalf("first open failed: %v", err)
+	}
+
+	err = mgr1.Set(ctx, secrets.GlobalScope, "PERSIST_KEY", "persist-value")
+	if err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+
+	_ = mgr1.Close()
+
+	// Second open: must reuse stored KDF params to decrypt.
+	mgr2, err := secretss3.New(secretss3.Config{Config: s3cfg}, logger)
+	if err != nil {
+		t.Fatalf("second open failed: %v", err)
+	}
+
+	assert := NewGomegaWithT(t)
+
+	val, err := mgr2.Get(ctx, secrets.GlobalScope, "PERSIST_KEY")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(val).To(Equal("persist-value"))
+
+	_ = mgr2.Close()
+}
+
 func TestSecretDrivers(t *testing.T) {
 	for _, factory := range buildDriverFactories(t) {
 		factory := factory

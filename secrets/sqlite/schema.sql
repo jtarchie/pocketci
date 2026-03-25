@@ -15,3 +15,14 @@ AFTER UPDATE ON secrets BEGIN
       updated_at = unixepoch()
   WHERE scope = NEW.scope AND key = NEW.key;
 END;
+
+-- Singleton row storing Argon2id KDF parameters (salt, time, memory, threads).
+-- The CHECK constraint enforces at most one row.
+CREATE TABLE IF NOT EXISTS kdf_params (
+  id        INTEGER PRIMARY KEY CHECK (id = 1),
+  algorithm TEXT    NOT NULL,
+  salt      BLOB    NOT NULL,
+  time      INTEGER NOT NULL,
+  memory    INTEGER NOT NULL,
+  threads   INTEGER NOT NULL
+) STRICT;

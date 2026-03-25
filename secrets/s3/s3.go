@@ -3,7 +3,8 @@
 // # Security model
 //
 // Secrets are protected by application-layer AES-256-GCM encryption (key
-// derived from Config.Key), applied before any bytes leave the process.
+// derived from Config.Key via Argon2id with a per-deployment random salt),
+// applied before any bytes leave the process.
 // An optional S3 Server-Side Encryption layer may be configured via
 // Config.EncryptMode (sse-s3, sse-kms, or sse-c).
 package s3
@@ -24,7 +25,7 @@ import (
 )
 
 // Config holds the configuration for the S3 secrets backend.
-// It embeds s3config.Config for all S3 connection fields, plus Passphrase
+// It embeds s3config.Config for all S3 connection fields, plus Key
 // for application-layer AES-256-GCM encryption.
 type Config struct {
 	s3config.Config
@@ -46,6 +47,16 @@ type secretRecord struct {
 	UpdatedAt      string `json:"updated_at"`
 }
 
+// kdfParamsRecord is the JSON structure stored as the KDF params sentinel object.
+type kdfParamsRecord struct {
+	Algorithm string `json:"algorithm"`
+	Salt      []byte `json:"salt"`
+	Time      uint32 `json:"time"`
+	Memory    uint32 `json:"memory"`
+	Threads   uint8  `json:"threads"`
+	KeyLen    uint32 `json:"key_len"`
+}
+
 // New creates a new S3-backed secrets manager.
 //
 // cfg.Key is mandatory: it is the passphrase for application-layer AES-256-GCM
@@ -62,18 +73,29 @@ func New(cfg Config, logger *slog.Logger) (secrets.Manager, error) {
 		return nil, errors.New("s3 secrets driver requires Key for application-layer encryption")
 	}
 
-	key := secrets.DeriveKey(cfg.Key)
-
-	encryptor, err := secrets.NewEncryptor(key)
-	if err != nil {
-		return nil, fmt.Errorf("could not create encryptor: %w", err)
-	}
-
 	ctx := context.Background()
 
 	client, err := s3config.NewClient(ctx, &cfg.Config)
 	if err != nil {
 		return nil, err
+	}
+
+	// Build a temporary S3 shell (no encryptor yet) to load/init KDF params.
+	shell := &S3{Client: client, logger: logger}
+
+	params, err := loadOrInitKDFParamsS3(ctx, shell)
+	if err != nil {
+		return nil, fmt.Errorf("could not load KDF params from S3: %w", err)
+	}
+
+	key, err := secrets.DeriveKey(cfg.Key, params)
+	if err != nil {
+		return nil, fmt.Errorf("could not derive key: %w", err)
+	}
+
+	encryptor, err := secrets.NewEncryptor(key)
+	if err != nil {
+		return nil, fmt.Errorf("could not create encryptor: %w", err)
 	}
 
 	mgr := &S3{
@@ -95,6 +117,74 @@ func New(cfg Config, logger *slog.Logger) (secrets.Manager, error) {
 	return mgr, nil
 }
 
+// kdfParamsKey returns the S3 object key used to store the KDF params sentinel.
+func (s *S3) kdfParamsKey() string {
+	parts := []string{}
+
+	if p := s.Prefix(); p != "" {
+		parts = append(parts, p)
+	}
+
+	parts = append(parts, "secrets", "__kdf_params__", "__kdf_params__.json")
+
+	return strings.Join(parts, "/")
+}
+
+// loadOrInitKDFParamsS3 reads KDF params from the reserved sentinel object.
+// On first startup (object not found), it generates a new random salt, uploads
+// the params, and returns them.
+func loadOrInitKDFParamsS3(ctx context.Context, s *S3) (secrets.KDFParams, error) {
+	objKey := s.kdfParamsKey()
+
+	data, err := s.GetBytes(ctx, objKey)
+	if err != nil && !s3config.IsNotFound(err) {
+		return secrets.KDFParams{}, fmt.Errorf("could not fetch KDF params: %w", err)
+	}
+
+	if err == nil {
+		var rec kdfParamsRecord
+
+		if jsonErr := json.Unmarshal(data, &rec); jsonErr != nil {
+			return secrets.KDFParams{}, fmt.Errorf("could not unmarshal KDF params: %w", jsonErr)
+		}
+
+		return secrets.KDFParams{
+			Algorithm: rec.Algorithm,
+			Salt:      rec.Salt,
+			Time:      rec.Time,
+			Memory:    rec.Memory,
+			Threads:   rec.Threads,
+			KeyLen:    rec.KeyLen,
+		}, nil
+	}
+
+	// First startup: generate and upload new KDF params.
+	params, genErr := secrets.DefaultKDFParams()
+	if genErr != nil {
+		return secrets.KDFParams{}, fmt.Errorf("could not generate KDF params: %w", genErr)
+	}
+
+	rec := kdfParamsRecord{
+		Algorithm: params.Algorithm,
+		Salt:      params.Salt,
+		Time:      params.Time,
+		Memory:    params.Memory,
+		Threads:   params.Threads,
+		KeyLen:    params.KeyLen,
+	}
+
+	payload, marshalErr := json.Marshal(rec)
+	if marshalErr != nil {
+		return secrets.KDFParams{}, fmt.Errorf("could not marshal KDF params: %w", marshalErr)
+	}
+
+	if putErr := s.PutBytes(ctx, objKey, payload, "application/json"); putErr != nil {
+		return secrets.KDFParams{}, fmt.Errorf("could not upload KDF params: %w", putErr)
+	}
+
+	return params, nil
+}
+
 // probeSSE writes a tiny sentinel object with SSE headers and verifies the
 // provider accepts them. The sentinel is deleted immediately after upload.
 func (s *S3) probeSSE(ctx context.Context) error {
@@ -113,7 +203,8 @@ func (s *S3) probeSSE(ctx context.Context) error {
 }
 
 // scopePrefix returns the S3 key prefix for a given scope directory.
-// Format: [prefix/]secrets/[scope]/
+// Each path segment of the scope is individually URL-escaped.
+// Format: [prefix/]secrets/[escaped-scope]/
 func (s *S3) scopePrefix(scope string) string {
 	parts := []string{}
 
@@ -121,15 +212,28 @@ func (s *S3) scopePrefix(scope string) string {
 		parts = append(parts, p)
 	}
 
-	parts = append(parts, "secrets", scope)
+	scopeSegments := strings.Split(scope, "/")
+	escaped := make([]string, len(scopeSegments))
+
+	for i, seg := range scopeSegments {
+		escaped[i] = url.PathEscape(seg)
+	}
+
+	parts = append(parts, "secrets", strings.Join(escaped, "/"))
 
 	return strings.Join(parts, "/") + "/"
 }
 
 // objectKey returns the S3 key for a specific scope+key combination.
-// Format: [prefix/]secrets/[scope]/[url.PathEscape(key)].json
+// Format: [prefix/]secrets/[escaped-scope]/[url.PathEscape(key)].json
 func (s *S3) objectKey(scope, key string) string {
 	return s.scopePrefix(scope) + url.PathEscape(key) + ".json"
+}
+
+// aadFor returns the additional authenticated data for a given scope and key.
+// This binds each ciphertext to its storage slot, preventing cross-slot swaps.
+func aadFor(scope, key string) []byte {
+	return []byte(scope + "\x00" + key)
 }
 
 // upload writes a secretRecord to S3 using multipart upload with SSE.
@@ -174,7 +278,7 @@ func (s *S3) Get(ctx context.Context, scope string, key string) (string, error) 
 		return "", fmt.Errorf("could not decode encrypted value for %q in scope %q: %w", key, scope, err)
 	}
 
-	plaintext, err := s.encryptor.Decrypt(ciphertext)
+	plaintext, err := s.encryptor.Decrypt(ciphertext, aadFor(scope, key))
 	if err != nil {
 		return "", fmt.Errorf("could not decrypt secret %q in scope %q: %w", key, scope, err)
 	}
@@ -184,7 +288,7 @@ func (s *S3) Get(ctx context.Context, scope string, key string) (string, error) 
 
 // Set stores or updates an encrypted secret.
 func (s *S3) Set(ctx context.Context, scope string, key string, value string) error {
-	encrypted, err := s.encryptor.Encrypt([]byte(value))
+	encrypted, err := s.encryptor.Encrypt([]byte(value), aadFor(scope, key))
 	if err != nil {
 		return fmt.Errorf("could not encrypt secret: %w", err)
 	}
