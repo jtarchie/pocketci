@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
-	"runtime/debug"
 
 	"github.com/dop251/goja"
 
@@ -24,36 +22,21 @@ type AgentRuntime struct {
 // mounts, outputVolumePath, and optional callbacks.
 func (ar *AgentRuntime) Run(call goja.FunctionCall) goja.Value {
 	r := ar.rt
-	promise, resolve, reject := r.jsVM.NewPromise()
 
 	if len(call.Arguments) == 0 {
-		_ = reject(r.jsVM.NewGoError(errors.New("agent.run requires an input object")))
-		return r.jsVM.ToValue(promise)
+		return r.rejectImmediate(errors.New("agent.run requires an input object"))
 	}
 
 	inputObj := call.Arguments[0].ToObject(r.jsVM)
 
 	var config agent.AgentConfig
 	if err := r.jsVM.ExportTo(inputObj, &config); err != nil {
-		_ = reject(r.jsVM.NewGoError(fmt.Errorf("invalid agent input: %w", err)))
-		return r.jsVM.ToValue(promise)
+		return r.rejectImmediate(fmt.Errorf("invalid agent input: %w", err))
 	}
 
 	ar.extractAgentCallbacks(inputObj, &config)
 
-	r.promises.Add(1)
-
-	go func() {
-		defer func() {
-			if p := recover(); p != nil {
-				slog.Error("agent.run.panic", "panic", p, "stack", string(debug.Stack()))
-				r.tasks <- func() error {
-					defer r.promises.Done()
-					return reject(r.jsVM.NewGoError(fmt.Errorf("panic in agent: %v", p)))
-				}
-			}
-		}()
-
+	return r.jsVM.ToValue(asyncTask(r, "agent.run", func() (json.RawMessage, error) {
 		ctx := r.ctx
 		if ctx == nil {
 			ctx = context.Background()
@@ -64,44 +47,18 @@ func (ar *AgentRuntime) Run(call goja.FunctionCall) goja.Value {
 
 		configJSON, err := json.Marshal(config)
 		if err != nil {
-			r.tasks <- func() error {
-				defer r.promises.Done()
-
-				return reject(r.jsVM.NewGoError(fmt.Errorf("could not marshal agent config: %w", err)))
-			}
-
-			return
+			return nil, fmt.Errorf("could not marshal agent config: %w", err)
 		}
 
-		resultJSON, err := r.runner.RunAgent(configJSON)
-
-		r.tasks <- func() error {
-			defer r.promises.Done()
-
-			if err != nil {
-				err = reject(r.jsVM.NewGoError(err))
-				if err != nil {
-					return fmt.Errorf("could not reject agent: %w", err)
-				}
-
-				return nil
-			}
-
-			var result agent.AgentResult
-			if unmarshalErr := json.Unmarshal(resultJSON, &result); unmarshalErr != nil {
-				return reject(r.jsVM.NewGoError(fmt.Errorf("could not unmarshal agent result: %w", unmarshalErr)))
-			}
-
-			err = resolve(result)
-			if err != nil {
-				return fmt.Errorf("could not resolve agent: %w", err)
-			}
-
-			return nil
+		return r.runner.RunAgent(configJSON)
+	}, func(resultJSON json.RawMessage) (any, error) {
+		var result agent.AgentResult
+		if err := json.Unmarshal(resultJSON, &result); err != nil {
+			return nil, fmt.Errorf("could not unmarshal agent result: %w", err)
 		}
-	}()
 
-	return r.jsVM.ToValue(promise)
+		return result, nil
+	}))
 }
 
 // extractAgentCallbacks reads optional JS callback properties from the input
@@ -179,18 +136,3 @@ func (ar *AgentRuntime) installAgentFunc(ctx context.Context, config *agent.Agen
 	})
 }
 
-// extractJSCallback reads a named property from a goja object and returns the
-// callable if it exists and is a function; otherwise returns nil.
-func extractJSCallback(vm *goja.Runtime, obj *goja.Object, name string) goja.Callable {
-	val := obj.Get(name)
-	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
-		return nil
-	}
-
-	fn, ok := goja.AssertFunction(val)
-	if !ok {
-		return nil
-	}
-
-	return fn
-}

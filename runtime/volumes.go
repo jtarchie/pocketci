@@ -3,8 +3,6 @@ package runtime
 import (
 	"errors"
 	"fmt"
-	"log/slog"
-	"runtime/debug"
 
 	"github.com/dop251/goja"
 
@@ -21,6 +19,7 @@ type Volumes struct {
 // Create creates a new volume.
 func (v *Volumes) Create(input runner.VolumeInput) *goja.Promise {
 	r := v.rt
+
 	if input.Name == "" {
 		r.mu.Lock()
 		volumeID := fmt.Sprintf("vol-%d", r.volumeIndex)
@@ -29,47 +28,11 @@ func (v *Volumes) Create(input runner.VolumeInput) *goja.Promise {
 		input.Name = support.DeterministicVolumeID(r.namespace, fmt.Sprintf("%s-%s", r.runID, volumeID))
 	}
 
-	promise, resolve, reject := r.jsVM.NewPromise()
-
-	r.promises.Add(1)
-
-	go func() {
-		defer func() {
-			if p := recover(); p != nil {
-				slog.Error("volumes.create.panic", "panic", p, "stack", string(debug.Stack()))
-				r.tasks <- func() error {
-					defer r.promises.Done()
-					return reject(r.jsVM.NewGoError(fmt.Errorf("panic in createVolume: %v", p)))
-				}
-			}
-		}()
-
-		result, err := r.runner.CreateVolume(input)
-
-		r.tasks <- func() error {
-			defer r.promises.Done()
-
-			if err != nil {
-				err = reject(err)
-				if err != nil {
-					return fmt.Errorf("could not reject run: %w", err)
-				}
-
-				return nil
-			}
-
-			volObj := v.buildVolumeObject(result)
-
-			err := resolve(volObj)
-			if err != nil {
-				return fmt.Errorf("could not resolve create volume: %w", err)
-			}
-
-			return nil
-		}
-	}()
-
-	return promise
+	return asyncTask(r, "volumes.create", func() (*runner.VolumeResult, error) {
+		return r.runner.CreateVolume(input)
+	}, func(result *runner.VolumeResult) (any, error) {
+		return v.buildVolumeObject(result), nil
+	})
 }
 
 // buildVolumeObject constructs a JS object with name, path, and a readFiles()
@@ -89,61 +52,19 @@ func (v *Volumes) buildVolumeObject(result *runner.VolumeResult) *goja.Object {
 func (v *Volumes) volumeReadFilesFunc(volumeName string) func(goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		r := v.rt
-		promise, resolve, reject := r.jsVM.NewPromise()
 
 		if len(call.Arguments) < 1 {
-			_ = reject(r.jsVM.NewGoError(errors.New("readFiles requires a filePaths array")))
-			return r.jsVM.ToValue(promise)
+			return r.rejectImmediate(errors.New("readFiles requires a filePaths array"))
 		}
 
-		var filePaths []string
-		if arr, ok := call.Arguments[0].Export().([]interface{}); ok {
-			filePaths = make([]string, 0, len(arr))
-			for _, val := range arr {
-				filePaths = append(filePaths, fmt.Sprintf("%v", val))
-			}
-		} else {
-			_ = reject(r.jsVM.NewGoError(errors.New("readFiles expects an array of file paths")))
-			return r.jsVM.ToValue(promise)
+		filePaths, ok := exportFilePathsArray(call.Arguments[0])
+		if !ok {
+			return r.rejectImmediate(errors.New("readFiles expects an array of file paths"))
 		}
 
-		r.promises.Add(1)
-
-		go func() {
-			defer func() {
-				if p := recover(); p != nil {
-					slog.Error("volume.readFiles.panic", "panic", p, "stack", string(debug.Stack()))
-					r.tasks <- func() error {
-						defer r.promises.Done()
-						return reject(r.jsVM.NewGoError(fmt.Errorf("panic in readFiles: %v", p)))
-					}
-				}
-			}()
-
-			result, err := r.runner.ReadFilesFromVolume(volumeName, filePaths...)
-
-			r.tasks <- func() error {
-				defer r.promises.Done()
-
-				if err != nil {
-					err = reject(r.jsVM.NewGoError(err))
-					if err != nil {
-						return fmt.Errorf("could not reject readFiles: %w", err)
-					}
-
-					return nil
-				}
-
-				err = resolve(result)
-				if err != nil {
-					return fmt.Errorf("could not resolve readFiles: %w", err)
-				}
-
-				return nil
-			}
-		}()
-
-		return r.jsVM.ToValue(promise)
+		return r.jsVM.ToValue(asyncTask(r, "volume.readFiles", func() (map[string]string, error) {
+			return r.runner.ReadFilesFromVolume(volumeName, filePaths...)
+		}, identity))
 	}
 }
 
@@ -151,22 +72,17 @@ func (v *Volumes) volumeReadFilesFunc(volumeName string) func(goja.FunctionCall)
 // Returns a Promise that resolves to a map of path → content strings.
 func (v *Volumes) ReadFiles(call goja.FunctionCall) goja.Value {
 	r := v.rt
-	promise, resolve, reject := r.jsVM.NewPromise()
 
 	if len(call.Arguments) < 2 {
-		_ = reject(r.jsVM.NewGoError(errors.New("readFiles requires volumeName and filePaths")))
-		return r.jsVM.ToValue(promise)
+		return r.rejectImmediate(errors.New("readFiles requires volumeName and filePaths"))
 	}
 
 	volumeName := call.Arguments[0].String()
 
 	// Support both array and variadic string arguments
 	var filePaths []string
-	if arr, ok := call.Arguments[1].Export().([]interface{}); ok {
-		filePaths = make([]string, 0, len(arr))
-		for _, val := range arr {
-			filePaths = append(filePaths, fmt.Sprintf("%v", val))
-		}
+	if arr, ok := exportFilePathsArray(call.Arguments[1]); ok {
+		filePaths = arr
 	} else {
 		filePaths = make([]string, 0, len(call.Arguments)-1)
 		for i := 1; i < len(call.Arguments); i++ {
@@ -174,41 +90,7 @@ func (v *Volumes) ReadFiles(call goja.FunctionCall) goja.Value {
 		}
 	}
 
-	r.promises.Add(1)
-
-	go func() {
-		defer func() {
-			if p := recover(); p != nil {
-				slog.Error("volumes.readFiles.panic", "panic", p, "stack", string(debug.Stack()))
-				r.tasks <- func() error {
-					defer r.promises.Done()
-					return reject(r.jsVM.NewGoError(fmt.Errorf("panic in readFiles: %v", p)))
-				}
-			}
-		}()
-
-		result, err := r.runner.ReadFilesFromVolume(volumeName, filePaths...)
-
-		r.tasks <- func() error {
-			defer r.promises.Done()
-
-			if err != nil {
-				err = reject(r.jsVM.NewGoError(err))
-				if err != nil {
-					return fmt.Errorf("could not reject readFiles: %w", err)
-				}
-
-				return nil
-			}
-
-			err = resolve(result)
-			if err != nil {
-				return fmt.Errorf("could not resolve readFiles: %w", err)
-			}
-
-			return nil
-		}
-	}()
-
-	return r.jsVM.ToValue(promise)
+	return r.jsVM.ToValue(asyncTask(r, "volumes.readFiles", func() (map[string]string, error) {
+		return r.runner.ReadFilesFromVolume(volumeName, filePaths...)
+	}, identity))
 }
