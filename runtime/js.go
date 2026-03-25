@@ -326,54 +326,58 @@ func (j *JS) setupWebhookBindings(ctx context.Context, jsVM *goja.Runtime, store
 	}
 
 	if err := jsVM.Set("webhookDedup", func(expression string) bool {
-		if opts.WebhookData == nil {
-			return false // manual triggers are never duplicates
-		}
-
-		env := buildWebhookEnv(opts.WebhookData)
-
-		keyHash, evalErr := filter.DedupKeyHash(expression, env)
-		if evalErr != nil {
-			slog.Error("webhookDedup evaluation failed", "error", evalErr, "expression", expression)
-
-			return false // on error, don't skip
-		}
-
-		if keyHash == nil {
-			return false // empty key, no dedup
-		}
-
-		ttl := opts.DedupTTL
-		if ttl == 0 {
-			ttl = defaultDedupTTL
-		}
-
-		cutoff := time.Now().UTC().Add(-ttl)
-		if _, pruneErr := store.PruneWebhookDedup(ctx, cutoff); pruneErr != nil {
-			slog.Warn("webhookDedup prune failed", "error", pruneErr)
-		}
-
-		isDup, checkErr := store.CheckWebhookDedup(ctx, opts.PipelineID, keyHash)
-		if checkErr != nil {
-			slog.Error("webhookDedup check failed", "error", checkErr)
-
-			return false
-		}
-
-		if isDup {
-			return true
-		}
-
-		if saveErr := store.SaveWebhookDedup(ctx, opts.PipelineID, keyHash); saveErr != nil {
-			slog.Warn("webhookDedup save failed", "error", saveErr)
-		}
-
-		return false
+		return j.evaluateWebhookDedup(ctx, store, opts, expression)
 	}); err != nil {
 		return fmt.Errorf("could not set webhookDedup: %w", err)
 	}
 
 	return nil
+}
+
+func (j *JS) evaluateWebhookDedup(ctx context.Context, store storage.Driver, opts ExecuteOptions, expression string) bool {
+	if opts.WebhookData == nil {
+		return false // manual triggers are never duplicates
+	}
+
+	env := buildWebhookEnv(opts.WebhookData)
+
+	keyHash, evalErr := filter.DedupKeyHash(expression, env)
+	if evalErr != nil {
+		slog.Error("webhookDedup evaluation failed", "error", evalErr, "expression", expression)
+
+		return false // on error, don't skip
+	}
+
+	if keyHash == nil {
+		return false // empty key, no dedup
+	}
+
+	ttl := opts.DedupTTL
+	if ttl == 0 {
+		ttl = defaultDedupTTL
+	}
+
+	cutoff := time.Now().UTC().Add(-ttl)
+	if _, pruneErr := store.PruneWebhookDedup(ctx, cutoff); pruneErr != nil {
+		slog.Warn("webhookDedup prune failed", "error", pruneErr)
+	}
+
+	isDup, checkErr := store.CheckWebhookDedup(ctx, opts.PipelineID, keyHash)
+	if checkErr != nil {
+		slog.Error("webhookDedup check failed", "error", checkErr)
+
+		return false
+	}
+
+	if isDup {
+		return true
+	}
+
+	if saveErr := store.SaveWebhookDedup(ctx, opts.PipelineID, keyHash); saveErr != nil {
+		slog.Warn("webhookDedup save failed", "error", saveErr)
+	}
+
+	return false
 }
 
 // buildWebhookEnv constructs a filter.WebhookEnv from webhook data.
