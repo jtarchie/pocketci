@@ -14,13 +14,15 @@ import (
 
 // CachingVolume wraps a volume to provide transparent S3-backed caching.
 type CachingVolume struct {
-	inner      orchestra.Volume
-	accessor   VolumeDataAccessor
-	store      CacheStore
-	compressor Compressor
-	cacheKey   string
-	logger     *slog.Logger
-	restored   bool
+	inner       orchestra.Volume
+	accessor    VolumeDataAccessor
+	store       CacheStore
+	compressor  Compressor
+	cacheKey    string
+	logger      *slog.Logger
+	restored    bool
+	restoreOnly bool
+	persistOnly bool
 }
 
 // NewCachingVolume creates a new caching volume wrapper.
@@ -31,14 +33,38 @@ func NewCachingVolume(
 	compressor Compressor,
 	cacheKey string,
 	logger *slog.Logger,
+	opts ...CachingVolumeOption,
 ) *CachingVolume {
-	return &CachingVolume{
+	v := &CachingVolume{
 		inner:      inner,
 		accessor:   accessor,
 		store:      store,
 		compressor: compressor,
 		cacheKey:   cacheKey + ".tar" + compressor.Extension(),
 		logger:     logger,
+	}
+
+	for _, opt := range opts {
+		opt(v)
+	}
+
+	return v
+}
+
+// CachingVolumeOption configures a CachingVolume.
+type CachingVolumeOption func(*CachingVolume)
+
+// WithRestoreOnly configures the volume to only restore from cache, never persist.
+func WithRestoreOnly() CachingVolumeOption {
+	return func(v *CachingVolume) {
+		v.restoreOnly = true
+	}
+}
+
+// WithPersistOnly configures the volume to only persist to cache, never restore.
+func WithPersistOnly() CachingVolumeOption {
+	return func(v *CachingVolume) {
+		v.persistOnly = true
 	}
 }
 
@@ -50,6 +76,12 @@ func (v *CachingVolume) RestoreFromCache(ctx context.Context) error {
 	}
 
 	v.restored = true
+
+	if v.persistOnly {
+		v.logger.Debug("volume.restore.skipped", "volume", v.inner.Name(), "reason", "persist-only mode")
+
+		return nil
+	}
 
 	v.logger.Debug("volume.check",
 		"volume", v.inner.Name(),
@@ -115,6 +147,12 @@ func (v *CachingVolume) RestoreFromCache(ctx context.Context) error {
 // If the store implements HashAwareCacheStore, content hashing is used
 // to skip redundant uploads when the volume content has not changed.
 func (v *CachingVolume) PersistToCache(ctx context.Context) error {
+	if v.restoreOnly {
+		v.logger.Debug("volume.persist.skipped", "volume", v.inner.Name(), "reason", "restore-only mode")
+
+		return nil
+	}
+
 	v.logger.Info("volume.persist",
 		"volume", v.inner.Name(),
 		"cache_key", v.cacheKey,

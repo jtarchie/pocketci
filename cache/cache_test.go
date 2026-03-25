@@ -428,3 +428,72 @@ func TestCachingVolumeExistsCheckBeforeRestore(t *testing.T) {
 		assert.Expect(store.restoreCalls).To(gomega.Equal(0))
 	})
 }
+
+func TestCachingVolumeRestoreOnlyMode(t *testing.T) {
+	t.Parallel()
+
+	assert := gomega.NewGomegaWithT(t)
+	ctx := context.Background()
+
+	store := newTrackingMockCacheStore()
+	compressor := cache.NewCompressor("none")
+	logger := slog.Default()
+
+	// Pre-populate cache
+	err := store.Persist(ctx, "test-key.tar", bytes.NewReader([]byte("cached data")))
+	assert.Expect(err).NotTo(gomega.HaveOccurred())
+
+	vol := cache.NewCachingVolume(
+		&mockVolume{name: "test-vol"},
+		&mockAccessor{},
+		store,
+		compressor,
+		"test-key",
+		logger,
+		cache.WithRestoreOnly(),
+	)
+
+	// Restore should work
+	err = vol.RestoreFromCache(ctx)
+	assert.Expect(err).NotTo(gomega.HaveOccurred())
+	assert.Expect(store.existsCalls).To(gomega.Equal(1))
+	assert.Expect(store.restoreCalls).To(gomega.Equal(1))
+
+	// Cleanup (which calls PersistToCache) should NOT persist
+	store.persistCalls = 0
+	err = vol.Cleanup(ctx)
+	assert.Expect(err).NotTo(gomega.HaveOccurred())
+	assert.Expect(store.persistCalls).To(gomega.Equal(0))
+}
+
+func TestCachingVolumePersistOnlyMode(t *testing.T) {
+	t.Parallel()
+
+	assert := gomega.NewGomegaWithT(t)
+	ctx := context.Background()
+
+	store := newTrackingMockCacheStore()
+	compressor := cache.NewCompressor("none")
+	logger := slog.Default()
+
+	vol := cache.NewCachingVolume(
+		&mockVolume{name: "test-vol"},
+		&mockAccessor{},
+		store,
+		compressor,
+		"test-key",
+		logger,
+		cache.WithPersistOnly(),
+	)
+
+	// Restore should be skipped (persist-only mode)
+	err := vol.RestoreFromCache(ctx)
+	assert.Expect(err).NotTo(gomega.HaveOccurred())
+	assert.Expect(store.existsCalls).To(gomega.Equal(0))
+	assert.Expect(store.restoreCalls).To(gomega.Equal(0))
+
+	// Persist should work
+	err = vol.PersistToCache(ctx)
+	assert.Expect(err).NotTo(gomega.HaveOccurred())
+	assert.Expect(store.persistCalls).To(gomega.Equal(1))
+}

@@ -16,6 +16,7 @@ type CachingDriver struct {
 	compressor Compressor
 	keyPrefix  string
 	logger     *slog.Logger
+	volOpts    []CachingVolumeOption
 }
 
 // NewCachingDriver creates a new caching driver wrapper.
@@ -27,6 +28,7 @@ func NewCachingDriver(
 	compressor Compressor,
 	keyPrefix string,
 	logger *slog.Logger,
+	volOpts ...CachingVolumeOption,
 ) *CachingDriver {
 	// Check if driver supports volume data access
 	if _, ok := inner.(VolumeDataAccessor); !ok {
@@ -41,6 +43,7 @@ func NewCachingDriver(
 		compressor: compressor,
 		keyPrefix:  keyPrefix,
 		logger:     logger,
+		volOpts:    volOpts,
 	}
 }
 
@@ -74,6 +77,7 @@ func (d *CachingDriver) CreateVolume(ctx context.Context, name string, size int)
 		d.compressor,
 		cacheKey,
 		d.logger,
+		d.volOpts...,
 	)
 
 	// Eagerly restore from cache

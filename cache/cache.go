@@ -32,6 +32,14 @@ type CacheOptions struct {
 
 	// Compression specifies the compression algorithm (e.g., "zstd", "gzip", "none").
 	Compression string
+
+	// RestoreOnly skips persisting to cache on volume cleanup.
+	// Useful for read-only caches shared from another source.
+	RestoreOnly bool
+
+	// PersistOnly skips restoring from cache on volume creation.
+	// Useful for write-through scenarios.
+	PersistOnly bool
 }
 
 // HashAwareCacheStore extends CacheStore with content-hash awareness.

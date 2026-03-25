@@ -16,6 +16,7 @@ func WrapWithCaching(
 	compression string,
 	keyPrefix string,
 	logger *slog.Logger,
+	volOpts ...CachingVolumeOption,
 ) orchestra.Driver {
 	if store == nil {
 		return driver
@@ -34,5 +35,5 @@ func WrapWithCaching(
 		return driver
 	}
 
-	return NewCachingDriver(driver, store, compressor, keyPrefix, logger)
+	return NewCachingDriver(driver, store, compressor, keyPrefix, logger, volOpts...)
 }
