@@ -103,6 +103,46 @@ type EventuallyContainsStringOptions struct {
 	Message    string `json:"message"`
 }
 
+// parseEventuallyOptions parses the third+ arguments as either an options
+// object or deprecated positional args.
+func (a *Assert) parseEventuallyOptions(args []goja.Value) (timeoutMs, intervalMs int64, message string) {
+	if len(args) == 0 {
+		return 0, 0, ""
+	}
+
+	arg := args[0]
+	if goja.IsUndefined(arg) || goja.IsNull(arg) {
+		return 0, 0, ""
+	}
+
+	obj := arg.ToObject(a.vm)
+	if obj == nil {
+		return 0, 0, ""
+	}
+
+	// Options object form: { timeoutMs, intervalMs, message }
+	if obj.Get("timeoutMs") != nil || obj.Get("intervalMs") != nil || obj.Get("message") != nil {
+		var opts EventuallyContainsStringOptions
+		if err := a.vm.ExportTo(arg, &opts); err == nil {
+			return opts.TimeoutMs, opts.IntervalMs, opts.Message
+		}
+
+		return 0, 0, ""
+	}
+
+	// Deprecated positional form: timeoutMs, intervalMs, message
+	timeoutMs = arg.ToInteger()
+	if len(args) >= 2 {
+		intervalMs = args[1].ToInteger()
+	}
+
+	if len(args) >= 3 {
+		message = args[2].String()
+	}
+
+	return timeoutMs, intervalMs, message
+}
+
 // EventuallyContainsString polls a getter function until the returned string
 // matches substr or the timeout expires.
 //
@@ -118,33 +158,7 @@ func (a *Assert) EventuallyContainsString(call goja.FunctionCall) goja.Value {
 
 	getter := call.Arguments[0]
 	substr := call.Arguments[1].String()
-
-	var timeoutMs, intervalMs int64
-	var message string
-
-	// Detect options object vs positional args
-	if len(call.Arguments) >= 3 && !goja.IsUndefined(call.Arguments[2]) && !goja.IsNull(call.Arguments[2]) {
-		if obj := call.Arguments[2].ToObject(a.vm); obj != nil {
-			// Check if it's an options object (has a known key) vs a number
-			if obj.Get("timeoutMs") != nil || obj.Get("intervalMs") != nil || obj.Get("message") != nil {
-				var opts EventuallyContainsStringOptions
-				if err := a.vm.ExportTo(call.Arguments[2], &opts); err == nil {
-					timeoutMs = opts.TimeoutMs
-					intervalMs = opts.IntervalMs
-					message = opts.Message
-				}
-			} else {
-				// Deprecated positional form
-				timeoutMs = call.Arguments[2].ToInteger()
-				if len(call.Arguments) >= 4 {
-					intervalMs = call.Arguments[3].ToInteger()
-				}
-				if len(call.Arguments) >= 5 {
-					message = call.Arguments[4].String()
-				}
-			}
-		}
-	}
+	timeoutMs, intervalMs, message := a.parseEventuallyOptions(call.Arguments[2:])
 
 	a.logger.Debug("substring.eventually.checking",
 		"pattern_length", len(substr),

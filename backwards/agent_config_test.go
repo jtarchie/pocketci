@@ -71,7 +71,7 @@ func TestAgentStepConfig(t *testing.T) {
 		assert.Expect(js).To(ContainSubstring(`"temperature"`))
 		assert.Expect(js).To(ContainSubstring(`"max_tokens"`))
 		assert.Expect(js).To(ContainSubstring(`"thinking"`))
-		assert.Expect(js).To(ContainSubstring(`"context_guard"`))
+		assert.Expect(js).To(ContainSubstring(`contextGuard`))
 		assert.Expect(js).To(ContainSubstring(`"safety"`))
 		assert.Expect(js).To(ContainSubstring(`"limits"`))
 	})

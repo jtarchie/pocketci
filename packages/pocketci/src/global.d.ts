@@ -93,26 +93,26 @@ declare global {
    *   image: "golang:1.24",
    *   command: { path: "go", args: ["test", "./..."] },
    *   mounts: { src },     // same volume — sees the cloned repo
-   *   work_dir: src.path,  // absolute path to the volume on the host
+   *   workDir: src.path,  // absolute path to the volume on the host
    * });
    * ```
    */
   interface RunTaskConfig {
     command: CommandConfig;
-    container_limits?: ContainerLimits;
+    containerLimits?: ContainerLimits;
     env?: EnvVars;
     image: string;
     mounts?: KnownMounts;
     name: string;
     privileged?: boolean;
     stdin?: string;
-    work_dir?: string;
+    workDir?: string;
     // Callback invoked with streaming output chunks as the container runs
     onOutput?: OutputCallback;
     timeout?: string;
     // When set, overrides the auto-generated storage path used by the runtime
     // so the caller's own storage entry is the single source of truth.
-    storage_key?: string;
+    storageKey?: string;
   }
 
   interface RunTaskResult {
@@ -332,18 +332,18 @@ declare global {
 
   // Unified tool definition passed to agent.run(). Covers both
   // agent tools (LLM sub-agents) and task tools (container commands).
-  // Distinguish by the `is_task` flag.
+  // Distinguish by the `isTask` flag.
   interface ToolDef {
     name: string;
     prompt?: string;
     model?: string;
     image?: string;
     storageKeyPrefix?: string; // Parent storage key for nested path persistence
-    // Task-specific fields (present when is_task is true)
-    is_task?: boolean;
+    // Task-specific fields (present when isTask is true)
+    isTask?: boolean;
     description?: string;
-    command_path?: string;
-    command_args?: string[];
+    commandPath?: string;
+    commandArgs?: string[];
     env?: { [key: string]: string };
   }
 
@@ -370,12 +370,12 @@ declare global {
     llm?: AgentLLMConfig;
     thinking?: AgentThinkingConfig;
     safety?: { [key: string]: string };
-    context_guard?: AgentContextGuardConfig;
+    contextGuard?: AgentContextGuardConfig;
     limits?: AgentLimitsConfig;
     context?: AgentContext;
     validation?: AgentValidationConfig;
-    output_schema?: Record<string, unknown>;
-    tool_timeout?: string; // Per-tool timeout duration (e.g. "60s", "5m")
+    outputSchema?: Record<string, unknown>;
+    toolTimeout?: string; // Per-tool timeout duration (e.g. "60s", "5m")
     tools?: ToolDef[]; // Agent + task tools registered as callable tools
   }
 
@@ -477,7 +477,7 @@ declare global {
     name: string;
     env?: EnvVars;
     mounts?: KnownMounts;
-    work_dir?: string;
+    workDir?: string;
     privileged?: boolean;
   }
 
@@ -485,7 +485,7 @@ declare global {
   interface SandboxExecConfig {
     command: CommandConfig;
     env?: EnvVars;
-    work_dir?: string;
+    workDir?: string;
     stdin?: string;
     timeout?: string;
     /** Callback invoked with streaming output chunks as the command runs. */

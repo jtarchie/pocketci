@@ -223,8 +223,8 @@ func TestOutputSchemaRoundTrip(t *testing.T) {
 
 		raw := make(map[string]json.RawMessage)
 		assert.Expect(json.Unmarshal(data, &raw)).To(Succeed())
-		_, found := raw["output_schema"]
-		assert.Expect(found).To(BeFalse(), "output_schema must be omitted when nil")
+		_, found := raw["outputSchema"]
+		assert.Expect(found).To(BeFalse(), "outputSchema must be omitted when nil")
 	})
 }
 

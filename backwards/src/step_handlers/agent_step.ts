@@ -148,12 +148,12 @@ export class AgentStepHandler implements StepHandler {
         }
         tools.push({
           name: taskTool.task,
-          is_task: true,
+          isTask: true,
           description: taskTool.description ?? "",
           image: taskConfig?.image ??
             taskConfig?.image_resource?.source?.repository ?? "",
-          command_path: taskConfig?.run?.path ?? "",
-          command_args: taskConfig?.run?.args ?? [],
+          commandPath: taskConfig?.run?.path ?? "",
+          commandArgs: taskConfig?.run?.args ?? [],
           env: taskConfig?.env ?? {},
           storageKeyPrefix: storageKey.replace(/\/run$/, ""),
         });
@@ -239,12 +239,12 @@ export class AgentStepHandler implements StepHandler {
         llm: agentStep.llm,
         thinking: agentStep.thinking,
         safety: agentStep.safety,
-        context_guard: agentStep.context_guard,
+        contextGuard: agentStep.context_guard,
         limits: agentStep.limits,
         context: agentStep.context,
         validation: agentStep.validation,
-        output_schema: agentStep.output_schema,
-        tool_timeout: agentStep.tool_timeout,
+        outputSchema: agentStep.output_schema,
+        toolTimeout: agentStep.tool_timeout,
         tools: tools.length > 0 ? tools : undefined,
         onUsage: (usage: AgentUsage) => {
           latestUsage = usage;

@@ -29,7 +29,7 @@ const pipeline = async () => {
     result = await sandbox.exec({
       command: { path: "sh", args: ["-c", "echo $GREET && pwd"] },
       env: { GREET: "hey-world" },
-      work_dir: "/tmp",
+      workDir: "/tmp",
     });
     assert.equal(result.code, 0);
     assert.containsString(result.stdout, "hey-world");

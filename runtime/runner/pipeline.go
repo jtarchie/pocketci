@@ -272,14 +272,14 @@ type RunInput struct {
 	ContainerLimits struct {
 		CPU    int64 `json:"cpu"`
 		Memory int64 `json:"memory"`
-	} `json:"container_limits"`
+	} `json:"containerLimits"`
 	Env        map[string]string       `json:"env"`
 	Image      string                  `json:"image"`
 	Mounts     map[string]VolumeResult `json:"mounts"`
 	Name       string                  `json:"name"`
 	Privileged bool                    `json:"privileged"`
 	Stdin      string                  `json:"stdin"`
-	WorkDir    string                  `json:"work_dir"`
+	WorkDir    string                  `json:"workDir"`
 	// OnOutput is called with streaming output chunks as the container runs.
 	// If provided, the callback receives (stream, data) where stream is "stdout" or "stderr".
 	OnOutput OutputCallback `json:"-"` // Not serialized from JS, set programmatically
@@ -289,7 +289,7 @@ type RunInput struct {
 	// When set (e.g. by the backwards TS layer), Go uses this path so that the
 	// caller's own storage entry is the single source of truth and no duplicate
 	// top-level tasks/ entry is created.
-	StorageKey string `json:"storage_key"`
+	StorageKey string `json:"storageKey"`
 }
 
 type RunStatus string

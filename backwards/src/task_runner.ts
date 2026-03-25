@@ -64,7 +64,7 @@ export class TaskRunner {
           args: step.config.run!.args || [],
           user: step.config.run!.user,
         },
-        container_limits: step.config.container_limits,
+        containerLimits: step.config.container_limits,
         env: step.config.env,
         image: image,
         name: step.task,
@@ -72,7 +72,7 @@ export class TaskRunner {
         privileged: step.privileged ?? false,
         stdin: stdin ?? "",
         timeout: step.timeout,
-        storage_key: taskStorageKey,
+        storageKey: taskStorageKey,
         onOutput: (stream: "stdout" | "stderr", data: string) => {
           logs.push({ type: stream, content: data });
 

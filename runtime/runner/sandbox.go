@@ -19,7 +19,7 @@ type SandboxInput struct {
 	Name       string                  `json:"name"`
 	Env        map[string]string       `json:"env"`
 	Mounts     map[string]VolumeResult `json:"mounts"`
-	WorkDir    string                  `json:"work_dir"`
+	WorkDir    string                  `json:"workDir"`
 	Privileged bool                    `json:"privileged"`
 }
 
@@ -31,7 +31,7 @@ type ExecInput struct {
 		User string   `json:"user"`
 	} `json:"command"`
 	Env     map[string]string `json:"env"`
-	WorkDir string            `json:"work_dir"`
+	WorkDir string            `json:"workDir"`
 	Stdin   string            `json:"stdin"`
 	Timeout string            `json:"timeout"`
 	// OnOutput is called with streaming output chunks. Not serialised from JS.

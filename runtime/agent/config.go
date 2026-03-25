@@ -24,10 +24,10 @@ type ToolDef struct {
 	Model            string            `json:"model,omitempty"`
 	Image            string            `json:"image,omitempty"`
 	StorageKeyPrefix string            `json:"storageKeyPrefix,omitempty"` // parent storage key for nested path persistence
-	IsTask           bool              `json:"is_task,omitempty"`
+	IsTask           bool              `json:"isTask,omitempty"`
 	Description      string            `json:"description,omitempty"`
-	CommandPath      string            `json:"command_path,omitempty"`
-	CommandArgs      []string          `json:"command_args,omitempty"`
+	CommandPath      string            `json:"commandPath,omitempty"`
+	CommandArgs      []string          `json:"commandArgs,omitempty"`
 	Env              map[string]string `json:"env,omitempty"`
 }
 
@@ -42,13 +42,13 @@ type AgentConfig struct {
 	LLM              *AgentLLMConfig                        `json:"llm,omitempty"`
 	Thinking         *AgentThinkingConfig                   `json:"thinking,omitempty"`
 	Safety           map[string]string                      `json:"safety,omitempty"`
-	ContextGuard     *AgentContextGuardConfig               `json:"context_guard,omitempty"`
+	ContextGuard     *AgentContextGuardConfig               `json:"contextGuard,omitempty"`
 	Limits           *AgentLimitsConfig                     `json:"limits,omitempty"`
 	Context          *AgentContext                          `json:"context,omitempty"`
 	Validation       *AgentValidationConfig                 `json:"validation,omitempty"`
 	Tools            []ToolDef                              `json:"tools,omitempty"`
-	OutputSchema     map[string]interface{}                 `json:"output_schema,omitempty"`
-	ToolTimeout      string                                 `json:"tool_timeout,omitempty"`
+	OutputSchema     map[string]interface{}                 `json:"outputSchema,omitempty"`
+	ToolTimeout      string                                 `json:"toolTimeout,omitempty"`
 	// OnOutput is called with streaming chunks. Not serialised from JS.
 	OnOutput pipelinerunner.OutputCallback `json:"-"`
 	// OnAuditEvent is called every time an audit event is appended.
