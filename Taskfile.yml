@@ -112,6 +112,19 @@ tasks:
       - task: build
       - flyctl deploy
 
+  deploy:nuke:
+    desc: Nuke and redeploy — destroys volume, recreates it, and deploys fresh
+    prompt: This will DELETE all persistent data. Are you sure?
+    cmds:
+      - task: build
+      - flyctl scale count 0 --yes
+      - |
+          for id in $(flyctl volumes list --json | jq -r '.[].id'); do
+            flyctl volumes destroy "$id" --yes
+          done
+      - flyctl volumes create ci_data --region sjc --size 1 --yes
+      - flyctl deploy
+
   bump:
     desc: Bump all Go and npm dependencies to latest versions
     cmds:
