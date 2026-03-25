@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -13,13 +14,13 @@ import (
 )
 
 type TriggerPipeline struct {
-	Name          string   `arg:""              help:"Name or ID of the pipeline to trigger"                    required:""`
-	ServerURL     string   `env:"CI_SERVER_URL" help:"URL of the CI server"                                    required:"" short:"s"`
-	AuthToken     string   `env:"CI_AUTH_TOKEN" help:"Bearer token for OAuth-authenticated servers"             short:"t"`
-	ConfigFile    string   `env:"CI_AUTH_CONFIG" help:"Path to auth config file (default: ~/.pocketci/auth.config)" short:"c"`
-	Args          []string `help:"Arguments passed to the pipeline (repeatable)" short:"a"`
-	WebhookBody   string   `help:"JSON body for simulated webhook trigger"       name:"webhook-body"`
-	WebhookMethod string   `help:"HTTP method for simulated webhook"             name:"webhook-method" default:"POST" enum:"GET,POST,PUT,PATCH,DELETE"`
+	Name          string   `arg:""                                                      help:"Name or ID of the pipeline to trigger"                       required:""`
+	ServerURL     string   `env:"CI_SERVER_URL"                                         help:"URL of the CI server"                                        required:""                              short:"s"`
+	AuthToken     string   `env:"CI_AUTH_TOKEN"                                         help:"Bearer token for OAuth-authenticated servers"                short:"t"`
+	ConfigFile    string   `env:"CI_AUTH_CONFIG"                                        help:"Path to auth config file (default: ~/.pocketci/auth.config)" short:"c"`
+	Args          []string `help:"Arguments passed to the pipeline (repeatable)"        short:"a"`
+	WebhookBody   string   `help:"JSON body for simulated webhook trigger"              name:"webhook-body"`
+	WebhookMethod string   `default:"POST"                                              enum:"GET,POST,PUT,PATCH,DELETE"                                   help:"HTTP method for simulated webhook" name:"webhook-method"`
 	WebhookHeader []string `help:"Header for simulated webhook (repeatable, KEY=VALUE)" name:"webhook-header"`
 }
 
@@ -57,7 +58,7 @@ func (c *TriggerPipeline) Run(logger *slog.Logger) error {
 	}
 
 	if resp.StatusCode() == http.StatusTooManyRequests {
-		return fmt.Errorf("max concurrent executions reached")
+		return errors.New("max concurrent executions reached")
 	}
 
 	if resp.StatusCode() == http.StatusNotFound {
@@ -131,9 +132,9 @@ func (c *TriggerPipeline) resolvePipeline(client *resty.Client, endpoint, server
 }
 
 type triggerRequestBody struct {
-	Mode    string           `json:"mode,omitempty"`
-	Args    []string         `json:"args,omitempty"`
-	Webhook *webhookSimBody  `json:"webhook,omitempty"`
+	Mode    string          `json:"mode,omitempty"`
+	Args    []string        `json:"args,omitempty"`
+	Webhook *webhookSimBody `json:"webhook,omitempty"`
 }
 
 type webhookSimBody struct {
