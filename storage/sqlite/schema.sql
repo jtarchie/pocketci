@@ -112,3 +112,16 @@ CREATE TRIGGER IF NOT EXISTS pipeline_runs_tasks_delete
 AFTER DELETE ON pipeline_runs BEGIN
   DELETE FROM tasks WHERE run_id = OLD.id;
 END;
+
+-- Webhook deduplication: stores truncated SHA-256 hashes of evaluated dedup keys.
+-- The (pipeline_id, key_hash) primary key prevents duplicate inserts efficiently.
+-- ON DELETE CASCADE removes entries when a pipeline is deleted.
+CREATE TABLE IF NOT EXISTS webhook_dedup (
+  pipeline_id TEXT    NOT NULL,
+  key_hash    BLOB    NOT NULL,
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+  PRIMARY KEY (pipeline_id, key_hash),
+  FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_webhook_dedup_created_at ON webhook_dedup(created_at);

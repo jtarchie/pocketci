@@ -181,8 +181,9 @@ type Steps []Step
 // WebhookTriggerConfig holds the filter expression and optional parameter
 // extraction map for webhook-based job triggers.
 type WebhookTriggerConfig struct {
-	Filter string            `json:"filter,omitempty" yaml:"filter,omitempty"`
-	Params map[string]string `json:"params,omitempty" yaml:"params,omitempty"`
+	Filter   string            `json:"filter,omitempty"    yaml:"filter,omitempty"`
+	DedupKey string            `json:"dedup_key,omitempty" yaml:"dedup_key,omitempty"`
+	Params   map[string]string `json:"params,omitempty"    yaml:"params,omitempty"`
 }
 
 // Triggers holds the set of trigger configurations for a job.

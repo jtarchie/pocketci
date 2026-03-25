@@ -53,6 +53,7 @@ type Server struct {
 	StorageS3Prefix          string        `env:"CI_STORAGE_S3_PREFIX"            help:"S3 key prefix for storage backend"                               name:"storage-s3-prefix"`
 	MaxInFlight              int           `default:"10"                          env:"CI_MAX_IN_FLIGHT"                                                 help:"Maximum concurrent pipeline executions"`
 	WebhookTimeout           time.Duration `default:"5s"                          env:"CI_WEBHOOK_TIMEOUT"                                               help:"Timeout waiting for pipeline webhook response"`
+	DedupTTL                 time.Duration `default:"168h"                        env:"CI_DEDUP_TTL"                                                     help:"TTL for webhook dedup entries (default 7 days)"`
 	BasicAuth                string        `env:"CI_BASIC_AUTH"                   help:"Basic auth credentials in format 'username:password' (optional)"`
 	AllowedDrivers           string        `default:"*"                           env:"CI_ALLOWED_DRIVERS"                                               help:"Comma-separated list of allowed driver names (e.g., 'docker,native,k8s'), or '*' for all"`
 	AllowedFeatures          string        `default:"*"                           env:"CI_ALLOWED_FEATURES"                                              help:"Comma-separated list of allowed features (webhooks,secrets,notifications,fetch,resume), or '*' for all"`
@@ -198,6 +199,7 @@ func (c *Server) Run(logger *slog.Logger) error {
 		SecretsManager:        secretsManager,
 		FetchTimeout:          c.FetchTimeout,
 		FetchMaxResponseBytes: int64(c.FetchMaxResponseMB) * 1024 * 1024,
+		DedupTTL:              c.DedupTTL,
 		AuthConfig:            authConfig,
 		ObservabilityProvider: obsProvider,
 		DefaultDriver:         defaultDriver,

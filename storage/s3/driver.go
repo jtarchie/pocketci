@@ -643,6 +643,21 @@ func (s *S3) Search(ctx context.Context, prefix, query string) (storage.Results,
 	return results, nil
 }
 
+// CheckWebhookDedup is not supported by the S3 driver; it always returns false.
+func (s *S3) CheckWebhookDedup(_ context.Context, _ string, _ []byte) (bool, error) {
+	return false, nil
+}
+
+// SaveWebhookDedup is not supported by the S3 driver; it is a no-op.
+func (s *S3) SaveWebhookDedup(_ context.Context, _ string, _ []byte) error {
+	return nil
+}
+
+// PruneWebhookDedup is not supported by the S3 driver; it is a no-op.
+func (s *S3) PruneWebhookDedup(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
+}
+
 // ─── S3 key helpers ─────────────────────────────────────────────────────────
 
 func (s *S3) pipelineByIDKey(id string) string {

@@ -57,6 +57,9 @@ type ExecuteOptions struct {
 	// OutputCallback, if set, is applied to every container task so that
 	// stdout/stderr chunks are forwarded to the caller in real time.
 	OutputCallback runner.OutputCallback
+	// DedupTTL is the time-to-live for webhook dedup entries.
+	// If zero, defaults to 7 days.
+	DedupTTL time.Duration
 }
 
 type JS struct {
@@ -266,15 +269,18 @@ func (j *JS) setupJSVM(
 		return fmt.Errorf("could not set http: %w", err)
 	}
 
-	if err := j.setupWebhookBindings(jsVM, opts); err != nil {
+	if err := j.setupWebhookBindings(ctx, jsVM, storage, opts); err != nil {
 		return err
 	}
 
 	return j.setupPipelineContext(jsVM, runtime, driver, opts)
 }
 
-// setupWebhookBindings registers webhookTrigger and webhookParams on the VM.
-func (j *JS) setupWebhookBindings(jsVM *goja.Runtime, opts ExecuteOptions) error {
+// defaultDedupTTL is the default time-to-live for webhook dedup entries.
+const defaultDedupTTL = 7 * 24 * time.Hour
+
+// setupWebhookBindings registers webhookTrigger, webhookParams, and webhookDedup on the VM.
+func (j *JS) setupWebhookBindings(ctx context.Context, jsVM *goja.Runtime, store storage.Driver, opts ExecuteOptions) error {
 	if err := jsVM.Set("webhookTrigger", func(expression string) bool {
 		if opts.WebhookData == nil {
 			return true
@@ -317,6 +323,54 @@ func (j *JS) setupWebhookBindings(jsVM *goja.Runtime, opts ExecuteOptions) error
 		return result
 	}); err != nil {
 		return fmt.Errorf("could not set webhookParams: %w", err)
+	}
+
+	if err := jsVM.Set("webhookDedup", func(expression string) bool {
+		if opts.WebhookData == nil {
+			return false // manual triggers are never duplicates
+		}
+
+		env := buildWebhookEnv(opts.WebhookData)
+
+		keyHash, evalErr := filter.DedupKeyHash(expression, env)
+		if evalErr != nil {
+			slog.Error("webhookDedup evaluation failed", "error", evalErr, "expression", expression)
+
+			return false // on error, don't skip
+		}
+
+		if keyHash == nil {
+			return false // empty key, no dedup
+		}
+
+		ttl := opts.DedupTTL
+		if ttl == 0 {
+			ttl = defaultDedupTTL
+		}
+
+		cutoff := time.Now().UTC().Add(-ttl)
+		if _, pruneErr := store.PruneWebhookDedup(ctx, cutoff); pruneErr != nil {
+			slog.Warn("webhookDedup prune failed", "error", pruneErr)
+		}
+
+		isDup, checkErr := store.CheckWebhookDedup(ctx, opts.PipelineID, keyHash)
+		if checkErr != nil {
+			slog.Error("webhookDedup check failed", "error", checkErr)
+
+			return false
+		}
+
+		if isDup {
+			return true
+		}
+
+		if saveErr := store.SaveWebhookDedup(ctx, opts.PipelineID, keyHash); saveErr != nil {
+			slog.Warn("webhookDedup save failed", "error", saveErr)
+		}
+
+		return false
+	}); err != nil {
+		return fmt.Errorf("could not set webhookDedup: %w", err)
 	}
 
 	return nil

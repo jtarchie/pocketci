@@ -38,6 +38,7 @@ type RouterOptions struct {
 	SecretsManager        secrets.Manager
 	FetchTimeout          time.Duration
 	FetchMaxResponseBytes int64
+	DedupTTL              time.Duration
 	AuthConfig            *auth.Config
 	ObservabilityProvider ObservabilityProvider
 	// DefaultDriver is the name of the default driver when a pipeline doesn't specify one.
@@ -185,6 +186,7 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	execService.AllowedFeatures = allowedFeatures
 	execService.FetchTimeout = opts.FetchTimeout
 	execService.FetchMaxResponseBytes = opts.FetchMaxResponseBytes
+	execService.DedupTTL = opts.DedupTTL
 	execService.DriverConfigs = opts.DriverConfigs
 	execService.CacheStore = opts.CacheStore
 	execService.CacheCompression = opts.CacheCompression

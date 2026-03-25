@@ -95,6 +95,14 @@ export class JobRunner {
       }
     }
 
+    const dedupKey = this.jobConfig.triggers?.webhook?.dedup_key;
+    if (dedupKey) {
+      if (webhookDedup(dedupKey)) {
+        storage.set(storageKey, { status: "skipped", dependsOn });
+        return;
+      }
+    }
+
     const rawParams = this.jobConfig.triggers?.webhook?.params;
     if (rawParams) {
       this.variableResolver.setJobParams(webhookParams(rawParams));

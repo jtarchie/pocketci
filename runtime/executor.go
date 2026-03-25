@@ -64,6 +64,9 @@ type ExecutorOptions struct {
 	// Driver, if set, is used for pipeline execution instead of creating
 	// one from the DriverFactory. The caller owns the driver lifecycle.
 	Driver orchestra.Driver
+	// DedupTTL is the time-to-live for webhook dedup entries.
+	// If zero, defaults to 7 days.
+	DedupTTL time.Duration
 }
 
 // ExecutePipeline executes a pipeline with the given content and driver factory.
@@ -135,6 +138,7 @@ func ExecutePipeline(
 		FetchTimeout:          opts.FetchTimeout,
 		FetchMaxResponseBytes: opts.FetchMaxResponseBytes,
 		Args:                  opts.Args,
+		DedupTTL:              opts.DedupTTL,
 	}
 
 	// If pre-seeded volumes were provided, pass them through.

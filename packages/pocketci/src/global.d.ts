@@ -876,6 +876,13 @@ declare global {
         /** Boolean expr-lang expression. Same variables as `webhook_trigger`. */
         filter?: string;
         /**
+         * Expr-lang string expression evaluated against webhook metadata.
+         * The result is hashed and checked against previously seen values.
+         * If already seen, the job is skipped as a duplicate.
+         * Example: `headers["X-Github-Delivery"]`
+         */
+        dedup_key?: string;
+        /**
          * Map of env var name → string expr-lang expression evaluated against
          * webhook metadata. Results are injected as env vars into all task
          * steps of the job.
@@ -922,6 +929,16 @@ declare global {
   function webhookParams(
     params: Record<string, string>,
   ): Record<string, string>;
+
+  /**
+   * Evaluates an expr-lang string expression against the current webhook
+   * metadata, hashes the result, and checks if it was already seen for this
+   * pipeline. Returns true if duplicate (job should skip), false otherwise.
+   * Always returns false for manual triggers.
+   *
+   * @param expression - An expr-lang string expression that produces a dedup key.
+   */
+  function webhookDedup(expression: string): boolean;
 
   type Resource = ResourceBase;
   type ResourceType = ResourceBase;

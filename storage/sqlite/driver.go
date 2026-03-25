@@ -1000,6 +1000,51 @@ func (s *Sqlite) Search(ctx context.Context, prefix, query string) (storage.Resu
 	return results, nil
 }
 
+// CheckWebhookDedup returns true if keyHash has already been recorded for pipelineID.
+func (s *Sqlite) CheckWebhookDedup(ctx context.Context, pipelineID string, keyHash []byte) (bool, error) {
+	var exists int
+
+	err := s.reader.QueryRowContext(ctx,
+		`SELECT 1 FROM webhook_dedup WHERE pipeline_id = ? AND key_hash = ? LIMIT 1`,
+		pipelineID, keyHash,
+	).Scan(&exists)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("check webhook dedup: %w", err)
+	}
+
+	return true, nil
+}
+
+// SaveWebhookDedup records keyHash for pipelineID. Duplicate inserts are silently ignored.
+func (s *Sqlite) SaveWebhookDedup(ctx context.Context, pipelineID string, keyHash []byte) error {
+	_, err := s.writer.ExecContext(ctx,
+		`INSERT OR IGNORE INTO webhook_dedup (pipeline_id, key_hash) VALUES (?, ?)`,
+		pipelineID, keyHash,
+	)
+	if err != nil {
+		return fmt.Errorf("save webhook dedup: %w", err)
+	}
+
+	return nil
+}
+
+// PruneWebhookDedup deletes dedup entries created before olderThan and returns the count removed.
+func (s *Sqlite) PruneWebhookDedup(ctx context.Context, olderThan time.Time) (int64, error) {
+	result, err := s.writer.ExecContext(ctx,
+		`DELETE FROM webhook_dedup WHERE created_at < ?`,
+		olderThan.Unix(),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("prune webhook dedup: %w", err)
+	}
+
+	return result.RowsAffected()
+}
+
 // sanitizeFTSQuery converts a freeform user query into a safe FTS5 query.
 // Each whitespace-separated token is treated as a literal prefix match term,
 // preventing accidental use of FTS5 boolean operators (AND, OR, NOT, etc.).

@@ -155,6 +155,15 @@ type Driver interface {
 	// separate indexing step is required. prefix follows the same convention as
 	// Set (no namespace; the implementation adds it internally).
 	Search(ctx context.Context, prefix, query string) (Results, error)
+
+	// Webhook dedup operations
+	//
+	// CheckWebhookDedup returns true if keyHash has already been recorded for pipelineID.
+	CheckWebhookDedup(ctx context.Context, pipelineID string, keyHash []byte) (bool, error)
+	// SaveWebhookDedup records keyHash for pipelineID. Duplicate inserts are ignored.
+	SaveWebhookDedup(ctx context.Context, pipelineID string, keyHash []byte) error
+	// PruneWebhookDedup deletes dedup entries older than olderThan and returns the count removed.
+	PruneWebhookDedup(ctx context.Context, olderThan time.Time) (int64, error)
 }
 
 type Payload map[string]any

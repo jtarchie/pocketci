@@ -42,6 +42,7 @@ type ExecutionService struct {
 	AllowedFeatures       []Feature
 	FetchTimeout          time.Duration
 	FetchMaxResponseBytes int64
+	DedupTTL              time.Duration
 	stopRegistry          map[string]context.CancelFunc
 	stopMu                sync.Mutex
 }
@@ -329,6 +330,7 @@ func (s *ExecutionService) buildExecutorOptions(pipeline *storage.Pipeline, opts
 	execOpts.DisableFetch = !IsFeatureEnabled(FeatureFetch, s.AllowedFeatures)
 	execOpts.FetchTimeout = s.FetchTimeout
 	execOpts.FetchMaxResponseBytes = s.FetchMaxResponseBytes
+	execOpts.DedupTTL = s.DedupTTL
 
 	return execOpts
 }
@@ -583,6 +585,7 @@ func (s *ExecutionService) RunByNameSync(
 		DisableFetch:          !IsFeatureEnabled(FeatureFetch, s.AllowedFeatures),
 		FetchTimeout:          s.FetchTimeout,
 		FetchMaxResponseBytes: s.FetchMaxResponseBytes,
+		DedupTTL:              s.DedupTTL,
 	}
 	if IsFeatureEnabled(FeatureSecrets, s.AllowedFeatures) {
 		opts.SecretsManager = s.SecretsManager
