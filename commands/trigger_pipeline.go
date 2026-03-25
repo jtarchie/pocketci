@@ -33,7 +33,10 @@ func (c *TriggerPipeline) Run(logger *slog.Logger) error {
 
 	logger.Info("pipeline.trigger", "id", pipeline.ID, "name", pipeline.Name)
 
-	body := c.buildTriggerRequest()
+	body, err := c.buildTriggerRequest()
+	if err != nil {
+		return err
+	}
 
 	triggerURL := endpoint + "/" + pipeline.ID + "/trigger"
 
@@ -92,17 +95,17 @@ type webhookSimBody struct {
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
-func (c *TriggerPipeline) buildTriggerRequest() triggerRequestBody {
+func (c *TriggerPipeline) buildTriggerRequest() (triggerRequestBody, error) {
 	if c.WebhookBody != "" || len(c.WebhookHeader) > 0 {
 		headers := make(map[string]string)
-		for _, h := range c.WebhookHeader {
-			k, v, _ := strings.Cut(h, "=")
-			headers[k] = v
-		}
 
-		var hdrs map[string]string
-		if len(headers) > 0 {
-			hdrs = headers
+		for _, h := range c.WebhookHeader {
+			k, v, ok := strings.Cut(h, "=")
+			if !ok {
+				return triggerRequestBody{}, fmt.Errorf("invalid webhook header %q: expected KEY=VALUE", h)
+			}
+
+			headers[k] = v
 		}
 
 		return triggerRequestBody{
@@ -110,17 +113,17 @@ func (c *TriggerPipeline) buildTriggerRequest() triggerRequestBody {
 			Webhook: &webhookSimBody{
 				Method:  c.WebhookMethod,
 				Body:    c.WebhookBody,
-				Headers: hdrs,
+				Headers: headers,
 			},
-		}
+		}, nil
 	}
 
 	if len(c.Args) > 0 {
 		return triggerRequestBody{
 			Mode: "args",
 			Args: c.Args,
-		}
+		}, nil
 	}
 
-	return triggerRequestBody{}
+	return triggerRequestBody{}, nil
 }
