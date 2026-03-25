@@ -205,7 +205,12 @@ func (j *JS) setupJSVM(
 		return fmt.Errorf("could not set assert: %w", err)
 	}
 
-	if err := jsVM.Set("YAML", jsapi.NewYAML(jsVM, j.logger)); err != nil {
+	yamlHelper := jsapi.NewYAML(jsVM, j.logger)
+	if err := jsVM.Set("yaml", yamlHelper); err != nil {
+		return fmt.Errorf("could not set yaml: %w", err)
+	}
+	// Deprecated alias for backwards compatibility
+	if err := jsVM.Set("YAML", yamlHelper); err != nil {
 		return fmt.Errorf("could not set YAML: %w", err)
 	}
 

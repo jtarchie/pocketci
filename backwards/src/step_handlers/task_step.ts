@@ -19,7 +19,7 @@ export class TaskStepHandler implements StepHandler {
 
     if ("file" in step && step.file) {
       const contents = await loadFileFromVolume(ctx, step.file, pathContext);
-      const taskConfig = YAML.parse(contents) as TaskConfig;
+      const taskConfig = yaml.parse(contents) as TaskConfig;
       taskStep = {
         task: step.task,
         parallelism: step.parallelism,
@@ -37,7 +37,7 @@ export class TaskStepHandler implements StepHandler {
       taskStep = ctx.variableResolver.injectJobParams(taskStep) as Task;
     } else if ("uri" in step && step.uri) {
       const contents = await loadFromURI(ctx, step.uri, pathContext);
-      const taskConfig = YAML.parse(contents) as TaskConfig;
+      const taskConfig = yaml.parse(contents) as TaskConfig;
       taskStep = {
         task: step.task,
         parallelism: step.parallelism,

@@ -14,7 +14,7 @@ function mergeAgentFromContents(
   contents: string,
   inlineStep: AgentStep,
 ): AgentStep {
-  const fileConfig = YAML.parse(contents) as Partial<AgentStep>;
+  const fileConfig = yaml.parse(contents) as Partial<AgentStep>;
   const merged = {
     ...fileConfig,
     ...inlineStep,
@@ -135,7 +135,7 @@ export class AgentStepHandler implements StepHandler {
             taskTool.file,
             pathContext,
           );
-          const fileConfig = YAML.parse(contents) as Partial<TaskConfig>;
+          const fileConfig = yaml.parse(contents) as Partial<TaskConfig>;
           taskConfig = { ...fileConfig, ...taskConfig } as TaskConfig;
         } else if ("uri" in taskTool && taskTool.uri) {
           const contents = await loadFromURI(
@@ -143,7 +143,7 @@ export class AgentStepHandler implements StepHandler {
             taskTool.uri,
             pathContext,
           );
-          const fileConfig = YAML.parse(contents) as Partial<TaskConfig>;
+          const fileConfig = yaml.parse(contents) as Partial<TaskConfig>;
           taskConfig = { ...fileConfig, ...taskConfig } as TaskConfig;
         }
         tools.push({

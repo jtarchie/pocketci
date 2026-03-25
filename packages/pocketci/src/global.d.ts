@@ -527,10 +527,13 @@ declare global {
   }
 
   /** Serialise/deserialise YAML inside pipeline scripts. */
-  namespace YAML {
+  namespace yaml {
     function parse(text: string): object;
     function stringify(obj: object): string;
   }
+
+  /** @deprecated Use `yaml` instead. */
+  const YAML: typeof yaml;
 
   // Notification types
   interface NotifyConfig {

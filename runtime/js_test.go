@@ -70,7 +70,7 @@ func TestYAMLAndAssert(t *testing.T) {
 	js := runtime.NewJS(slog.Default())
 	err := js.Execute(context.Background(), `
 		async function pipeline() {
-			const payload = YAML.parse("foo: bar");
+			const payload = yaml.parse("foo: bar");
 			assert.equal(payload.foo, "bar");
 		};
 
