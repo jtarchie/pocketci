@@ -157,21 +157,6 @@ func (r *Runtime) sandboxCloseFunc(handle *runner.SandboxHandle) func(goja.Funct
 	}
 }
 
-// Deprecated: use volumes.create() instead.
-func (r *Runtime) CreateVolume(input runner.VolumeInput) *goja.Promise {
-	return r.Volumes().Create(input)
-}
-
-// Deprecated: use volumes.readFiles() instead.
-func (r *Runtime) ReadFilesFromVolume(call goja.FunctionCall) goja.Value {
-	return r.Volumes().ReadFiles(call)
-}
-
-// Deprecated: use agent.run() instead.
-func (r *Runtime) Agent(call goja.FunctionCall) goja.Value {
-	return r.AgentRT().Run(call)
-}
-
 func (r *Runtime) Wait() error {
 	go func() {
 		r.promises.Wait()

@@ -445,9 +445,6 @@ declare global {
    * `await`-ed.
    */
   namespace runtime {
-    /** @deprecated Use `volumes.create()` instead. */
-    function createVolume(volume?: VolumeConfig): Promise<VolumeResult>;
-
     /**
      * Runs a container task to completion and returns its stdout, stderr, and
      * exit code. Throws if the container cannot be started.
@@ -460,15 +457,6 @@ declare global {
      * Call `close()` on the returned handle when done to remove the container.
      */
     function startSandbox(config: SandboxConfig): Promise<SandboxHandle>;
-
-    /** @deprecated Use `agent.run()` instead. */
-    function agent(config: AgentRunConfig): Promise<AgentResult>;
-
-    /** @deprecated Use `volumes.readFiles()` instead. */
-    function readFilesFromVolume(
-      volumeName: string,
-      filePaths: string[],
-    ): Promise<Record<string, string>>;
   }
 
   /** Configuration for creating a sandbox. */
