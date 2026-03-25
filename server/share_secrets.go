@@ -67,7 +67,9 @@ func resolveShareSigningSecret(ctx context.Context, mgr secrets.Manager, logger 
 
 // collectSecretValues retrieves all decrypted secret values for the global scope
 // and the given pipeline scope. System-managed keys are excluded.
-func collectSecretValues(ctx context.Context, mgr secrets.Manager, pipelineID string) []string {
+// Errors listing or fetching individual secrets are logged at Warn level and
+// skipped so that a partial failure does not block share-link rendering.
+func collectSecretValues(ctx context.Context, mgr secrets.Manager, pipelineID string, logger *slog.Logger) []string {
 	if mgr == nil {
 		return nil
 	}
@@ -77,6 +79,8 @@ func collectSecretValues(ctx context.Context, mgr secrets.Manager, pipelineID st
 	for _, scope := range []string{secrets.GlobalScope, secrets.PipelineScope(pipelineID)} {
 		keys, err := mgr.ListByScope(ctx, scope)
 		if err != nil {
+			logger.Warn("secrets.collect.list_error", slog.String("scope", scope), slog.Any("error", err))
+
 			continue
 		}
 
@@ -87,6 +91,8 @@ func collectSecretValues(ctx context.Context, mgr secrets.Manager, pipelineID st
 
 			val, err := mgr.Get(ctx, scope, key)
 			if err != nil {
+				logger.Warn("secrets.collect.get_error", slog.String("scope", scope), slog.String("key", key), slog.Any("error", err))
+
 				continue
 			}
 

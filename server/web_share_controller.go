@@ -69,7 +69,7 @@ func (c *WebShareController) Show(ctx *echo.Context) error {
 	stats := countTaskStats(tree)
 
 	// Collect secret values for redaction and preload terminal HTML statically.
-	secretValues := collectSecretValues(ctx.Request().Context(), c.secretsMgr, pipelineID)
+	secretValues := collectSecretValues(ctx.Request().Context(), c.secretsMgr, pipelineID, c.logger)
 	redact := func(html string) string {
 		return support.RedactSecrets(html, secretValues)
 	}
