@@ -2,12 +2,12 @@
 
 Manage shared storage between tasks.
 
-## runtime.createVolume()
+## volumes.create()
 
 Create a volume for inter-task communication.
 
 ```typescript
-const vol = await runtime.createVolume(name, sizeGiB);
+const vol = await volumes.create(name, sizeGiB);
 ```
 
 - `name` — volume identifier
@@ -17,7 +17,7 @@ const vol = await runtime.createVolume(name, sizeGiB);
 ## Example
 
 ```typescript
-const vol = await runtime.createVolume("workspace", 50);
+const vol = await volumes.create("workspace", 50);
 
 await runtime.run({
   name: "setup",

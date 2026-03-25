@@ -173,7 +173,7 @@ giving us exit code and output per command, while the shell session persists.
 
 9. **TypeScript types** in global.d.ts:
    - Add `runtime.startSandbox(config: SandboxConfig): Promise<SandboxHandle>`
-   - `SandboxConfig`: `image`, `env?`, `mounts?`, `work_dir?`, `privileged?`,
+   - `SandboxConfig`: `image`, `env?`, `mounts?`, `workDir?`, `privileged?`,
      `name`
    - `SandboxHandle`: `exec(config: ExecConfig): Promise<RunTaskResult>`,
      `close(): Promise<void>`, `id: string`

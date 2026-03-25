@@ -142,7 +142,7 @@ For direct JS/TS pipelines, create named volumes:
 ```typescript
 const pipeline = async () => {
   // Create a cached volume
-  const cache = await runtime.createVolume({ name: "build-cache" });
+  const cache = await volumes.create({ name: "build-cache" });
 
   // Use the volume in a task
   await runtime.run({

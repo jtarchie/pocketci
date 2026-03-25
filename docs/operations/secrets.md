@@ -237,8 +237,9 @@ export { pipeline };
 
 Secrets are scoped to limit access:
 
-- **Pipeline scope** (`pipeline/<id>`): Set via `pocketci pipeline set --secret`. Each
-  pipeline only sees its own pipeline-scoped secrets.
+- **Pipeline scope** (`pipeline/<id>`): Set via
+  `pocketci pipeline set --secret`. Each pipeline only sees its own
+  pipeline-scoped secrets.
 - **Global scope** (`global`): Set via `pocketci server --secret` or
   `pocketci pipeline run --global-secret`. Shared across all pipelines.
 

@@ -1,4 +1,4 @@
-# runtime.agent()
+# agent.run()
 
 Run an LLM agent that can use a sandboxed container as a tool.
 
@@ -7,7 +7,7 @@ tools backed by the container image you provide. Results stream back in real
 time.
 
 ```typescript
-const result = await runtime.agent(options);
+const result = await agent.run(options);
 ```
 
 ## Options
@@ -30,12 +30,12 @@ const result = await runtime.agent(options);
 | `llm`              | object | LLM generation overrides (see [LLM Config](#llm))                                   |
 | `thinking`         | object | Extended thinking config (see [Thinking](#thinking))                                |
 | `safety`           | object | Safety filter overrides (see [Safety](#safety))                                     |
-| `context_guard`    | object | Context window management (see [Context Guard](#context-guard))                     |
+| `contextGuard`     | object | Context window management (see [Context Guard](#context-guard))                     |
 | `limits`           | object | Hard turn/token limits (see [Limits](#limits))                                      |
 | `context`          | object | Pre-inject prior task outputs into session (see [Context](#context))                |
 | `validation`       | object | Output validation via Expr expressions (see [Validation](#validation))              |
-| `output_schema`    | object | JSON schema for structured output (see [Output Schema](#output-schema))             |
-| `tool_timeout`     | string | Per-tool timeout duration, e.g. `"60s"`, `"5m"` (see [Tool Timeout](#tool-timeout)) |
+| `outputSchema`     | object | JSON schema for structured output (see [Output Schema](#output-schema))             |
+| `toolTimeout`      | string | Per-tool timeout duration, e.g. `"60s"`, `"5m"` (see [Tool Timeout](#tool-timeout)) |
 | `tools`            | array  | Agent + task tools callable by the LLM (see [Tools](#tools))                        |
 
 ## Providers
@@ -154,7 +154,7 @@ context_guard:
 ```
 
 ```typescript
-context_guard?: {
+contextGuard?: {
   strategy: "threshold" | "sliding_window";
   max_tokens?: number;  // threshold: evict history when total exceeds this
   max_turns?: number;   // sliding_window: keep only the last N turns
@@ -166,12 +166,12 @@ context_guard?: {
 | `threshold`      | 128000               | _N/A_               | Truncates history once total tokens exceed the limit |
 | `sliding_window` | _N/A_                | 30                  | Keeps only the most-recent N conversation turns      |
 
-**Strategy inference:** If `context_guard` is provided with only `max_turns` (no
+**Strategy inference:** If `contextGuard` is provided with only `max_turns` (no
 `strategy`), the strategy automatically becomes `"sliding_window"`. If only
 `max_tokens` is provided, the strategy becomes `"threshold"`. An error is
 returned if an invalid `strategy` is explicitly specified.
 
-Omitting `context_guard` entirely disables context management; the full
+Omitting `contextGuard` entirely disables context management; the full
 conversation history is sent to the model on every turn.
 
 ## Progressive Persistence {#progressive-persistence}
@@ -188,7 +188,7 @@ finished. This ensures visibility into progress and durability against crashes:
   stored immediately to prevent data loss if the agent crashes.
 
 This behavior is transparent to pipeline code. The `result` returned by
-`runtime.agent()` still includes the complete `auditLog` array in memory.
+`agent.run()` still includes the complete `auditLog` array in memory.
 
 ## Built-in Tools {#built-in-tools}
 
@@ -301,7 +301,7 @@ tool_timeout: "120s" # applies to all tools except run_script
 ```
 
 ```typescript
-tool_timeout?: string; // Go duration format: "60s", "5m", etc.
+toolTimeout?: string; // Go duration format: "60s", "5m", etc.
 ```
 
 | Tool            | Default timeout    |
@@ -631,7 +631,7 @@ Agent runs support optional callbacks for streaming output, incremental usage
 updates, and audit event notifications. All callbacks are optional.
 
 ```typescript
-await runtime.agent({
+await agent.run({
   name: "agent",
   prompt: "Build the project",
   model: "anthropic/claude-3-5-sonnet-20241022",
@@ -679,7 +679,7 @@ runner. Custom callbacks can observe the same events in real time.
 ### Minimal agent
 
 ```typescript
-const result = await runtime.agent({
+const result = await agent.run({
   name: "summarize",
   prompt: "Summarize the files in /workspace",
   model: "openrouter/google/gemini-2.0-flash",
@@ -692,7 +692,7 @@ console.log(result.text);
 ### Agent with volumes and LLM tuning
 
 ```typescript
-const repo = await runtime.createVolume("repo", 500);
+const repo = await volumes.create("repo", 500);
 
 await runtime.run({
   name: "clone",
@@ -704,7 +704,7 @@ await runtime.run({
   mounts: { "/repo": repo },
 });
 
-const result = await runtime.agent({
+const result = await agent.run({
   name: "review",
   prompt: "Review the code for security issues and summarize findings.",
   model: "anthropic/claude-3-5-sonnet-20241022",
@@ -713,14 +713,14 @@ const result = await runtime.agent({
   llm: { temperature: 0.1, max_tokens: 4096 },
   thinking: { budget: 2048 },
   safety: { dangerous_content: "block_only_high" },
-  context_guard: { strategy: "threshold", max_tokens: 80000 },
+  contextGuard: { strategy: "threshold", max_tokens: 80000 },
 });
 ```
 
 ### Streaming output callback
 
 ```typescript
-await runtime.agent({
+await agent.run({
   name: "agent",
   prompt: "Run the test suite and report failures.",
   model: "openrouter/anthropic/claude-3-5-sonnet",

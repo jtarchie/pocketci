@@ -73,7 +73,7 @@ See [examples/run/k6.ts](../../examples/run/k6.ts) for a complete example.
 
 ```typescript
 const pipeline = async () => {
-  const workdir = await runtime.createVolume("workdir", 200);
+  const workdir = await volumes.create("workdir", 200);
 
   const result = await runtime.run({
     name: "k6",
@@ -106,8 +106,9 @@ pocketci pipeline run k6 run --vus=10 --duration=30s /workspace/script.js \
   --server-url http://localhost:8080
 ```
 
-The driver is a server concern — the same `pocketci pipeline run` command works whether
-the server uses Docker, Kubernetes, Hetzner, or any other configured driver.
+The driver is a server concern — the same `pocketci pipeline run` command works
+whether the server uses Docker, Kubernetes, Hetzner, or any other configured
+driver.
 
 ## Server configuration
 

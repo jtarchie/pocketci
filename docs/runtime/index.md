@@ -19,7 +19,7 @@ All pipelines have access to these globals:
 const pipeline = async () => {
   console.log("Starting pipeline:", pipelineContext.name);
 
-  const vol = await runtime.createVolume("data", 100);
+  const vol = await volumes.create("data", 100);
   const result = await runtime.run({
     name: "build",
     image: "golang:1.22",
