@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jtarchie/pocketci/cache"
+	cachepluginfs "github.com/jtarchie/pocketci/cache/filesystem"
 	cacheplugins3 "github.com/jtarchie/pocketci/cache/s3"
 	"github.com/jtarchie/pocketci/observability"
 	"github.com/jtarchie/pocketci/observability/honeybadger"
@@ -136,6 +137,8 @@ type Server struct {
 	CacheS3AccessKeyID     string        `env:"CI_CACHE_S3_ACCESS_KEY_ID"     help:"S3 access key ID for cache"                             name:"cache-s3-access-key-id"`
 	CacheS3SecretAccessKey string        `env:"CI_CACHE_S3_SECRET_ACCESS_KEY" help:"S3 secret access key for cache"                         name:"cache-s3-secret-access-key"`
 	CacheS3TTL             time.Duration `env:"CI_CACHE_S3_TTL"               help:"Cache object TTL (0 = no expiry)"                       name:"cache-s3-ttl"`
+	CacheFilesystemDir     string        `env:"CI_CACHE_FILESYSTEM_DIR"       help:"Directory for filesystem cache backend"                 name:"cache-filesystem-dir"`
+	CacheFilesystemTTL     time.Duration `env:"CI_CACHE_FILESYSTEM_TTL"       help:"Filesystem cache TTL (0 = no expiry)"                   name:"cache-filesystem-ttl"`
 	CacheCompression       string        `env:"CI_CACHE_COMPRESSION"          help:"Cache compression: zstd, gzip, or none (default: zstd)"`
 	CacheKeyPrefix         string        `env:"CI_CACHE_KEY_PREFIX"           help:"Cache key prefix"`
 	// Profiling
@@ -468,7 +471,26 @@ func (c *Server) defaultDriverName() string {
 }
 
 func (c *Server) initCacheStore() (cache.CacheStore, error) {
-	if c.CacheS3Bucket == "" {
+	hasS3 := c.CacheS3Bucket != ""
+	hasFS := c.CacheFilesystemDir != ""
+
+	if hasS3 && hasFS {
+		return nil, fmt.Errorf("cannot configure both S3 and filesystem cache backends; choose one")
+	}
+
+	if hasFS {
+		store, err := cachepluginfs.New(cachepluginfs.Config{
+			Directory: c.CacheFilesystemDir,
+			TTL:       c.CacheFilesystemTTL,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("could not create filesystem cache store: %w", err)
+		}
+
+		return store, nil
+	}
+
+	if !hasS3 {
 		return nil, nil
 	}
 

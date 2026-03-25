@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jtarchie/pocketci/cache"
+	fscache "github.com/jtarchie/pocketci/cache/filesystem"
 	s3cache "github.com/jtarchie/pocketci/cache/s3"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/orchestra/digitalocean"
@@ -276,4 +277,108 @@ func TestCacheWithoutCachingEnabled(t *testing.T) {
 	defer func() { _ = vol.Cleanup(ctx) }()
 
 	assert.Expect(vol.Name()).To(gomega.Equal("test-vol"))
+}
+
+func TestCacheFilesystemIntegration(t *testing.T) {
+	entries := getAvailableDrivers()
+	if len(entries) == 0 {
+		t.Skip("no drivers available for testing")
+	}
+
+	for _, entry := range entries {
+		entry := entry
+		t.Run(entry.name, func(t *testing.T) {
+			assert := gomega.NewGomegaWithT(t)
+			ctx := context.Background()
+			logger := slog.Default()
+
+			t.Run("filesystem cache persists volume data across runs", func(t *testing.T) {
+				cacheDir := t.TempDir()
+				volumeName := "cache-fs-test-vol"
+				mountPath := "/cachevol"
+				testData := "fs-cached-data-" + gonanoid.Must()
+
+				store, err := fscache.New(fscache.Config{
+					Directory: cacheDir,
+				})
+				assert.Expect(err).NotTo(gomega.HaveOccurred())
+
+				namespace1 := "fs-cache-test-1-" + gonanoid.Must()
+				driver1, err := entry.factory(namespace1, logger)
+				assert.Expect(err).NotTo(gomega.HaveOccurred())
+				defer func() { _ = driver1.Close() }()
+
+				driver1 = cache.WrapWithCaching(driver1, store, "zstd", "fs-test", logger)
+
+				vol1, err := driver1.CreateVolume(ctx, volumeName, 0)
+				assert.Expect(err).NotTo(gomega.HaveOccurred())
+
+				taskID1 := gonanoid.Must()
+				container1, err := driver1.RunContainer(ctx, orchestra.Task{
+					ID:      taskID1,
+					Image:   "busybox",
+					Command: []string{"sh", "-c", fmt.Sprintf("echo '%s' > .%s/data.txt", testData, mountPath)},
+					Mounts: orchestra.Mounts{
+						{Name: volumeName, Path: mountPath},
+					},
+				})
+				assert.Expect(err).NotTo(gomega.HaveOccurred())
+
+				assert.Eventually(func() bool {
+					status, err := container1.Status(ctx)
+					if err != nil {
+						return false
+					}
+					return status.IsDone() && status.ExitCode() == 0
+				}, "30s", "100ms").Should(gomega.BeTrue(), "container should complete successfully")
+
+				err = container1.Cleanup(ctx)
+				assert.Expect(err).NotTo(gomega.HaveOccurred())
+
+				err = vol1.Cleanup(ctx)
+				assert.Expect(err).NotTo(gomega.HaveOccurred())
+
+				err = driver1.Close()
+				assert.Expect(err).NotTo(gomega.HaveOccurred())
+
+				// Second run: restore from filesystem cache
+				namespace2 := "fs-cache-test-2-" + gonanoid.Must()
+				driver2, err := entry.factory(namespace2, logger)
+				assert.Expect(err).NotTo(gomega.HaveOccurred())
+				defer func() { _ = driver2.Close() }()
+
+				driver2 = cache.WrapWithCaching(driver2, store, "zstd", "fs-test", logger)
+
+				vol2, err := driver2.CreateVolume(ctx, volumeName, 0)
+				assert.Expect(err).NotTo(gomega.HaveOccurred())
+				defer func() { _ = vol2.Cleanup(ctx) }()
+
+				taskID2 := gonanoid.Must()
+				container2, err := driver2.RunContainer(ctx, orchestra.Task{
+					ID:      taskID2,
+					Image:   "busybox",
+					Command: []string{"cat", "." + mountPath + "/data.txt"},
+					Mounts: orchestra.Mounts{
+						{Name: volumeName, Path: mountPath},
+					},
+				})
+				assert.Expect(err).NotTo(gomega.HaveOccurred())
+
+				assert.Eventually(func() bool {
+					status, err := container2.Status(ctx)
+					if err != nil {
+						return false
+					}
+					return status.IsDone() && status.ExitCode() == 0
+				}, "30s", "100ms").Should(gomega.BeTrue(), "container should complete successfully")
+
+				assert.Eventually(func() bool {
+					stdout := &strings.Builder{}
+					stderr := &strings.Builder{}
+					_ = container2.Logs(ctx, stdout, stderr, false)
+					return strings.Contains(stdout.String(), testData)
+				}, "10s", "100ms").Should(gomega.BeTrue(), "cached data should be restored from filesystem")
+			})
+		})
+	}
 }
