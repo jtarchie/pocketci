@@ -18,10 +18,10 @@ type CLI struct {
 	Server   commands.Server   `cmd:"" help:"Run a server"`
 	Login    commands.Login    `cmd:"" help:"Authenticate with a CI server via browser-based OAuth"`
 
-	LogLevel  slog.Level       `default:"info"      env:"CI_LOG_LEVEL"                              help:"Set the log level (debug, info, warn, error)"`
-	AddSource bool             `env:"CI_ADD_SOURCE" help:"Add source code location to log messages"`
-	LogFormat string           `default:"text"      enum:"text,json"                                env:"CI_LOG_FORMAT"                                 help:"Set the log format (text, json)"`
-	Version   kong.VersionFlag `short:"V"           name:"version"                                  help:"Print version."`
+	LogLevel  slog.Level       `default:"info"        env:"CI_LOG_LEVEL"                              help:"Set the log level (debug, info, warn, error)"`
+	AddSource bool             `env:"CI_ADD_SOURCE"   help:"Add source code location to log messages"`
+	LogFormat string           `default:"text"        enum:"text,json"                                env:"CI_LOG_FORMAT"                                 help:"Set the log format (text, json)"`
+	Version   kong.VersionFlag `help:"Print version." name:"version"                                  short:"V"`
 }
 
 func main() {
