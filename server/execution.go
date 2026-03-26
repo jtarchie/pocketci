@@ -201,7 +201,7 @@ func (s *ExecutionService) ResumePipeline(ctx context.Context, pipeline *storage
 
 // RecoverOrphanedRuns handles runs that were in-flight when the server stopped.
 // If the resume feature is enabled, resume-enabled pipelines are restarted;
-// otherwise all orphaned runs are marked as failed.
+// otherwise all orphaned runs are marked as failed and their resources cleaned up.
 func (s *ExecutionService) RecoverOrphanedRuns(ctx context.Context) {
 	runs, err := s.store.GetRunsByStatus(ctx, storage.RunStatusRunning)
 	if err != nil {
@@ -214,29 +214,49 @@ func (s *ExecutionService) RecoverOrphanedRuns(ctx context.Context) {
 	for _, run := range runs {
 		logger := s.logger.With("run_id", run.ID, "pipeline_id", run.PipelineID)
 
-		if resumeEnabled {
-			pipeline, pErr := s.store.GetPipeline(ctx, run.PipelineID)
-			if pErr != nil {
-				logger.Error("orphan.recovery.get_pipeline_failed", "error", pErr)
-				_ = s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "Server restarted; pipeline not found for resume")
-				continue
-			}
+		pipeline, pErr := s.store.GetPipeline(ctx, run.PipelineID)
+		if pErr != nil {
+			logger.Error("orphan.recovery.get_pipeline_failed", "error", pErr)
+			_ = s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "Server restarted; pipeline not found")
+			continue
+		}
 
-			if pipeline.ResumeEnabled {
-				logger.Info("orphan.recovery.resuming")
-				runCopy := run
-				if rErr := s.ResumePipeline(ctx, pipeline, &runCopy); rErr != nil {
-					logger.Error("orphan.recovery.resume_failed", "error", rErr)
-					_ = s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "Server restarted; resume failed: "+rErr.Error())
-				}
-				continue
+		if resumeEnabled && pipeline.ResumeEnabled {
+			logger.Info("orphan.recovery.resuming")
+			runCopy := run
+			if rErr := s.ResumePipeline(ctx, pipeline, &runCopy); rErr != nil {
+				logger.Error("orphan.recovery.resume_failed", "error", rErr)
+				_ = s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "Server restarted; resume failed: "+rErr.Error())
+				s.cleanupOrphanedRunResources(ctx, run.ID, pipeline, logger)
 			}
+			continue
 		}
 
 		logger.Info("orphan.recovery.marking_failed")
 		_ = s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "Server restarted during execution")
 		_ = s.store.UpdateStatusForPrefix(ctx, "/pipeline/"+run.ID+"/", []string{"pending", "running"}, "aborted")
+		s.cleanupOrphanedRunResources(ctx, run.ID, pipeline, logger)
 	}
+}
+
+// cleanupOrphanedRunResources destroys any containers and volumes left behind
+// by a run that was interrupted when the server stopped.
+func (s *ExecutionService) cleanupOrphanedRunResources(ctx context.Context, runID string, pipeline *storage.Pipeline, logger *slog.Logger) {
+	namespace := "ci-" + runID
+	factory := s.resolveDriverFactory(ctx, pipeline, logger)
+
+	driver, err := factory(ctx, namespace)
+	if err != nil {
+		logger.Warn("orphan.recovery.cleanup_driver_failed", "namespace", namespace, "error", err)
+		return
+	}
+
+	if err := driver.Close(); err != nil {
+		logger.Warn("orphan.recovery.cleanup_failed", "namespace", namespace, "error", err)
+		return
+	}
+
+	logger.Info("orphan.recovery.cleanup_done", "namespace", namespace)
 }
 
 // webhookExecData holds webhook-specific execution data.

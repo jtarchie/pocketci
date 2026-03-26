@@ -239,6 +239,42 @@ export const pipeline = async () => {
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
 
+		t.Run("orphaned run resources are cleaned up when auto-resume is off", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
+
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
+
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = client.Close() }()
+
+			// Create a pipeline with native driver
+			pipeline, err := client.SavePipeline(context.Background(), "orphan-cleanup-test", "export const pipeline = async () => {};", "native", "")
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			// Simulate a crash: create a run stuck in "running"
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+			assert.Expect(err).NotTo(HaveOccurred())
+			err = client.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusRunning, "")
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			// Create router with resume feature disabled — triggers cleanup path
+			router := newStrictSecretRouter(t, client, server.RouterOptions{
+				MaxInFlight:     5,
+				AllowedFeatures: "webhooks,secrets,notifications,fetch",
+			})
+
+			router.WaitForExecutions()
+
+			// Run should be marked failed and cleanup should have run without error
+			finalRun, err := client.GetRun(context.Background(), run.ID)
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(finalRun.Status).To(Equal(storage.RunStatusFailed))
+		})
+
 		t.Run("orphaned runs stay failed when auto-resume is on but pipeline has resume_enabled=false", func(t *testing.T) {
 			t.Parallel()
 			assert := NewGomegaWithT(t)
