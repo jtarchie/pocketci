@@ -13,6 +13,7 @@ import (
 var version = "dev"
 
 type CLI struct {
+	Execute  commands.Execute  `cmd:"" help:"Execute a pipeline locally"`
 	Pipeline commands.Pipeline `cmd:"" help:"Manage pipelines"`
 	Resource commands.Resource `cmd:"" help:"Execute a native resource operation"`
 	Server   commands.Server   `cmd:"" help:"Run a server"`
