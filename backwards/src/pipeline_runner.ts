@@ -197,22 +197,50 @@ export class PipelineRunner {
     for (const job of this.config.jobs) {
       const dependsOn = extractJobDependencies(job.plan);
       const storageKey = `/pipeline/${buildID}/jobs/${job.name}`;
-      storage.set(storageKey, { status: "pending", dependsOn });
+      const blockedBy = this.getBlockedByInfo(job);
+      storage.set(storageKey, {
+        status: "pending",
+        dependsOn,
+        ...(blockedBy.length > 0 && { blockedBy }),
+      });
     }
+  }
+
+  private getBlockedByInfo(
+    job: Job,
+  ): Array<{ job: string; lastStatus: string }> {
+    const blocked: Array<{ job: string; lastStatus: string }> = [];
+    for (const step of job.plan) {
+      if ("get" in step && step.passed?.length) {
+        for (const dep of step.passed) {
+          if (!this.isJobPassedSatisfied(dep)) {
+            const pid = pipelineContext?.pipelineID ?? "";
+            const lastStatus = storage.getMostRecentJobStatus(pid, dep) ??
+              "never-run";
+            blocked.push({ job: dep, lastStatus });
+          }
+        }
+      }
+    }
+    return blocked;
   }
 
   private findJobsWithNoDependencies(): Job[] {
     return this.config.jobs.filter((job) => {
-      return !job.plan.some((step) => {
-        if ("get" in step && step.passed) {
-          return true;
-        }
-        return false;
-      });
+      const hasPassedConstraints = job.plan.some((s) =>
+        "get" in s && s.passed?.length
+      );
+      if (!hasPassedConstraints) return true;
+      // Include jobs whose cross-run passed constraints are already satisfied
+      return this.canJobRun(job);
     });
   }
 
   private async runJob(job: Job): Promise<void> {
+    // Guard against double-execution when a job's cross-run deps are satisfied
+    // and it appears in both findJobsWithNoDependencies and runDependentJobs.
+    if (this.jobResults.has(job.name)) return;
+
     this.executedJobs.push(job.name);
 
     try {
@@ -261,12 +289,11 @@ export class PipelineRunner {
   }
 
   private canJobRun(job: Job): boolean {
-    // Check if all passed constraints are satisfied
+    // Check if all passed constraints are satisfied (current run or cross-run)
     for (const step of job.plan) {
       if ("get" in step && step.passed && step.passed.length > 0) {
-        // Check if all jobs in passed constraint have completed successfully
-        const allDependenciesMet = step.passed.every(
-          (depJobName) => this.jobResults.get(depJobName) === true,
+        const allDependenciesMet = step.passed.every((depJobName) =>
+          this.isJobPassedSatisfied(depJobName)
         );
 
         if (!allDependenciesMet) {
@@ -276,5 +303,16 @@ export class PipelineRunner {
     }
 
     return true;
+  }
+
+  private isJobPassedSatisfied(depJobName: string): boolean {
+    // Current run (in-memory) takes priority
+    if (this.jobResults.has(depJobName)) {
+      return this.jobResults.get(depJobName) === true;
+    }
+    // Cross-run: check most recent prior execution
+    const pipelineID = pipelineContext?.pipelineID ?? "";
+    const status = storage.getMostRecentJobStatus(pipelineID, depJobName);
+    return status === "success";
   }
 }

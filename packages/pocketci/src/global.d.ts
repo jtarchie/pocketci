@@ -223,6 +223,12 @@ declare global {
   namespace storage {
     function set(key: string, value: unknown): Promise<void>;
     function get(key: string): unknown;
+    /** Returns the status of the most recent non-skipped, non-pending execution
+     *  of jobName within the given pipelineID scope, or null if none found. */
+    function getMostRecentJobStatus(
+      pipelineID: string,
+      jobName: string,
+    ): string | null;
   }
 
   // Cumulative token counts and request stats.

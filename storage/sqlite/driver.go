@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -344,6 +345,55 @@ func (s *Sqlite) UpdateStatusForPrefix(ctx context.Context, prefix string, match
 	}
 
 	return nil
+}
+
+// escapeLike escapes SQL LIKE wildcard characters (%, _, \) in a string
+// so it can be used safely in a LIKE pattern with ESCAPE '\'.
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+
+	return s
+}
+
+func (s *Sqlite) GetMostRecentJobStatus(ctx context.Context, pipelineID, jobName string) (string, error) {
+	escaped := escapeLike(jobName)
+
+	var status string
+
+	var err error
+
+	if s.namespace != "" {
+		// CLI mode: namespace already scopes to pipeline
+		pattern := "/" + s.namespace + "/pipeline/%/jobs/" + escaped
+		err = s.reader.QueryRowContext(ctx, `
+			SELECT status FROM tasks
+			WHERE path LIKE ? ESCAPE '\'
+			  AND status NOT IN ('skipped', 'pending')
+			ORDER BY id DESC LIMIT 1
+		`, pattern).Scan(&status)
+	} else {
+		// Server mode: join with pipeline_runs for pipeline scoping
+		err = s.reader.QueryRowContext(ctx, `
+			SELECT t.status FROM tasks t
+			JOIN pipeline_runs pr ON t.run_id = pr.id
+			WHERE pr.pipeline_id = ?
+			  AND t.path LIKE '%/jobs/' || ? ESCAPE '\'
+			  AND t.status NOT IN ('skipped', 'pending')
+			ORDER BY t.id DESC LIMIT 1
+		`, pipelineID, escaped).Scan(&status)
+	}
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("failed to get most recent job status: %w", err)
+	}
+
+	return status, nil
 }
 
 func (s *Sqlite) Close() error {

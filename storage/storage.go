@@ -156,6 +156,11 @@ type Driver interface {
 	// Set (no namespace; the implementation adds it internally).
 	Search(ctx context.Context, prefix, query string) (Results, error)
 
+	// GetMostRecentJobStatus returns the status of the most recent non-skipped,
+	// non-pending execution of jobName within the given pipelineID scope.
+	// Returns ("", nil) if no execution is found.
+	GetMostRecentJobStatus(ctx context.Context, pipelineID, jobName string) (string, error)
+
 	// Webhook dedup operations
 	//
 	// CheckWebhookDedup returns true if keyHash has already been recorded for pipelineID.

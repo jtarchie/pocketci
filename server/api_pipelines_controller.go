@@ -814,6 +814,68 @@ func (c *APIPipelinesController) setPaused(ctx *echo.Context, paused bool) error
 	})
 }
 
+// SeedJobPassed handles POST /api/pipelines/:id/jobs/:name/seed-passed.
+// It creates a synthetic success record so that cross-run `passed` constraints
+// referencing the named job are immediately satisfied.
+func (c *APIPipelinesController) SeedJobPassed(ctx *echo.Context) error {
+	pipelineID := ctx.Param("id")
+	jobName := ctx.Param("name")
+
+	pipeline, err := c.store.GetPipeline(ctx.Request().Context(), pipelineID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return ctx.JSON(http.StatusNotFound, map[string]string{
+				"error": "pipeline not found",
+			})
+		}
+
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": fmt.Sprintf("failed to get pipeline: %v", err),
+		})
+	}
+
+	if err := checkPipelineRBAC(ctx, pipeline); err != nil {
+		return nil //nolint:nilerr // helper already wrote the HTTP response
+	}
+
+	// Create a synthetic run to hold the seeded record
+	run, err := c.store.SaveRun(
+		ctx.Request().Context(),
+		pipeline.ID,
+		"seed",
+		formatActor(ctx),
+		storage.TriggerInput{},
+	)
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": fmt.Sprintf("failed to create seed run: %v", err),
+		})
+	}
+
+	// Write the success task record at the standard path
+	taskPath := "/pipeline/" + run.ID + "/jobs/" + jobName
+	if err := c.store.Set(ctx.Request().Context(), taskPath, map[string]any{
+		"status": "success",
+		"seeded": true,
+	}); err != nil {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": fmt.Sprintf("failed to seed job status: %v", err),
+		})
+	}
+
+	// Immediately mark the run as completed
+	if err := c.store.UpdateRunStatus(ctx.Request().Context(), run.ID, storage.RunStatusSuccess, ""); err != nil {
+		c.logger.Error("seed.run.update.failed", "error", err)
+	}
+
+	return ctx.JSON(http.StatusOK, map[string]any{
+		"pipeline_id": pipeline.ID,
+		"job":         jobName,
+		"run_id":      run.ID,
+		"message":     "job passed status seeded successfully",
+	})
+}
+
 // RegisterRoutes registers all pipeline API routes on the given group.
 func (c *APIPipelinesController) RegisterRoutes(api *echo.Group) {
 	api.GET("/pipelines", c.Index)
@@ -824,4 +886,5 @@ func (c *APIPipelinesController) RegisterRoutes(api *echo.Group) {
 	api.POST("/pipelines/:id/pause", c.Pause)
 	api.POST("/pipelines/:id/unpause", c.Unpause)
 	api.POST("/pipelines/:name/run", c.Run)
+	api.POST("/pipelines/:id/jobs/:name/seed-passed", c.SeedJobPassed)
 }

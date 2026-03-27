@@ -643,6 +643,99 @@ func (s *S3) Search(ctx context.Context, prefix, query string) (storage.Results,
 	return results, nil
 }
 
+func (s *S3) GetMostRecentJobStatus(ctx context.Context, pipelineID, jobName string) (string, error) {
+	if s.namespace != "" {
+		// CLI mode: scan task keys under this namespace for job records
+		return s.getMostRecentJobStatusByTaskScan(ctx, jobName)
+	}
+
+	// Server mode: use pipeline_runs to scope by pipelineID
+	return s.getMostRecentJobStatusByRuns(ctx, pipelineID, jobName)
+}
+
+func (s *S3) getMostRecentJobStatusByTaskScan(ctx context.Context, jobName string) (string, error) {
+	// List all task keys and find those matching /pipeline/*/jobs/{jobName}.
+	// S3 keys are alphabetically ordered and NanoIDs are random, so we cannot
+	// rely on key order for recency. Instead we scan all matching keys and
+	// return the last non-skipped/non-pending status found. In practice this
+	// means "last written wins", which matches the SQLite id-ordering behavior.
+	prefix := s.taskKey("/pipeline/")
+
+	keys, err := s.ListKeys(ctx, prefix)
+	if err != nil {
+		return "", fmt.Errorf("failed to list tasks: %w", err)
+	}
+
+	sort.Strings(keys)
+
+	suffix := "/jobs/" + jobName
+	lastStatus := ""
+
+	for _, key := range keys {
+		logicalPath := s.StripPrefix(key)
+		logicalPath = strings.TrimPrefix(logicalPath, "tasks")
+
+		if !strings.HasSuffix(logicalPath, suffix) {
+			continue
+		}
+
+		payload, err := s.getJSON(ctx, key)
+		if err != nil {
+			continue
+		}
+
+		status, _ := payload["status"].(string)
+		if status == "skipped" || status == "pending" || status == "" {
+			continue
+		}
+
+		lastStatus = status
+	}
+
+	return lastStatus, nil
+}
+
+func (s *S3) getMostRecentJobStatusByRuns(ctx context.Context, pipelineID, jobName string) (string, error) {
+	keys, err := s.ListKeys(ctx, s.runsPrefix())
+	if err != nil {
+		return "", fmt.Errorf("failed to list runs: %w", err)
+	}
+
+	var runs []storage.PipelineRun
+
+	for _, key := range keys {
+		run, err := s.getRun(ctx, key)
+		if err != nil {
+			continue
+		}
+
+		if run.PipelineID == pipelineID {
+			runs = append(runs, *run)
+		}
+	}
+
+	sort.Slice(runs, func(i, j int) bool {
+		return runs[i].CreatedAt.After(runs[j].CreatedAt)
+	})
+
+	for _, run := range runs {
+		jobPath := "/pipeline/" + run.ID + "/jobs/" + jobName
+		payload, err := s.Get(ctx, jobPath)
+		if err != nil {
+			continue
+		}
+
+		status, _ := payload["status"].(string)
+		if status == "skipped" || status == "pending" || status == "" {
+			continue
+		}
+
+		return status, nil
+	}
+
+	return "", nil
+}
+
 // CheckWebhookDedup is not supported by the S3 driver; it always returns false.
 func (s *S3) CheckWebhookDedup(_ context.Context, _ string, _ []byte) (bool, error) {
 	return false, nil

@@ -88,7 +88,7 @@ export class JobRunner {
     const webhookFilter = this.jobConfig.triggers?.webhook?.filter ??
       this.jobConfig.webhook_trigger;
 
-    if (webhookFilter) {
+    if (webhookFilter && pipelineContext?.triggeredBy === "webhook") {
       if (!webhookTrigger(webhookFilter)) {
         storage.set(storageKey, { status: "skipped", dependsOn });
         return;

@@ -541,6 +541,10 @@ func (w *storageContextWrapper) DeletePipeline(id string) error {
 	return w.driver.DeletePipeline(w.ctx, id)
 }
 
+func (w *storageContextWrapper) GetMostRecentJobStatus(pipelineID, jobName string) (string, error) {
+	return w.driver.GetMostRecentJobStatus(w.ctx, pipelineID, jobName)
+}
+
 // Close wraps the storage Close method (no context needed).
 func (w *storageContextWrapper) Close() error {
 	return w.driver.Close()

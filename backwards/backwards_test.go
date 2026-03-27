@@ -824,3 +824,126 @@ func TestVersionEveryWithMock(t *testing.T) {
 	})
 
 }
+
+func TestCrossRunPassed(t *testing.T) {
+	t.Parallel()
+
+	t.Run("within-run cascade works with passed constraints", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		runner := testhelpers.Runner{
+			Pipeline:          "steps/cross_run_passed.yml",
+			Driver:            "native",
+			StorageSQLitePath: ":memory:",
+		}
+		err := runner.Run(nil)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("second run succeeds using prior run's job status", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		dbFile, err := os.CreateTemp(t.TempDir(), "*.db")
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(dbFile.Close()).NotTo(HaveOccurred())
+		storagePath := dbFile.Name()
+
+		const pipelineFile = "steps/cross_run_passed.yml"
+
+		// Run 1: both build and deploy execute via within-run cascade
+		runner1 := testhelpers.Runner{
+			Pipeline:          pipelineFile,
+			Driver:            "native",
+			StorageSQLitePath: storagePath,
+			RunID:             "run-1",
+		}
+		err = runner1.Run(nil)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		// Run 2: same pipeline, different run ID, same storage
+		// deploy's passed constraint should be satisfied by run-1's build success
+		runner2 := testhelpers.Runner{
+			Pipeline:          pipelineFile,
+			Driver:            "native",
+			StorageSQLitePath: storagePath,
+			RunID:             "run-2",
+		}
+		err = runner2.Run(nil)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		// Verify both runs wrote job statuses to storage
+		pipelinePath, err := filepath.Abs(pipelineFile)
+		assert.Expect(err).NotTo(HaveOccurred())
+		runtimeID := youtubeIDStyle(pipelinePath)
+
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: storagePath}, runtimeID, nil)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		// Verify run-1 has job records (build and deploy, plus their step entries)
+		results1, err := store.GetAll(context.Background(), "/pipeline/run-1/jobs/", []string{"status"})
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(len(results1)).To(BeNumerically(">=", 2))
+
+		// Verify run-2 has job records
+		results2, err := store.GetAll(context.Background(), "/pipeline/run-2/jobs/", []string{"status"})
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(len(results2)).To(BeNumerically(">=", 2))
+
+		// Verify cross-run query works: build's most recent status is success
+		status, err := store.GetMostRecentJobStatus(context.Background(), "", "build")
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(status).To(Equal("success"))
+
+		// Verify cross-run query works: deploy's most recent status is success
+		status, err = store.GetMostRecentJobStatus(context.Background(), "", "deploy")
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(status).To(Equal("success"))
+	})
+
+	t.Run("blockedBy info in pending records", func(t *testing.T) {
+		t.Parallel()
+
+		assert := NewGomegaWithT(t)
+
+		dbFile, err := os.CreateTemp(t.TempDir(), "*.db")
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(dbFile.Close()).NotTo(HaveOccurred())
+		storagePath := dbFile.Name()
+
+		const pipelineFile = "steps/cross_run_passed.yml"
+
+		// Single run with no prior data: deploy's pending record should
+		// initially have blockedBy info (before build runs and cascades)
+		runner := testhelpers.Runner{
+			Pipeline:          pipelineFile,
+			Driver:            "native",
+			StorageSQLitePath: storagePath,
+			RunID:             "run-blocked",
+		}
+		err = runner.Run(nil)
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		pipelinePath, err := filepath.Abs(pipelineFile)
+		assert.Expect(err).NotTo(HaveOccurred())
+		runtimeID := youtubeIDStyle(pipelinePath)
+
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: storagePath}, runtimeID, nil)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		// After the run completes, both jobs should have succeeded
+		// (within-run cascade handles it)
+		buildPayload, err := store.Get(context.Background(), "/pipeline/run-blocked/jobs/build")
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(buildPayload["status"]).To(Equal("success"))
+
+		deployPayload, err := store.Get(context.Background(), "/pipeline/run-blocked/jobs/deploy")
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(deployPayload["status"]).To(Equal("success"))
+	})
+}
