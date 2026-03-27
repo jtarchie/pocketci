@@ -352,30 +352,22 @@ jobs:
 	})
 
 	t.Run("credentials are redacted from the server URL in output", func(t *testing.T) {
-		// Not parallel — captures os.Stdout, which is not goroutine-safe.
+		t.Parallel()
 		assert := NewGomegaWithT(t)
 
 		_, ts := newTestServer(t, server.RouterOptions{})
 
 		serverURLWithAuth := "http://admin:supersecret@" + ts.Listener.Addr().String()
 
+		var buf bytes.Buffer
 		pipelineFile := writePipeline(t, t.TempDir(), "my-pipeline.js", minimalJS)
 		cmd := commands.SetPipeline{
 			Pipeline:  pipelineFile,
 			ServerURL: serverURLWithAuth,
+			Output:    &buf,
 		}
 
-		// Capture stdout.
-		origStdout := os.Stdout
-		r, w, _ := os.Pipe()
-		os.Stdout = w
-
 		err := cmd.Run(slog.Default())
-
-		_ = w.Close()
-		var buf bytes.Buffer
-		_, _ = buf.ReadFrom(r)
-		os.Stdout = origStdout
 
 		assert.Expect(err).NotTo(HaveOccurred())
 		output := buf.String()

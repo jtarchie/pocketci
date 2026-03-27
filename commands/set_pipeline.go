@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/url"
 	"os"
@@ -63,6 +64,9 @@ type SetPipeline struct {
 	QEMUImage               string `env:"CI_QEMU_IMAGE"                help:"QEMU boot image path or URL"    name:"qemu-image"`
 	QEMUBinary              string `env:"CI_QEMU_BINARY"               help:"Path to qemu-system binary"     name:"qemu-binary"`
 	QEMUCacheDir            string `env:"CI_QEMU_CACHE_DIR"            help:"Directory for QEMU image cache" name:"qemu-cache-dir"`
+
+	// Output is the writer for user-facing messages (defaults to os.Stdout).
+	Output io.Writer `kong:"-"`
 }
 
 // pipelineRequest matches the server's expected JSON body for PUT /api/pipelines/:name.
@@ -218,9 +222,19 @@ func (c *SetPipeline) uploadPipeline(logger *slog.Logger, name string, reqBody p
 	return pipeline, nil
 }
 
+func (c *SetPipeline) output() io.Writer {
+	if c.Output != nil {
+		return c.Output
+	}
+
+	return os.Stdout
+}
+
 func (c *SetPipeline) printSuccess(pipeline storage.Pipeline, secretsMap map[string]string) {
-	fmt.Printf("Pipeline '%s' uploaded successfully!\n", pipeline.Name)
-	fmt.Printf("  ID: %s\n", pipeline.ID)
+	w := c.output()
+
+	fmt.Fprintf(w, "Pipeline '%s' uploaded successfully!\n", pipeline.Name)
+	fmt.Fprintf(w, "  ID: %s\n", pipeline.ID)
 
 	displayURL := c.ServerURL
 	if parsed, err := url.Parse(c.ServerURL); err == nil && parsed.User != nil {
@@ -228,19 +242,19 @@ func (c *SetPipeline) printSuccess(pipeline storage.Pipeline, secretsMap map[str
 		displayURL = parsed.String()
 	}
 
-	fmt.Printf("  URL: %s/pipelines/%s/\n", displayURL, pipeline.ID)
-	fmt.Printf("  Server: %s\n", displayURL)
+	fmt.Fprintf(w, "  URL: %s/pipelines/%s/\n", displayURL, pipeline.ID)
+	fmt.Fprintf(w, "  Server: %s\n", displayURL)
 
 	if c.Driver != "" {
-		fmt.Printf("  Driver: %s\n", c.Driver)
+		fmt.Fprintf(w, "  Driver: %s\n", c.Driver)
 	}
 
 	if len(secretsMap) > 0 {
-		fmt.Printf("  Secrets: %d key(s) set\n", len(secretsMap))
+		fmt.Fprintf(w, "  Secrets: %d key(s) set\n", len(secretsMap))
 	}
 
 	if c.WebhookSecret != "" {
-		fmt.Printf("  Webhook URL: %s/api/webhooks/%s\n", displayURL, pipeline.ID)
+		fmt.Fprintf(w, "  Webhook URL: %s/api/webhooks/%s\n", displayURL, pipeline.ID)
 	}
 }
 
