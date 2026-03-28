@@ -231,8 +231,8 @@ func (c *SetPipeline) output() io.Writer {
 func (c *SetPipeline) printSuccess(pipeline storage.Pipeline, secretsMap map[string]string) {
 	w := c.output()
 
-	fmt.Fprintf(w, "Pipeline '%s' uploaded successfully!\n", pipeline.Name)
-	fmt.Fprintf(w, "  ID: %s\n", pipeline.ID)
+	_, _ = fmt.Fprintf(w, "Pipeline '%s' uploaded successfully!\n", pipeline.Name)
+	_, _ = fmt.Fprintf(w, "  ID: %s\n", pipeline.ID)
 
 	displayURL := c.ServerURL
 	if parsed, err := url.Parse(c.ServerURL); err == nil && parsed.User != nil {
@@ -240,19 +240,19 @@ func (c *SetPipeline) printSuccess(pipeline storage.Pipeline, secretsMap map[str
 		displayURL = parsed.String()
 	}
 
-	fmt.Fprintf(w, "  URL: %s/pipelines/%s/\n", displayURL, pipeline.ID)
-	fmt.Fprintf(w, "  Server: %s\n", displayURL)
+	_, _ = fmt.Fprintf(w, "  URL: %s/pipelines/%s/\n", displayURL, pipeline.ID)
+	_, _ = fmt.Fprintf(w, "  Server: %s\n", displayURL)
 
 	if c.Driver != "" {
-		fmt.Fprintf(w, "  Driver: %s\n", c.Driver)
+		_, _ = fmt.Fprintf(w, "  Driver: %s\n", c.Driver)
 	}
 
 	if len(secretsMap) > 0 {
-		fmt.Fprintf(w, "  Secrets: %d key(s) set\n", len(secretsMap))
+		_, _ = fmt.Fprintf(w, "  Secrets: %d key(s) set\n", len(secretsMap))
 	}
 
 	if c.WebhookSecret != "" {
-		fmt.Fprintf(w, "  Webhook URL: %s/api/webhooks/%s\n", displayURL, pipeline.ID)
+		_, _ = fmt.Fprintf(w, "  Webhook URL: %s/api/webhooks/%s\n", displayURL, pipeline.ID)
 	}
 }
 
