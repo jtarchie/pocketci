@@ -25,17 +25,15 @@ import (
 )
 
 type SetPipeline struct {
+	ServerConfig
 	Pipeline      string   `arg:""                                                                      help:"Path to pipeline file (JS, TS, or YAML)"                        required:"" type:"existingfile"`
 	Name          string   `help:"Name for the pipeline (defaults to filename without extension)"       short:"n"`
-	ServerURL     string   `env:"CI_SERVER_URL"                                                         help:"URL of the CI server"                                           required:"" short:"s"`
 	Driver        string   `env:"CI_DRIVER"                                                             help:"Orchestrator driver (e.g., 'docker', 'native', 'k8s')"          short:"d"`
 	WebhookSecret string   `env:"CI_WEBHOOK_SECRET"                                                     help:"Secret for webhook signature validation"                        short:"w"`
 	Secret        []string `help:"Set a pipeline-scoped secret as KEY=VALUE (can be repeated)"          short:"e"`
 	SecretFile    string   `help:"Path to a file containing secrets in KEY=VALUE format (one per line)" type:"existingfile"`
 	Resume        bool     `default:"false"                                                             help:"Enable automatic resume for this pipeline"`
 	RBAC          string   `env:"CI_PIPELINE_RBAC"                                                      help:"RBAC expression to control access to this pipeline (expr-lang)" name:"rbac"`
-	AuthToken     string   `env:"CI_AUTH_TOKEN"                                                         help:"Bearer token for OAuth-authenticated servers"                   short:"t"`
-	ConfigFile    string   `env:"CI_AUTH_CONFIG"                                                        help:"Path to auth config file (default: ~/.pocketci/auth.config)"    short:"c"`
 
 	// Driver-specific configuration (passed via driver_config map)
 	DockerHost              string `env:"CI_DOCKER_HOST"               help:"Docker daemon host URL"         name:"docker-host"`

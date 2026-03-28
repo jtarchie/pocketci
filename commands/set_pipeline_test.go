@@ -84,9 +84,9 @@ const pipeline = async () => {
 export { pipeline };
 `)
 			cmd := commands.SetPipeline{
-				Pipeline:  pipelineFile,
-				ServerURL: ts.URL,
-				Driver:    "docker",
+				ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
+				Pipeline:     pipelineFile,
+				Driver:       "docker",
 			}
 
 			err := cmd.Run(slog.Default())
@@ -113,8 +113,8 @@ const pipeline = async (): Promise<void> => {
 export { pipeline };
 `)
 			cmd := commands.SetPipeline{
-				Pipeline:  pipelineFile,
-				ServerURL: ts.URL,
+				ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
+				Pipeline:     pipelineFile,
 			}
 
 			err := cmd.Run(slog.Default())
@@ -134,9 +134,9 @@ export { pipeline };
 
 			pipelineFile := writePipeline(t, t.TempDir(), "file.js", minimalJS)
 			cmd := commands.SetPipeline{
-				Pipeline:  pipelineFile,
-				Name:      "custom-name",
-				ServerURL: ts.URL,
+				ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
+				Pipeline:     pipelineFile,
+				Name:         "custom-name",
 			}
 
 			err := cmd.Run(slog.Default())
@@ -167,8 +167,8 @@ export { pipeline };
 
 			pipelineFile := writePipeline(t, t.TempDir(), "pipeline.js", minimalJS)
 			cmd := commands.SetPipeline{
-				Pipeline:  pipelineFile,
-				ServerURL: wrapped.URL,
+				ServerConfig: commands.ServerConfig{ServerURL: wrapped.URL},
+				Pipeline:     pipelineFile,
 			}
 
 			err := cmd.Run(slog.Default())
@@ -191,8 +191,8 @@ const pipeline = async () => { console.log("v2"); };
 export { pipeline };
 `)
 			cmd := commands.SetPipeline{
-				Pipeline:  pipelineFile,
-				ServerURL: ts.URL,
+				ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
+				Pipeline:     pipelineFile,
 			}
 
 			err = cmd.Run(slog.Default())
@@ -218,8 +218,8 @@ export { pipeline };
 
 			pipelineFile := writePipeline(t, t.TempDir(), "new-pipeline.js", minimalJS)
 			cmd := commands.SetPipeline{
-				Pipeline:  pipelineFile,
-				ServerURL: ts.URL,
+				ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
+				Pipeline:     pipelineFile,
 			}
 
 			err = cmd.Run(slog.Default())
@@ -243,8 +243,8 @@ export { pipeline };
 
 			pipelineFile := writePipeline(t, t.TempDir(), "auth-pipeline.js", minimalJS)
 			cmd := commands.SetPipeline{
-				Pipeline:  pipelineFile,
-				ServerURL: serverURLWithAuth,
+				ServerConfig: commands.ServerConfig{ServerURL: serverURLWithAuth},
+				Pipeline:     pipelineFile,
 			}
 
 			// If auth is not forwarded on any request the server rejects with 401
@@ -266,8 +266,8 @@ const pipeline = async ( => {
 };
 `)
 		cmd := commands.SetPipeline{
-			Pipeline:  pipelineFile,
-			ServerURL: "http://localhost:0", // never reached — validation is client-side
+			ServerConfig: commands.ServerConfig{ServerURL: "http://localhost:0"}, // never reached — validation is client-side
+			Pipeline:     pipelineFile,
 		}
 
 		err := cmd.Run(slog.Default())
@@ -281,8 +281,8 @@ const pipeline = async ( => {
 
 		pipelineFile := writePipeline(t, t.TempDir(), "pipeline.txt", "some content")
 		cmd := commands.SetPipeline{
-			Pipeline:  pipelineFile,
-			ServerURL: "http://localhost:0",
+			ServerConfig: commands.ServerConfig{ServerURL: "http://localhost:0"},
+			Pipeline:     pipelineFile,
 		}
 
 		err := cmd.Run(slog.Default())
@@ -314,8 +314,8 @@ jobs:
 
 		pipelineFile := writePipeline(t, t.TempDir(), "templated.yaml", yamlWithTemplating)
 		cmd := commands.SetPipeline{
-			Pipeline:  pipelineFile,
-			ServerURL: ts.URL,
+			ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
+			Pipeline:     pipelineFile,
 		}
 
 		err := cmd.Run(slog.Default())
@@ -341,8 +341,8 @@ jobs:
 
 		pipelineFile := writePipeline(t, t.TempDir(), "bad-template.yaml", yamlWithBadTemplate)
 		cmd := commands.SetPipeline{
-			Pipeline:  pipelineFile,
-			ServerURL: "http://localhost:0",
+			ServerConfig: commands.ServerConfig{ServerURL: "http://localhost:0"},
+			Pipeline:     pipelineFile,
 		}
 
 		err := cmd.Run(slog.Default())
@@ -362,9 +362,9 @@ jobs:
 		var buf bytes.Buffer
 		pipelineFile := writePipeline(t, t.TempDir(), "my-pipeline.js", minimalJS)
 		cmd := commands.SetPipeline{
-			Pipeline:  pipelineFile,
-			ServerURL: serverURLWithAuth,
-			Output:    &buf,
+			ServerConfig: commands.ServerConfig{ServerURL: serverURLWithAuth},
+			Pipeline:     pipelineFile,
+			Output:       &buf,
 		}
 
 		err := cmd.Run(slog.Default())

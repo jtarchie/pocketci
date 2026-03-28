@@ -10,10 +10,8 @@ import (
 )
 
 type TriggerPipeline struct {
+	ServerConfig
 	Name          string   `arg:""                                                      help:"Name or ID of the pipeline to trigger"                       required:""`
-	ServerURL     string   `env:"CI_SERVER_URL"                                         help:"URL of the CI server"                                        required:""                              short:"s"`
-	AuthToken     string   `env:"CI_AUTH_TOKEN"                                         help:"Bearer token for OAuth-authenticated servers"                short:"t"`
-	ConfigFile    string   `env:"CI_AUTH_CONFIG"                                        help:"Path to auth config file (default: ~/.pocketci/auth.config)" short:"c"`
 	Args          []string `help:"Arguments passed to the pipeline (repeatable)"        short:"a"`
 	WebhookBody   string   `help:"JSON body for simulated webhook trigger"              name:"webhook-body"`
 	WebhookMethod string   `default:"POST"                                              enum:"GET,POST,PUT,PATCH,DELETE"                                   help:"HTTP method for simulated webhook" name:"webhook-method"`

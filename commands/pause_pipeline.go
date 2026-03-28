@@ -7,28 +7,24 @@ import (
 )
 
 type PausePipeline struct {
-	Name       string `arg:""               help:"Name or ID of the pipeline to pause"                         required:""`
-	ServerURL  string `env:"CI_SERVER_URL"  help:"URL of the CI server"                                        required:"" short:"s"`
-	AuthToken  string `env:"CI_AUTH_TOKEN"  help:"Bearer token for OAuth-authenticated servers"                short:"t"`
-	ConfigFile string `env:"CI_AUTH_CONFIG" help:"Path to auth config file (default: ~/.pocketci/auth.config)" short:"c"`
+	ServerConfig
+	Name string `arg:"" help:"Name or ID of the pipeline to pause" required:""`
 }
 
 func (c *PausePipeline) Run(logger *slog.Logger) error {
-	return setPipelinePaused(logger, c.Name, c.ServerURL, c.AuthToken, c.ConfigFile, true)
+	return setPipelinePaused(logger, c.Name, c.ServerConfig, true)
 }
 
 type UnpausePipeline struct {
-	Name       string `arg:""               help:"Name or ID of the pipeline to unpause"                       required:""`
-	ServerURL  string `env:"CI_SERVER_URL"  help:"URL of the CI server"                                        required:"" short:"s"`
-	AuthToken  string `env:"CI_AUTH_TOKEN"  help:"Bearer token for OAuth-authenticated servers"                short:"t"`
-	ConfigFile string `env:"CI_AUTH_CONFIG" help:"Path to auth config file (default: ~/.pocketci/auth.config)" short:"c"`
+	ServerConfig
+	Name string `arg:"" help:"Name or ID of the pipeline to unpause" required:""`
 }
 
 func (c *UnpausePipeline) Run(logger *slog.Logger) error {
-	return setPipelinePaused(logger, c.Name, c.ServerURL, c.AuthToken, c.ConfigFile, false)
+	return setPipelinePaused(logger, c.Name, c.ServerConfig, false)
 }
 
-func setPipelinePaused(logger *slog.Logger, name, serverURL, authToken, configFile string, paused bool) error {
+func setPipelinePaused(logger *slog.Logger, name string, cfg ServerConfig, paused bool) error {
 	action := "pause"
 	if !paused {
 		action = "unpause"
@@ -36,8 +32,8 @@ func setPipelinePaused(logger *slog.Logger, name, serverURL, authToken, configFi
 
 	logger = logger.WithGroup("pipeline." + action)
 
-	serverURL = strings.TrimSuffix(serverURL, "/")
-	client, endpoint := setupAPIClient(serverURL, authToken, configFile)
+	serverURL := strings.TrimSuffix(cfg.ServerURL, "/")
+	client, endpoint := setupAPIClient(serverURL, cfg.AuthToken, cfg.ConfigFile)
 
 	logger.Info("pipeline.list")
 

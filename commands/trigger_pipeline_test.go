@@ -24,7 +24,7 @@ func TestTriggerPipeline(t *testing.T) {
 
 		cmd := commands.TriggerPipeline{
 			Name:      "my-pipeline",
-			ServerURL: ts.URL,
+			ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
 		}
 
 		err = cmd.Run(slog.Default())
@@ -42,7 +42,7 @@ func TestTriggerPipeline(t *testing.T) {
 
 		cmd := commands.TriggerPipeline{
 			Name:      saved.ID,
-			ServerURL: ts.URL,
+			ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
 		}
 
 		err = cmd.Run(slog.Default())
@@ -60,7 +60,7 @@ func TestTriggerPipeline(t *testing.T) {
 
 		cmd := commands.TriggerPipeline{
 			Name:      "my-pipeline",
-			ServerURL: ts.URL,
+			ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
 			Args:      []string{"--env=staging", "--verbose"},
 		}
 
@@ -80,8 +80,8 @@ func TestTriggerPipeline(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		cmd := commands.TriggerPipeline{
+			ServerConfig:  commands.ServerConfig{ServerURL: ts.URL},
 			Name:          "my-pipeline",
-			ServerURL:     ts.URL,
 			WebhookBody:   `{"event": "push"}`,
 			WebhookMethod: "POST",
 			WebhookHeader: []string{"X-GitHub-Event=push"},
@@ -99,7 +99,7 @@ func TestTriggerPipeline(t *testing.T) {
 
 		cmd := commands.TriggerPipeline{
 			Name:      "non-existent",
-			ServerURL: ts.URL,
+			ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
 		}
 
 		err := cmd.Run(slog.Default())
@@ -121,7 +121,7 @@ func TestTriggerPipeline(t *testing.T) {
 
 		cmd := commands.TriggerPipeline{
 			Name:      "my-pipeline",
-			ServerURL: ts.URL,
+			ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
 		}
 
 		err = cmd.Run(slog.Default())

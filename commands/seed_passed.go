@@ -11,11 +11,9 @@ import (
 // SeedPassed seeds a job's passed status so that cross-run `passed` constraints
 // referencing the named job are immediately satisfied.
 type SeedPassed struct {
-	Pipeline   string `arg:""               help:"Pipeline name or ID"                                         required:""`
-	Job        string `arg:""               help:"Job name to seed as passed"                                  required:""`
-	ServerURL  string `env:"CI_SERVER_URL"  help:"URL of the CI server"                                        required:"" short:"s"`
-	AuthToken  string `env:"CI_AUTH_TOKEN"  help:"Bearer token for OAuth-authenticated servers"                short:"t"`
-	ConfigFile string `env:"CI_AUTH_CONFIG" help:"Path to auth config file (default: ~/.pocketci/auth.config)" short:"c"`
+	ServerConfig
+	Pipeline string `arg:"" help:"Pipeline name or ID"            required:""`
+	Job      string `arg:"" help:"Job name to seed as passed"     required:""`
 }
 
 func (c *SeedPassed) Run(logger *slog.Logger) error {

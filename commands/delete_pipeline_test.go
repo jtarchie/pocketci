@@ -26,8 +26,8 @@ func TestDeletePipeline(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			cmd := commands.DeletePipeline{
-				Name:      "my-pipeline",
-				ServerURL: ts.URL,
+				Name:         "my-pipeline",
+				ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
 			}
 
 			err = cmd.Run(slog.Default())
@@ -48,8 +48,8 @@ func TestDeletePipeline(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			cmd := commands.DeletePipeline{
-				Name:      saved.ID,
-				ServerURL: ts.URL,
+				Name:         saved.ID,
+				ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
 			}
 
 			err = cmd.Run(slog.Default())
@@ -67,8 +67,8 @@ func TestDeletePipeline(t *testing.T) {
 			_, ts := newTestServer(t, server.RouterOptions{})
 
 			cmd := commands.DeletePipeline{
-				Name:      "non-existent",
-				ServerURL: ts.URL,
+				Name:         "non-existent",
+				ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
 			}
 
 			err := cmd.Run(slog.Default())
@@ -88,8 +88,8 @@ func TestDeletePipeline(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			cmd := commands.DeletePipeline{
-				Name:      "to-delete",
-				ServerURL: ts.URL,
+				Name:         "to-delete",
+				ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
 			}
 
 			err = cmd.Run(slog.Default())
