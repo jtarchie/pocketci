@@ -7,6 +7,10 @@ tasks:
       - task: build:docs
       - task: build:backwards
       - go generate ./...
+  build:binary:
+    desc: Build optimized binary with stripped debug info
+    cmds:
+      - go build -ldflags="-s -w" -trimpath -o pocketci .
   build:static:
     dir: server/static
     cmds:
