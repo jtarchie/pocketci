@@ -23,7 +23,7 @@ func TestTriggerPipeline(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		cmd := commands.TriggerPipeline{
-			Name:      "my-pipeline",
+			Name:         "my-pipeline",
 			ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
 		}
 
@@ -41,7 +41,7 @@ func TestTriggerPipeline(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		cmd := commands.TriggerPipeline{
-			Name:      saved.ID,
+			Name:         saved.ID,
 			ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
 		}
 
@@ -59,9 +59,9 @@ func TestTriggerPipeline(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		cmd := commands.TriggerPipeline{
-			Name:      "my-pipeline",
+			Name:         "my-pipeline",
 			ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
-			Args:      []string{"--env=staging", "--verbose"},
+			Args:         []string{"--env=staging", "--verbose"},
 		}
 
 		err = cmd.Run(slog.Default())
@@ -98,7 +98,7 @@ func TestTriggerPipeline(t *testing.T) {
 		_, ts := newTestServer(t, server.RouterOptions{})
 
 		cmd := commands.TriggerPipeline{
-			Name:      "non-existent",
+			Name:         "non-existent",
 			ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
 		}
 
@@ -120,7 +120,7 @@ func TestTriggerPipeline(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		cmd := commands.TriggerPipeline{
-			Name:      "my-pipeline",
+			Name:         "my-pipeline",
 			ServerConfig: commands.ServerConfig{ServerURL: ts.URL},
 		}
 

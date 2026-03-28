@@ -12,8 +12,8 @@ import (
 // referencing the named job are immediately satisfied.
 type SeedPassed struct {
 	ServerConfig
-	Pipeline string `arg:"" help:"Pipeline name or ID"            required:""`
-	Job      string `arg:"" help:"Job name to seed as passed"     required:""`
+	Pipeline string `arg:"" help:"Pipeline name or ID"        required:""`
+	Job      string `arg:"" help:"Job name to seed as passed" required:""`
 }
 
 func (c *SeedPassed) Run(logger *slog.Logger) error {

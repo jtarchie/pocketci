@@ -11,10 +11,10 @@ import (
 
 type TriggerPipeline struct {
 	ServerConfig
-	Name          string   `arg:""                                                      help:"Name or ID of the pipeline to trigger"                       required:""`
+	Name          string   `arg:""                                                      help:"Name or ID of the pipeline to trigger" required:""`
 	Args          []string `help:"Arguments passed to the pipeline (repeatable)"        short:"a"`
 	WebhookBody   string   `help:"JSON body for simulated webhook trigger"              name:"webhook-body"`
-	WebhookMethod string   `default:"POST"                                              enum:"GET,POST,PUT,PATCH,DELETE"                                   help:"HTTP method for simulated webhook" name:"webhook-method"`
+	WebhookMethod string   `default:"POST"                                              enum:"GET,POST,PUT,PATCH,DELETE"             help:"HTTP method for simulated webhook" name:"webhook-method"`
 	WebhookHeader []string `help:"Header for simulated webhook (repeatable, KEY=VALUE)" name:"webhook-header"`
 }
 
