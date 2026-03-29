@@ -30,6 +30,7 @@ type ObservabilityProvider interface {
 // RouterOptions configures the router.
 type RouterOptions struct {
 	MaxInFlight           int
+	MaxQueueSize          int
 	WebhookTimeout        time.Duration
 	BasicAuthUsername     string
 	BasicAuthPassword     string
@@ -71,6 +72,11 @@ type Router struct {
 // This is useful for graceful shutdown or testing.
 func (r *Router) WaitForExecutions() {
 	r.execService.Wait()
+}
+
+// Shutdown stops the queue processor and waits for all in-flight executions to complete.
+func (r *Router) Shutdown() {
+	r.execService.Shutdown()
 }
 
 // ExecutionService returns the execution service for testing purposes.
@@ -181,7 +187,7 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	}
 
 	// Create execution service with allowed drivers and features
-	execService := NewExecutionService(store, logger, opts.MaxInFlight, allowedDrivers)
+	execService := NewExecutionService(store, logger, opts.MaxInFlight, opts.MaxQueueSize, allowedDrivers)
 	execService.SecretsManager = opts.SecretsManager
 	execService.AllowedFeatures = allowedFeatures
 	execService.FetchTimeout = opts.FetchTimeout

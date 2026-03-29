@@ -423,7 +423,7 @@ func TestExecutionAPI(t *testing.T) {
 			var resp map[string]any
 			err = json.Unmarshal(rec2.Body.Bytes(), &resp)
 			assert.Expect(err).NotTo(HaveOccurred())
-			assert.Expect(resp["error"]).To(Equal("max concurrent executions reached"))
+			assert.Expect(resp["error"]).To(Equal("execution queue is full"))
 
 			// Wait for background goroutines to complete before cleanup
 			router2.WaitForExecutions()

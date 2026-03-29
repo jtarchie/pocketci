@@ -25,7 +25,10 @@ import (
 // ErrRunNotInFlight is returned when a stop is requested for a run that is not currently executing.
 var ErrRunNotInFlight = errors.New("run is not currently in flight")
 
-// ExecutionService manages pipeline execution with concurrency limits.
+// ErrQueueFull is returned when the execution queue has reached its maximum size.
+var ErrQueueFull = errors.New("execution queue is full")
+
+// ExecutionService manages pipeline execution with concurrency limits and queuing.
 type ExecutionService struct {
 	store                 storage.Driver
 	logger                *slog.Logger
@@ -44,12 +47,21 @@ type ExecutionService struct {
 	DedupTTL              time.Duration
 	stopRegistry          map[string]context.CancelFunc
 	stopMu                sync.Mutex
+
+	// Queue fields
+	maxQueueSize    int
+	cond            *sync.Cond
+	queueDone       atomic.Bool
+	queueWg         sync.WaitGroup
+	pendingWebhooks map[string]chan *jsapi.HTTPResponse
+	pendingMu       sync.Mutex
 }
 
 // NewExecutionService creates a new execution service.
 // The allowedDrivers list determines the default driver (first in list).
 // If allowedDrivers is empty or contains "*", defaults to "docker".
-func NewExecutionService(store storage.Driver, logger *slog.Logger, maxInFlight int, allowedDrivers []string) *ExecutionService {
+// maxQueueSize controls the maximum number of pending queued runs; 0 disables queuing.
+func NewExecutionService(store storage.Driver, logger *slog.Logger, maxInFlight int, maxQueueSize int, allowedDrivers []string) *ExecutionService {
 	if maxInFlight <= 0 {
 		maxInFlight = 10 // default limit
 	}
@@ -60,19 +72,172 @@ func NewExecutionService(store storage.Driver, logger *slog.Logger, maxInFlight 
 		defaultDriver = allowedDrivers[0]
 	}
 
-	return &ExecutionService{
-		store:         store,
-		logger:        logger.WithGroup("executor.run"),
-		maxInFlight:   maxInFlight,
-		DefaultDriver: defaultDriver,
-		stopRegistry:  make(map[string]context.CancelFunc),
+	svc := &ExecutionService{
+		store:           store,
+		logger:          logger.WithGroup("executor.run"),
+		maxInFlight:     maxInFlight,
+		maxQueueSize:    maxQueueSize,
+		DefaultDriver:   defaultDriver,
+		stopRegistry:    make(map[string]context.CancelFunc),
+		pendingWebhooks: make(map[string]chan *jsapi.HTTPResponse),
 	}
+	svc.cond = sync.NewCond(&sync.Mutex{})
+
+	if maxQueueSize > 0 {
+		svc.queueWg.Add(1)
+
+		go svc.processQueue()
+	}
+
+	return svc
 }
 
 // Wait blocks until all in-flight pipeline executions have completed.
 // This is useful for graceful shutdown or testing.
 func (s *ExecutionService) Wait() {
 	s.wg.Wait()
+}
+
+// Shutdown stops the queue processor and waits for all in-flight executions to complete.
+func (s *ExecutionService) Shutdown() {
+	s.queueDone.Store(true)
+	s.cond.Broadcast()
+	s.queueWg.Wait()
+	s.wg.Wait()
+}
+
+// processQueue is a background goroutine that dispatches queued runs as in-flight slots free up.
+func (s *ExecutionService) processQueue() {
+	defer s.queueWg.Done()
+
+	for {
+		s.cond.L.Lock()
+		for !s.CanExecute() && !s.queueDone.Load() {
+			s.cond.Wait()
+		}
+		s.cond.L.Unlock()
+
+		ctx := context.Background()
+
+		runs, err := s.store.GetRecentRunsByStatus(ctx, storage.RunStatusQueued, s.maxInFlight)
+		if err != nil {
+			s.logger.Error("queue.processor.list_failed", "error", err)
+
+			if s.queueDone.Load() {
+				return
+			}
+
+			continue
+		}
+
+		if len(runs) == 0 {
+			if s.queueDone.Load() {
+				return
+			}
+
+			// Brief sleep to avoid a tight spin if Broadcast is called
+			// but no runs are actually queued yet (race between SaveRun and Broadcast).
+			time.Sleep(50 * time.Millisecond)
+
+			continue
+		}
+
+		for i := range runs {
+			if !s.CanExecute() {
+				break
+			}
+
+			s.dispatchQueuedRun(ctx, &runs[i])
+		}
+	}
+}
+
+// dispatchQueuedRun resolves a queued run's pipeline and options, then dispatches it.
+func (s *ExecutionService) dispatchQueuedRun(ctx context.Context, run *storage.PipelineRun) {
+	logger := s.logger.With("run_id", run.ID, "pipeline_id", run.PipelineID)
+
+	pipeline, pErr := s.store.GetPipeline(ctx, run.PipelineID)
+	if pErr != nil {
+		logger.Error("queue.processor.get_pipeline_failed", "error", pErr)
+		_ = s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "Pipeline not found during queue dispatch")
+
+		return
+	}
+
+	opts := s.buildQueuedExecOptions(run)
+	s.dispatchRun(pipeline, run, opts) //nolint:contextcheck // deliberate: execution goroutine creates its own context
+}
+
+// buildQueuedExecOptions constructs execOptions for a run being dispatched from the queue.
+func (s *ExecutionService) buildQueuedExecOptions(run *storage.PipelineRun) execOptions {
+	// Look up any pending webhook response channel for this run.
+	s.pendingMu.Lock()
+	responseChan, hasWebhook := s.pendingWebhooks[run.ID]
+	delete(s.pendingWebhooks, run.ID)
+	s.pendingMu.Unlock()
+
+	opts := execOptions{}
+	if run.TriggerType == storage.TriggerTypeResume {
+		opts.resume = true
+	}
+
+	if run.TriggerInput.Args != nil {
+		opts.args = run.TriggerInput.Args
+	}
+
+	if hasWebhook && run.TriggerInput.Webhook != nil {
+		opts.webhook = &webhookExecData{
+			webhookData: &jsapi.WebhookData{
+				Provider:  run.TriggerInput.Webhook.Provider,
+				EventType: run.TriggerInput.Webhook.EventType,
+				Method:    run.TriggerInput.Webhook.Method,
+				URL:       run.TriggerInput.Webhook.URL,
+				Headers:   run.TriggerInput.Webhook.Headers,
+				Body:      run.TriggerInput.Webhook.Body,
+				Query:     run.TriggerInput.Webhook.Query,
+			},
+			responseChan: responseChan,
+		}
+	}
+
+	return opts
+}
+
+// dispatchRun starts an in-flight execution for a queued run.
+func (s *ExecutionService) dispatchRun(pipeline *storage.Pipeline, run *storage.PipelineRun, opts execOptions) {
+	s.inFlight.Add(1)
+	s.wg.Add(1)
+
+	go s.executePipeline(pipeline, run, opts)
+}
+
+// signalSlotFreed wakes the queue processor after an in-flight slot is released.
+func (s *ExecutionService) signalSlotFreed() {
+	s.cond.Broadcast()
+}
+
+// CanAccept returns true if a new pipeline can be started immediately or queued.
+func (s *ExecutionService) CanAccept(ctx context.Context) bool {
+	if s.CanExecute() {
+		return true
+	}
+
+	return s.maxQueueSize > 0 && s.QueueLength(ctx) < s.maxQueueSize
+}
+
+// QueueLength returns the number of runs currently in queued status.
+func (s *ExecutionService) QueueLength(ctx context.Context) int {
+	runs, err := s.store.GetRunsByStatus(ctx, storage.RunStatusQueued)
+	if err != nil {
+		return 0
+	}
+
+	return len(runs)
+}
+
+// MaxQueueSize returns the configured maximum queue size.
+func (s *ExecutionService) MaxQueueSize() int {
+	return s.maxQueueSize
 }
 
 // StopRun cancels an in-flight pipeline execution by its run ID.
@@ -121,9 +286,15 @@ func (s *ExecutionService) MaxInFlight() int {
 // It creates a run record, starts a goroutine to execute the pipeline,
 // and returns the run ID immediately. Optional args are passed through
 // to pipelineContext.args in the runtime.
+// Returns ErrQueueFull if both in-flight slots and the queue are at capacity.
 func (s *ExecutionService) TriggerPipeline(ctx context.Context, pipeline *storage.Pipeline, args []string) (*storage.PipelineRun, error) {
 	requestID, _ := RequestIDFromContext(ctx)
 	actor, _ := RequestActorFromContext(ctx)
+
+	// Check if we can accept this run (either execute or queue it)
+	if !s.CanAccept(ctx) {
+		return nil, ErrQueueFull
+	}
 
 	// Create run record with queued status
 	run, err := s.store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, formatTriggeredBy(actor), storage.TriggerInput{Args: args})
@@ -131,18 +302,25 @@ func (s *ExecutionService) TriggerPipeline(ctx context.Context, pipeline *storag
 		return nil, err
 	}
 
-	// Increment in-flight counter and WaitGroup
-	s.inFlight.Add(1)
-	s.wg.Add(1)
+	opts := execOptions{args: args, requestID: requestID, authProvider: actor.Provider, user: actor.User}
 
-	// Launch execution goroutine
-	go s.executePipeline(pipeline, run, execOptions{args: args, requestID: requestID, authProvider: actor.Provider, user: actor.User}) //nolint:contextcheck // deliberate: goroutine outlives HTTP request context
+	// Fast path: dispatch immediately if a slot is available
+	if s.CanExecute() {
+		s.dispatchRun(pipeline, run, opts) //nolint:contextcheck // deliberate: execution goroutine creates its own context
+
+		return run, nil
+	}
+
+	// Slow path: run stays in queued status in DB, wake the processor
+	s.logger.Info("queue.enqueued", "run_id", run.ID, "pipeline_id", pipeline.ID)
+	s.cond.Broadcast()
 
 	return run, nil
 }
 
 // TriggerWebhookPipeline starts a new pipeline execution triggered by a webhook.
 // It passes webhook request data and a response channel through to the pipeline runtime.
+// Returns ErrQueueFull if both in-flight slots and the queue are at capacity.
 func (s *ExecutionService) TriggerWebhookPipeline(
 	ctx context.Context,
 	pipeline *storage.Pipeline,
@@ -151,6 +329,11 @@ func (s *ExecutionService) TriggerWebhookPipeline(
 ) (*storage.PipelineRun, error) {
 	requestID, _ := RequestIDFromContext(ctx)
 	actor, _ := RequestActorFromContext(ctx)
+
+	// Check if we can accept this run (either execute or queue it)
+	if !s.CanAccept(ctx) {
+		return nil, ErrQueueFull
+	}
 
 	// Create run record with queued status
 	triggeredBy := formatWebhookTriggeredBy(webhookData)
@@ -161,12 +344,7 @@ func (s *ExecutionService) TriggerWebhookPipeline(
 		return nil, err
 	}
 
-	// Increment in-flight counter and WaitGroup
-	s.inFlight.Add(1)
-	s.wg.Add(1)
-
-	// Launch execution goroutine with webhook data
-	go s.executePipeline(pipeline, run, execOptions{ //nolint:contextcheck // deliberate: goroutine outlives HTTP request context
+	opts := execOptions{
 		webhook: &webhookExecData{
 			webhookData:  webhookData,
 			responseChan: responseChan,
@@ -174,7 +352,22 @@ func (s *ExecutionService) TriggerWebhookPipeline(
 		requestID:    requestID,
 		authProvider: actor.Provider,
 		user:         actor.User,
-	})
+	}
+
+	// Fast path: dispatch immediately if a slot is available
+	if s.CanExecute() {
+		s.dispatchRun(pipeline, run, opts) //nolint:contextcheck // deliberate: execution goroutine creates its own context
+
+		return run, nil
+	}
+
+	// Slow path: store response channel for later dispatch, wake the processor
+	s.pendingMu.Lock()
+	s.pendingWebhooks[run.ID] = responseChan
+	s.pendingMu.Unlock()
+
+	s.logger.Info("queue.enqueued", "run_id", run.ID, "pipeline_id", pipeline.ID)
+	s.cond.Broadcast()
 
 	return run, nil
 }
@@ -182,7 +375,13 @@ func (s *ExecutionService) TriggerWebhookPipeline(
 // ResumePipeline resumes a failed or aborted pipeline run.
 // It reuses the existing run ID so that the ResumableRunner can load
 // previous state and skip completed steps.
+// Returns ErrQueueFull if both in-flight slots and the queue are at capacity.
 func (s *ExecutionService) ResumePipeline(ctx context.Context, pipeline *storage.Pipeline, run *storage.PipelineRun) error {
+	// Check if we can accept this run (either execute or queue it)
+	if !s.CanAccept(ctx) {
+		return ErrQueueFull
+	}
+
 	requestID, _ := RequestIDFromContext(ctx)
 	actor, _ := RequestActorFromContext(ctx)
 
@@ -191,10 +390,18 @@ func (s *ExecutionService) ResumePipeline(ctx context.Context, pipeline *storage
 		return fmt.Errorf("failed to reset run status: %w", err)
 	}
 
-	s.inFlight.Add(1)
-	s.wg.Add(1)
+	opts := execOptions{resume: true, requestID: requestID, authProvider: actor.Provider, user: actor.User}
 
-	go s.executePipeline(pipeline, run, execOptions{resume: true, requestID: requestID, authProvider: actor.Provider, user: actor.User}) //nolint:contextcheck // deliberate: goroutine outlives HTTP request context
+	// Fast path: dispatch immediately if a slot is available
+	if s.CanExecute() {
+		s.dispatchRun(pipeline, run, opts) //nolint:contextcheck // deliberate: execution goroutine creates its own context
+
+		return nil
+	}
+
+	// Slow path: run stays in queued status in DB, wake the processor
+	s.logger.Info("queue.enqueued", "run_id", run.ID, "pipeline_id", run.PipelineID)
+	s.cond.Broadcast()
 
 	return nil
 }
@@ -237,6 +444,9 @@ func (s *ExecutionService) RecoverOrphanedRuns(ctx context.Context) {
 		_ = s.store.UpdateStatusForPrefix(ctx, "/pipeline/"+run.ID+"/", []string{"pending", "running"}, "aborted")
 		s.cleanupOrphanedRunResources(ctx, run.ID, pipeline, logger)
 	}
+
+	// Wake the queue processor to dispatch any runs that were queued before the restart.
+	s.cond.Broadcast()
 }
 
 // cleanupOrphanedRunResources destroys any containers and volumes left behind
@@ -390,7 +600,10 @@ func (s *ExecutionService) finalizeExecRun(ctx, dbCtx context.Context, run *stor
 }
 
 func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *storage.PipelineRun, opts execOptions) {
-	defer s.inFlight.Add(-1)
+	defer func() {
+		s.inFlight.Add(-1)
+		s.signalSlotFreed()
+	}()
 	defer s.wg.Done()
 
 	ctx, cancel := context.WithCancel(context.Background())

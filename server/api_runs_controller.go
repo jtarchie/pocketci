@@ -216,6 +216,19 @@ func (c *APIRunsController) Resume(ctx *echo.Context) error {
 	}
 
 	if err := c.execService.ResumePipeline(reqCtx, pipeline, run); err != nil {
+		if errors.Is(err, ErrQueueFull) {
+			if isHtmxRequest(ctx) {
+				return ctx.String(http.StatusTooManyRequests, "Execution queue is full")
+			}
+
+			return ctx.JSON(http.StatusTooManyRequests, map[string]any{
+				"error":          "execution queue is full",
+				"in_flight":      c.execService.CurrentInFlight(),
+				"max_in_flight":  c.execService.MaxInFlight(),
+				"max_queue_size": c.execService.MaxQueueSize(),
+			})
+		}
+
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to resume run: %v", err),
 		})

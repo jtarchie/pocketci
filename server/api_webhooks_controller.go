@@ -140,18 +140,6 @@ func (c *APIWebhooksController) Trigger(ctx *echo.Context) error {
 	logger = logger.With("provider", event.Provider, "event_type", event.EventType)
 	logger.Info("webhook.detected")
 
-	if !c.execService.CanExecute() {
-		logger.Error("webhook.rate_limited",
-			"in_flight", c.execService.CurrentInFlight(),
-			"max_in_flight", c.execService.MaxInFlight(),
-		)
-		return ctx.JSON(http.StatusTooManyRequests, map[string]any{
-			"error":         "max concurrent executions reached",
-			"in_flight":     c.execService.CurrentInFlight(),
-			"max_in_flight": c.execService.MaxInFlight(),
-		})
-	}
-
 	webhookData := &jsapi.WebhookData{
 		Provider:  event.Provider,
 		EventType: event.EventType,
@@ -166,6 +154,21 @@ func (c *APIWebhooksController) Trigger(ctx *echo.Context) error {
 
 	run, err := c.execService.TriggerWebhookPipeline(ctx.Request().Context(), pipeline, webhookData, responseChan)
 	if err != nil {
+		if errors.Is(err, ErrQueueFull) {
+			logger.Error("webhook.queue_full",
+				"in_flight", c.execService.CurrentInFlight(),
+				"max_in_flight", c.execService.MaxInFlight(),
+				"max_queue_size", c.execService.MaxQueueSize(),
+			)
+
+			return ctx.JSON(http.StatusTooManyRequests, map[string]any{
+				"error":          "execution queue is full",
+				"in_flight":      c.execService.CurrentInFlight(),
+				"max_in_flight":  c.execService.MaxInFlight(),
+				"max_queue_size": c.execService.MaxQueueSize(),
+			})
+		}
+
 		logger.Error("webhook.trigger_error", "error", err)
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to trigger pipeline: %v", err),

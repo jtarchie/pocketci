@@ -52,6 +52,7 @@ type Server struct {
 	StorageS3SecretAccessKey string        `env:"CI_STORAGE_S3_SECRET_ACCESS_KEY" help:"S3 secret access key for storage backend"                        name:"storage-s3-secret-access-key"`
 	StorageS3Prefix          string        `env:"CI_STORAGE_S3_PREFIX"            help:"S3 key prefix for storage backend"                               name:"storage-s3-prefix"`
 	MaxInFlight              int           `default:"10"                          env:"CI_MAX_IN_FLIGHT"                                                 help:"Maximum concurrent pipeline executions"`
+	MaxQueueSize             int           `default:"100"                         env:"CI_MAX_QUEUE_SIZE"                                                help:"Maximum queued pipeline executions (0 disables queuing)"`
 	WebhookTimeout           time.Duration `default:"5s"                          env:"CI_WEBHOOK_TIMEOUT"                                               help:"Timeout waiting for pipeline webhook response"`
 	DedupTTL                 time.Duration `default:"168h"                        env:"CI_DEDUP_TTL"                                                     help:"TTL for webhook dedup entries (default 7 days)"`
 	BasicAuth                string        `env:"CI_BASIC_AUTH"                   help:"Basic auth credentials in format 'username:password' (optional)"`
@@ -191,6 +192,7 @@ func (c *Server) Run(logger *slog.Logger) error {
 
 	router, err := server.NewRouter(logger, client, server.RouterOptions{
 		MaxInFlight:           c.MaxInFlight,
+		MaxQueueSize:          c.MaxQueueSize,
 		WebhookTimeout:        c.WebhookTimeout,
 		BasicAuthUsername:     basicAuthUsername,
 		BasicAuthPassword:     basicAuthPassword,

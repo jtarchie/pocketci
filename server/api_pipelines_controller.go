@@ -573,17 +573,6 @@ func (c *APIPipelinesController) triggerByMode(ctx *echo.Context, pipeline *stor
 func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
 	id := ctx.Param("id")
 
-	if !c.execService.CanExecute() {
-		if isHtmxRequest(ctx) {
-			return ctx.String(http.StatusTooManyRequests, "Max concurrent executions reached")
-		}
-		return ctx.JSON(http.StatusTooManyRequests, map[string]any{
-			"error":         "max concurrent executions reached",
-			"in_flight":     c.execService.CurrentInFlight(),
-			"max_in_flight": c.execService.MaxInFlight(),
-		})
-	}
-
 	pipeline, err := c.store.GetPipeline(ctx.Request().Context(), id)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
@@ -624,6 +613,19 @@ func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
 	if err != nil {
 		if errors.Is(err, errHandled) {
 			return nil
+		}
+
+		if errors.Is(err, ErrQueueFull) {
+			if isHtmxRequest(ctx) {
+				return ctx.String(http.StatusTooManyRequests, "Execution queue is full")
+			}
+
+			return ctx.JSON(http.StatusTooManyRequests, map[string]any{
+				"error":          "execution queue is full",
+				"in_flight":      c.execService.CurrentInFlight(),
+				"max_in_flight":  c.execService.MaxInFlight(),
+				"max_queue_size": c.execService.MaxQueueSize(),
+			})
 		}
 
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{
