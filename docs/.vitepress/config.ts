@@ -24,6 +24,7 @@ export default defineConfig({
         { text: "Overview", link: "/guides/" },
         { text: "Run Pipelines", link: "/guides/run" },
         { text: "Webhooks", link: "/guides/webhooks" },
+        { text: "Scheduling", link: "/guides/scheduling" },
         { text: "MCP", link: "/guides/mcp" },
       ],
       "/operations/": [
@@ -33,6 +34,7 @@ export default defineConfig({
         { text: "Storage", link: "/operations/storage" },
         { text: "Secrets", link: "/operations/secrets" },
         { text: "Caching", link: "/operations/caching" },
+        { text: "Execution Queue", link: "/operations/execution-queue" },
         { text: "Feature Gates", link: "/operations/feature-gates" },
       ],
       "/cli/": [
@@ -47,6 +49,17 @@ export default defineConfig({
         { text: "Pipeline Ls", link: "/cli/pipeline-ls" },
         { text: "Pipeline Pause", link: "/cli/pipeline-pause" },
         { text: "Pipeline Unpause", link: "/cli/pipeline-unpause" },
+        { text: "Pipeline Schedule", link: "/cli/schedule" },
+      ],
+      "/api/": [
+        { text: "Overview", link: "/api/" },
+        { text: "Pipelines", link: "/api/pipelines" },
+        { text: "Runs", link: "/api/runs" },
+        { text: "Webhooks", link: "/api/webhooks" },
+        { text: "Schedules", link: "/api/schedules" },
+        { text: "Drivers", link: "/api/drivers" },
+        { text: "Features", link: "/api/features" },
+        { text: "MCP", link: "/api/mcp" },
       ],
       "/drivers/": [
         { text: "Overview", link: "/drivers/" },

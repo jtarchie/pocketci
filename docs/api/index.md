@@ -9,6 +9,7 @@ All endpoints support optional basic authentication (if configured).
 - [Pipelines](./pipelines.md) — create, list, update, delete, trigger pipelines
 - [Runs](./runs.md) — query execution history and task logs
 - [Webhooks](./webhooks.md) — trigger pipelines via HTTP webhooks
+- [Schedules](./schedules.md) — manage pipeline schedule triggers
 - [Drivers](./drivers.md) — list available orchestration drivers
 - [Features](./features.md) — list available feature gates
 - [MCP](./mcp.md) — Model Context Protocol server for AI assistants

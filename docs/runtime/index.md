@@ -10,7 +10,11 @@ All pipelines have access to these globals:
 
 - `runtime` — container execution and volume management
 - `http` — webhook request/response handling
-- `pipelineContext` — metadata about the current execution
+- `pipelineContext` — metadata about the current execution (includes
+  `targetJobs` array when running a scheduled job)
+- `triggerPipeline(name, options?)` — trigger another pipeline programmatically
+  (see
+  [Scheduling guide](../guides/scheduling.md#triggering-pipelines-from-javascript))
 - `assert` — test assertions (useful for inline validation)
 
 ## Example

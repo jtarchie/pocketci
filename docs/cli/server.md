@@ -17,6 +17,9 @@ pocketci server [options]
 - `--secret` — set global secret, repeatable (`KEY=VALUE` format)
 - `--max-in-flight` — maximum concurrent pipeline executions (default: `10`,
   env: `CI_MAX_IN_FLIGHT`)
+- `--max-queue-size` — maximum queued pipeline executions; 0 disables queuing
+  (default: `100`, env: `CI_MAX_QUEUE_SIZE`). See
+  [Execution Queue](../operations/execution-queue.md)
 - `--webhook-timeout` — time allowed for `http.respond()` in webhooks (default:
   `5s`, env: `CI_WEBHOOK_TIMEOUT`)
 - `--fetch-timeout` — default timeout for `fetch()` in pipelines (default:

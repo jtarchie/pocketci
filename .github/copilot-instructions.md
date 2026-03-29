@@ -219,6 +219,25 @@ Prefer fixing the root cause over suppressing linters. Before adding `//nolint`:
 When suppression is genuinely necessary, always include a reason:
 `//nolint:rulename // reason why`.
 
+## Documentation Requirements
+
+Every user-facing change **must** include corresponding documentation updates:
+
+- New CLI commands or flags → update `docs/cli/` pages and `docs/cli/index.md`
+- New API endpoints → update `docs/api/` pages and `docs/api/index.md`
+- New server options → update `docs/cli/server.md`
+- New feature gates → update `docs/operations/feature-gates.md`
+- New runtime globals or JS/TS API → update `docs/runtime/` pages
+- New guides or workflows → add to `docs/guides/`
+- New operational topics → add to `docs/operations/`
+
+After adding new doc pages:
+
+1. Add the page to the VitePress sidebar in `docs/.vitepress/config.ts`
+2. Add a link from the relevant index page
+3. Run `task build:docs` to verify the build succeeds (`deadLinks: "error"`
+   catches broken links)
+
 ## CI Validation
 
 PR gate (`.github/workflows/go.yml`): runs on `ubuntu-latest` with Docker,
