@@ -838,31 +838,21 @@ func (s *Sqlite) SearchRunsByPipeline(ctx context.Context, pipelineID, query str
 }
 
 func (s *Sqlite) UpdateRunStatus(ctx context.Context, runID string, status storage.RunStatus, errorMessage string) error {
-	now := time.Now().UTC()
+	now := time.Now().UTC().Unix()
 
-	// State machine: "failed" and "queued" can overwrite any state (stop/resume).
-	// All other targets only apply when the current status is non-terminal.
-	statusGuard := ""
-	if status != storage.RunStatusFailed && status != storage.RunStatusQueued {
-		statusGuard = ` AND status IN ('queued', 'running')`
-	}
-
-	var query string
-	var args []any
-
-	switch status {
-	case storage.RunStatusRunning:
-		query = `UPDATE pipeline_runs SET status = ?, started_at = ? WHERE id = ?` + statusGuard
-		args = []any{status, now.Unix(), runID}
-	case storage.RunStatusSuccess, storage.RunStatusFailed, storage.RunStatusSkipped:
-		query = `UPDATE pipeline_runs SET status = ?, completed_at = ?, error_message = ? WHERE id = ?` + statusGuard
-		args = []any{status, now.Unix(), errorMessage, runID}
-	default:
-		query = `UPDATE pipeline_runs SET status = ? WHERE id = ?` + statusGuard
-		args = []any{status, runID}
-	}
-
-	result, err := s.writer.ExecContext(ctx, query, args...)
+	result, err := s.writer.ExecContext(ctx, `
+		UPDATE pipeline_runs
+		SET
+			status        = ?1,
+			started_at    = CASE WHEN ?1 = 'running' THEN ?2 ELSE started_at END,
+			completed_at  = CASE WHEN ?1 IN ('success', 'failed', 'skipped') THEN ?2 ELSE completed_at END,
+			error_message = CASE WHEN ?1 IN ('success', 'failed', 'skipped') THEN ?3 ELSE error_message END
+		WHERE id = ?4
+		  AND (
+			  ?1 IN ('failed', 'queued')
+			  OR status IN ('queued', 'running')
+		  )
+	`, string(status), now, errorMessage, runID)
 	if err != nil {
 		return fmt.Errorf("failed to update run status: %w", err)
 	}
