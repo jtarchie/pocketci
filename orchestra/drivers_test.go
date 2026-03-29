@@ -402,7 +402,7 @@ func testDriverEnvVars(t *testing.T, dtc driverTestCtx) {
 
 	assert := NewGomegaWithT(t)
 
-	assert.Expect(os.Setenv("IGNORE", "ME")).NotTo(HaveOccurred()) //nolint: usetesting
+	t.Setenv("IGNORE", "ME")
 
 	client, err := dtc.init("test-" + gonanoid.Must())
 	assert.Expect(err).NotTo(HaveOccurred())

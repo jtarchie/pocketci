@@ -196,6 +196,20 @@ parameters. In tests: `slog.New(slog.NewTextHandler(io.Discard, nil))`.
 - `webhooks.Provider` — webhook integrations
 - Interface compliance: `var _ orchestra.Driver = &Docker{}`
 
+## Linter suppressions (`//nolint`)
+
+Prefer fixing the root cause over suppressing linters. Before adding `//nolint`:
+
+- **`usetesting`**: Use `t.Setenv()` / `t.TempDir()` instead of `os.Setenv` / `os.MkdirTemp` in tests.
+- **`forcetypeassert`**: Use comma-ok (`v, ok := x.(T)`) and return an error if `!ok`.
+- **`noctx`**: Use `http.NewRequestWithContext`; `context.Background()` is acceptable as a last resort in tests.
+- **`errcheck`** on deferred `Close()`: Log the error or use a named return to capture it; for test helpers prefer `t.Cleanup`.
+- **`nilnil`**: Return a sentinel value, a no-op implementation, or restructure to avoid dual-nil returns.
+- **`containedctx`** / **`contextcheck`**: Indicate stored contexts or goroutines outliving their parent. Add a comment explaining the deliberate design (e.g., `// JS VM cannot pass context parameters`).
+- **`gosec`** for `exec.Command`: Add a comment explaining why the input is trusted or controlled.
+
+When suppression is genuinely necessary, always include a reason: `//nolint:rulename // reason why`.
+
 ## CI Validation
 
 PR gate (`.github/workflows/go.yml`): runs on `ubuntu-latest` with Docker,

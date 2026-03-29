@@ -34,7 +34,12 @@ func Evaluate(expression string, env WebhookEnv) (bool, error) {
 		return false, fmt.Errorf("webhook_trigger eval error: %w", err)
 	}
 
-	return result.(bool), nil //nolint:forcetypeassert
+	boolResult, ok := result.(bool)
+	if !ok {
+		return false, fmt.Errorf("webhook_trigger expected bool result, got %T", result)
+	}
+
+	return boolResult, nil
 }
 
 // EvaluateString compiles and runs a string-valued expression against env.

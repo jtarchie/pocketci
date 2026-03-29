@@ -268,7 +268,7 @@ func TestQEMU_Volume(t *testing.T) {
 func TestQEMU_EnvironmentVariables(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
-	assert.Expect(os.Setenv("IGNORE", "ME")).NotTo(HaveOccurred()) //nolint:usetesting
+	t.Setenv("IGNORE", "ME")
 
 	taskID := "env-" + gonanoid.Must(6)
 

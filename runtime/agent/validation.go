@@ -27,5 +27,10 @@ func evalValidation(expression string, env map[string]any) (bool, error) {
 		return false, fmt.Errorf("validation eval: %w", err)
 	}
 
-	return result.(bool), nil //nolint:forcetypeassert
+	boolResult, ok := result.(bool)
+	if !ok {
+		return false, fmt.Errorf("expected bool from expression, got %T", result)
+	}
+
+	return boolResult, nil
 }

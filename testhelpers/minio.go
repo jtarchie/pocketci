@@ -65,7 +65,11 @@ func StartMinIO(t *testing.T) *MinioServer {
 
 	// Wait for MinIO to be ready by polling its health endpoint
 	assert.Eventually(func() bool {
-		resp, err := http.Get(endpoint + "/minio/health/live") //nolint:noctx
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, endpoint+"/minio/health/live", nil)
+		if err != nil {
+			return false
+		}
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return false
 		}
