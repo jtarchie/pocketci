@@ -22,8 +22,8 @@ github.com/PuerkitoBio/goquery v1.11.0 h1:jZ7pwMQXIITcUXNH83LLk+txlaEy6NVOfTuP43
 github.com/PuerkitoBio/goquery v1.11.0/go.mod h1:wQHgxUOU3JGuj3oD/QFfxUdlzW6xPHfqyHre6VMY4DQ=
 github.com/PuerkitoBio/rehttp v1.4.0 h1:rIN7A2s+O9fmHUM1vUcInvlHj9Ysql4hE+Y0wcl/xk8=
 github.com/PuerkitoBio/rehttp v1.4.0/go.mod h1:LUwKPoDbDIA2RL5wYZCNsQ90cx4OJ4AWBmq6KzWZL1s=
-github.com/achetronic/adk-utils-go v0.10.0 h1:gKv9FiJosA8pwpc29F0WO2BXCJy38OXihIA6LyIXmrA=
-github.com/achetronic/adk-utils-go v0.10.0/go.mod h1:D3mFttpD3bFFhqldc6/a0fNalCjBvet8hJy0fIsJ0FM=
+github.com/achetronic/adk-utils-go v0.12.0 h1:CmoiAEOH2wOuYWC/bJo9Ttja78/z79bH9+FPH13HkBw=
+github.com/achetronic/adk-utils-go v0.12.0/go.mod h1:D3mFttpD3bFFhqldc6/a0fNalCjBvet8hJy0fIsJ0FM=
 github.com/agnivade/levenshtein v1.2.1 h1:EHBY3UOn1gwdy/VbFwgo4cxecRznFk7fKWN1KOX7eoM=
 github.com/agnivade/levenshtein v1.2.1/go.mod h1:QVVI16kDrtSuwcpd0p1+xMC6Z/VfhtCyDIjcwga4/DU=
 github.com/alecthomas/assert/v2 v2.11.0 h1:2Q9r3ki8+JYXvGsDyBXwH3LcJ+WK5D0gc5E8vS6K3D0=
