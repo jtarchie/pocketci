@@ -60,6 +60,12 @@ type ExecuteOptions struct {
 	// DedupTTL is the time-to-live for webhook dedup entries.
 	// If zero, defaults to 7 days.
 	DedupTTL time.Duration
+	// TargetJobs, when set, limits execution to these specific jobs (and their
+	// downstream dependents via passed constraints). Empty means run all jobs.
+	TargetJobs []string
+	// TriggerCallback, if set, allows pipeline code to trigger other pipelines
+	// via the triggerPipeline() JS API.
+	TriggerCallback func(ctx context.Context, pipelineName string, jobs []string, args []string) (string, error)
 }
 
 type JS struct {
@@ -232,24 +238,8 @@ func (j *JS) setupJSVM(
 		return fmt.Errorf("could not set runtime: %w", err)
 	}
 
-	notifier := jsapi.NewNotifier(j.logger)
-	notifier.Disabled = opts.DisableNotifications
-	if opts.SecretsManager != nil {
-		notifier.SetSecretsManager(opts.SecretsManager, opts.PipelineID)
-	}
-	notifyRuntime := jsapi.NewNotifyRuntime(ctx, jsVM, notifier, runtime.promises, runtime.tasks)
-
-	if err := jsVM.Set("notify", notifyRuntime); err != nil {
-		return fmt.Errorf("could not set notify: %w", err)
-	}
-
-	resourceRunner := runner.NewResourceRunner(ctx, j.logger)
-	if opts.SecretsManager != nil {
-		resourceRunner.SetSecretsManager(opts.SecretsManager, opts.PipelineID)
-	}
-
-	if err := jsVM.Set("nativeResources", resourceRunner); err != nil {
-		return fmt.Errorf("could not set nativeResources: %w", err)
+	if err := j.setupNotifyAndResources(ctx, jsVM, runtime, opts); err != nil {
+		return err
 	}
 
 	storageWrapper := &storageContextWrapper{driver: storage, ctx: ctx}
@@ -273,7 +263,38 @@ func (j *JS) setupJSVM(
 		return err
 	}
 
+	if err := j.setupTriggerPipeline(ctx, jsVM, runtime, opts); err != nil {
+		return err
+	}
+
 	return j.setupPipelineContext(jsVM, runtime, driver, opts)
+}
+
+// setupNotifyAndResources registers the notify and nativeResources globals on the VM.
+func (j *JS) setupNotifyAndResources(ctx context.Context, jsVM *goja.Runtime, rt *Runtime, opts ExecuteOptions) error {
+	notifier := jsapi.NewNotifier(j.logger)
+	notifier.Disabled = opts.DisableNotifications
+
+	if opts.SecretsManager != nil {
+		notifier.SetSecretsManager(opts.SecretsManager, opts.PipelineID)
+	}
+
+	notifyRuntime := jsapi.NewNotifyRuntime(ctx, jsVM, notifier, rt.promises, rt.tasks)
+
+	if err := jsVM.Set("notify", notifyRuntime); err != nil {
+		return fmt.Errorf("could not set notify: %w", err)
+	}
+
+	resourceRunner := runner.NewResourceRunner(ctx, j.logger)
+	if opts.SecretsManager != nil {
+		resourceRunner.SetSecretsManager(opts.SecretsManager, opts.PipelineID)
+	}
+
+	if err := jsVM.Set("nativeResources", resourceRunner); err != nil {
+		return fmt.Errorf("could not set nativeResources: %w", err)
+	}
+
+	return nil
 }
 
 // defaultDedupTTL is the default time-to-live for webhook dedup entries.
@@ -399,6 +420,74 @@ func buildWebhookEnv(wd *jsapi.WebhookData) filter.WebhookEnv {
 	return env
 }
 
+// setupTriggerPipeline registers the triggerPipeline() global function on the VM.
+// It allows pipeline code to trigger other pipelines programmatically.
+func (j *JS) setupTriggerPipeline(ctx context.Context, jsVM *goja.Runtime, rt *Runtime, opts ExecuteOptions) error {
+	if opts.TriggerCallback == nil {
+		// No callback provided -- register a no-op that returns an error.
+		if err := jsVM.Set("triggerPipeline", func(_ goja.FunctionCall) goja.Value {
+			panic(jsVM.NewGoError(errors.New("triggerPipeline is not available in this execution context")))
+		}); err != nil {
+			return fmt.Errorf("could not set triggerPipeline: %w", err)
+		}
+
+		return nil
+	}
+
+	triggerFn := func(call goja.FunctionCall) goja.Value {
+		pipelineName := call.Argument(0).String()
+
+		var jobs []string
+
+		var args []string
+
+		if optsArg := call.Argument(1); optsArg != nil && !goja.IsUndefined(optsArg) && !goja.IsNull(optsArg) {
+			obj := optsArg.ToObject(jsVM)
+
+			if jobsVal := obj.Get("jobs"); jobsVal != nil && !goja.IsUndefined(jobsVal) {
+				if err := jsVM.ExportTo(jobsVal, &jobs); err != nil {
+					panic(jsVM.NewGoError(fmt.Errorf("triggerPipeline: invalid jobs: %w", err)))
+				}
+			}
+
+			if argsVal := obj.Get("args"); argsVal != nil && !goja.IsUndefined(argsVal) {
+				if err := jsVM.ExportTo(argsVal, &args); err != nil {
+					panic(jsVM.NewGoError(fmt.Errorf("triggerPipeline: invalid args: %w", err)))
+				}
+			}
+		}
+
+		promise, resolve, reject := jsVM.NewPromise()
+
+		rt.promises.Add(1)
+
+		go func() {
+			runID, triggerErr := opts.TriggerCallback(ctx, pipelineName, jobs, args)
+
+			rt.tasks <- func() error {
+				defer rt.promises.Done()
+
+				if triggerErr != nil {
+					return reject(jsVM.NewGoError(triggerErr))
+				}
+
+				result := jsVM.NewObject()
+				_ = result.Set("runID", runID)
+
+				return resolve(result)
+			}
+		}()
+
+		return jsVM.ToValue(promise)
+	}
+
+	if err := jsVM.Set("triggerPipeline", triggerFn); err != nil {
+		return fmt.Errorf("could not set triggerPipeline: %w", err)
+	}
+
+	return nil
+}
+
 // setupPipelineContext registers the pipelineContext global on the VM.
 func (j *JS) setupPipelineContext(jsVM *goja.Runtime, runtime *Runtime, driver orchestra.Driver, opts ExecuteOptions) error {
 	triggeredBy := "manual"
@@ -412,11 +501,17 @@ func (j *JS) setupPipelineContext(jsVM *goja.Runtime, runtime *Runtime, driver o
 		args = []string{}
 	}
 
+	targetJobs := opts.TargetJobs
+	if targetJobs == nil {
+		targetJobs = []string{}
+	}
+
 	pipelineContext := map[string]any{
 		"runID":       opts.RunID,
 		"pipelineID":  opts.PipelineID,
 		"triggeredBy": triggeredBy,
 		"args":        args,
+		"targetJobs":  targetJobs,
 	}
 	if driver != nil {
 		pipelineContext["driverName"] = driver.Name()

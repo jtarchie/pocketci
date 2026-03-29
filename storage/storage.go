@@ -60,10 +60,11 @@ func (s RunStatus) IsTerminal() bool {
 type TriggerType string
 
 const (
-	TriggerTypeManual  TriggerType = "manual"
-	TriggerTypeWebhook TriggerType = "webhook"
-	TriggerTypeCLI     TriggerType = "cli"
-	TriggerTypeResume  TriggerType = "resume"
+	TriggerTypeManual   TriggerType = "manual"
+	TriggerTypeWebhook  TriggerType = "webhook"
+	TriggerTypeCLI      TriggerType = "cli"
+	TriggerTypeResume   TriggerType = "resume"
+	TriggerTypeSchedule TriggerType = "schedule"
 )
 
 // TriggerWebhookInput captures the full webhook HTTP request for audit and retrigger.
@@ -82,6 +83,30 @@ type TriggerWebhookInput struct {
 type TriggerInput struct {
 	Args    []string             `json:"args,omitempty"`
 	Webhook *TriggerWebhookInput `json:"webhook,omitempty"`
+	Jobs    []string             `json:"jobs,omitempty"`
+}
+
+// ScheduleType represents the type of schedule trigger.
+type ScheduleType string
+
+const (
+	ScheduleTypeCron     ScheduleType = "cron"
+	ScheduleTypeInterval ScheduleType = "interval"
+)
+
+// Schedule represents a scheduled trigger for a pipeline.
+type Schedule struct {
+	ID           string       `json:"id"`
+	PipelineID   string       `json:"pipeline_id"`
+	Name         string       `json:"name"`
+	ScheduleType ScheduleType `json:"schedule_type"`
+	ScheduleExpr string       `json:"schedule_expr"`
+	JobName      string       `json:"job_name"`
+	Enabled      bool         `json:"enabled"`
+	LastRunAt    *time.Time   `json:"last_run_at,omitempty"`
+	NextRunAt    *time.Time   `json:"next_run_at,omitempty"`
+	CreatedAt    time.Time    `json:"created_at"`
+	UpdatedAt    time.Time    `json:"updated_at"`
 }
 
 // PipelineRun represents an execution of a pipeline.
@@ -160,6 +185,19 @@ type Driver interface {
 	// non-pending execution of jobName within the given pipelineID scope.
 	// Returns ("", nil) if no execution is found.
 	GetMostRecentJobStatus(ctx context.Context, pipelineID, jobName string) (string, error)
+
+	// Schedule operations
+	SaveSchedule(ctx context.Context, schedule *Schedule) error
+	GetSchedulesByPipeline(ctx context.Context, pipelineID string) ([]Schedule, error)
+	DeleteSchedulesByPipeline(ctx context.Context, pipelineID string) error
+	// DeleteSchedulesByPipelineExcept removes schedules for a pipeline whose
+	// names are NOT in the keepNames set. Used during sync to prune stale entries.
+	DeleteSchedulesByPipelineExcept(ctx context.Context, pipelineID string, keepNames []string) error
+	UpdateScheduleEnabled(ctx context.Context, id string, enabled bool) error
+	// ClaimDueSchedules atomically claims schedules whose next_run_at <= now.
+	// Uses UPDATE...RETURNING to prevent multi-instance collisions.
+	ClaimDueSchedules(ctx context.Context, now time.Time) ([]Schedule, error)
+	UpdateScheduleAfterRun(ctx context.Context, id string, lastRunAt, nextRunAt time.Time) error
 
 	// Webhook dedup operations
 	//

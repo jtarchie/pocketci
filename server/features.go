@@ -14,9 +14,12 @@ const (
 	FeatureNotifications Feature = "notifications"
 	FeatureFetch         Feature = "fetch"
 	FeatureResume        Feature = "resume"
+	FeatureSchedules     Feature = "schedules"
 )
 
 // AllFeatures is the canonical list of known features.
+// FeatureSchedules is intentionally excluded — it starts a background goroutine
+// and must be explicitly opted into via the allowed features flag.
 var AllFeatures = []Feature{
 	FeatureWebhooks,
 	FeatureSecrets,
@@ -67,8 +70,12 @@ func IsFeatureEnabled(feature Feature, allowed []Feature) bool {
 	return false
 }
 
+// knownFeatures includes all recognized feature names, even those not in AllFeatures.
+// FeatureSchedules is opt-in (not in AllFeatures) but still recognized.
+var knownFeatures = append([]Feature{FeatureSchedules}, AllFeatures...)
+
 func isKnownFeature(f Feature) bool {
-	for _, known := range AllFeatures {
+	for _, known := range knownFeatures {
 		if known == f {
 			return true
 		}
@@ -78,8 +85,8 @@ func isKnownFeature(f Feature) bool {
 }
 
 func knownFeatureNames() string {
-	names := make([]string, len(AllFeatures))
-	for i, f := range AllFeatures {
+	names := make([]string, len(knownFeatures))
+	for i, f := range knownFeatures {
 		names[i] = string(f)
 	}
 

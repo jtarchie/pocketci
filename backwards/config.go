@@ -186,9 +186,17 @@ type WebhookTriggerConfig struct {
 	Params   map[string]string `json:"params,omitempty"    yaml:"params,omitempty"`
 }
 
+// ScheduleTriggerConfig defines a schedule for automatic job triggering.
+// Exactly one of Cron or Every must be set.
+type ScheduleTriggerConfig struct {
+	Cron  string `json:"cron,omitempty"  yaml:"cron,omitempty"`
+	Every string `json:"every,omitempty" yaml:"every,omitempty"`
+}
+
 // Triggers holds the set of trigger configurations for a job.
 type Triggers struct {
-	Webhook *WebhookTriggerConfig `json:"webhook,omitempty" yaml:"webhook,omitempty"`
+	Webhook  *WebhookTriggerConfig  `json:"webhook,omitempty"  yaml:"webhook,omitempty"`
+	Schedule *ScheduleTriggerConfig `json:"schedule,omitempty" yaml:"schedule,omitempty"`
 }
 
 type Job struct {

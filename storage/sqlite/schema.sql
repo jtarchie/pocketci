@@ -113,6 +113,29 @@ AFTER DELETE ON pipeline_runs BEGIN
   DELETE FROM tasks WHERE run_id = OLD.id;
 END;
 
+-- Schedules: stores schedule triggers for pipelines.
+-- Each schedule is tied to a pipeline and optionally targets a specific job.
+-- ClaimDueSchedules uses UPDATE...RETURNING for atomic multi-instance safety.
+CREATE TABLE IF NOT EXISTS schedules (
+  id            TEXT    NOT NULL PRIMARY KEY,
+  pipeline_id   TEXT    NOT NULL,
+  name          TEXT    NOT NULL,
+  schedule_type TEXT    NOT NULL,
+  schedule_expr TEXT    NOT NULL,
+  job_name      TEXT    NOT NULL DEFAULT '',
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  last_run_at   INTEGER,
+  next_run_at   INTEGER,
+  created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+  UNIQUE(pipeline_id, name),
+  FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_schedules_next_run
+  ON schedules(next_run_at) WHERE enabled = 1;
+CREATE INDEX IF NOT EXISTS idx_schedules_pipeline_id ON schedules(pipeline_id);
+
 -- Webhook deduplication: stores truncated SHA-256 hashes of evaluated dedup keys.
 -- The (pipeline_id, key_hash) primary key prevents duplicate inserts efficiently.
 -- ON DELETE CASCADE removes entries when a pipeline is deleted.

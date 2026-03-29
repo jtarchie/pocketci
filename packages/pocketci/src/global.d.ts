@@ -146,6 +146,8 @@ declare global {
     triggeredBy?: string;
     /** Arguments passed from `ci run <name> [args...]` */
     args: string[];
+    /** When set, limits execution to these specific jobs and their downstream dependents. */
+    targetJobs: string[];
   }
   /**
    * Metadata about the current run, injected by the runtime.
@@ -945,6 +947,15 @@ declare global {
    * @param expression - An expr-lang string expression that produces a dedup key.
    */
   function webhookDedup(expression: string): boolean;
+
+  /**
+   * Triggers another pipeline by name, optionally targeting specific jobs.
+   * Returns a promise that resolves with the new run ID.
+   */
+  function triggerPipeline(
+    pipelineName: string,
+    opts?: { jobs?: string[]; args?: string[] },
+  ): Promise<{ runID: string }>;
 
   type Resource = ResourceBase;
   type ResourceType = ResourceBase;

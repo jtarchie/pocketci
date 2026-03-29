@@ -185,6 +185,10 @@ func (s *ExecutionService) buildQueuedExecOptions(run *storage.PipelineRun) exec
 		opts.args = run.TriggerInput.Args
 	}
 
+	if len(run.TriggerInput.Jobs) > 0 {
+		opts.jobs = run.TriggerInput.Jobs
+	}
+
 	if hasWebhook && run.TriggerInput.Webhook != nil {
 		opts.webhook = &webhookExecData{
 			webhookData: &jsapi.WebhookData{
@@ -406,6 +410,40 @@ func (s *ExecutionService) ResumePipeline(ctx context.Context, pipeline *storage
 	return nil
 }
 
+// TriggerScheduledPipeline starts a pipeline execution triggered by the scheduler.
+// If jobName is non-empty, only that job (and its downstream dependents) runs.
+// Returns ErrQueueFull if both in-flight slots and the queue are at capacity.
+func (s *ExecutionService) TriggerScheduledPipeline(ctx context.Context, pipeline *storage.Pipeline, scheduleName, jobName string) (*storage.PipelineRun, error) {
+	if !s.CanAccept(ctx) {
+		return nil, ErrQueueFull
+	}
+
+	triggerInput := storage.TriggerInput{}
+	if jobName != "" {
+		triggerInput.Jobs = []string{jobName}
+	}
+
+	triggeredBy := "schedule:" + scheduleName
+
+	run, err := s.store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeSchedule, triggeredBy, triggerInput)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := execOptions{jobs: triggerInput.Jobs}
+
+	if s.CanExecute() {
+		s.dispatchRun(pipeline, run, opts) //nolint:contextcheck // deliberate: execution goroutine creates its own context
+
+		return run, nil
+	}
+
+	s.logger.Info("queue.enqueued", "run_id", run.ID, "pipeline_id", pipeline.ID, "schedule", scheduleName)
+	s.cond.Broadcast()
+
+	return run, nil
+}
+
 // RecoverOrphanedRuns handles runs that were in-flight when the server stopped.
 // If the resume feature is enabled, resume-enabled pipelines are restarted;
 // otherwise all orphaned runs are marked as failed and their resources cleaned up.
@@ -479,6 +517,7 @@ type webhookExecData struct {
 type execOptions struct {
 	webhook      *webhookExecData
 	args         []string
+	jobs         []string
 	resume       bool
 	requestID    string
 	authProvider string
@@ -544,6 +583,38 @@ func (s *ExecutionService) buildExecutorOptions(pipeline *storage.Pipeline, opts
 	if opts.webhook != nil && IsFeatureEnabled(FeatureWebhooks, s.AllowedFeatures) {
 		execOpts.WebhookData = opts.webhook.webhookData
 		execOpts.ResponseChan = opts.webhook.responseChan
+	}
+
+	if len(opts.jobs) > 0 {
+		execOpts.TargetJobs = opts.jobs
+	}
+
+	// Wire up triggerPipeline() callback for JS API.
+	execOpts.TriggerCallback = func(ctx context.Context, pipelineName string, jobs []string, args []string) (string, error) {
+		if !s.CanAccept(ctx) {
+			return "", ErrQueueFull
+		}
+
+		pipeline, lookupErr := s.store.GetPipelineByName(ctx, pipelineName)
+		if lookupErr != nil {
+			return "", fmt.Errorf("pipeline %q not found: %w", pipelineName, lookupErr)
+		}
+
+		triggerInput := storage.TriggerInput{Args: args, Jobs: jobs}
+
+		run, triggerErr := s.store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "triggerPipeline", triggerInput)
+		if triggerErr != nil {
+			return "", triggerErr
+		}
+
+		triggerOpts := execOptions{args: args, jobs: jobs}
+		if s.CanExecute() {
+			s.dispatchRun(pipeline, run, triggerOpts) //nolint:contextcheck // deliberate: execution goroutine creates its own context
+		} else {
+			s.cond.Broadcast()
+		}
+
+		return run.ID, nil
 	}
 
 	execOpts.DisableNotifications = !IsFeatureEnabled(FeatureNotifications, s.AllowedFeatures)

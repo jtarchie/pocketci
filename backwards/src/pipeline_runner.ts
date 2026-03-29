@@ -178,17 +178,59 @@ export class PipelineRunner {
     // Pre-write all jobs as pending for graph visualization
     this.writeAllJobsAsPending();
 
-    // Find jobs with no dependencies
-    const jobsWithNoDeps = this.findJobsWithNoDependencies();
+    const targetJobs: string[] = pipelineContext?.targetJobs ?? [];
 
-    // Run jobs in dependency order
-    for (const job of jobsWithNoDeps) {
-      await this.runJob(job);
+    if (targetJobs.length > 0) {
+      // Targeted execution: run only specified jobs, then cascade forward
+      await this.runTargetedJobs(targetJobs);
+    } else {
+      // Full execution: run all root jobs in dependency order
+      const jobsWithNoDeps = this.findJobsWithNoDependencies();
+
+      for (const job of jobsWithNoDeps) {
+        await this.runJob(job);
+      }
     }
 
     if (this.config.assert?.execution) {
       // this assures that the outputs are in the same order as the job
       assert.equal(this.executedJobs, this.config.assert.execution);
+    }
+  }
+
+  private async runTargetedJobs(targetJobNames: string[]): Promise<void> {
+    const jobsByName = new Map(
+      this.config.jobs.map((job) => [job.name, job]),
+    );
+
+    for (const jobName of targetJobNames) {
+      const job = jobsByName.get(jobName);
+      if (!job) {
+        throw new Error(`Target job "${jobName}" not found in pipeline`);
+      }
+
+      // Check passed constraints against prior run results (cross-run)
+      if (!this.canJobRun(job)) {
+        const buildID = getBuildID();
+        const storageKey = `/pipeline/${buildID}/jobs/${job.name}`;
+        storage.set(storageKey, {
+          status: "skipped",
+          reason: "passed constraints not satisfied",
+        });
+        continue;
+      }
+
+      // Run the target job; runJob handles cascading to dependents
+      await this.runJob(job);
+    }
+
+    // Mark remaining non-executed jobs as skipped
+    for (const job of this.config.jobs) {
+      if (!this.jobResults.has(job.name)) {
+        const buildID = getBuildID();
+        const storageKey = `/pipeline/${buildID}/jobs/${job.name}`;
+        storage.set(storageKey, { status: "skipped" });
+      }
     }
   }
 

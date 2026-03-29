@@ -11,6 +11,7 @@ import (
 
 	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/scheduler"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/server/auth"
 	"github.com/jtarchie/pocketci/storage"
@@ -63,6 +64,7 @@ type RouterOptions struct {
 type Router struct {
 	*echo.Echo
 	execService     *ExecutionService
+	scheduler       *scheduler.Scheduler
 	webGroup        *echo.Group
 	allowedDrivers  []string
 	allowedFeatures []Feature
@@ -74,8 +76,12 @@ func (r *Router) WaitForExecutions() {
 	r.execService.Wait()
 }
 
-// Shutdown stops the queue processor and waits for all in-flight executions to complete.
+// Shutdown stops the scheduler and queue processor, then waits for all in-flight executions to complete.
 func (r *Router) Shutdown() {
+	if r.scheduler != nil {
+		r.scheduler.Stop()
+	}
+
 	r.execService.Shutdown()
 }
 
@@ -205,6 +211,9 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	// Recover orphaned runs from previous server instance
 	execService.RecoverOrphanedRuns(context.Background())
 
+	// Start the scheduler if the feature is enabled
+	sched := startSchedulerIfEnabled(store, execService, allowedFeatures, logger)
+
 	router.Use(middleware.RequestIDWithConfig(middleware.RequestIDConfig{
 		RequestIDHandler: func(c *echo.Context, id string) {
 			req := c.Request()
@@ -328,7 +337,36 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 
 	registerRoutes(router, api, web, store, execService, allowedDrivers, configuredDrivers, allowedFeatures, opts.SecretsManager, opts.WebhookProviders, webhookTimeout, logger)
 
-	return &Router{Echo: router, execService: execService, webGroup: web, allowedDrivers: allowedDrivers, allowedFeatures: allowedFeatures}, nil
+	return &Router{Echo: router, execService: execService, scheduler: sched, webGroup: web, allowedDrivers: allowedDrivers, allowedFeatures: allowedFeatures}, nil
+}
+
+// startSchedulerIfEnabled creates and starts the scheduler if the schedules feature is enabled.
+func startSchedulerIfEnabled(store storage.Driver, execService *ExecutionService, allowedFeatures []Feature, logger *slog.Logger) *scheduler.Scheduler {
+	if !IsFeatureEnabled(FeatureSchedules, allowedFeatures) {
+		return nil
+	}
+
+	triggerFn := func(ctx context.Context, sched storage.Schedule) error {
+		pipeline, pErr := store.GetPipeline(ctx, sched.PipelineID)
+		if pErr != nil {
+			return fmt.Errorf("scheduler: pipeline %s not found: %w", sched.PipelineID, pErr)
+		}
+
+		if pipeline.Paused {
+			return nil
+		}
+
+		_, tErr := execService.TriggerScheduledPipeline(ctx, pipeline, sched.Name, sched.JobName)
+
+		return tErr
+	}
+
+	const schedulerTickInterval = 10 * time.Second
+
+	sched := scheduler.New(store, triggerFn, logger, schedulerTickInterval)
+	sched.Start()
+
+	return sched
 }
 
 // registerRoutes wires all controllers to their respective route groups.
@@ -353,6 +391,7 @@ func registerRoutes(
 	(&APIRunsController{BaseController: base, allowedFeatures: allowedFeatures}).RegisterRoutes(api)
 	(&APIDriversController{allowedDrivers: allowedDrivers, configuredDrivers: configuredDrivers}).RegisterRoutes(api)
 	(&APIFeaturesController{allowedFeatures: allowedFeatures}).RegisterRoutes(api)
+	RegisterScheduleRoutes(api, store)
 
 	// Webhooks registered on the main router (no auth group, before API group)
 	(&APIWebhooksController{BaseController: base, allowedFeatures: allowedFeatures, webhookTimeout: webhookTimeout, logger: logger.WithGroup("webhook"), secretsMgr: secretsMgr, providers: webhookProviders}).RegisterRoutes(router)

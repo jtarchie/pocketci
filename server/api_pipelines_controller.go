@@ -11,8 +11,11 @@ import (
 	"sort"
 	"time"
 
+	"github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
+	"github.com/jtarchie/pocketci/runtime/support"
+	"github.com/jtarchie/pocketci/scheduler"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/server/auth"
 	"github.com/jtarchie/pocketci/storage"
@@ -465,6 +468,13 @@ func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
 		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
+	if err := syncSchedules(ctx.Request().Context(), c.store, pipeline); err != nil {
+		c.logger.Error("pipeline.sync_schedules.failed",
+			slog.String("pipeline_id", pipeline.ID),
+			slog.String("error", err.Error()),
+		)
+	}
+
 	c.logger.Info("pipeline.upsert",
 		slog.String("pipeline", pipeline.Name),
 		slog.String("pipeline_id", pipeline.ID),
@@ -889,4 +899,83 @@ func (c *APIPipelinesController) RegisterRoutes(api *echo.Group) {
 	api.POST("/pipelines/:id/unpause", c.Unpause)
 	api.POST("/pipelines/:name/run", c.Run)
 	api.POST("/pipelines/:id/jobs/:name/seed-passed", c.SeedJobPassed)
+	api.GET("/pipelines/:id/schedules", c.ListSchedules)
+}
+
+// syncSchedules extracts schedule declarations from YAML pipeline content
+// and syncs them to the schedules table. It upserts current schedules
+// (preserving user-managed fields like enabled) and prunes stale ones.
+func syncSchedules(ctx context.Context, store storage.Driver, pipeline *storage.Pipeline) error {
+	if pipeline.ContentType != storage.ContentTypeYAML {
+		// Only YAML pipelines support inline schedule declarations.
+		// For JS/TS, schedules are managed via CLI/API (future).
+		return nil
+	}
+
+	extracted, err := backwards.ExtractSchedules(pipeline.Content)
+	if err != nil {
+		return fmt.Errorf("extract schedules: %w", err)
+	}
+
+	now := time.Now().UTC()
+
+	keepNames := make([]string, 0, len(extracted))
+
+	for _, s := range extracted {
+		nextRunAt, err := scheduler.ComputeNextRun(s.ScheduleType, s.ScheduleExpr, now)
+		if err != nil {
+			return fmt.Errorf("compute next run for job %q: %w", s.JobName, err)
+		}
+
+		schedule := &storage.Schedule{
+			ID:           support.UniqueID(),
+			PipelineID:   pipeline.ID,
+			Name:         s.JobName,
+			ScheduleType: s.ScheduleType,
+			ScheduleExpr: s.ScheduleExpr,
+			JobName:      s.JobName,
+			Enabled:      true,
+			NextRunAt:    &nextRunAt,
+		}
+
+		if err := store.SaveSchedule(ctx, schedule); err != nil {
+			return fmt.Errorf("save schedule for job %q: %w", s.JobName, err)
+		}
+
+		keepNames = append(keepNames, s.JobName)
+	}
+
+	// Remove schedules no longer declared in the YAML.
+	if err := store.DeleteSchedulesByPipelineExcept(ctx, pipeline.ID, keepNames); err != nil {
+		return fmt.Errorf("prune stale schedules: %w", err)
+	}
+
+	return nil
+}
+
+// ListSchedules handles GET /api/pipelines/:id/schedules - List schedules for a pipeline.
+func (c *APIPipelinesController) ListSchedules(ctx *echo.Context) error {
+	id := ctx.Param("id")
+
+	_, err := c.store.GetPipeline(ctx.Request().Context(), id)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return ctx.JSON(http.StatusNotFound, map[string]string{
+				"error": "pipeline not found",
+			})
+		}
+
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": fmt.Sprintf("failed to get pipeline: %v", err),
+		})
+	}
+
+	schedules, err := c.store.GetSchedulesByPipeline(ctx.Request().Context(), id)
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": fmt.Sprintf("failed to list schedules: %v", err),
+		})
+	}
+
+	return ctx.JSON(http.StatusOK, schedules)
 }

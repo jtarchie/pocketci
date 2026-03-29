@@ -10,4 +10,5 @@ type Pipeline struct {
 	Pause      PausePipeline   `cmd:"" help:"Pause a pipeline to prevent new runs"`
 	Unpause    UnpausePipeline `cmd:"" help:"Unpause a pipeline to allow new runs"`
 	SeedPassed SeedPassed      `cmd:"" help:"Seed a job's passed status for cross-run dependencies"`
+	Schedule   Schedule        `cmd:"" help:"Manage pipeline schedules"`
 }

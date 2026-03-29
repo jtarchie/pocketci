@@ -751,6 +751,41 @@ func (s *S3) PruneWebhookDedup(_ context.Context, _ time.Time) (int64, error) {
 	return 0, nil
 }
 
+// SaveSchedule is not supported by the S3 driver; it is a no-op.
+func (s *S3) SaveSchedule(_ context.Context, _ *storage.Schedule) error {
+	return nil
+}
+
+// GetSchedulesByPipeline is not supported by the S3 driver; returns empty.
+func (s *S3) GetSchedulesByPipeline(_ context.Context, _ string) ([]storage.Schedule, error) {
+	return nil, nil
+}
+
+// DeleteSchedulesByPipeline is not supported by the S3 driver; it is a no-op.
+func (s *S3) DeleteSchedulesByPipeline(_ context.Context, _ string) error {
+	return nil
+}
+
+// DeleteSchedulesByPipelineExcept is not supported by the S3 driver; it is a no-op.
+func (s *S3) DeleteSchedulesByPipelineExcept(_ context.Context, _ string, _ []string) error {
+	return nil
+}
+
+// UpdateScheduleEnabled is not supported by the S3 driver; it is a no-op.
+func (s *S3) UpdateScheduleEnabled(_ context.Context, _ string, _ bool) error {
+	return nil
+}
+
+// ClaimDueSchedules is not supported by the S3 driver; returns empty.
+func (s *S3) ClaimDueSchedules(_ context.Context, _ time.Time) ([]storage.Schedule, error) {
+	return nil, nil
+}
+
+// UpdateScheduleAfterRun is not supported by the S3 driver; it is a no-op.
+func (s *S3) UpdateScheduleAfterRun(_ context.Context, _ string, _, _ time.Time) error {
+	return nil
+}
+
 // ─── S3 key helpers ─────────────────────────────────────────────────────────
 
 func (s *S3) pipelineByIDKey(id string) string {

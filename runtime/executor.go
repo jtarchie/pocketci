@@ -67,6 +67,12 @@ type ExecutorOptions struct {
 	// DedupTTL is the time-to-live for webhook dedup entries.
 	// If zero, defaults to 7 days.
 	DedupTTL time.Duration
+	// TargetJobs, when set, limits execution to these specific jobs (and their
+	// downstream dependents via passed constraints). Empty means run all jobs.
+	TargetJobs []string
+	// TriggerCallback, if set, allows pipeline code to trigger other pipelines
+	// via the triggerPipeline() JS API.
+	TriggerCallback func(ctx context.Context, pipelineName string, jobs []string, args []string) (string, error)
 }
 
 // ExecutePipeline executes a pipeline with the given content and driver factory.
@@ -139,6 +145,8 @@ func ExecutePipeline(
 		FetchMaxResponseBytes: opts.FetchMaxResponseBytes,
 		Args:                  opts.Args,
 		DedupTTL:              opts.DedupTTL,
+		TargetJobs:            opts.TargetJobs,
+		TriggerCallback:       opts.TriggerCallback,
 	}
 
 	// If pre-seeded volumes were provided, pass them through.
