@@ -4,14 +4,10 @@ import (
 	"context"
 	"log/slog"
 	"os"
-	"os/exec"
 	"testing"
 
-	"github.com/jtarchie/pocketci/s3config"
 	"github.com/jtarchie/pocketci/storage"
-	"github.com/jtarchie/pocketci/storage/s3"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
-	"github.com/jtarchie/pocketci/testhelpers"
 	. "github.com/onsi/gomega"
 )
 
@@ -38,37 +34,6 @@ func allDrivers() []driverFactory {
 
 				client, err := storagesqlite.NewSqlite(storagesqlite.Config{
 					Path: f.Name(),
-				}, namespace, logger)
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				t.Cleanup(func() { _ = client.Close() })
-
-				return client
-			},
-		},
-		{
-			name: "s3",
-			new: func(t *testing.T, namespace string) storage.Driver {
-				t.Helper()
-
-				if _, err := exec.LookPath("minio"); err != nil {
-					t.Skip("minio not installed, skipping S3 storage test")
-				}
-
-				server := testhelpers.StartMinIO(t)
-				t.Cleanup(server.Stop)
-
-				client, err := s3.NewS3(s3.Config{
-					Config: s3config.Config{
-						Endpoint:        server.Endpoint(),
-						Bucket:          server.Bucket(),
-						Region:          "us-east-1",
-						AccessKeyID:     "minioadmin",
-						SecretAccessKey: "minioadmin",
-						ForcePathStyle:  true,
-					},
 				}, namespace, logger)
 				if err != nil {
 					t.Fatal(err)

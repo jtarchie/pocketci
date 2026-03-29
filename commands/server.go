@@ -31,7 +31,6 @@ import (
 	"github.com/jtarchie/pocketci/server"
 	"github.com/jtarchie/pocketci/server/auth"
 	"github.com/jtarchie/pocketci/storage"
-	storages3 "github.com/jtarchie/pocketci/storage/s3"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/jtarchie/pocketci/webhooks"
 	webhookgeneric "github.com/jtarchie/pocketci/webhooks/generic"
@@ -43,23 +42,17 @@ import (
 
 type Server struct {
 	Port int `default:"8080" env:"CI_PORT" help:"Port to run the server on"`
-	// Storage backend: SQLite (default) or S3
-	StorageSQLitePath        string        `default:"test.db"                     env:"CI_STORAGE_SQLITE_PATH"                                           help:"SQLite storage database file path (use ':memory:' for in-memory)"                                       name:"storage-sqlite-path"`
-	StorageS3Bucket          string        `env:"CI_STORAGE_S3_BUCKET"            help:"S3 bucket name for storage backend"                              name:"storage-s3-bucket"`
-	StorageS3Endpoint        string        `env:"CI_STORAGE_S3_ENDPOINT"          help:"S3-compatible endpoint URL"                                      name:"storage-s3-endpoint"`
-	StorageS3Region          string        `env:"CI_STORAGE_S3_REGION"            help:"AWS region for S3 storage backend"                               name:"storage-s3-region"`
-	StorageS3AccessKeyID     string        `env:"CI_STORAGE_S3_ACCESS_KEY_ID"     help:"S3 access key ID for storage backend"                            name:"storage-s3-access-key-id"`
-	StorageS3SecretAccessKey string        `env:"CI_STORAGE_S3_SECRET_ACCESS_KEY" help:"S3 secret access key for storage backend"                        name:"storage-s3-secret-access-key"`
-	StorageS3Prefix          string        `env:"CI_STORAGE_S3_PREFIX"            help:"S3 key prefix for storage backend"                               name:"storage-s3-prefix"`
-	MaxInFlight              int           `default:"10"                          env:"CI_MAX_IN_FLIGHT"                                                 help:"Maximum concurrent pipeline executions"`
-	MaxQueueSize             int           `default:"100"                         env:"CI_MAX_QUEUE_SIZE"                                                help:"Maximum queued pipeline executions (0 disables queuing)"`
-	WebhookTimeout           time.Duration `default:"5s"                          env:"CI_WEBHOOK_TIMEOUT"                                               help:"Timeout waiting for pipeline webhook response"`
-	DedupTTL                 time.Duration `default:"168h"                        env:"CI_DEDUP_TTL"                                                     help:"TTL for webhook dedup entries (default 7 days)"`
-	BasicAuth                string        `env:"CI_BASIC_AUTH"                   help:"Basic auth credentials in format 'username:password' (optional)"`
-	AllowedDrivers           string        `default:"*"                           env:"CI_ALLOWED_DRIVERS"                                               help:"Comma-separated list of allowed driver names (e.g., 'docker,native,k8s'), or '*' for all"`
-	AllowedFeatures          string        `default:"*"                           env:"CI_ALLOWED_FEATURES"                                              help:"Comma-separated list of allowed features (webhooks,secrets,notifications,fetch,resume), or '*' for all"`
-	FetchTimeout             time.Duration `default:"30s"                         env:"CI_FETCH_TIMEOUT"                                                 help:"Default timeout for fetch() calls in pipelines"`
-	FetchMaxResponseMB       int           `default:"10"                          env:"CI_FETCH_MAX_RESPONSE_MB"                                         help:"Maximum response body size in MB for fetch() calls"                                                     name:"fetch-max-response-mb"`
+	// Storage backend: SQLite
+	StorageSQLitePath  string        `default:"test.db"   env:"CI_STORAGE_SQLITE_PATH"                                           help:"SQLite storage database file path (use ':memory:' for in-memory)"                                       name:"storage-sqlite-path"`
+	MaxInFlight        int           `default:"10"        env:"CI_MAX_IN_FLIGHT"                                                 help:"Maximum concurrent pipeline executions"`
+	MaxQueueSize       int           `default:"100"       env:"CI_MAX_QUEUE_SIZE"                                                help:"Maximum queued pipeline executions (0 disables queuing)"`
+	WebhookTimeout     time.Duration `default:"5s"        env:"CI_WEBHOOK_TIMEOUT"                                               help:"Timeout waiting for pipeline webhook response"`
+	DedupTTL           time.Duration `default:"168h"      env:"CI_DEDUP_TTL"                                                     help:"TTL for webhook dedup entries (default 7 days)"`
+	BasicAuth          string        `env:"CI_BASIC_AUTH" help:"Basic auth credentials in format 'username:password' (optional)"`
+	AllowedDrivers     string        `default:"*"         env:"CI_ALLOWED_DRIVERS"                                               help:"Comma-separated list of allowed driver names (e.g., 'docker,native,k8s'), or '*' for all"`
+	AllowedFeatures    string        `default:"*"         env:"CI_ALLOWED_FEATURES"                                              help:"Comma-separated list of allowed features (webhooks,secrets,notifications,fetch,resume), or '*' for all"`
+	FetchTimeout       time.Duration `default:"30s"       env:"CI_FETCH_TIMEOUT"                                                 help:"Default timeout for fetch() calls in pipelines"`
+	FetchMaxResponseMB int           `default:"10"        env:"CI_FETCH_MAX_RESPONSE_MB"                                         help:"Maximum response body size in MB for fetch() calls"                                                     name:"fetch-max-response-mb"`
 	// SQLite secrets backend
 	SecretsSQLitePath       string `default:"test.db"                  env:"CI_SECRETS_SQLITE_PATH"                                       help:"SQLite secrets database file path (use ':memory:' for in-memory)" name:"secrets-sqlite-path"`
 	SecretsSQLitePassphrase string `env:"CI_SECRETS_SQLITE_PASSPHRASE" help:"Encryption passphrase for SQLite secrets backend (required)" name:"secrets-sqlite-passphrase"`
@@ -270,34 +263,14 @@ func (c *Server) initObservability(logger *slog.Logger) (observability.Provider,
 }
 
 func (c *Server) initStorage(logger *slog.Logger) (storage.Driver, error) {
-	switch {
-	case c.StorageS3Bucket != "":
-		client, err := storages3.NewS3(storages3.Config{
-			Config: s3config.Config{
-				Bucket:          c.StorageS3Bucket,
-				Prefix:          c.StorageS3Prefix,
-				Endpoint:        c.StorageS3Endpoint,
-				Region:          c.StorageS3Region,
-				AccessKeyID:     c.StorageS3AccessKeyID,
-				SecretAccessKey: c.StorageS3SecretAccessKey,
-				ForcePathStyle:  c.StorageS3Endpoint != "",
-			},
-		}, "", logger)
-		if err != nil {
-			return nil, fmt.Errorf("could not create S3 storage client: %w", err)
-		}
-
-		return client, nil
-	default:
-		client, err := storagesqlite.NewSqlite(storagesqlite.Config{
-			Path: c.StorageSQLitePath,
-		}, "", logger)
-		if err != nil {
-			return nil, fmt.Errorf("could not create SQLite storage client: %w", err)
-		}
-
-		return client, nil
+	client, err := storagesqlite.NewSqlite(storagesqlite.Config{
+		Path: c.StorageSQLitePath,
+	}, "", logger)
+	if err != nil {
+		return nil, fmt.Errorf("could not create SQLite storage client: %w", err)
 	}
+
+	return client, nil
 }
 
 func (c *Server) initSecrets(logger *slog.Logger) (secrets.Manager, error) {

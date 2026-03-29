@@ -31,20 +31,11 @@ pocketci server [options]
 
 ### Storage Options
 
-SQLite is the default backend. Set `--storage-s3-bucket` to use S3 instead. See
-[Storage](../operations/storage.md) for full details.
+SQLite is the storage backend. See [Storage](../operations/storage.md) for full
+details.
 
 - `--storage-sqlite-path` — SQLite database file path (default: `pocketci.db`,
   env: `CI_STORAGE_SQLITE_PATH`)
-- `--storage-s3-bucket` — S3 bucket name (env: `CI_STORAGE_S3_BUCKET`)
-- `--storage-s3-endpoint` — S3-compatible endpoint URL (env:
-  `CI_STORAGE_S3_ENDPOINT`)
-- `--storage-s3-region` — AWS region (env: `CI_STORAGE_S3_REGION`)
-- `--storage-s3-access-key-id` — S3 access key ID (env:
-  `CI_STORAGE_S3_ACCESS_KEY_ID`)
-- `--storage-s3-secret-access-key` — S3 secret access key (env:
-  `CI_STORAGE_S3_SECRET_ACCESS_KEY`)
-- `--storage-s3-prefix` — S3 key prefix (env: `CI_STORAGE_S3_PREFIX`)
 
 ### Secrets Options
 
@@ -140,18 +131,6 @@ pocketci server \
   --oauth-github-client-secret YOUR_CLIENT_SECRET \
   --oauth-session-secret "$(openssl rand -hex 32)" \
   --oauth-callback-url https://ci.example.com
-```
-
-With S3 storage and encrypted secrets:
-
-```bash
-pocketci server \
-  --port 8080 \
-  --storage-s3-bucket my-ci-storage \
-  --storage-s3-region us-east-1 \
-  --secrets-s3-bucket my-ci-secrets \
-  --secrets-s3-region us-east-1 \
-  --secrets-s3-passphrase "$(openssl rand -hex 32)"
 ```
 
 The server provides:
