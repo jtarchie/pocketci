@@ -21,8 +21,6 @@ import (
 )
 
 func TestDrivers(t *testing.T) {
-	t.Parallel()
-
 	type driverEntry struct {
 		name      string
 		newDriver func(namespace string) (orchestra.Driver, error)
@@ -62,10 +60,6 @@ type driverTestCtx struct {
 func runDriverTests(t *testing.T, name string, newDriver func(namespace string) (orchestra.Driver, error)) {
 	t.Helper()
 
-	if name == "native" {
-		t.Parallel()
-	}
-
 	if name == "k8s" && !k8s.IsAvailable() {
 		t.Skip("Kubernetes cluster not available")
 	}
@@ -99,10 +93,6 @@ func runDriverTests(t *testing.T, name string, newDriver func(namespace string) 
 }
 
 func testDriverStdin(t *testing.T, dtc driverTestCtx) {
-	if dtc.name == "native" {
-		t.Parallel()
-	}
-
 	// Fly machines don't support piping stdin from the client
 	if dtc.name == "fly" {
 		t.Skip("Fly machines do not support stdin")
@@ -150,10 +140,6 @@ func testDriverStdin(t *testing.T, dtc driverTestCtx) {
 }
 
 func testDriverExitCodeFailed(t *testing.T, dtc driverTestCtx) {
-	if dtc.name == "native" {
-		t.Parallel()
-	}
-
 	assert := NewGomegaWithT(t)
 
 	client, err := dtc.init("test-" + gonanoid.Must())
@@ -191,10 +177,6 @@ func testDriverExitCodeFailed(t *testing.T, dtc driverTestCtx) {
 }
 
 func testDriverHappyPath(t *testing.T, dtc driverTestCtx) {
-	if dtc.name == "native" {
-		t.Parallel()
-	}
-
 	assert := NewGomegaWithT(t)
 
 	client, err := dtc.init("test-" + gonanoid.Must())
@@ -265,10 +247,6 @@ func testDriverHappyPath(t *testing.T, dtc driverTestCtx) {
 }
 
 func testDriverVolume(t *testing.T, dtc driverTestCtx) {
-	if dtc.name == "native" {
-		t.Parallel()
-	}
-
 	assert := NewGomegaWithT(t)
 
 	client, err := dtc.init("test-" + gonanoid.Must())
@@ -332,10 +310,6 @@ func testDriverVolume(t *testing.T, dtc driverTestCtx) {
 }
 
 func testDriverReadFiles(t *testing.T, dtc driverTestCtx) {
-	if dtc.name == "native" {
-		t.Parallel()
-	}
-
 	assert := NewGomegaWithT(t)
 
 	client, err := dtc.init("test-" + gonanoid.Must())
@@ -396,10 +370,6 @@ func testDriverReadFiles(t *testing.T, dtc driverTestCtx) {
 }
 
 func testDriverEnvVars(t *testing.T, dtc driverTestCtx) {
-	if dtc.name == "native" {
-		t.Parallel()
-	}
-
 	assert := NewGomegaWithT(t)
 
 	t.Setenv("IGNORE", "ME")
@@ -441,10 +411,6 @@ func testDriverEnvVars(t *testing.T, dtc driverTestCtx) {
 }
 
 func testDriverStreamingLogs(t *testing.T, dtc driverTestCtx) {
-	if dtc.name == "native" {
-		t.Parallel()
-	}
-
 	assert := NewGomegaWithT(t)
 
 	client, err := dtc.init("test-" + gonanoid.Must())
@@ -508,8 +474,6 @@ func testDriverStreamingLogs(t *testing.T, dtc driverTestCtx) {
 }
 
 func TestSandboxDrivers(t *testing.T) {
-	t.Parallel()
-
 	type driverEntry struct {
 		name      string
 		newDriver func(namespace string) (orchestra.Driver, error)
@@ -539,10 +503,6 @@ func TestSandboxDrivers(t *testing.T) {
 
 func runSandboxDriverTests(t *testing.T, name string, newDriver func(namespace string) (orchestra.Driver, error)) {
 	t.Helper()
-
-	if name == "native" {
-		t.Parallel()
-	}
 
 	// Skip k8s tests if cluster is not available.
 	if name == "k8s" && !k8s.IsAvailable() {
@@ -581,10 +541,6 @@ func runSandboxDriverTests(t *testing.T, name string, newDriver func(namespace s
 	}
 
 	t.Run("sequential commands share environment", func(t *testing.T) {
-		if name == "native" {
-			t.Parallel()
-		}
-
 		assert := NewGomegaWithT(t)
 
 		sandboxDriver := newSandboxDriver(t)
@@ -616,10 +572,6 @@ func runSandboxDriverTests(t *testing.T, name string, newDriver func(namespace s
 	})
 
 	t.Run("exec respects env and workdir", func(t *testing.T) {
-		if name == "native" {
-			t.Parallel()
-		}
-
 		assert := NewGomegaWithT(t)
 
 		sandboxDriver := newSandboxDriver(t)
@@ -644,10 +596,6 @@ func runSandboxDriverTests(t *testing.T, name string, newDriver func(namespace s
 	})
 
 	t.Run("exec captures non-zero exit code", func(t *testing.T) {
-		if name == "native" {
-			t.Parallel()
-		}
-
 		assert := NewGomegaWithT(t)
 
 		sandboxDriver := newSandboxDriver(t)
@@ -668,10 +616,6 @@ func runSandboxDriverTests(t *testing.T, name string, newDriver func(namespace s
 	})
 
 	t.Run("cleanup removes sandbox", func(t *testing.T) {
-		if name == "native" {
-			t.Parallel()
-		}
-
 		assert := NewGomegaWithT(t)
 
 		sandboxDriver := newSandboxDriver(t)
