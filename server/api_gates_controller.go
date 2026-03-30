@@ -45,8 +45,7 @@ func (c *APIGatesController) resolveGate(ctx *echo.Context, status storage.GateS
 	gateID := ctx.Param("gate_id")
 
 	reqCtx := ctx.Request().Context()
-	// TODO: extract authenticated user identity from request context when auth is enabled.
-	approvedBy := "api"
+	approvedBy := formatActor(ctx)
 
 	// ResolveGate atomically updates only pending gates (WHERE status = 'pending'),
 	// so no pre-fetch is needed, avoiding a TOCTOU race.
