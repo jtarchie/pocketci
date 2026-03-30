@@ -94,6 +94,29 @@ const (
 	ScheduleTypeInterval ScheduleType = "interval"
 )
 
+// GateStatus represents the status of an approval gate.
+type GateStatus string
+
+const (
+	GateStatusPending  GateStatus = "pending"
+	GateStatusApproved GateStatus = "approved"
+	GateStatusRejected GateStatus = "rejected"
+	GateStatusTimedOut GateStatus = "timed_out"
+)
+
+// Gate represents an approval gate within a pipeline run.
+type Gate struct {
+	ID         string     `json:"id"`
+	RunID      string     `json:"run_id"`
+	PipelineID string     `json:"pipeline_id"`
+	Name       string     `json:"name"`
+	Status     GateStatus `json:"status"`
+	Message    string     `json:"message"`
+	ApprovedBy string     `json:"approved_by"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+}
+
 // Schedule represents a scheduled trigger for a pipeline.
 type Schedule struct {
 	ID           string       `json:"id"`
@@ -198,6 +221,13 @@ type Driver interface {
 	// Uses UPDATE...RETURNING to prevent multi-instance collisions.
 	ClaimDueSchedules(ctx context.Context, now time.Time) ([]Schedule, error)
 	UpdateScheduleAfterRun(ctx context.Context, id string, lastRunAt, nextRunAt time.Time) error
+
+	// Gate operations
+	SaveGate(ctx context.Context, gate *Gate) error
+	GetGate(ctx context.Context, gateID string) (*Gate, error)
+	GetPendingGates(ctx context.Context) ([]Gate, error)
+	ResolveGate(ctx context.Context, gateID string, status GateStatus, approvedBy string) error
+	GetGatesByRunID(ctx context.Context, runID string) ([]Gate, error)
 
 	// Webhook dedup operations
 	//

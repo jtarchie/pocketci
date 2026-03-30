@@ -15,6 +15,7 @@ const (
 	FeatureFetch         Feature = "fetch"
 	FeatureResume        Feature = "resume"
 	FeatureSchedules     Feature = "schedules"
+	FeatureGates         Feature = "gates"
 )
 
 // AllFeatures is the canonical list of known features.
@@ -72,7 +73,7 @@ func IsFeatureEnabled(feature Feature, allowed []Feature) bool {
 
 // knownFeatures includes all recognized feature names, even those not in AllFeatures.
 // FeatureSchedules is opt-in (not in AllFeatures) but still recognized.
-var knownFeatures = append([]Feature{FeatureSchedules}, AllFeatures...)
+var knownFeatures = append([]Feature{FeatureSchedules, FeatureGates}, AllFeatures...)
 
 func isKnownFeature(f Feature) bool {
 	for _, known := range knownFeatures {

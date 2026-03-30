@@ -136,6 +136,25 @@ CREATE INDEX IF NOT EXISTS idx_schedules_next_run
   ON schedules(next_run_at) WHERE enabled = 1;
 CREATE INDEX IF NOT EXISTS idx_schedules_pipeline_id ON schedules(pipeline_id);
 
+-- Gates: stores approval gates for pipeline runs.
+-- A gate blocks pipeline execution until approved/rejected via API or timed out.
+CREATE TABLE IF NOT EXISTS gates (
+  id          TEXT NOT NULL PRIMARY KEY,
+  run_id      TEXT NOT NULL,
+  pipeline_id TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'pending',
+  message     TEXT NOT NULL DEFAULT '',
+  approved_by TEXT NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+  resolved_at INTEGER,
+  FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE,
+  FOREIGN KEY (run_id) REFERENCES pipeline_runs(id) ON DELETE CASCADE
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_gates_run_id ON gates(run_id);
+CREATE INDEX IF NOT EXISTS idx_gates_status ON gates(status);
+
 -- Webhook deduplication: stores truncated SHA-256 hashes of evaluated dedup keys.
 -- The (pipeline_id, key_hash) primary key prevents duplicate inserts efficiently.
 -- ON DELETE CASCADE removes entries when a pipeline is deleted.
