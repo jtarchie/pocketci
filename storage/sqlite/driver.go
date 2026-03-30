@@ -1289,6 +1289,8 @@ func (s *Sqlite) UpdateScheduleAfterRun(ctx context.Context, id string, lastRunA
 	return nil
 }
 
+const gateColumns = `id, run_id, pipeline_id, name, status, message, approved_by, created_at, resolved_at`
+
 // gateScan is an intermediate struct for scanning gate rows.
 type gateScan struct {
 	ID         string        `db:"id"`
@@ -1340,10 +1342,9 @@ func (s *Sqlite) SaveGate(ctx context.Context, gate *storage.Gate) error {
 func (s *Sqlite) GetGate(ctx context.Context, gateID string) (*storage.Gate, error) {
 	var row gateScan
 
-	err := sqlscan.Get(ctx, s.reader, &row, `
-		SELECT id, run_id, pipeline_id, name, status, message, approved_by, created_at, resolved_at
-		FROM gates WHERE id = ?
-	`, gateID)
+	err := sqlscan.Get(ctx, s.reader, &row,
+		`SELECT `+gateColumns+` FROM gates WHERE id = ?`,
+		gateID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get gate: %w", err)
 	}
@@ -1357,11 +1358,9 @@ func (s *Sqlite) GetGate(ctx context.Context, gateID string) (*storage.Gate, err
 func (s *Sqlite) GetPendingGates(ctx context.Context) ([]storage.Gate, error) {
 	var rows []gateScan
 
-	err := sqlscan.Select(ctx, s.reader, &rows, `
-		SELECT id, run_id, pipeline_id, name, status, message, approved_by, created_at, resolved_at
-		FROM gates WHERE status = 'pending'
-		ORDER BY created_at ASC
-	`)
+	err := sqlscan.Select(ctx, s.reader, &rows,
+		`SELECT `+gateColumns+` FROM gates WHERE status = 'pending' ORDER BY created_at ASC`,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pending gates: %w", err)
 	}
@@ -1402,11 +1401,9 @@ func (s *Sqlite) ResolveGate(ctx context.Context, gateID string, status storage.
 func (s *Sqlite) GetGatesByRunID(ctx context.Context, runID string) ([]storage.Gate, error) {
 	var rows []gateScan
 
-	err := sqlscan.Select(ctx, s.reader, &rows, `
-		SELECT id, run_id, pipeline_id, name, status, message, approved_by, created_at, resolved_at
-		FROM gates WHERE run_id = ?
-		ORDER BY created_at ASC
-	`, runID)
+	err := sqlscan.Select(ctx, s.reader, &rows,
+		`SELECT `+gateColumns+` FROM gates WHERE run_id = ? ORDER BY created_at ASC`,
+		runID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get gates by run ID: %w", err)
 	}
