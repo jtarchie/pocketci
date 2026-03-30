@@ -92,10 +92,17 @@ func (c *APIGatesController) resolveGate(ctx *echo.Context, status storage.GateS
 		return ctx.NoContent(http.StatusOK)
 	}
 
-	return ctx.JSON(http.StatusOK, map[string]string{
-		"gate_id": gateID,
-		"status":  string(status),
-	})
+	// Return the full resolved gate for consistency with ListByRun.
+	gate, err := c.store.GetGate(reqCtx, gateID)
+	if err != nil {
+		// Resolve succeeded but re-fetch failed; return minimal response.
+		return ctx.JSON(http.StatusOK, map[string]string{
+			"gate_id": gateID,
+			"status":  string(status),
+		})
+	}
+
+	return ctx.JSON(http.StatusOK, gate)
 }
 
 // requireGatesFeature is middleware that rejects requests when the gates feature is disabled.
