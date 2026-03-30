@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/jtarchie/pocketci/storage"
@@ -13,6 +14,7 @@ import (
 type APIGatesController struct {
 	BaseController
 	allowedFeatures []Feature
+	logger          *slog.Logger
 }
 
 // ListByRun handles GET /api/runs/:run_id/gates - List gates for a run.
@@ -46,8 +48,13 @@ func (c *APIGatesController) resolveGate(ctx *echo.Context, status storage.GateS
 	approvedBy := "api"
 
 	// ResolveGate atomically updates only pending gates (WHERE status = 'pending'),
-	// so no pre-fetch is needed — this avoids a TOCTOU race.
+	// so no pre-fetch is needed, avoiding a TOCTOU race.
 	if err := c.store.ResolveGate(reqCtx, gateID, status, approvedBy); err != nil {
+		c.logger.Error("gate.resolve.failed",
+			slog.String("gate_id", gateID),
+			slog.String("status", string(status)),
+			slog.Any("error", err),
+		)
 		if errors.Is(err, storage.ErrNotFound) {
 			// Distinguish "gate doesn't exist" from "gate already resolved".
 			gate, getErr := c.store.GetGate(reqCtx, gateID)
@@ -66,6 +73,12 @@ func (c *APIGatesController) resolveGate(ctx *echo.Context, status storage.GateS
 			"error": fmt.Sprintf("failed to resolve gate: %v", err),
 		})
 	}
+
+	c.logger.Info("gate.resolved",
+		slog.String("gate_id", gateID),
+		slog.String("status", string(status)),
+		slog.String("approved_by", approvedBy),
+	)
 
 	if isHtmxRequest(ctx) {
 		action := "approved"
