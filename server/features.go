@@ -21,6 +21,8 @@ const (
 // AllFeatures is the canonical list of known features.
 // FeatureSchedules is intentionally excluded — it starts a background goroutine
 // and must be explicitly opted into via the allowed features flag.
+// FeatureGates is intentionally excluded — it requires external approval
+// actions and must be explicitly opted into via the allowed features flag.
 var AllFeatures = []Feature{
 	FeatureWebhooks,
 	FeatureSecrets,
@@ -72,7 +74,7 @@ func IsFeatureEnabled(feature Feature, allowed []Feature) bool {
 }
 
 // knownFeatures includes all recognized feature names, even those not in AllFeatures.
-// FeatureSchedules is opt-in (not in AllFeatures) but still recognized.
+// FeatureSchedules and FeatureGates are opt-in (not in AllFeatures) but still recognized.
 var knownFeatures = append([]Feature{FeatureSchedules, FeatureGates}, AllFeatures...)
 
 func isKnownFeature(f Feature) bool {

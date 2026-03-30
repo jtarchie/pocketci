@@ -12,9 +12,11 @@ capabilities are available. By default, all features are enabled.
 | `notifications` | The `notify` system (Slack, Teams, HTTP)                      |
 | `fetch`         | The global `fetch()` function for outbound HTTP requests      |
 | `schedules`     | Background scheduler for cron/interval pipeline triggers      |
+| `gates`         | Approval gates that pause pipeline execution until approved   |
 
-> **Note:** The `schedules` feature is excluded from the `*` wildcard. To enable
-> it alongside all default features, use `--allowed-features "*,schedules"`.
+> **Note:** The `schedules` and `gates` features are excluded from the `*`
+> wildcard. To enable them alongside all default features, use
+> `--allowed-features "*,schedules,gates"`.
 
 ## Configuration
 
@@ -70,6 +72,13 @@ pocketci server --allowed-features "*"
 - `GET /api/pipelines/:id/schedules` still returns stored schedule data
 - See [Scheduling](../guides/scheduling.md) for setup details
 
+### Gates disabled
+
+- `pipeline.gate()` calls in JavaScript pipelines will fail with an error
+- Gate API endpoints (`/api/gates/*`, `/api/runs/:id/gates`) return
+  `403 Forbidden`
+- Gate declarations in YAML are still validated but not executed
+
 ## Discovery
 
 Query the enabled features at runtime:
@@ -84,5 +93,5 @@ curl http://localhost:8080/api/features
 If you specify an unknown feature name, the server will refuse to start:
 
 ```
-could not parse allowed features: unknown feature "bogus"; known features: webhooks, secrets, notifications, fetch, schedules
+could not parse allowed features: unknown feature "bogus"; known features: webhooks, secrets, notifications, fetch, schedules, gates
 ```
