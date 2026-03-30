@@ -146,16 +146,16 @@ func (p *PipelineNamespace) runStageJobs(ctx context.Context, stageName string, 
 		}()
 	}
 
-	var firstErr error
+	var errs []error
 
 	for range jobs {
 		result := <-results
-		if result.err != nil && firstErr == nil {
-			firstErr = fmt.Errorf("stage %q job %q failed: %w", stageName, result.name, result.err)
+		if result.err != nil {
+			errs = append(errs, fmt.Errorf("stage %q job %q failed: %w", stageName, result.name, result.err))
 		}
 	}
 
-	return firstErr
+	return errors.Join(errs...)
 }
 
 const promisePollInterval = 10 * time.Millisecond
