@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -251,7 +252,13 @@ func (p *PipelineNamespace) pollGate(ctx context.Context, gateID, gateName, time
 	for {
 		if !deadline.IsZero() && time.Now().After(deadline) {
 			// Mark gate as timed out
-			_ = r.storage.ResolveGate(ctx, gateID, storage.GateStatusTimedOut, "timeout")
+			if err := r.storage.ResolveGate(ctx, gateID, storage.GateStatusTimedOut, "timeout"); err != nil {
+				r.logger.Error("pipeline.gate.resolve.timeout.failed",
+					slog.String("gate_id", gateID),
+					slog.String("gate_name", gateName),
+					slog.Any("error", err),
+				)
+			}
 
 			return fmt.Errorf("pipeline.gate %q: timed out", gateName)
 		}

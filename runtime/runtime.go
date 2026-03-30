@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/dop251/goja"
@@ -27,6 +28,7 @@ type Runtime struct {
 	ctx            context.Context //nolint: containedctx
 	storage        storage.Driver
 	triggeredBy    string
+	logger         *slog.Logger
 }
 
 func NewRuntime(

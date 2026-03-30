@@ -150,6 +150,7 @@ func (j *JS) ExecuteWithOptions(ctx context.Context, source string, driver orche
 	runtime.pipelineID = opts.PipelineID
 	runtime.ctx = ctx
 	runtime.storage = storage
+	runtime.logger = j.logger
 
 	if err := j.setupJSVM(ctx, jsVM, runtime, driver, storage, opts); err != nil {
 		return err
