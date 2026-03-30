@@ -58,6 +58,11 @@ func (r *Runtime) AgentRT() *AgentRuntime {
 	return &AgentRuntime{rt: r}
 }
 
+// PipelineNS returns a PipelineNamespace instance sharing this runtime's state.
+func (r *Runtime) PipelineNS() *PipelineNamespace {
+	return &PipelineNamespace{rt: r}
+}
+
 // Run executes a container task. Accepts an object with optional onOutput callback.
 func (r *Runtime) Run(call goja.FunctionCall) goja.Value {
 	if len(call.Arguments) == 0 {

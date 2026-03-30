@@ -238,6 +238,11 @@ func (j *JS) setupJSVM(
 		return fmt.Errorf("could not set runtime: %w", err)
 	}
 
+	pipelineNS := runtime.PipelineNS()
+	if err := jsVM.Set("pipeline", pipelineNS); err != nil {
+		return fmt.Errorf("could not set pipeline: %w", err)
+	}
+
 	if err := j.setupNotifyAndResources(ctx, jsVM, runtime, opts); err != nil {
 		return err
 	}
