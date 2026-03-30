@@ -199,6 +199,13 @@ type Triggers struct {
 	Schedule *ScheduleTriggerConfig `json:"schedule,omitempty" yaml:"schedule,omitempty"`
 }
 
+// GateConfig defines an approval gate on a job.
+// The pipeline pauses before executing the job's plan until the gate is approved.
+type GateConfig struct {
+	Message string `json:"message,omitempty" yaml:"message,omitempty"`
+	Timeout string `json:"timeout,omitempty" yaml:"timeout,omitempty"`
+}
+
 type Job struct {
 	Assert *struct {
 		Execution []string `yaml:"execution,omitempty"`
@@ -211,6 +218,8 @@ type Job struct {
 
 	Name           string        `validate:"required,min=3"        yaml:"name,omitempty"`
 	Plan           Steps         `validate:"required,min=1,dive"   yaml:"plan,omitempty"`
+	DependsOn      []string      `json:"depends_on,omitempty"      yaml:"depends_on,omitempty"`
+	Gate           *GateConfig   `json:"gate,omitempty"            yaml:"gate,omitempty"`
 	MaxInFlight    int           `yaml:"max_in_flight,omitempty"`
 	Public         bool          `yaml:"public,omitempty"`
 	Ensure         *Step         `yaml:"ensure,omitempty"`

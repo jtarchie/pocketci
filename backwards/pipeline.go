@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	sprig "github.com/go-task/slim-sprig/v3"
@@ -105,6 +106,14 @@ func NewPipelineFromContent(content string) (string, error) {
 		return "", err
 	}
 
+	if err := validateDependsOn(config.Jobs); err != nil {
+		return "", err
+	}
+
+	if err := validateGateConfigs(config.Jobs); err != nil {
+		return "", err
+	}
+
 	jsonBytes, err := yaml.MarshalWithOptions(config, yaml.JSON())
 	if err != nil {
 		return "", fmt.Errorf("could not marshal pipeline: %w", err)
@@ -153,6 +162,14 @@ func ValidatePipeline(content []byte) error {
 	}
 
 	if err := validateInputOutputWiring(config.Jobs); err != nil {
+		return err
+	}
+
+	if err := validateDependsOn(config.Jobs); err != nil {
+		return err
+	}
+
+	if err := validateGateConfigs(config.Jobs); err != nil {
 		return err
 	}
 
@@ -354,6 +371,89 @@ func validateResourceTypes(config *Config) error {
 	for _, resource := range config.Resources {
 		if !validTypes[resource.Type] {
 			return fmt.Errorf("resource %q has undefined resource type %q", resource.Name, resource.Type)
+		}
+	}
+
+	return nil
+}
+
+// validateDependsOn checks that all depends_on references point to existing jobs
+// and that the dependency graph has no cycles.
+func validateDependsOn(jobs Jobs) error {
+	jobNames := make(map[string]bool, len(jobs))
+	for _, job := range jobs {
+		jobNames[job.Name] = true
+	}
+
+	// Check all references are valid
+	for _, job := range jobs {
+		for _, dep := range job.DependsOn {
+			if !jobNames[dep] {
+				return fmt.Errorf("job %q depends_on unknown job %q", job.Name, dep)
+			}
+
+			if dep == job.Name {
+				return fmt.Errorf("job %q depends_on itself", job.Name)
+			}
+		}
+	}
+
+	// Check for cycles using DFS
+	adj := make(map[string][]string, len(jobs))
+	for _, job := range jobs {
+		adj[job.Name] = job.DependsOn
+	}
+
+	const (
+		white = 0 // unvisited
+		gray  = 1 // in current path
+		black = 2 // fully explored
+	)
+
+	color := make(map[string]int, len(jobs))
+
+	var visit func(string) error
+	visit = func(name string) error {
+		color[name] = gray
+
+		for _, dep := range adj[name] {
+			switch color[dep] {
+			case gray:
+				return fmt.Errorf("circular dependency detected: %s -> %s", name, dep)
+			case white:
+				if err := visit(dep); err != nil {
+					return err
+				}
+			}
+		}
+
+		color[name] = black
+
+		return nil
+	}
+
+	for _, job := range jobs {
+		if color[job.Name] == white {
+			if err := visit(job.Name); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateGateConfigs checks that gate timeout values are valid Go durations when specified.
+func validateGateConfigs(jobs Jobs) error {
+	for _, job := range jobs {
+		if job.Gate == nil {
+			continue
+		}
+
+		if job.Gate.Timeout != "" {
+			if _, err := time.ParseDuration(job.Gate.Timeout); err != nil {
+				return fmt.Errorf("job %q gate timeout %q is not a valid duration: %w", job.Name, job.Gate.Timeout, err)
+			}
 		}
 	}
 
