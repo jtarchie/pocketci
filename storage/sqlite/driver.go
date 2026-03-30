@@ -1304,6 +1304,15 @@ type gateScan struct {
 	ResolvedAt sql.NullInt64 `db:"resolved_at"`
 }
 
+func convertGateRows(rows []gateScan) []storage.Gate {
+	gates := make([]storage.Gate, 0, len(rows))
+	for _, row := range rows {
+		gates = append(gates, row.toStorage())
+	}
+
+	return gates
+}
+
 func (g gateScan) toStorage() storage.Gate {
 	gate := storage.Gate{
 		ID:         g.ID,
@@ -1365,12 +1374,7 @@ func (s *Sqlite) GetPendingGates(ctx context.Context) ([]storage.Gate, error) {
 		return nil, fmt.Errorf("failed to get pending gates: %w", err)
 	}
 
-	gates := make([]storage.Gate, 0, len(rows))
-	for _, row := range rows {
-		gates = append(gates, row.toStorage())
-	}
-
-	return gates, nil
+	return convertGateRows(rows), nil
 }
 
 // ResolveGate updates a gate's status and records who resolved it.
@@ -1408,12 +1412,7 @@ func (s *Sqlite) GetGatesByRunID(ctx context.Context, runID string) ([]storage.G
 		return nil, fmt.Errorf("failed to get gates by run ID: %w", err)
 	}
 
-	gates := make([]storage.Gate, 0, len(rows))
-	for _, row := range rows {
-		gates = append(gates, row.toStorage())
-	}
-
-	return gates, nil
+	return convertGateRows(rows), nil
 }
 
 func boolToInt(b bool) int {
