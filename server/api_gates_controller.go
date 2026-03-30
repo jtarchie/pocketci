@@ -17,12 +17,6 @@ type APIGatesController struct {
 
 // ListByRun handles GET /api/runs/:run_id/gates - List gates for a run.
 func (c *APIGatesController) ListByRun(ctx *echo.Context) error {
-	if !IsFeatureEnabled(FeatureGates, c.allowedFeatures) {
-		return ctx.JSON(http.StatusForbidden, map[string]string{
-			"error": "gates feature is not enabled",
-		})
-	}
-
 	runID := ctx.Param("run_id")
 
 	gates, err := c.store.GetGatesByRunID(ctx.Request().Context(), runID)
@@ -46,12 +40,6 @@ func (c *APIGatesController) Reject(ctx *echo.Context) error {
 }
 
 func (c *APIGatesController) resolveGate(ctx *echo.Context, status storage.GateStatus) error {
-	if !IsFeatureEnabled(FeatureGates, c.allowedFeatures) {
-		return ctx.JSON(http.StatusForbidden, map[string]string{
-			"error": "gates feature is not enabled",
-		})
-	}
-
 	gateID := ctx.Param("gate_id")
 
 	reqCtx := ctx.Request().Context()
@@ -107,9 +95,23 @@ func (c *APIGatesController) resolveGate(ctx *echo.Context, status storage.GateS
 	})
 }
 
+// requireGatesFeature is middleware that rejects requests when the gates feature is disabled.
+func (c *APIGatesController) requireGatesFeature(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(ctx *echo.Context) error {
+		if !IsFeatureEnabled(FeatureGates, c.allowedFeatures) {
+			return ctx.JSON(http.StatusForbidden, map[string]string{
+				"error": "gates feature is not enabled",
+			})
+		}
+
+		return next(ctx)
+	}
+}
+
 // RegisterRoutes registers all gate API routes on the given group.
 func (c *APIGatesController) RegisterRoutes(api *echo.Group) {
-	api.GET("/runs/:run_id/gates", c.ListByRun)
-	api.POST("/gates/:gate_id/approve", c.Approve)
-	api.POST("/gates/:gate_id/reject", c.Reject)
+	g := api.Group("", c.requireGatesFeature)
+	g.GET("/runs/:run_id/gates", c.ListByRun)
+	g.POST("/gates/:gate_id/approve", c.Approve)
+	g.POST("/gates/:gate_id/reject", c.Reject)
 }
