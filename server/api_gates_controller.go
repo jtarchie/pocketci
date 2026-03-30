@@ -43,33 +43,22 @@ func (c *APIGatesController) resolveGate(ctx *echo.Context, status storage.GateS
 	gateID := ctx.Param("gate_id")
 
 	reqCtx := ctx.Request().Context()
-
-	// Verify gate exists
-	gate, err := c.store.GetGate(reqCtx, gateID)
-	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
-			return ctx.JSON(http.StatusNotFound, map[string]string{
-				"error": "gate not found",
-			})
-		}
-
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get gate: %v", err),
-		})
-	}
-
-	if gate.Status != storage.GateStatusPending {
-		return ctx.JSON(http.StatusConflict, map[string]string{
-			"error": fmt.Sprintf("gate is already %s", gate.Status),
-		})
-	}
-
 	approvedBy := "api"
 
+	// ResolveGate atomically updates only pending gates (WHERE status = 'pending'),
+	// so no pre-fetch is needed — this avoids a TOCTOU race.
 	if err := c.store.ResolveGate(reqCtx, gateID, status, approvedBy); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
+			// Distinguish "gate doesn't exist" from "gate already resolved".
+			gate, getErr := c.store.GetGate(reqCtx, gateID)
+			if getErr != nil {
+				return ctx.JSON(http.StatusNotFound, map[string]string{
+					"error": "gate not found",
+				})
+			}
+
 			return ctx.JSON(http.StatusConflict, map[string]string{
-				"error": "gate was already resolved",
+				"error": fmt.Sprintf("gate is already %s", gate.Status),
 			})
 		}
 
