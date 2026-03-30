@@ -5,7 +5,7 @@ go 1.25.8
 require (
 	github.com/Code-Hex/vz/v3 v3.7.1
 	github.com/PuerkitoBio/goquery v1.11.0
-	github.com/achetronic/adk-utils-go v0.10.0
+	github.com/achetronic/adk-utils-go v0.12.0
 	github.com/alecthomas/kong v1.14.0
 	github.com/aws/aws-sdk-go-v2 v1.41.5
 	github.com/aws/aws-sdk-go-v2/config v1.32.13
