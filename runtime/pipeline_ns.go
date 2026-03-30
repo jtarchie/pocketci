@@ -158,6 +158,8 @@ func (p *PipelineNamespace) runStageJobs(ctx context.Context, stageName string, 
 	return firstErr
 }
 
+const promisePollInterval = 10 * time.Millisecond
+
 // waitForPromise polls a JS promise via the task queue until it resolves or rejects.
 func (p *PipelineNamespace) waitForPromise(promise *goja.Promise, errCh chan<- error, stageName, jobName string) {
 	r := p.rt
@@ -166,14 +168,18 @@ func (p *PipelineNamespace) waitForPromise(promise *goja.Promise, errCh chan<- e
 	check = func() {
 		switch promise.State() {
 		case goja.PromiseStatePending:
-			// Re-enqueue check
+			// Re-enqueue check after a short delay to avoid a tight busy loop.
 			r.promises.Add(1)
-			r.tasks <- func() error {
-				defer r.promises.Done()
-				check()
 
-				return nil
-			}
+			go func() {
+				time.Sleep(promisePollInterval)
+				r.tasks <- func() error {
+					defer r.promises.Done()
+					check()
+
+					return nil
+				}
+			}()
 		case goja.PromiseStateFulfilled:
 			errCh <- nil
 		case goja.PromiseStateRejected:
