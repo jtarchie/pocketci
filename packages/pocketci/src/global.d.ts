@@ -853,6 +853,10 @@ declare global {
     max_in_flight?: number;
     plan: Step[];
     assert: AssertionBase;
+    gate?: {
+      message?: string;
+      timeout?: string;
+    };
   }
 
   interface JobConfig {
@@ -968,6 +972,30 @@ declare global {
     resource_types: ResourceType[];
     resources: Resource[];
   }
+
+  /** Pipeline namespace providing stage, job, and gate APIs. */
+  const pipeline: {
+    /**
+     * Creates an approval gate that pauses execution until approved or rejected.
+     * @param name - Gate name for identification.
+     * @param options - Optional message and timeout (Go duration string).
+     * @returns A promise that resolves on approval or rejects on rejection/timeout.
+     */
+    gate(
+      name: string,
+      options?: { message?: string; timeout?: string },
+    ): Promise<void>;
+
+    /**
+     * Runs jobs in parallel within a named stage.
+     */
+    stage(
+      name: string,
+      callback: (stage: {
+        job(name: string, fn: () => Promise<void> | void): void;
+      }) => void,
+    ): Promise<void>;
+  };
 }
 
 export {};

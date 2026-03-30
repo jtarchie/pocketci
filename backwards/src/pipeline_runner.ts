@@ -286,6 +286,14 @@ export class PipelineRunner {
     this.executedJobs.push(job.name);
 
     try {
+      // Wait for gate approval before executing the job's plan.
+      if (job.gate) {
+        await pipeline.gate(job.name, {
+          message: job.gate.message,
+          timeout: job.gate.timeout,
+        });
+      }
+
       const jobRunner = new JobRunner(
         job,
         this.config.resources,
