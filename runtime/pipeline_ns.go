@@ -57,7 +57,10 @@ func (p *PipelineNamespace) Stage(call goja.FunctionCall) goja.Value {
 
 	scope := &stageScope{}
 
-	// Build the stage object that gets passed to the callback
+	// Build the stage object that gets passed to the callback.
+	// stage.job() uses panic instead of rejectImmediate because it is a
+	// synchronous registration call invoked inside the user's callback.
+	// Panics are caught by Goja and surfaced as JS exceptions to the caller.
 	stageObj := r.jsVM.NewObject()
 	_ = stageObj.Set("job", func(jobCall goja.FunctionCall) goja.Value {
 		if len(jobCall.Arguments) < 2 {
