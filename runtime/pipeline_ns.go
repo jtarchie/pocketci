@@ -222,12 +222,14 @@ func (p *PipelineNamespace) Gate(call goja.FunctionCall) goja.Value {
 		Message:    opts.Message,
 	}
 
+	createdAt := time.Now()
+
 	return r.jsVM.ToValue(asyncTask(r, "pipeline.gate."+gateName, func(ctx context.Context) (struct{}, error) {
 		if err := r.storage.SaveGate(ctx, gate); err != nil {
 			return struct{}{}, fmt.Errorf("pipeline.gate %q: failed to save: %w", gateName, err)
 		}
 
-		return struct{}{}, p.pollGate(ctx, gateID, gateName, opts.Timeout)
+		return struct{}{}, p.pollGate(ctx, gateID, gateName, opts.Timeout, createdAt)
 	}, func(_ struct{}) (any, error) {
 		return goja.Undefined(), nil
 	}))
@@ -236,7 +238,9 @@ func (p *PipelineNamespace) Gate(call goja.FunctionCall) goja.Value {
 const gatePollInterval = 2 * time.Second
 
 // pollGate polls storage for gate resolution until approved, rejected, or timed out.
-func (p *PipelineNamespace) pollGate(ctx context.Context, gateID, gateName, timeout string) error {
+// The deadline is computed from createdAt (gate creation time) rather than the
+// current wall clock, so timeouts remain correct across process restarts.
+func (p *PipelineNamespace) pollGate(ctx context.Context, gateID, gateName, timeout string, createdAt time.Time) error {
 	r := p.rt
 
 	var deadline time.Time
@@ -246,7 +250,7 @@ func (p *PipelineNamespace) pollGate(ctx context.Context, gateID, gateName, time
 			return fmt.Errorf("pipeline.gate %q: invalid timeout %q: %w", gateName, timeout, err)
 		}
 
-		deadline = time.Now().Add(dur)
+		deadline = createdAt.Add(dur)
 	}
 
 	for {
