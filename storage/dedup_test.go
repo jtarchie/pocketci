@@ -14,7 +14,7 @@ func TestWebhookDedup(t *testing.T) {
 			if df.name != "sqlite" {
 				t.Skip("webhook dedup only supported on sqlite")
 			}
-			t.Run("CheckWebhookDedup returns false for unseen key", func(t *testing.T) {
+			t.Run("RecordWebhookDedup returns false for new key", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
 				client := df.new(t, "namespace")
@@ -23,12 +23,12 @@ func TestWebhookDedup(t *testing.T) {
 				pipeline, err := client.SavePipeline(ctx, "dedup-test", "content", "docker", "")
 				assert.Expect(err).NotTo(HaveOccurred())
 
-				found, err := client.CheckWebhookDedup(ctx, pipeline.ID, []byte("unseen-key-hash!"))
+				isDup, err := client.RecordWebhookDedup(ctx, pipeline.ID, []byte("unseen-key-hash!"))
 				assert.Expect(err).NotTo(HaveOccurred())
-				assert.Expect(found).To(BeFalse())
+				assert.Expect(isDup).To(BeFalse())
 			})
 
-			t.Run("SaveWebhookDedup then CheckWebhookDedup returns true", func(t *testing.T) {
+			t.Run("RecordWebhookDedup returns true for duplicate key", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
 				client := df.new(t, "namespace")
@@ -38,15 +38,16 @@ func TestWebhookDedup(t *testing.T) {
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				keyHash := []byte("0123456789abcdef")
-				err = client.SaveWebhookDedup(ctx, pipeline.ID, keyHash)
+				isDup, err := client.RecordWebhookDedup(ctx, pipeline.ID, keyHash)
 				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(isDup).To(BeFalse())
 
-				found, err := client.CheckWebhookDedup(ctx, pipeline.ID, keyHash)
+				isDup, err = client.RecordWebhookDedup(ctx, pipeline.ID, keyHash)
 				assert.Expect(err).NotTo(HaveOccurred())
-				assert.Expect(found).To(BeTrue())
+				assert.Expect(isDup).To(BeTrue())
 			})
 
-			t.Run("SaveWebhookDedup is idempotent", func(t *testing.T) {
+			t.Run("RecordWebhookDedup is idempotent for duplicates", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
 				client := df.new(t, "namespace")
@@ -56,10 +57,11 @@ func TestWebhookDedup(t *testing.T) {
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				keyHash := []byte("0123456789abcdef")
-				err = client.SaveWebhookDedup(ctx, pipeline.ID, keyHash)
+				_, err = client.RecordWebhookDedup(ctx, pipeline.ID, keyHash)
 				assert.Expect(err).NotTo(HaveOccurred())
-				err = client.SaveWebhookDedup(ctx, pipeline.ID, keyHash)
+				isDup, err := client.RecordWebhookDedup(ctx, pipeline.ID, keyHash)
 				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(isDup).To(BeTrue())
 			})
 
 			t.Run("different keys are independent", func(t *testing.T) {
@@ -74,16 +76,17 @@ func TestWebhookDedup(t *testing.T) {
 				key1 := []byte("aaaaaaaaaaaaaaaa")
 				key2 := []byte("bbbbbbbbbbbbbbbb")
 
-				err = client.SaveWebhookDedup(ctx, pipeline.ID, key1)
+				isDup, err := client.RecordWebhookDedup(ctx, pipeline.ID, key1)
 				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(isDup).To(BeFalse())
 
-				found, err := client.CheckWebhookDedup(ctx, pipeline.ID, key1)
+				isDup, err = client.RecordWebhookDedup(ctx, pipeline.ID, key1)
 				assert.Expect(err).NotTo(HaveOccurred())
-				assert.Expect(found).To(BeTrue())
+				assert.Expect(isDup).To(BeTrue())
 
-				found, err = client.CheckWebhookDedup(ctx, pipeline.ID, key2)
+				isDup, err = client.RecordWebhookDedup(ctx, pipeline.ID, key2)
 				assert.Expect(err).NotTo(HaveOccurred())
-				assert.Expect(found).To(BeFalse())
+				assert.Expect(isDup).To(BeFalse())
 			})
 
 			t.Run("different pipelines have independent dedup", func(t *testing.T) {
@@ -98,16 +101,17 @@ func TestWebhookDedup(t *testing.T) {
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				keyHash := []byte("0123456789abcdef")
-				err = client.SaveWebhookDedup(ctx, p1.ID, keyHash)
+				isDup, err := client.RecordWebhookDedup(ctx, p1.ID, keyHash)
 				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(isDup).To(BeFalse())
 
-				found, err := client.CheckWebhookDedup(ctx, p1.ID, keyHash)
+				isDup, err = client.RecordWebhookDedup(ctx, p1.ID, keyHash)
 				assert.Expect(err).NotTo(HaveOccurred())
-				assert.Expect(found).To(BeTrue())
+				assert.Expect(isDup).To(BeTrue())
 
-				found, err = client.CheckWebhookDedup(ctx, p2.ID, keyHash)
+				isDup, err = client.RecordWebhookDedup(ctx, p2.ID, keyHash)
 				assert.Expect(err).NotTo(HaveOccurred())
-				assert.Expect(found).To(BeFalse())
+				assert.Expect(isDup).To(BeFalse())
 			})
 
 			t.Run("PruneWebhookDedup removes old entries", func(t *testing.T) {
@@ -120,7 +124,7 @@ func TestWebhookDedup(t *testing.T) {
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				keyHash := []byte("0123456789abcdef")
-				err = client.SaveWebhookDedup(ctx, pipeline.ID, keyHash)
+				_, err = client.RecordWebhookDedup(ctx, pipeline.ID, keyHash)
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				// Prune with a future cutoff should remove it
@@ -128,9 +132,9 @@ func TestWebhookDedup(t *testing.T) {
 				assert.Expect(err).NotTo(HaveOccurred())
 				assert.Expect(pruned).To(BeNumerically(">=", 1))
 
-				found, err := client.CheckWebhookDedup(ctx, pipeline.ID, keyHash)
+				isDup, err := client.RecordWebhookDedup(ctx, pipeline.ID, keyHash)
 				assert.Expect(err).NotTo(HaveOccurred())
-				assert.Expect(found).To(BeFalse())
+				assert.Expect(isDup).To(BeFalse())
 			})
 
 			t.Run("PruneWebhookDedup keeps recent entries", func(t *testing.T) {
@@ -143,7 +147,7 @@ func TestWebhookDedup(t *testing.T) {
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				keyHash := []byte("0123456789abcdef")
-				err = client.SaveWebhookDedup(ctx, pipeline.ID, keyHash)
+				_, err = client.RecordWebhookDedup(ctx, pipeline.ID, keyHash)
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				// Prune with a past cutoff should keep it
@@ -151,9 +155,9 @@ func TestWebhookDedup(t *testing.T) {
 				assert.Expect(err).NotTo(HaveOccurred())
 				assert.Expect(pruned).To(BeNumerically("==", 0))
 
-				found, err := client.CheckWebhookDedup(ctx, pipeline.ID, keyHash)
+				isDup, err := client.RecordWebhookDedup(ctx, pipeline.ID, keyHash)
 				assert.Expect(err).NotTo(HaveOccurred())
-				assert.Expect(found).To(BeTrue())
+				assert.Expect(isDup).To(BeTrue())
 			})
 		})
 	}

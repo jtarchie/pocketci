@@ -170,7 +170,7 @@ func (c *WebMetricsController) buildData(ctx *echo.Context) (MetricsDashboardDat
 		nameByID[p.ID] = p.Name
 	}
 
-	recentFailed, err := c.store.GetRecentRunsByStatus(reqCtx, storage.RunStatusFailed, 10)
+	recentFailed, err := c.store.GetRunsByStatus(reqCtx, storage.RunStatusFailed, 10)
 	if err != nil {
 		return data, err
 	}

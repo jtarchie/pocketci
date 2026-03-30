@@ -181,7 +181,7 @@ func TestPipelineStorage(t *testing.T) {
 				assert.Expect(retrieved.Paused).To(BeFalse())
 			})
 
-			t.Run("UpdatePipelinePaused sets and clears paused flag", func(t *testing.T) {
+			t.Run("UpdatePipeline sets and clears paused flag", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
 				client := df.new(t, "namespace")
@@ -192,14 +192,16 @@ func TestPipelineStorage(t *testing.T) {
 				assert.Expect(err).NotTo(HaveOccurred())
 				assert.Expect(pipeline.Paused).To(BeFalse())
 
-				err = client.UpdatePipelinePaused(ctx, pipeline.ID, true)
+				paused := true
+				err = client.UpdatePipeline(ctx, pipeline.ID, storage.PipelineUpdate{Paused: &paused})
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				retrieved, err := client.GetPipeline(ctx, pipeline.ID)
 				assert.Expect(err).NotTo(HaveOccurred())
 				assert.Expect(retrieved.Paused).To(BeTrue())
 
-				err = client.UpdatePipelinePaused(ctx, pipeline.ID, false)
+				paused = false
+				err = client.UpdatePipeline(ctx, pipeline.ID, storage.PipelineUpdate{Paused: &paused})
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				retrieved, err = client.GetPipeline(ctx, pipeline.ID)
@@ -207,12 +209,13 @@ func TestPipelineStorage(t *testing.T) {
 				assert.Expect(retrieved.Paused).To(BeFalse())
 			})
 
-			t.Run("UpdatePipelinePaused returns error for non-existent ID", func(t *testing.T) {
+			t.Run("UpdatePipeline returns error for non-existent ID", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
 				client := df.new(t, "namespace")
 
-				err := client.UpdatePipelinePaused(context.Background(), "non-existent-id", true)
+				paused := true
+				err := client.UpdatePipeline(context.Background(), "non-existent-id", storage.PipelineUpdate{Paused: &paused})
 				assert.Expect(err).To(Equal(storage.ErrNotFound))
 			})
 

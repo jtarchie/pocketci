@@ -119,7 +119,7 @@ func (s *ExecutionService) processQueue() {
 
 		ctx := context.Background()
 
-		runs, err := s.store.GetRecentRunsByStatus(ctx, storage.RunStatusQueued, s.maxInFlight)
+		runs, err := s.store.GetRunsByStatus(ctx, storage.RunStatusQueued, s.maxInFlight)
 		if err != nil {
 			s.logger.Error("queue.processor.list_failed", "error", err)
 
@@ -231,7 +231,7 @@ func (s *ExecutionService) CanAccept(ctx context.Context) bool {
 
 // QueueLength returns the number of runs currently in queued status.
 func (s *ExecutionService) QueueLength(ctx context.Context) int {
-	runs, err := s.store.GetRunsByStatus(ctx, storage.RunStatusQueued)
+	runs, err := s.store.GetRunsByStatus(ctx, storage.RunStatusQueued, 0)
 	if err != nil {
 		return 0
 	}
@@ -448,7 +448,7 @@ func (s *ExecutionService) TriggerScheduledPipeline(ctx context.Context, pipelin
 // If the resume feature is enabled, resume-enabled pipelines are restarted;
 // otherwise all orphaned runs are marked as failed and their resources cleaned up.
 func (s *ExecutionService) RecoverOrphanedRuns(ctx context.Context) {
-	runs, err := s.store.GetRunsByStatus(ctx, storage.RunStatusRunning)
+	runs, err := s.store.GetRunsByStatus(ctx, storage.RunStatusRunning, 0)
 	if err != nil {
 		s.logger.Error("orphan.recovery.list_failed", "error", err)
 		return

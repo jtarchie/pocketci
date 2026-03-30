@@ -7,6 +7,7 @@ import (
 
 	"github.com/jtarchie/pocketci/commands"
 	"github.com/jtarchie/pocketci/server"
+	"github.com/jtarchie/pocketci/storage"
 	. "github.com/onsi/gomega"
 )
 
@@ -116,7 +117,8 @@ func TestTriggerPipeline(t *testing.T) {
 		saved, err := client.SavePipeline(context.Background(), "my-pipeline", "content", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		err = client.UpdatePipelinePaused(context.Background(), saved.ID, true)
+		paused := true
+		err = client.UpdatePipeline(context.Background(), saved.ID, storage.PipelineUpdate{Paused: &paused})
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		cmd := commands.TriggerPipeline{

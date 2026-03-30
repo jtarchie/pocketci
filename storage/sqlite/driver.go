@@ -563,59 +563,39 @@ func (s *Sqlite) DeletePipeline(ctx context.Context, id string) error {
 	return nil
 }
 
-// UpdatePipelineResumeEnabled updates the resume_enabled flag for a pipeline.
-func (s *Sqlite) UpdatePipelineResumeEnabled(ctx context.Context, pipelineID string, enabled bool) error {
-	val := 0
-	if enabled {
-		val = 1
+// UpdatePipeline applies partial updates to a pipeline. Only non-nil fields
+// in the PipelineUpdate struct are written.
+func (s *Sqlite) UpdatePipeline(ctx context.Context, pipelineID string, update storage.PipelineUpdate) error {
+	var setClauses []string
+
+	var args []any
+
+	if update.ResumeEnabled != nil {
+		setClauses = append(setClauses, "resume_enabled = ?")
+		args = append(args, boolToInt(*update.ResumeEnabled))
 	}
 
-	result, err := s.writer.ExecContext(ctx, `UPDATE pipelines SET resume_enabled = ? WHERE id = ?`, val, pipelineID)
+	if update.Paused != nil {
+		setClauses = append(setClauses, "paused = ?")
+		args = append(args, boolToInt(*update.Paused))
+	}
+
+	if update.RBACExpression != nil {
+		setClauses = append(setClauses, "rbac_expression = ?")
+		args = append(args, *update.RBACExpression)
+	}
+
+	if len(setClauses) == 0 {
+		return nil
+	}
+
+	args = append(args, pipelineID)
+
+	query := "UPDATE pipelines SET " + strings.Join(setClauses, ", ") + " WHERE id = ?"
+
+	result, err := s.writer.ExecContext(ctx, query, args...)
 	if err != nil {
-		return fmt.Errorf("failed to update pipeline resume_enabled: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return storage.ErrNotFound
-	}
-
-	return nil
-}
-
-// UpdatePipelinePaused updates the paused flag for a pipeline.
-func (s *Sqlite) UpdatePipelinePaused(ctx context.Context, pipelineID string, paused bool) error {
-	val := 0
-	if paused {
-		val = 1
-	}
-
-	result, err := s.writer.ExecContext(ctx, `UPDATE pipelines SET paused = ? WHERE id = ?`, val, pipelineID)
-	if err != nil {
-		return fmt.Errorf("failed to update pipeline paused: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return storage.ErrNotFound
-	}
-
-	return nil
-}
-
-// UpdatePipelineRBACExpression updates the RBAC expression for a pipeline.
-func (s *Sqlite) UpdatePipelineRBACExpression(ctx context.Context, pipelineID, expression string) error {
-	result, err := s.writer.ExecContext(ctx, `UPDATE pipelines SET rbac_expression = ? WHERE id = ?`, expression, pipelineID)
-	if err != nil {
-		return fmt.Errorf("failed to update pipeline rbac_expression: %w", err)
+		return fmt.Errorf("failed to update pipeline: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
@@ -681,14 +661,25 @@ func (s *Sqlite) GetRun(ctx context.Context, runID string) (*storage.PipelineRun
 }
 
 // GetRunsByStatus returns all pipeline runs with the given status.
-func (s *Sqlite) GetRunsByStatus(ctx context.Context, status storage.RunStatus) ([]storage.PipelineRun, error) {
-	var rows []pipelineRunScan
-
-	err := sqlscan.Select(ctx, s.writer, &rows, `
+// GetRunsByStatus returns pipeline runs with the given status ordered by
+// creation date descending. When limit > 0 at most limit rows are returned;
+// limit <= 0 returns all matching rows.
+func (s *Sqlite) GetRunsByStatus(ctx context.Context, status storage.RunStatus, limit int) ([]storage.PipelineRun, error) {
+	query := `
 		SELECT id, pipeline_id, status, started_at, completed_at, error_message, trigger_type, triggered_by, trigger_input, created_at
 		FROM pipeline_runs WHERE status = ?
-		ORDER BY created_at DESC
-	`, string(status))
+		ORDER BY created_at DESC`
+
+	args := []any{string(status)}
+
+	if limit > 0 {
+		query += "\n\t\tLIMIT ?"
+		args = append(args, limit)
+	}
+
+	var rows []pipelineRunScan
+
+	err := sqlscan.Select(ctx, s.writer, &rows, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get runs by status: %w", err)
 	}
@@ -723,118 +714,99 @@ func (s *Sqlite) GetRunStats(ctx context.Context) (map[storage.RunStatus]int, er
 	return stats, nil
 }
 
-// GetRecentRunsByStatus returns the most recent N pipeline runs with the given status.
-func (s *Sqlite) GetRecentRunsByStatus(ctx context.Context, status storage.RunStatus, limit int) ([]storage.PipelineRun, error) {
-	var rows []pipelineRunScan
-
-	err := sqlscan.Select(ctx, s.writer, &rows, `
-		SELECT id, pipeline_id, status, started_at, completed_at, error_message, trigger_type, triggered_by, trigger_input, created_at
-		FROM pipeline_runs WHERE status = ?
-		ORDER BY created_at DESC
-		LIMIT ?
-	`, string(status), limit)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get recent runs by status: %w", err)
-	}
-
-	runs := make([]storage.PipelineRun, 0, len(rows))
-	for _, row := range rows {
-		runs = append(runs, row.toStorage())
-	}
-
-	return runs, nil
-}
-
-// SearchRunsByPipeline returns a paginated list of runs for a specific pipeline
-// filtered by query matching the run ID, status, or error message using FTS5.
-// When query is empty it returns all runs ordered by creation date descending.
-func (s *Sqlite) SearchRunsByPipeline(ctx context.Context, pipelineID, query string, page, perPage int) (*storage.PaginationResult[storage.PipelineRun], error) {
+// paginatedSearch runs a paginated query with optional FTS filtering.
+// When query is empty it uses countSQL/selectSQL; otherwise it sanitises the
+// query and uses countFTSSQL/selectFTSSQL. The select SQL must end with
+// ORDER BY ... (no LIMIT/OFFSET) — the helper appends LIMIT ? OFFSET ?.
+// baseArgs are prepended to every query; ftsQuery is appended for FTS queries.
+func paginatedSearch[S any, T any](
+	ctx context.Context,
+	db *sql.DB,
+	page, perPage int,
+	query string,
+	countSQL, selectSQL string,
+	countFTSSQL, selectFTSSQL string,
+	baseArgs []any,
+	convert func(S) T,
+) (*storage.PaginationResult[T], error) {
 	if page < 1 {
 		page = 1
 	}
+
 	if perPage < 1 {
 		perPage = 20
 	}
 
 	offset := (page - 1) * perPage
 
+	var (
+		cntSQL string
+		selSQL string
+		args   []any
+	)
+
 	if query == "" {
-		// No FTS filter – return all runs ordered by creation date.
-		var totalItems int
-		err := sqlscan.Get(ctx, s.writer, &totalItems, `SELECT COUNT(*) FROM pipeline_runs WHERE pipeline_id = ?`, pipelineID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to count runs: %w", err)
-		}
-
-		var rows []pipelineRunScan
-		err = sqlscan.Select(ctx, s.writer, &rows, `
-			SELECT id, pipeline_id, status, started_at, completed_at, error_message, trigger_type, triggered_by, trigger_input, created_at
-			FROM pipeline_runs WHERE pipeline_id = ?
-			ORDER BY created_at DESC
-			LIMIT ? OFFSET ?
-		`, pipelineID, perPage, offset)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list runs: %w", err)
-		}
-
-		runs := make([]storage.PipelineRun, 0, len(rows))
-		for _, row := range rows {
-			runs = append(runs, row.toStorage())
-		}
-
-		totalPages := (totalItems + perPage - 1) / perPage
-
-		return &storage.PaginationResult[storage.PipelineRun]{
-			Items:      runs,
-			Page:       page,
-			PerPage:    perPage,
-			TotalItems: totalItems,
-			TotalPages: totalPages,
-			HasNext:    page < totalPages,
-		}, nil
+		cntSQL = countSQL
+		selSQL = selectSQL + "\n\t\t\tLIMIT ? OFFSET ?"
+		args = append(args, baseArgs...)
+	} else {
+		ftsQuery := sanitizeFTSQuery(query)
+		cntSQL = countFTSSQL
+		selSQL = selectFTSSQL + "\n\t\t\tLIMIT ? OFFSET ?"
+		args = append(args, baseArgs...)
+		args = append(args, ftsQuery)
 	}
-
-	ftsQuery := sanitizeFTSQuery(query)
 
 	var totalItems int
-	err := sqlscan.Get(ctx, s.writer, &totalItems, `
-		SELECT COUNT(*) FROM pipeline_runs
-		WHERE pipeline_id = ?
-		  AND id IN (SELECT id FROM pipeline_runs_fts WHERE pipeline_runs_fts MATCH ?)
-	`, pipelineID, ftsQuery)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count run search results: %w", err)
+	if err := sqlscan.Get(ctx, db, &totalItems, cntSQL, args...); err != nil {
+		return nil, fmt.Errorf("failed to count results: %w", err)
 	}
 
-	var rows []pipelineRunScan
+	selectArgs := append(args, perPage, offset) //nolint:gocritic // intentional new slice
 
-	err = sqlscan.Select(ctx, s.writer, &rows, `
-		SELECT id, pipeline_id, status, started_at, completed_at, error_message, trigger_type, triggered_by, trigger_input, created_at
-		FROM pipeline_runs
-		WHERE pipeline_id = ?
-		  AND id IN (SELECT id FROM pipeline_runs_fts WHERE pipeline_runs_fts MATCH ?)
-		ORDER BY created_at DESC
-		LIMIT ? OFFSET ?
-	`, pipelineID, ftsQuery, perPage, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search runs: %w", err)
+	var rows []S
+	if err := sqlscan.Select(ctx, db, &rows, selSQL, selectArgs...); err != nil {
+		return nil, fmt.Errorf("failed to query results: %w", err)
 	}
 
-	runs := make([]storage.PipelineRun, 0, len(rows))
+	items := make([]T, 0, len(rows))
 	for _, row := range rows {
-		runs = append(runs, row.toStorage())
+		items = append(items, convert(row))
 	}
 
 	totalPages := (totalItems + perPage - 1) / perPage
 
-	return &storage.PaginationResult[storage.PipelineRun]{
-		Items:      runs,
+	return &storage.PaginationResult[T]{
+		Items:      items,
 		Page:       page,
 		PerPage:    perPage,
 		TotalItems: totalItems,
 		TotalPages: totalPages,
 		HasNext:    page < totalPages,
 	}, nil
+}
+
+// SearchRunsByPipeline returns a paginated list of runs for a specific pipeline
+// filtered by query matching the run ID, status, or error message using FTS5.
+// When query is empty it returns all runs ordered by creation date descending.
+func (s *Sqlite) SearchRunsByPipeline(ctx context.Context, pipelineID, query string, page, perPage int) (*storage.PaginationResult[storage.PipelineRun], error) {
+	const cols = `id, pipeline_id, status, started_at, completed_at, error_message, trigger_type, triggered_by, trigger_input, created_at`
+
+	return paginatedSearch[pipelineRunScan](
+		ctx, s.writer, page, perPage, query,
+		`SELECT COUNT(*) FROM pipeline_runs WHERE pipeline_id = ?`,
+		`SELECT `+cols+` FROM pipeline_runs WHERE pipeline_id = ?
+			ORDER BY created_at DESC`,
+		`SELECT COUNT(*) FROM pipeline_runs
+			WHERE pipeline_id = ?
+			  AND id IN (SELECT id FROM pipeline_runs_fts WHERE pipeline_runs_fts MATCH ?)`,
+		`SELECT `+cols+` FROM pipeline_runs
+			WHERE pipeline_id = ?
+			  AND id IN (SELECT id FROM pipeline_runs_fts WHERE pipeline_runs_fts MATCH ?)
+			ORDER BY created_at DESC`,
+		[]any{pipelineID},
+		pipelineRunScan.toStorage,
+	)
 }
 
 func (s *Sqlite) UpdateRunStatus(ctx context.Context, runID string, status storage.RunStatus, errorMessage string) error {
@@ -917,91 +889,21 @@ func (s *Sqlite) PruneRunsByPipeline(ctx context.Context, pipelineID string, kee
 // the FTS5 index. When query is empty it returns all pipelines ordered by
 // creation date descending.
 func (s *Sqlite) SearchPipelines(ctx context.Context, query string, page, perPage int) (*storage.PaginationResult[storage.Pipeline], error) {
-	if page < 1 {
-		page = 1
-	}
+	const cols = `id, name, content, content_type, driver, resume_enabled, paused, rbac_expression, created_at, updated_at`
 
-	if perPage < 1 {
-		perPage = 20
-	}
-
-	offset := (page - 1) * perPage
-
-	if query == "" {
-		// No FTS filter – return all pipelines ordered by creation date.
-		var totalItems int
-		err := sqlscan.Get(ctx, s.writer, &totalItems, `SELECT COUNT(*) FROM pipelines`)
-		if err != nil {
-			return nil, fmt.Errorf("failed to count pipelines: %w", err)
-		}
-
-		var rows []pipelineScan
-		err = sqlscan.Select(ctx, s.writer, &rows, `
-			SELECT id, name, content, content_type, driver, resume_enabled, paused, rbac_expression, created_at, updated_at
-			FROM pipelines ORDER BY created_at DESC
-			LIMIT ? OFFSET ?
-		`, perPage, offset)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list pipelines: %w", err)
-		}
-
-		pipelines := make([]storage.Pipeline, 0, len(rows))
-		for _, row := range rows {
-			pipelines = append(pipelines, row.toStorage())
-		}
-
-		totalPages := (totalItems + perPage - 1) / perPage
-
-		return &storage.PaginationResult[storage.Pipeline]{
-			Items:      pipelines,
-			Page:       page,
-			PerPage:    perPage,
-			TotalItems: totalItems,
-			TotalPages: totalPages,
-			HasNext:    page < totalPages,
-		}, nil
-	}
-
-	ftsQuery := sanitizeFTSQuery(query)
-
-	var totalItems int
-
-	err := sqlscan.Get(ctx, s.writer, &totalItems, `
-		SELECT COUNT(*) FROM pipelines
-		WHERE id IN (SELECT id FROM pipelines_fts WHERE pipelines_fts MATCH ?)
-	`, ftsQuery)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count pipeline search results: %w", err)
-	}
-
-	var rows []pipelineScan
-
-	err = sqlscan.Select(ctx, s.writer, &rows, `
-		SELECT p.id, p.name, p.content, p.content_type, p.driver, p.resume_enabled, p.paused, p.rbac_expression, p.created_at, p.updated_at
-		FROM pipelines p
-		WHERE p.id IN (SELECT id FROM pipelines_fts WHERE pipelines_fts MATCH ?)
-		ORDER BY p.created_at DESC
-		LIMIT ? OFFSET ?
-	`, ftsQuery, perPage, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search pipelines: %w", err)
-	}
-
-	pipelines := make([]storage.Pipeline, 0, len(rows))
-	for _, row := range rows {
-		pipelines = append(pipelines, row.toStorage())
-	}
-
-	totalPages := (totalItems + perPage - 1) / perPage
-
-	return &storage.PaginationResult[storage.Pipeline]{
-		Items:      pipelines,
-		Page:       page,
-		PerPage:    perPage,
-		TotalItems: totalItems,
-		TotalPages: totalPages,
-		HasNext:    page < totalPages,
-	}, nil
+	return paginatedSearch[pipelineScan](
+		ctx, s.writer, page, perPage, query,
+		`SELECT COUNT(*) FROM pipelines`,
+		`SELECT `+cols+` FROM pipelines
+			ORDER BY created_at DESC`,
+		`SELECT COUNT(*) FROM pipelines
+			WHERE id IN (SELECT id FROM pipelines_fts WHERE pipelines_fts MATCH ?)`,
+		`SELECT `+cols+` FROM pipelines
+			WHERE id IN (SELECT id FROM pipelines_fts WHERE pipelines_fts MATCH ?)
+			ORDER BY created_at DESC`,
+		nil,
+		pipelineScan.toStorage,
+	)
 }
 
 // Search returns records whose indexed text matches query and whose path begins
@@ -1040,36 +942,23 @@ func (s *Sqlite) Search(ctx context.Context, prefix, query string) (storage.Resu
 	return results, nil
 }
 
-// CheckWebhookDedup returns true if keyHash has already been recorded for pipelineID.
-func (s *Sqlite) CheckWebhookDedup(ctx context.Context, pipelineID string, keyHash []byte) (bool, error) {
-	var exists int
-
-	err := s.reader.QueryRowContext(ctx,
-		`SELECT 1 FROM webhook_dedup WHERE pipeline_id = ? AND key_hash = ? LIMIT 1`,
-		pipelineID, keyHash,
-	).Scan(&exists)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return false, nil
-		}
-
-		return false, fmt.Errorf("check webhook dedup: %w", err)
-	}
-
-	return true, nil
-}
-
-// SaveWebhookDedup records keyHash for pipelineID. Duplicate inserts are silently ignored.
-func (s *Sqlite) SaveWebhookDedup(ctx context.Context, pipelineID string, keyHash []byte) error {
-	_, err := s.writer.ExecContext(ctx,
+// RecordWebhookDedup atomically checks and records a dedup key.
+// Returns true if the key already existed (duplicate), false if newly recorded.
+func (s *Sqlite) RecordWebhookDedup(ctx context.Context, pipelineID string, keyHash []byte) (bool, error) {
+	result, err := s.writer.ExecContext(ctx,
 		`INSERT OR IGNORE INTO webhook_dedup (pipeline_id, key_hash) VALUES (?, ?)`,
 		pipelineID, keyHash,
 	)
 	if err != nil {
-		return fmt.Errorf("save webhook dedup: %w", err)
+		return false, fmt.Errorf("record webhook dedup: %w", err)
 	}
 
-	return nil
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("record webhook dedup rows affected: %w", err)
+	}
+
+	return rows == 0, nil
 }
 
 // PruneWebhookDedup deletes dedup entries created before olderThan and returns the count removed.
@@ -1177,8 +1066,8 @@ func (s *Sqlite) GetSchedulesByPipeline(ctx context.Context, pipelineID string) 
 	return schedules, nil
 }
 
-// DeleteSchedulesByPipeline removes all schedules for a pipeline.
-func (s *Sqlite) DeleteSchedulesByPipeline(ctx context.Context, pipelineID string) error {
+// deleteAllSchedules removes all schedules for a pipeline.
+func (s *Sqlite) deleteAllSchedules(ctx context.Context, pipelineID string) error {
 	_, err := s.writer.ExecContext(ctx, `DELETE FROM schedules WHERE pipeline_id = ?`, pipelineID)
 	if err != nil {
 		return fmt.Errorf("failed to delete schedules by pipeline: %w", err)
@@ -1187,10 +1076,11 @@ func (s *Sqlite) DeleteSchedulesByPipeline(ctx context.Context, pipelineID strin
 	return nil
 }
 
-// DeleteSchedulesByPipelineExcept removes schedules for a pipeline whose names are NOT in keepNames.
-func (s *Sqlite) DeleteSchedulesByPipelineExcept(ctx context.Context, pipelineID string, keepNames []string) error {
+// PruneSchedulesByPipeline removes schedules for a pipeline whose names are
+// NOT in keepNames. An empty keepNames deletes all schedules for the pipeline.
+func (s *Sqlite) PruneSchedulesByPipeline(ctx context.Context, pipelineID string, keepNames []string) error {
 	if len(keepNames) == 0 {
-		return s.DeleteSchedulesByPipeline(ctx, pipelineID)
+		return s.deleteAllSchedules(ctx, pipelineID)
 	}
 
 	placeholders := make([]string, len(keepNames))
@@ -1361,20 +1251,6 @@ func (s *Sqlite) GetGate(ctx context.Context, gateID string) (*storage.Gate, err
 	gate := row.toStorage()
 
 	return &gate, nil
-}
-
-// GetPendingGates returns all gates with status 'pending'.
-func (s *Sqlite) GetPendingGates(ctx context.Context) ([]storage.Gate, error) {
-	var rows []gateScan
-
-	err := sqlscan.Select(ctx, s.reader, &rows,
-		`SELECT `+gateColumns+` FROM gates WHERE status = 'pending' ORDER BY created_at ASC`,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pending gates: %w", err)
-	}
-
-	return convertGateRows(rows), nil
 }
 
 // ResolveGate updates a gate's status and records who resolved it.

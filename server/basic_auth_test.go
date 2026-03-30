@@ -354,7 +354,8 @@ func TestBasicAuthDeniedWhenPipelineHasRBAC(t *testing.T) {
 	// Set RBAC expression directly in storage (simulating prior OAuth setup).
 	pipeline, err := client.GetPipelineByName(t.Context(), "rbac-test")
 	assert.Expect(err).NotTo(gomega.HaveOccurred())
-	err = client.UpdatePipelineRBACExpression(t.Context(), pipeline.ID, `Email == "admin@example.com"`)
+	rbacExpr := `Email == "admin@example.com"`
+	err = client.UpdatePipeline(t.Context(), pipeline.ID, storage.PipelineUpdate{RBACExpression: &rbacExpr})
 	assert.Expect(err).NotTo(gomega.HaveOccurred())
 
 	// GET pipeline — should be denied (basic auth can't satisfy RBAC).

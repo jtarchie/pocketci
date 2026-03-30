@@ -422,7 +422,8 @@ func TestPipelineAPI(t *testing.T) {
 			saved, err := client.SavePipeline(context.Background(), "unpausable", "content", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			err = client.UpdatePipelinePaused(context.Background(), saved.ID, true)
+			paused := true
+			err = client.UpdatePipeline(context.Background(), saved.ID, storage.PipelineUpdate{Paused: &paused})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			router := newRouterWithSecrets(t, client, server.RouterOptions{})
@@ -453,7 +454,8 @@ func TestPipelineAPI(t *testing.T) {
 			saved, err := client.SavePipeline(context.Background(), "paused-trigger", "content", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			err = client.UpdatePipelinePaused(context.Background(), saved.ID, true)
+			paused := true
+			err = client.UpdatePipeline(context.Background(), saved.ID, storage.PipelineUpdate{Paused: &paused})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			router := newRouterWithSecrets(t, client, server.RouterOptions{})

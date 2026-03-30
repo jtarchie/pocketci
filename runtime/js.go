@@ -389,22 +389,14 @@ func (j *JS) evaluateWebhookDedup(ctx context.Context, store storage.Driver, opt
 		slog.Warn("webhookDedup prune failed", "error", pruneErr)
 	}
 
-	isDup, checkErr := store.CheckWebhookDedup(ctx, opts.PipelineID, keyHash)
-	if checkErr != nil {
-		slog.Error("webhookDedup check failed", "error", checkErr)
+	isDup, err := store.RecordWebhookDedup(ctx, opts.PipelineID, keyHash)
+	if err != nil {
+		slog.Error("webhookDedup record failed", "error", err)
 
 		return false
 	}
 
-	if isDup {
-		return true
-	}
-
-	if saveErr := store.SaveWebhookDedup(ctx, opts.PipelineID, keyHash); saveErr != nil {
-		slog.Warn("webhookDedup save failed", "error", saveErr)
-	}
-
-	return false
+	return isDup
 }
 
 // buildWebhookEnv constructs a filter.WebhookEnv from webhook data.

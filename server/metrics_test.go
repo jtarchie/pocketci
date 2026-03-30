@@ -167,7 +167,7 @@ func TestMetricsDashboard(t *testing.T) {
 			}
 
 			// Limit to 3
-			runs, err := client.GetRecentRunsByStatus(ctx, storage.RunStatusFailed, 3)
+			runs, err := client.GetRunsByStatus(ctx, storage.RunStatusFailed, 3)
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(runs).To(HaveLen(3))
 			for _, r := range runs {

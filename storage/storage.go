@@ -39,6 +39,14 @@ type Pipeline struct {
 	UpdatedAt      time.Time   `json:"updated_at"`
 }
 
+// PipelineUpdate holds optional fields for partial pipeline updates.
+// Only non-nil fields are written to the database.
+type PipelineUpdate struct {
+	ResumeEnabled  *bool   `json:"resume_enabled,omitempty"`
+	Paused         *bool   `json:"paused,omitempty"`
+	RBACExpression *string `json:"rbac_expression,omitempty"`
+}
+
 // RunStatus represents the status of a pipeline run.
 type RunStatus string
 
@@ -169,9 +177,10 @@ type Driver interface {
 
 	// Pipeline CRUD operations
 	SavePipeline(ctx context.Context, name, content, driver, contentType string) (*Pipeline, error)
-	UpdatePipelineResumeEnabled(ctx context.Context, pipelineID string, enabled bool) error
-	UpdatePipelinePaused(ctx context.Context, pipelineID string, paused bool) error
-	UpdatePipelineRBACExpression(ctx context.Context, pipelineID, expression string) error
+	// UpdatePipeline applies partial updates to a pipeline. Only non-nil fields
+	// in the PipelineUpdate struct are written. Returns ErrNotFound when the
+	// pipeline does not exist.
+	UpdatePipeline(ctx context.Context, pipelineID string, update PipelineUpdate) error
 	GetPipeline(ctx context.Context, id string) (*Pipeline, error)
 	GetPipelineByName(ctx context.Context, name string) (*Pipeline, error)
 	DeletePipeline(ctx context.Context, id string) error
@@ -179,11 +188,12 @@ type Driver interface {
 	// Pipeline run operations
 	SaveRun(ctx context.Context, pipelineID string, triggerType TriggerType, triggeredBy string, triggerInput TriggerInput) (*PipelineRun, error)
 	GetRun(ctx context.Context, runID string) (*PipelineRun, error)
-	GetRunsByStatus(ctx context.Context, status RunStatus) ([]PipelineRun, error)
+	// GetRunsByStatus returns runs with the given status ordered by creation
+	// date descending. When limit > 0 at most limit rows are returned;
+	// limit <= 0 returns all matching rows.
+	GetRunsByStatus(ctx context.Context, status RunStatus, limit int) ([]PipelineRun, error)
 	// GetRunStats returns the count of runs grouped by status.
 	GetRunStats(ctx context.Context) (map[RunStatus]int, error)
-	// GetRecentRunsByStatus returns the most recent N runs with the given status.
-	GetRecentRunsByStatus(ctx context.Context, status RunStatus, limit int) ([]PipelineRun, error)
 	SearchRunsByPipeline(ctx context.Context, pipelineID, query string, page, perPage int) (*PaginationResult[PipelineRun], error)
 	UpdateRunStatus(ctx context.Context, runID string, status RunStatus, errorMessage string) error
 	// PruneRunsByPipeline deletes old pipeline runs according to retention limits.
@@ -212,10 +222,9 @@ type Driver interface {
 	// Schedule operations
 	SaveSchedule(ctx context.Context, schedule *Schedule) error
 	GetSchedulesByPipeline(ctx context.Context, pipelineID string) ([]Schedule, error)
-	DeleteSchedulesByPipeline(ctx context.Context, pipelineID string) error
-	// DeleteSchedulesByPipelineExcept removes schedules for a pipeline whose
-	// names are NOT in the keepNames set. Used during sync to prune stale entries.
-	DeleteSchedulesByPipelineExcept(ctx context.Context, pipelineID string, keepNames []string) error
+	// PruneSchedulesByPipeline removes schedules for a pipeline whose names are
+	// NOT in keepNames. An empty keepNames deletes all schedules for the pipeline.
+	PruneSchedulesByPipeline(ctx context.Context, pipelineID string, keepNames []string) error
 	UpdateScheduleEnabled(ctx context.Context, id string, enabled bool) error
 	// ClaimDueSchedules atomically claims schedules whose next_run_at <= now.
 	// Uses UPDATE...RETURNING to prevent multi-instance collisions.
@@ -225,16 +234,14 @@ type Driver interface {
 	// Gate operations
 	SaveGate(ctx context.Context, gate *Gate) error
 	GetGate(ctx context.Context, gateID string) (*Gate, error)
-	GetPendingGates(ctx context.Context) ([]Gate, error)
 	ResolveGate(ctx context.Context, gateID string, status GateStatus, approvedBy string) error
 	GetGatesByRunID(ctx context.Context, runID string) ([]Gate, error)
 
 	// Webhook dedup operations
 	//
-	// CheckWebhookDedup returns true if keyHash has already been recorded for pipelineID.
-	CheckWebhookDedup(ctx context.Context, pipelineID string, keyHash []byte) (bool, error)
-	// SaveWebhookDedup records keyHash for pipelineID. Duplicate inserts are ignored.
-	SaveWebhookDedup(ctx context.Context, pipelineID string, keyHash []byte) error
+	// RecordWebhookDedup atomically checks and records a dedup key.
+	// Returns true if the key already existed (duplicate), false if newly recorded.
+	RecordWebhookDedup(ctx context.Context, pipelineID string, keyHash []byte) (bool, error)
 	// PruneWebhookDedup deletes dedup entries older than olderThan and returns the count removed.
 	PruneWebhookDedup(ctx context.Context, olderThan time.Time) (int64, error)
 }

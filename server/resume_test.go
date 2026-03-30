@@ -212,7 +212,8 @@ export const pipeline = async () => {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Enable resume on the pipeline
-			err = client.UpdatePipelineResumeEnabled(context.Background(), pipeline.ID, true)
+			resumeEnabled := true
+			err = client.UpdatePipeline(context.Background(), pipeline.ID, storage.PipelineUpdate{ResumeEnabled: &resumeEnabled})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Create a run and set its status to "running" to simulate a crash
@@ -336,7 +337,8 @@ func TestResumeEnabled(t *testing.T) {
 			assert.Expect(pipeline.ResumeEnabled).To(BeFalse())
 
 			// Enable resume
-			err = client.UpdatePipelineResumeEnabled(context.Background(), pipeline.ID, true)
+			resumeEnabled := true
+			err = client.UpdatePipeline(context.Background(), pipeline.ID, storage.PipelineUpdate{ResumeEnabled: &resumeEnabled})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Re-fetch and verify
@@ -345,7 +347,8 @@ func TestResumeEnabled(t *testing.T) {
 			assert.Expect(updated.ResumeEnabled).To(BeTrue())
 
 			// Disable resume
-			err = client.UpdatePipelineResumeEnabled(context.Background(), pipeline.ID, false)
+			resumeEnabled = false
+			err = client.UpdatePipeline(context.Background(), pipeline.ID, storage.PipelineUpdate{ResumeEnabled: &resumeEnabled})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			disabled, err := client.GetPipeline(context.Background(), pipeline.ID)
@@ -385,12 +388,12 @@ func TestResumeEnabled(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Query for running runs
-			runningRuns, err := client.GetRunsByStatus(context.Background(), storage.RunStatusRunning)
+			runningRuns, err := client.GetRunsByStatus(context.Background(), storage.RunStatusRunning, 0)
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(len(runningRuns)).To(Equal(2))
 
 			// Query for failed runs
-			failedRuns, err := client.GetRunsByStatus(context.Background(), storage.RunStatusFailed)
+			failedRuns, err := client.GetRunsByStatus(context.Background(), storage.RunStatusFailed, 0)
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(len(failedRuns)).To(Equal(1))
 			assert.Expect(failedRuns[0].ID).To(Equal(run2.ID))
@@ -428,7 +431,8 @@ export const pipeline = async () => {
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// Enable resume
-			err = client.UpdatePipelineResumeEnabled(context.Background(), pipeline.ID, true)
+			resumeEnabled := true
+			err = client.UpdatePipeline(context.Background(), pipeline.ID, storage.PipelineUpdate{ResumeEnabled: &resumeEnabled})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			// First: trigger and let it fail (simulate by running a failing pipeline first)
@@ -478,7 +482,8 @@ export const pipeline = async () => {
 			pipeline, err := client.SavePipeline(context.Background(), "api-resume-test", "export const pipeline = async () => {};", "native", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			err = client.UpdatePipelineResumeEnabled(context.Background(), pipeline.ID, true)
+			resumeEnabled := true
+			err = client.UpdatePipeline(context.Background(), pipeline.ID, storage.PipelineUpdate{ResumeEnabled: &resumeEnabled})
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			router := newStrictSecretRouter(t, client, server.RouterOptions{MaxInFlight: 5})

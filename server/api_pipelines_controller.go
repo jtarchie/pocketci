@@ -376,7 +376,7 @@ func (c *APIPipelinesController) upsertPostSave(ctx *echo.Context, pipeline *sto
 	}
 
 	if req.ResumeEnabled != nil {
-		if err := c.store.UpdatePipelineResumeEnabled(ctx.Request().Context(), pipeline.ID, *req.ResumeEnabled); err != nil {
+		if err := c.store.UpdatePipeline(ctx.Request().Context(), pipeline.ID, storage.PipelineUpdate{ResumeEnabled: req.ResumeEnabled}); err != nil {
 			return respondJSON(ctx, http.StatusInternalServerError, map[string]string{
 				"error": fmt.Sprintf("failed to update resume_enabled: %v", err),
 			})
@@ -402,7 +402,7 @@ func (c *APIPipelinesController) upsertPostSave(ctx *echo.Context, pipeline *sto
 
 		oldExpression := pipeline.RBACExpression
 
-		if err := c.store.UpdatePipelineRBACExpression(ctx.Request().Context(), pipeline.ID, *req.RBACExpression); err != nil {
+		if err := c.store.UpdatePipeline(ctx.Request().Context(), pipeline.ID, storage.PipelineUpdate{RBACExpression: req.RBACExpression}); err != nil {
 			return respondJSON(ctx, http.StatusInternalServerError, map[string]string{
 				"error": fmt.Sprintf("failed to update rbac_expression: %v", err),
 			})
@@ -795,7 +795,7 @@ func (c *APIPipelinesController) setPaused(ctx *echo.Context, paused bool) error
 		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
-	if err := c.store.UpdatePipelinePaused(ctx.Request().Context(), id, paused); err != nil {
+	if err := c.store.UpdatePipeline(ctx.Request().Context(), id, storage.PipelineUpdate{Paused: &paused}); err != nil {
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to update pipeline: %v", err),
 		})
@@ -946,7 +946,7 @@ func syncSchedules(ctx context.Context, store storage.Driver, pipeline *storage.
 	}
 
 	// Remove schedules no longer declared in the YAML.
-	if err := store.DeleteSchedulesByPipelineExcept(ctx, pipeline.ID, keepNames); err != nil {
+	if err := store.PruneSchedulesByPipeline(ctx, pipeline.ID, keepNames); err != nil {
 		return fmt.Errorf("prune stale schedules: %w", err)
 	}
 
