@@ -389,6 +389,7 @@ func registerRoutes(
 	// API controllers (JSON responses)
 	(&APIPipelinesController{BaseController: base, logger: logger, allowedDrivers: allowedDrivers, allowedFeatures: allowedFeatures, secretsMgr: secretsMgr}).RegisterRoutes(api)
 	(&APIRunsController{BaseController: base, allowedFeatures: allowedFeatures}).RegisterRoutes(api)
+	(&APIGatesController{BaseController: base, allowedFeatures: allowedFeatures}).RegisterRoutes(api)
 	(&APIDriversController{allowedDrivers: allowedDrivers, configuredDrivers: configuredDrivers}).RegisterRoutes(api)
 	(&APIFeaturesController{allowedFeatures: allowedFeatures}).RegisterRoutes(api)
 	RegisterScheduleRoutes(api, store)
