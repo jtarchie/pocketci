@@ -37,6 +37,7 @@ func newJobRunner(
 		handlers: map[string]StepHandler{
 			"task": &TaskHandler{},
 			"try":  &TryHandler{},
+			"do":   &DoHandler{},
 		},
 	}
 }
@@ -112,7 +113,17 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 		return fmt.Errorf("no handler registered for step type %q", stepType)
 	}
 
-	return handler.Execute(sc, step, pathPrefix)
+	stepErr := handler.Execute(sc, step, pathPrefix)
+
+	// Ensure hook always runs regardless of step success/failure.
+	if step.Ensure != nil {
+		ensurePrefix := fmt.Sprintf("%s/ensure", pathPrefix)
+		if ensureErr := jr.processStep(sc, step.Ensure, ensurePrefix); ensureErr != nil {
+			sc.Logger.Warn("step.ensure.failed", "prefix", pathPrefix, "error", ensureErr)
+		}
+	}
+
+	return stepErr
 }
 
 func identifyStepType(step *config.Step) string {
@@ -121,6 +132,8 @@ func identifyStepType(step *config.Step) string {
 		return "task"
 	case len(step.Try) > 0:
 		return "try"
+	case len(step.Do) > 0:
+		return "do"
 	default:
 		return ""
 	}

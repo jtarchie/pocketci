@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/goccy/go-yaml"
@@ -19,6 +20,12 @@ import (
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+func debugLogger(w io.Writer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
 }
 
 func loadConfig(t *testing.T, path string) *configpkg.Config {
@@ -79,6 +86,35 @@ func TestTryStep(t *testing.T) {
 			runner := backwards.New(cfg, driver, store, logger, "test-run")
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
+func TestDoStep(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "../../backwards/steps/do.yml")
+
+			var logs strings.Builder
+
+			logger := debugLogger(&logs)
+
+			driver, err := df.new("test-do-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-do", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(logs.String()).To(ContainSubstring("ensure-task"))
 		})
 	}
 }

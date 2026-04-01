@@ -33,6 +33,15 @@ func (sc *StepContext) BaseStorageKey() string {
 	return fmt.Sprintf("/pipeline/%s/jobs/%s", sc.RunID, sc.JobName)
 }
 
+// statusFromErr returns "failure" if err is non-nil, "success" otherwise.
+func statusFromErr(err error) string {
+	if err != nil {
+		return "failure"
+	}
+
+	return "success"
+}
+
 // zeroPadWithLength zero-pads num based on the number of digits in (length-1).
 func zeroPadWithLength(num, length int) string {
 	if length <= 1 {

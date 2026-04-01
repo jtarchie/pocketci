@@ -35,6 +35,7 @@ func (h *TaskHandler) Execute(sc *StepContext, step *config.Step, pathPrefix str
 		ID:      fmt.Sprintf("%s-%s", sc.JobName, taskName),
 		Command: command,
 		Env:     step.TaskConfig.Env,
+		Image:   resolveImage(step.TaskConfig),
 	}
 
 	container, err := sc.Driver.RunContainer(sc.Ctx, task)
@@ -88,6 +89,22 @@ func (h *TaskHandler) Execute(sc *StepContext, step *config.Step, pathPrefix str
 	}
 
 	return nil
+}
+
+func resolveImage(cfg *config.TaskConfig) string {
+	if cfg == nil {
+		return ""
+	}
+
+	if cfg.Image != "" {
+		return cfg.Image
+	}
+
+	if repo, ok := cfg.ImageResource.Source["repository"].(string); ok {
+		return repo
+	}
+
+	return ""
 }
 
 func buildCommand(cfg *config.TaskConfig) []string {
