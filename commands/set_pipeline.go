@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/jtarchie/pocketci/backwards"
+	"github.com/jtarchie/pocketci/client"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/orchestra/digitalocean"
 	"github.com/jtarchie/pocketci/orchestra/docker"
@@ -67,18 +68,6 @@ type SetPipeline struct {
 	Output io.Writer `kong:"-"`
 }
 
-// pipelineRequest matches the server's expected JSON body for PUT /api/pipelines/:name.
-type pipelineRequest struct {
-	Content        string            `json:"content"`
-	ContentType    string            `json:"content_type"`
-	Driver         string            `json:"driver"`
-	DriverConfig   json.RawMessage   `json:"driver_config,omitempty"`
-	WebhookSecret  string            `json:"webhook_secret"`
-	Secrets        map[string]string `json:"secrets,omitempty"`
-	ResumeEnabled  *bool             `json:"resume_enabled,omitempty"`
-	RBACExpression *string           `json:"rbac_expression,omitempty"`
-}
-
 func (c *SetPipeline) Run(logger *slog.Logger) error {
 	logger = logger.WithGroup("pipeline.set")
 
@@ -111,10 +100,16 @@ func (c *SetPipeline) Run(logger *slog.Logger) error {
 
 	reqBody := c.buildRequestBody(string(content), contentType, secretsMap)
 
-	pipeline, err := c.uploadPipeline(logger, name, reqBody)
+	apiClient := c.NewClient()
+
+	logger.Info("pipeline.upload", "url", RedactURL(apiClient.ServerURL()+"/api/pipelines/"+url.PathEscape(name)))
+
+	pipeline, err := apiClient.SetPipeline(name, reqBody)
 	if err != nil {
 		return err
 	}
+
+	logger.Info("pipeline.upload.success", "id", pipeline.ID, "name", pipeline.Name)
 
 	c.printSuccess(pipeline, secretsMap)
 
@@ -157,8 +152,8 @@ func (c *SetPipeline) validatePipelineContent(logger *slog.Logger, content []byt
 	}
 }
 
-func (c *SetPipeline) buildRequestBody(content, contentType string, secretsMap map[string]string) pipelineRequest {
-	reqBody := pipelineRequest{
+func (c *SetPipeline) buildRequestBody(content, contentType string, secretsMap map[string]string) client.SetPipelineRequest {
+	reqBody := client.SetPipelineRequest{
 		Content:       content,
 		ContentType:   contentType,
 		Driver:        c.Driver,
@@ -173,51 +168,6 @@ func (c *SetPipeline) buildRequestBody(content, contentType string, secretsMap m
 	}
 
 	return reqBody
-}
-
-func (c *SetPipeline) uploadPipeline(logger *slog.Logger, name string, reqBody pipelineRequest) (storage.Pipeline, error) {
-	serverURL := strings.TrimSuffix(c.ServerURL, "/")
-	client, baseEndpoint := setupAPIClient(serverURL, c.AuthToken, c.ConfigFile)
-	endpoint := baseEndpoint + "/" + url.PathEscape(name)
-
-	logger.Info("pipeline.upload", "url", RedactURL(endpoint))
-
-	resp, err := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetBody(reqBody).
-		Put(endpoint)
-	if err != nil {
-		return storage.Pipeline{}, fmt.Errorf("could not connect to server: %w", err)
-	}
-
-	body := resp.Body()
-
-	if err := checkAuthStatus(resp.StatusCode(), serverURL); err != nil {
-		return storage.Pipeline{}, err
-	}
-
-	if resp.StatusCode() != 200 {
-		var errResp map[string]string
-		if json.Unmarshal(body, &errResp) == nil {
-			if msg, ok := errResp["error"]; ok {
-				return storage.Pipeline{}, fmt.Errorf("server error (%d): %s", resp.StatusCode(), msg)
-			}
-		}
-
-		return storage.Pipeline{}, fmt.Errorf("server error (%d): %s", resp.StatusCode(), string(body))
-	}
-
-	var pipeline storage.Pipeline
-	if err := json.Unmarshal(body, &pipeline); err != nil {
-		return storage.Pipeline{}, fmt.Errorf("could not parse response: %w", err)
-	}
-
-	logger.Info("pipeline.upload.success",
-		"id", pipeline.ID,
-		"name", pipeline.Name,
-	)
-
-	return pipeline, nil
 }
 
 func (c *SetPipeline) output() io.Writer {

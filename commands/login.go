@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-resty/resty/v2"
+	"github.com/jtarchie/pocketci/client"
 )
 
 type Login struct {
@@ -23,54 +22,38 @@ func (c *Login) Run(logger *slog.Logger) error {
 	logger = logger.WithGroup("login")
 
 	serverURL := strings.TrimSuffix(c.ServerURL, "/")
+	apiClient := client.New(serverURL)
 
-	client := resty.New()
-
-	code, err := c.beginDeviceFlow(client, logger, serverURL)
+	code, err := c.beginDeviceFlow(apiClient, logger)
 	if err != nil {
 		return err
 	}
 
-	return c.pollForToken(client, logger, serverURL, code)
+	return c.pollForToken(apiClient, logger, serverURL, code)
 }
 
-func (c *Login) beginDeviceFlow(client *resty.Client, logger *slog.Logger, serverURL string) (string, error) {
-	logger.Info("login.begin", "server", serverURL)
+func (c *Login) beginDeviceFlow(apiClient *client.Client, logger *slog.Logger) (string, error) {
+	logger.Info("login.begin", "server", apiClient.ServerURL())
 
-	beginResp, err := client.R().
-		Post(serverURL + "/auth/cli/begin")
+	result, err := apiClient.BeginDeviceFlow()
 	if err != nil {
-		return "", fmt.Errorf("could not connect to server: %w", err)
+		return "", err
 	}
 
-	if beginResp.StatusCode() != 200 {
-		return "", fmt.Errorf("server error (%d): %s", beginResp.StatusCode(), beginResp.String())
-	}
-
-	var beginResult struct {
-		Code     string `json:"code"`
-		LoginURL string `json:"login_url"`
-	}
-
-	if err := json.Unmarshal(beginResp.Body(), &beginResult); err != nil {
-		return "", fmt.Errorf("could not parse response: %w", err)
-	}
-
-	approveURL := serverURL + "/auth/cli/approve?code=" + url.QueryEscape(beginResult.Code)
+	approveURL := apiClient.ServerURL() + "/auth/cli/approve?code=" + url.QueryEscape(result.Code)
 
 	fmt.Println("Opening browser for authentication...")
 	fmt.Printf("If the browser does not open, visit:\n  %s\n\n", approveURL)
-	fmt.Printf("Your device code: %s\n\n", beginResult.Code)
+	fmt.Printf("Your device code: %s\n\n", result.Code)
 
 	openBrowser(approveURL)
 
-	return beginResult.Code, nil
+	return result.Code, nil
 }
 
-func (c *Login) pollForToken(client *resty.Client, logger *slog.Logger, serverURL, code string) error {
+func (c *Login) pollForToken(apiClient *client.Client, logger *slog.Logger, serverURL, code string) error {
 	fmt.Print("Waiting for authentication...")
 
-	pollEndpoint := serverURL + "/auth/cli/poll?code=" + url.QueryEscape(code)
 	timeout := time.After(10 * time.Minute)
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -83,7 +66,7 @@ func (c *Login) pollForToken(client *resty.Client, logger *slog.Logger, serverUR
 		case <-ticker.C:
 			fmt.Print(".")
 
-			token, done, err := c.handlePollResponse(client, pollEndpoint)
+			token, done, err := apiClient.PollDeviceFlow(code)
 			if err != nil {
 				return err
 			}
@@ -99,38 +82,6 @@ func (c *Login) pollForToken(client *resty.Client, logger *slog.Logger, serverUR
 			return nil
 		}
 	}
-}
-
-func (c *Login) handlePollResponse(client *resty.Client, pollEndpoint string) (string, bool, error) {
-	pollResp, err := client.R().Get(pollEndpoint)
-	if err != nil {
-		return "", false, nil
-	}
-
-	if pollResp.StatusCode() == 202 {
-		return "", false, nil
-	}
-
-	if pollResp.StatusCode() == 410 {
-		fmt.Println()
-		return "", false, errors.New("authentication code expired, please try again")
-	}
-
-	if pollResp.StatusCode() != 200 {
-		fmt.Println()
-		return "", false, fmt.Errorf("unexpected response (%d): %s", pollResp.StatusCode(), pollResp.String())
-	}
-
-	var tokenResult struct {
-		Token string `json:"token"`
-	}
-
-	if err := json.Unmarshal(pollResp.Body(), &tokenResult); err != nil {
-		fmt.Println()
-		return "", false, fmt.Errorf("could not parse token response: %w", err)
-	}
-
-	return tokenResult.Token, true, nil
 }
 
 func (c *Login) saveToken(logger *slog.Logger, serverURL, token string) {

@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"log/slog"
-	"strings"
 )
 
 type PausePipeline struct {
@@ -32,29 +31,25 @@ func setPipelinePaused(logger *slog.Logger, name string, cfg ServerConfig, pause
 
 	logger = logger.WithGroup("pipeline." + action)
 
-	serverURL := strings.TrimSuffix(cfg.ServerURL, "/")
-	client, endpoint := setupAPIClient(serverURL, cfg.AuthToken, cfg.ConfigFile)
+	apiClient := cfg.NewClient()
 
 	logger.Info("pipeline.list")
 
-	matched, err := findPipelineByNameOrID(client, endpoint, serverURL, name)
+	matched, err := apiClient.FindPipelineByNameOrID(name)
 	if err != nil {
 		return err
 	}
 
 	logger.Info("pipeline."+action, "id", matched.ID, "name", matched.Name)
 
-	resp, err := client.R().Post(endpoint + "/" + matched.ID + "/" + action)
+	if paused {
+		err = apiClient.PausePipeline(matched.ID)
+	} else {
+		err = apiClient.UnpausePipeline(matched.ID)
+	}
+
 	if err != nil {
 		return fmt.Errorf("could not %s pipeline %q (%s): %w", action, matched.Name, matched.ID, err)
-	}
-
-	if err := checkAuthStatus(resp.StatusCode(), serverURL); err != nil {
-		return err
-	}
-
-	if resp.StatusCode() != 200 {
-		return fmt.Errorf("server error (%d): %s", resp.StatusCode(), resp.String())
 	}
 
 	pastTense := "paused"

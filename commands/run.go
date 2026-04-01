@@ -10,12 +10,11 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/go-resty/resty/v2"
+	"github.com/jtarchie/pocketci/client"
 	"github.com/klauspost/compress/zstd"
 	"github.com/schollz/progressbar/v3"
 )
@@ -45,9 +44,6 @@ type sseEvent struct {
 func (c *Run) Run(logger *slog.Logger) error {
 	logger = logger.WithGroup("pipeline.run")
 
-	serverURL := strings.TrimSuffix(c.ServerURL, "/")
-	endpoint := serverURL + "/api/pipelines/" + c.Name + "/run"
-
 	tmpFile, contentType, err := c.buildMultipartBody(logger)
 	if err != nil {
 		return err
@@ -65,27 +61,52 @@ func (c *Run) Run(logger *slog.Logger) error {
 		return fmt.Errorf("could not rewind temp file: %w", err)
 	}
 
-	logger.Info("pipeline.run.trigger", "name", c.Name, "url", RedactURL(endpoint), "args", c.Args, "upload_bytes", bodySize)
-
-	client, _ := setupAPIClient(serverURL, c.AuthToken, c.ConfigFile)
-
+	var opts []client.Option
 	if c.Timeout > 0 {
-		client.SetTimeout(c.Timeout)
+		opts = append(opts, client.WithTimeout(c.Timeout))
 	}
 
-	resp, err := c.sendRequest(client, endpoint, tmpFile, contentType, bodySize)
+	apiClient := c.NewClient(opts...)
+
+	logger.Info("pipeline.run.trigger", "name", c.Name, "url", RedactURL(apiClient.ServerURL()+"/api/pipelines/"+c.Name+"/run"), "args", c.Args, "upload_bytes", bodySize)
+
+	bar := progressbar.NewOptions64(bodySize,
+		progressbar.OptionSetDescription("uploading"),
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSetVisibility(!c.NoWorkdir),
+		progressbar.OptionOnCompletion(func() { fmt.Fprintln(os.Stderr) }),
+	)
+
+	resp, err := apiClient.RunPipeline(c.Name, io.TeeReader(tmpFile, bar), contentType, bodySize)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = resp.RawBody().Close() }()
 
-	if err := checkResponseStatus(resp, serverURL); err != nil {
+	_ = bar.Finish()
+
+	if err := checkRunResponseStatus(resp.StatusCode(), resp.RawBody(), apiClient.ServerURL()); err != nil {
 		return err
 	}
 
 	logger.Info("pipeline.run.streaming")
 
 	return streamSSEEvents(resp.RawBody(), logger)
+}
+
+func checkRunResponseStatus(statusCode int, body io.Reader, serverURL string) error {
+	switch statusCode {
+	case 401:
+		return &client.AuthRequiredError{ServerURL: serverURL}
+	case 403:
+		return &client.AccessDeniedError{ServerURL: serverURL}
+	case 200:
+		return nil
+	default:
+		b, _ := io.ReadAll(body)
+		return fmt.Errorf("server returned %d: %s", statusCode, string(b))
+	}
 }
 
 func (c *Run) buildMultipartBody(logger *slog.Logger) (*os.File, string, error) {
@@ -164,48 +185,6 @@ func (c *Run) writeWorkdirField(mw *multipart.Writer, logger *slog.Logger) error
 
 	if err := zw.Close(); err != nil {
 		return fmt.Errorf("could not flush zstd stream: %w", err)
-	}
-
-	return nil
-}
-
-func (c *Run) sendRequest(client *resty.Client, endpoint string, body *os.File, contentType string, bodySize int64) (*resty.Response, error) {
-	bar := progressbar.NewOptions64(bodySize,
-		progressbar.OptionSetDescription("uploading"),
-		progressbar.OptionSetWriter(os.Stderr),
-		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetVisibility(!c.NoWorkdir),
-		progressbar.OptionOnCompletion(func() { fmt.Fprintln(os.Stderr) }),
-	)
-
-	resp, err := client.R().
-		SetHeader("Content-Type", contentType).
-		SetHeader("Content-Length", strconv.FormatInt(bodySize, 10)).
-		SetHeader("Accept", "text/event-stream").
-		SetBody(io.TeeReader(body, bar)).
-		SetDoNotParseResponse(true).
-		Post(endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("could not connect to server: %w", err)
-	}
-
-	_ = bar.Finish()
-
-	return resp, nil
-}
-
-func checkResponseStatus(resp *resty.Response, serverURL string) error {
-	if resp.StatusCode() == 401 {
-		return authRequiredError(serverURL)
-	}
-
-	if resp.StatusCode() == 403 {
-		return accessDeniedError(serverURL)
-	}
-
-	if resp.StatusCode() != 200 {
-		body, _ := io.ReadAll(resp.RawBody())
-		return fmt.Errorf("server returned %d: %s", resp.StatusCode(), string(body))
 	}
 
 	return nil

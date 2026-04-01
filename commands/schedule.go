@@ -1,11 +1,8 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
-	"strings"
 	"time"
 )
 
@@ -16,18 +13,6 @@ type Schedule struct {
 	Unpause UnpauseSchedule `cmd:"" help:"Unpause a schedule"`
 }
 
-type scheduleResponse struct {
-	ID           string     `json:"id"`
-	PipelineID   string     `json:"pipeline_id"`
-	Name         string     `json:"name"`
-	ScheduleType string     `json:"schedule_type"`
-	ScheduleExpr string     `json:"schedule_expr"`
-	JobName      string     `json:"job_name"`
-	Enabled      bool       `json:"enabled"`
-	LastRunAt    *time.Time `json:"last_run_at,omitempty"`
-	NextRunAt    *time.Time `json:"next_run_at,omitempty"`
-}
-
 // ListSchedules lists all schedules for a pipeline.
 type ListSchedules struct {
 	ServerConfig
@@ -35,30 +20,16 @@ type ListSchedules struct {
 }
 
 func (c *ListSchedules) Run(_ *slog.Logger) error {
-	serverURL := strings.TrimSuffix(c.ServerURL, "/")
-	client, endpoint := setupAPIClient(serverURL, c.AuthToken, c.ConfigFile)
+	apiClient := c.NewClient()
 
-	pipeline, err := findPipelineByNameOrID(client, endpoint, serverURL, c.Name)
+	pipeline, err := apiClient.FindPipelineByNameOrID(c.Name)
 	if err != nil {
 		return err
 	}
 
-	resp, err := client.R().Get(endpoint + "/" + pipeline.ID + "/schedules")
+	schedules, err := apiClient.ListSchedules(pipeline.ID)
 	if err != nil {
-		return fmt.Errorf("could not list schedules: %w", err)
-	}
-
-	if err := checkAuthStatus(resp.StatusCode(), serverURL); err != nil {
 		return err
-	}
-
-	if resp.StatusCode() != http.StatusOK {
-		return fmt.Errorf("server returned %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	var schedules []scheduleResponse
-	if err := json.Unmarshal(resp.Body(), &schedules); err != nil {
-		return fmt.Errorf("could not parse response: %w", err)
 	}
 
 	if len(schedules) == 0 {
@@ -108,27 +79,16 @@ func (c *UnpauseSchedule) Run(logger *slog.Logger) error {
 }
 
 func setScheduleEnabled(cfg ServerConfig, pipelineName, scheduleName string, enabled bool, _ *slog.Logger) error {
-	serverURL := strings.TrimSuffix(cfg.ServerURL, "/")
-	client, endpoint := setupAPIClient(serverURL, cfg.AuthToken, cfg.ConfigFile)
+	apiClient := cfg.NewClient()
 
-	pipeline, err := findPipelineByNameOrID(client, endpoint, serverURL, pipelineName)
+	pipeline, err := apiClient.FindPipelineByNameOrID(pipelineName)
 	if err != nil {
 		return err
 	}
 
-	// First, list schedules to find the one by name
-	resp, err := client.R().Get(endpoint + "/" + pipeline.ID + "/schedules")
+	schedules, err := apiClient.ListSchedules(pipeline.ID)
 	if err != nil {
-		return fmt.Errorf("could not list schedules: %w", err)
-	}
-
-	if resp.StatusCode() != http.StatusOK {
-		return fmt.Errorf("server returned %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	var schedules []scheduleResponse
-	if err := json.Unmarshal(resp.Body(), &schedules); err != nil {
-		return fmt.Errorf("could not parse response: %w", err)
+		return err
 	}
 
 	var scheduleID string
@@ -145,19 +105,8 @@ func setScheduleEnabled(cfg ServerConfig, pipelineName, scheduleName string, ena
 		return fmt.Errorf("schedule %q not found for pipeline %q", scheduleName, pipeline.Name)
 	}
 
-	// Build schedule endpoint from server URL directly.
-	scheduleEndpoint := serverURL + "/api/schedules"
-
-	resp, err = client.R().
-		SetHeader("Content-Type", "application/json").
-		SetBody(map[string]bool{"enabled": enabled}).
-		Put(scheduleEndpoint + "/" + scheduleID + "/enabled")
-	if err != nil {
-		return fmt.Errorf("could not update schedule: %w", err)
-	}
-
-	if resp.StatusCode() != http.StatusOK {
-		return fmt.Errorf("server returned %d: %s", resp.StatusCode(), resp.String())
+	if err := apiClient.SetScheduleEnabled(scheduleID, enabled); err != nil {
+		return err
 	}
 
 	action := "paused"

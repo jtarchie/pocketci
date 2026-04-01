@@ -110,38 +110,3 @@ func ResolveAuthToken(explicitToken, configPath, serverURL string) string {
 
 	return ""
 }
-
-// authRequiredError returns a user-facing error when the server requires authentication.
-// checkAuthStatus returns an error for 401/403 status codes, nil otherwise.
-func checkAuthStatus(statusCode int, serverURL string) error {
-	switch statusCode {
-	case 401:
-		return authRequiredError(serverURL)
-	case 403:
-		return accessDeniedError(serverURL)
-	default:
-		return nil
-	}
-}
-
-func authRequiredError(serverURL string) error {
-	return fmt.Errorf(
-		"authentication required: server %s returned 401 Unauthorized\n\n"+
-			"Please log in first:\n"+
-			"  ci login -s %s\n\n"+
-			"Or provide a token directly:\n"+
-			"  export CI_AUTH_TOKEN=<token>",
-		serverURL, serverURL,
-	)
-}
-
-// accessDeniedError returns a user-friendly error when the user lacks permission.
-func accessDeniedError(serverURL string) error {
-	//nolint:staticcheck // ST1005: intentionally multi-line user-facing error with instructions
-	return fmt.Errorf(
-		"access denied: server %s returned 403 Forbidden\n\n"+
-			"Your account does not have permission for this operation.\n"+
-			"Contact your administrator for access.",
-		serverURL,
-	)
-}
