@@ -145,6 +145,8 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 		if failureErr := jr.processStep(sc, step.OnFailure, failurePrefix); failureErr != nil {
 			sc.Logger.Warn("step.on_failure.failed", "prefix", pathPrefix, "error", failureErr)
 		}
+
+		stepErr = nil
 	}
 
 	// Ensure hook always runs regardless of step success/failure.
