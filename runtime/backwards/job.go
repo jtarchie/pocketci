@@ -2,6 +2,7 @@ package backwards
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -54,13 +55,14 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	}
 
 	sc := &StepContext{
-		Ctx:         ctx,
-		Driver:      jr.driver,
-		Storage:     jr.storage,
-		Logger:      jr.logger,
-		RunID:       jr.runID,
-		JobName:     jr.job.Name,
-		MaxInFlight: jr.job.MaxInFlight,
+		Ctx:          ctx,
+		Driver:       jr.driver,
+		Storage:      jr.storage,
+		Logger:       jr.logger,
+		RunID:        jr.runID,
+		JobName:      jr.job.Name,
+		MaxInFlight:  jr.job.MaxInFlight,
+		CacheVolumes: make(map[string]string),
 	}
 	sc.ProcessStep = func(step *config.Step, pathPrefix string) error {
 		return jr.processStep(sc, step, pathPrefix)
@@ -80,20 +82,29 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 
 	planErr = jr.runJobHooks(sc, planErr)
 
-	if planErr != nil {
+	// Always validate job-level assertions, even after plan errors.
+	if assertErr := jr.validateAssertions(sc); assertErr != nil {
 		_ = jr.storage.Set(ctx, jobKey, storage.Payload{
 			"status": "failure",
 		})
 
-		return planErr
+		return assertErr
 	}
 
-	if err := jr.validateAssertions(sc); err != nil {
-		_ = jr.storage.Set(ctx, jobKey, storage.Payload{
-			"status": "failure",
-		})
+	// Step-level assertion errors always propagate — they are test correctness
+	// checks that should not be masked by passing job assertions.
+	// Task execution failures (non-zero exit, errored, aborted) are cleared when
+	// job assertions pass, since the execution order was expected.
+	if planErr != nil {
+		isStepAssertionErr := errors.Is(planErr, ErrAssertionFailed)
 
-		return err
+		if isStepAssertionErr || jr.job.Assert == nil {
+			_ = jr.storage.Set(ctx, jobKey, storage.Payload{
+				"status": "failure",
+			})
+
+			return planErr
+		}
 	}
 
 	err = jr.storage.Set(ctx, jobKey, storage.Payload{
@@ -157,6 +168,12 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 		return executeAcross(sc, step, pathPrefix, func(s *config.Step, prefix string) error {
 			return jr.processStep(sc, s, prefix)
 		})
+	}
+
+	// Handle attempts retry before normal step dispatch.
+	// Attempts strips hooks from the inner step and manages them after all retries.
+	if step.Attempts > 1 {
+		return jr.executeWithAttempts(sc, step, pathPrefix)
 	}
 
 	stepType := identifyStepType(step)

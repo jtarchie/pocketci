@@ -322,6 +322,84 @@ func TestEnsureStep(t *testing.T) {
 	}
 }
 
+func TestSkippedSteps(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "../../backwards/steps/skipped_steps.yml")
+
+			logger := discardLogger()
+
+			driver, err := df.new("test-skipped-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-skipped", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
+func TestCachesStep(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "../../backwards/steps/caches.yml")
+
+			logger := discardLogger()
+
+			driver, err := df.new("test-caches-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-caches", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
+func TestAttemptsStep(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "../../backwards/steps/attempts.yml")
+
+			logger := discardLogger()
+
+			driver, err := df.new("test-attempts-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-attempts", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
 func TestAcrossStep(t *testing.T) {
 	for _, df := range drivers {
 		t.Run(df.name, func(t *testing.T) {
@@ -399,7 +477,6 @@ func collectStepsWithAssertions(cfg *configpkg.Config) []stepLocation {
 // "assertion failed" errors.
 var skipJobMutate = map[string]bool{
 	"cross_run_passed.yml": true, // uses get steps with resources (unsupported)
-	"skipped_steps.yml":    true, // task failure propagates before assertion check
 }
 
 // skipStepMutate lists YAML files whose step-level assertions can't be

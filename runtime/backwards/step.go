@@ -30,6 +30,7 @@ type StepContext struct {
 	MaxInFlight     int
 	HadFailure      bool // true when a step failed, even if handled by a step-level hook
 	ProcessStep     func(step *config.Step, pathPrefix string) error
+	CacheVolumes    map[string]string // maps cache path → volume name, shared across tasks in a job
 }
 
 // BaseStorageKey returns the storage prefix for the current job.

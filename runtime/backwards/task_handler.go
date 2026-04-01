@@ -99,6 +99,7 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		Command: buildCommand(step.TaskConfig),
 		Env:     env,
 		Image:   resolveImage(step.TaskConfig),
+		Mounts:  resolveCaches(sc, step.TaskConfig),
 	}
 
 	execCtx := sc.Ctx
@@ -216,6 +217,47 @@ func buildCommand(cfg *config.TaskConfig) []string {
 	cmd = append(cmd, cfg.Run.Args...)
 
 	return cmd
+}
+
+// resolveCaches converts TaskConfig.Caches into orchestra.Mounts.
+// Volume names are stable per cache path within a job run, so multiple tasks
+// sharing the same cache path reuse the same volume.
+func resolveCaches(sc *StepContext, cfg *config.TaskConfig) orchestra.Mounts {
+	if cfg == nil || len(cfg.Caches) == 0 {
+		return nil
+	}
+
+	mounts := make(orchestra.Mounts, 0, len(cfg.Caches))
+
+	for _, cache := range cfg.Caches {
+		volName, ok := sc.CacheVolumes[cache.Path]
+		if !ok {
+			volName = fmt.Sprintf("cache-%s-%s", sc.RunID, sanitizeCachePath(cache.Path))
+			sc.CacheVolumes[cache.Path] = volName
+		}
+
+		mounts = append(mounts, orchestra.Mount{
+			Name: volName,
+			Path: cache.Path,
+		})
+	}
+
+	return mounts
+}
+
+// sanitizeCachePath converts a cache path to a safe volume name component.
+func sanitizeCachePath(path string) string {
+	var b strings.Builder
+
+	for _, r := range strings.ToLower(path) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+
+	return strings.Trim(b.String(), "-")
 }
 
 func waitForContainer(ctx context.Context, container orchestra.Container) (orchestra.ContainerStatus, error) {
