@@ -11,6 +11,18 @@ func isAbortError(err error) bool {
 	return errors.As(err, &abortErr)
 }
 
+// isErroredError reports whether err is a TaskErroredError.
+func isErroredError(err error) bool {
+	var erroredErr *TaskErroredError
+	return errors.As(err, &erroredErr)
+}
+
+// isFailedError reports whether err is a TaskFailedError.
+func isFailedError(err error) bool {
+	var failedErr *TaskFailedError
+	return errors.As(err, &failedErr)
+}
+
 // ErrAssertionFailed is the sentinel used by errors.Is to detect assertion failures.
 var ErrAssertionFailed = errors.New("assertion failed")
 
@@ -31,6 +43,20 @@ type TaskAbortedError struct {
 
 func (e *TaskAbortedError) Error() string {
 	return fmt.Sprintf("Task %s aborted", e.TaskName)
+}
+
+// TaskErroredError indicates a task encountered an infrastructure error.
+type TaskErroredError struct {
+	TaskName string
+	Err      error
+}
+
+func (e *TaskErroredError) Error() string {
+	return fmt.Sprintf("Task %s errored", e.TaskName)
+}
+
+func (e *TaskErroredError) Unwrap() error {
+	return e.Err
 }
 
 // AssertionError wraps ErrAssertionFailed with a descriptive message.

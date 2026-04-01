@@ -51,7 +51,7 @@ func (h *TaskHandler) Execute(sc *StepContext, step *config.Step, pathPrefix str
 
 	container, err := sc.Driver.RunContainer(sc.Ctx, task)
 	if err != nil {
-		return fmt.Errorf("run container for task %q: %w", taskName, err)
+		return &TaskErroredError{TaskName: taskName, Err: err}
 	}
 
 	defer func() { _ = container.Cleanup(sc.Ctx) }()
@@ -70,7 +70,7 @@ func (h *TaskHandler) Execute(sc *StepContext, step *config.Step, pathPrefix str
 			return &TaskAbortedError{TaskName: taskName}
 		}
 
-		return fmt.Errorf("wait for task %q: %w", taskName, err)
+		return &TaskErroredError{TaskName: taskName, Err: err}
 	}
 
 	exitCode := status.ExitCode()
