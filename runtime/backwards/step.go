@@ -31,6 +31,7 @@ type StepContext struct {
 	HadFailure      bool // true when a step failed, even if handled by a step-level hook
 	ProcessStep     func(step *config.Step, pathPrefix string) error
 	CacheVolumes    map[string]string // maps cache path → volume name, shared across tasks in a job
+	KnownVolumes    map[string]string // maps mount name → driver volume name, shared across tasks in a job
 }
 
 // BaseStorageKey returns the storage prefix for the current job.

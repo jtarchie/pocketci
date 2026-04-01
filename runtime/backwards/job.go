@@ -63,6 +63,7 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		JobName:      jr.job.Name,
 		MaxInFlight:  jr.job.MaxInFlight,
 		CacheVolumes: make(map[string]string),
+		KnownVolumes: make(map[string]string),
 	}
 	sc.ProcessStep = func(step *config.Step, pathPrefix string) error {
 		return jr.processStep(sc, step, pathPrefix)

@@ -426,6 +426,58 @@ func TestAcrossStep(t *testing.T) {
 	}
 }
 
+func TestTaskFileStep(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "../../backwards/steps/task_file.yml")
+
+			logger := discardLogger()
+
+			driver, err := df.new("test-task-file-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-task-file", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
+func TestTaskURIStep(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "../../backwards/steps/task_uri.yml")
+
+			logger := discardLogger()
+
+			driver, err := df.new("test-task-uri-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-task-uri", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
 type stepLocation struct {
 	jobIdx  int
 	stepIdx int
@@ -483,8 +535,6 @@ var skipJobMutate = map[string]bool{
 // mutation-tested through the Go-native runner.
 var skipStepMutate = map[string]bool{
 	"cross_run_passed.yml": true, // uses get steps with resources (unsupported)
-	"task_file.yml":        true, // uses outputs + file: task reference (unsupported)
-	"task_uri.yml":         true, // uses file:// URI task reference (unsupported)
 }
 
 func TestMutateJobAsserts(t *testing.T) {

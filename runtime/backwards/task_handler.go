@@ -1,16 +1,20 @@
 package backwards
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/goccy/go-yaml"
 	config "github.com/jtarchie/pocketci/backwards"
+	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/storage"
 )
@@ -29,7 +33,12 @@ func (h *TaskHandler) Execute(sc *StepContext, step *config.Step, pathPrefix str
 	sc.ExecutedTasks = append(sc.ExecutedTasks, taskName)
 	sc.ExecutedTasksMu.Unlock()
 
-	return h.runTask(sc, step, pathPrefix, taskName, step.TaskConfig.Env)
+	var env map[string]string
+	if step.TaskConfig != nil {
+		env = step.TaskConfig.Env
+	}
+
+	return h.runTask(sc, step, pathPrefix, taskName, env)
 }
 
 func (h *TaskHandler) executeParallel(sc *StepContext, step *config.Step, pathPrefix string) error {
@@ -82,6 +91,34 @@ func (h *TaskHandler) executeParallel(sc *StepContext, step *config.Step, pathPr
 
 // runTask executes a single container task with the given name and environment.
 func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, taskName string, env map[string]string) error {
+	// Load task config from file or URI if specified.
+	taskConfig := step.TaskConfig
+
+	if step.File != "" {
+		loaded, err := loadTaskConfigFromVolume(sc, step.File)
+		if err != nil {
+			return &TaskErroredError{TaskName: taskName, Err: err}
+		}
+
+		taskConfig = loaded
+	} else if step.URI != "" {
+		path, err := parseFileURI(step.URI)
+		if err != nil {
+			return &TaskErroredError{TaskName: taskName, Err: err}
+		}
+
+		loaded, err := loadTaskConfigFromVolume(sc, path)
+		if err != nil {
+			return &TaskErroredError{TaskName: taskName, Err: err}
+		}
+
+		taskConfig = loaded
+	}
+
+	if env == nil && taskConfig != nil {
+		env = taskConfig.Env
+	}
+
 	storageKey := fmt.Sprintf("%s/%s/tasks/%s", sc.BaseStorageKey(), pathPrefix, taskName)
 
 	startedAt := time.Now()
@@ -96,10 +133,10 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 
 	task := orchestra.Task{
 		ID:      fmt.Sprintf("%s-%s", sc.JobName, taskName),
-		Command: buildCommand(step.TaskConfig),
+		Command: buildCommand(taskConfig),
 		Env:     env,
-		Image:   resolveImage(step.TaskConfig),
-		Mounts:  resolveCaches(sc, step.TaskConfig),
+		Image:   resolveImage(taskConfig),
+		Mounts:  resolveMounts(sc, taskConfig),
 	}
 
 	execCtx := sc.Ctx
@@ -219,6 +256,70 @@ func buildCommand(cfg *config.TaskConfig) []string {
 	return cmd
 }
 
+// resolveMounts combines cache mounts and input/output mounts for a task.
+func resolveMounts(sc *StepContext, cfg *config.TaskConfig) orchestra.Mounts {
+	cacheMounts := resolveCaches(sc, cfg)
+	ioMounts := resolveInputsOutputs(sc, cfg)
+
+	if len(cacheMounts) == 0 {
+		return ioMounts
+	}
+
+	if len(ioMounts) == 0 {
+		return cacheMounts
+	}
+
+	mounts := make(orchestra.Mounts, 0, len(cacheMounts)+len(ioMounts))
+	mounts = append(mounts, cacheMounts...)
+	mounts = append(mounts, ioMounts...)
+
+	return mounts
+}
+
+// resolveInputsOutputs converts TaskConfig inputs and outputs into orchestra.Mounts.
+// Volume names are stable per mount name within a job run, so outputs from one
+// step become available as inputs to later steps.
+func resolveInputsOutputs(sc *StepContext, cfg *config.TaskConfig) orchestra.Mounts {
+	if cfg == nil {
+		return nil
+	}
+
+	totalMounts := len(cfg.Outputs) + len(cfg.Inputs)
+	if totalMounts == 0 {
+		return nil
+	}
+
+	mounts := make(orchestra.Mounts, 0, totalMounts)
+
+	for _, output := range cfg.Outputs {
+		volName, ok := sc.KnownVolumes[output.Name]
+		if !ok {
+			volName = fmt.Sprintf("vol-%s-%s", sc.RunID, output.Name)
+			sc.KnownVolumes[output.Name] = volName
+		}
+
+		mounts = append(mounts, orchestra.Mount{
+			Name: volName,
+			Path: output.Name,
+		})
+	}
+
+	for _, input := range cfg.Inputs {
+		volName, ok := sc.KnownVolumes[input.Name]
+		if !ok {
+			volName = fmt.Sprintf("vol-%s-%s", sc.RunID, input.Name)
+			sc.KnownVolumes[input.Name] = volName
+		}
+
+		mounts = append(mounts, orchestra.Mount{
+			Name: volName,
+			Path: input.Name,
+		})
+	}
+
+	return mounts
+}
+
 // resolveCaches converts TaskConfig.Caches into orchestra.Mounts.
 // Volume names are stable per cache path within a job run, so multiple tasks
 // sharing the same cache path reuse the same volume.
@@ -278,4 +379,85 @@ func waitForContainer(ctx context.Context, container orchestra.Container) (orche
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
+}
+
+// loadTaskConfigFromVolume reads a YAML task config from a volume.
+// The filePath format is "mount-name/relative/path/to/file.yml".
+func loadTaskConfigFromVolume(sc *StepContext, filePath string) (*config.TaskConfig, error) {
+	parts := strings.SplitN(filePath, "/", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid file path %q: expected mount-name/path", filePath)
+	}
+
+	mountName := parts[0]
+	relativePath := parts[1]
+
+	volName, ok := sc.KnownVolumes[mountName]
+	if !ok {
+		return nil, fmt.Errorf("volume %q not found in known volumes", mountName)
+	}
+
+	accessor, ok := sc.Driver.(cache.VolumeDataAccessor)
+	if !ok {
+		return nil, fmt.Errorf("driver %q does not support reading files from volumes", sc.Driver.Name())
+	}
+
+	tarReader, err := accessor.ReadFilesFromVolume(sc.Ctx, volName, relativePath)
+	if err != nil {
+		return nil, fmt.Errorf("reading file %q from volume %q: %w", relativePath, mountName, err)
+	}
+
+	defer tarReader.Close()
+
+	content, err := extractFileFromTar(tarReader, relativePath)
+	if err != nil {
+		return nil, fmt.Errorf("extracting file %q: %w", relativePath, err)
+	}
+
+	var taskConfig config.TaskConfig
+
+	if err := yaml.UnmarshalWithOptions(content, &taskConfig, yaml.Strict()); err != nil {
+		return nil, fmt.Errorf("parsing task config from %q: %w", filePath, err)
+	}
+
+	return &taskConfig, nil
+}
+
+// extractFileFromTar reads the first matching file from a tar archive.
+func extractFileFromTar(reader io.Reader, targetPath string) ([]byte, error) {
+	tr := tar.NewReader(reader)
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			return nil, fmt.Errorf("file %q not found in tar archive", targetPath)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("reading tar: %w", err)
+		}
+
+		if header.Name == targetPath || strings.TrimPrefix(header.Name, "./") == targetPath {
+			data, err := io.ReadAll(tr)
+			if err != nil {
+				return nil, fmt.Errorf("reading file content: %w", err)
+			}
+
+			return data, nil
+		}
+	}
+}
+
+// parseFileURI extracts the volume path from a file:// URI.
+func parseFileURI(uri string) (string, error) {
+	if !strings.HasPrefix(uri, "file://") {
+		return "", fmt.Errorf("unsupported URI scheme in %q; only file:// is supported", uri)
+	}
+
+	path := strings.TrimPrefix(uri, "file://")
+	if strings.Contains(path, "..") {
+		return "", fmt.Errorf("file:// URI must not contain \"..\" path segments: %q", uri)
+	}
+
+	return path, nil
 }
