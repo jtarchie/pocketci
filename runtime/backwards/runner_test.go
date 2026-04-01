@@ -119,6 +119,36 @@ func TestDoStep(t *testing.T) {
 	}
 }
 
+func TestOnAbortStep(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "../../backwards/steps/on_abort.yml")
+
+			var logs strings.Builder
+
+			logger := debugLogger(&logs)
+
+			driver, err := df.new("test-on-abort-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-on-abort", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(logs.String()).To(ContainSubstring("Task abort-task aborted"))
+			assert.Expect(logs.String()).To(ContainSubstring("on-abort-task"))
+		})
+	}
+}
+
 func TestOnSuccessStep(t *testing.T) {
 	for _, df := range drivers {
 		t.Run(df.name, func(t *testing.T) {

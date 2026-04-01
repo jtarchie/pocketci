@@ -115,13 +115,23 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 
 	stepErr := handler.Execute(sc, step, pathPrefix)
 
-	// on_success / on_failure hooks run before ensure.
-	if stepErr == nil && step.OnSuccess != nil {
+	// on_success / on_abort / on_failure hooks run before ensure.
+	switch {
+	case stepErr == nil && step.OnSuccess != nil:
 		successPrefix := fmt.Sprintf("%s/on_success", pathPrefix)
 		if successErr := jr.processStep(sc, step.OnSuccess, successPrefix); successErr != nil {
 			stepErr = successErr
 		}
-	} else if stepErr != nil && step.OnFailure != nil {
+	case isAbortError(stepErr) && step.OnAbort != nil:
+		sc.Logger.Debug(stepErr.Error())
+
+		abortPrefix := fmt.Sprintf("%s/on_abort", pathPrefix)
+		if abortErr := jr.processStep(sc, step.OnAbort, abortPrefix); abortErr != nil {
+			sc.Logger.Warn("step.on_abort.failed", "prefix", pathPrefix, "error", abortErr)
+		}
+
+		stepErr = nil
+	case stepErr != nil && step.OnFailure != nil:
 		failurePrefix := fmt.Sprintf("%s/on_failure", pathPrefix)
 		if failureErr := jr.processStep(sc, step.OnFailure, failurePrefix); failureErr != nil {
 			sc.Logger.Warn("step.on_failure.failed", "prefix", pathPrefix, "error", failureErr)

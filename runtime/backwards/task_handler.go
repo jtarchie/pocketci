@@ -2,6 +2,8 @@ package backwards
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -38,6 +40,15 @@ func (h *TaskHandler) Execute(sc *StepContext, step *config.Step, pathPrefix str
 		Image:   resolveImage(step.TaskConfig),
 	}
 
+	// Use a timeout context if configured.
+	execCtx := sc.Ctx
+	if step.Timeout > 0 {
+		var cancel context.CancelFunc
+		execCtx, cancel = context.WithTimeout(sc.Ctx, step.Timeout)
+
+		defer cancel()
+	}
+
 	container, err := sc.Driver.RunContainer(sc.Ctx, task)
 	if err != nil {
 		return fmt.Errorf("run container for task %q: %w", taskName, err)
@@ -45,8 +56,20 @@ func (h *TaskHandler) Execute(sc *StepContext, step *config.Step, pathPrefix str
 
 	defer func() { _ = container.Cleanup(sc.Ctx) }()
 
-	status, err := waitForContainer(sc, container)
+	status, err := waitForContainer(execCtx, container)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			elapsed := time.Since(startedAt)
+
+			_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+				"status":     "abort",
+				"started_at": startedAt.Format(time.RFC3339),
+				"elapsed":    elapsed.String(),
+			})
+
+			return &TaskAbortedError{TaskName: taskName}
+		}
+
 		return fmt.Errorf("wait for task %q: %w", taskName, err)
 	}
 
@@ -118,13 +141,13 @@ func buildCommand(cfg *config.TaskConfig) []string {
 	return cmd
 }
 
-func waitForContainer(sc *StepContext, container orchestra.Container) (orchestra.ContainerStatus, error) {
+func waitForContainer(ctx context.Context, container orchestra.Container) (orchestra.ContainerStatus, error) {
 	for {
 		select {
-		case <-sc.Ctx.Done():
-			return nil, fmt.Errorf("context cancelled: %w", sc.Ctx.Err())
+		case <-ctx.Done():
+			return nil, fmt.Errorf("context cancelled: %w", ctx.Err())
 		default:
-			status, err := container.Status(sc.Ctx)
+			status, err := container.Status(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("container status: %w", err)
 			}
