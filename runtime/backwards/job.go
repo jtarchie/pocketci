@@ -152,6 +152,13 @@ func (jr *JobRunner) runJobHooks(sc *StepContext, planErr error) error {
 }
 
 func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix string) error {
+	// Handle across expansion before normal step dispatch.
+	if len(step.Across) > 0 {
+		return executeAcross(sc, step, pathPrefix, func(s *config.Step, prefix string) error {
+			return jr.processStep(sc, s, prefix)
+		})
+	}
+
 	stepType := identifyStepType(step)
 	if stepType == "" {
 		return fmt.Errorf("unknown step type in job %q at prefix %q", jr.job.Name, pathPrefix)

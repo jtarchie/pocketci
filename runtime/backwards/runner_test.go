@@ -322,6 +322,32 @@ func TestEnsureStep(t *testing.T) {
 	}
 }
 
+func TestAcrossStep(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "../../backwards/steps/across.yml")
+
+			logger := discardLogger()
+
+			driver, err := df.new("test-across-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-across", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
 type stepLocation struct {
 	jobIdx  int
 	stepIdx int
@@ -382,7 +408,6 @@ var skipStepMutate = map[string]bool{
 	"cross_run_passed.yml": true, // uses get steps with resources (unsupported)
 	"task_file.yml":        true, // uses outputs + file: task reference (unsupported)
 	"task_uri.yml":         true, // uses file:// URI task reference (unsupported)
-	"across.yml":           true, // across variable injection not fully supported
 }
 
 func TestMutateJobAsserts(t *testing.T) {
