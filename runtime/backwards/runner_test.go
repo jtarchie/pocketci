@@ -119,6 +119,35 @@ func TestDoStep(t *testing.T) {
 	}
 }
 
+func TestOnSuccessStep(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "../../backwards/steps/on_success.yml")
+
+			var logs strings.Builder
+
+			logger := debugLogger(&logs)
+
+			driver, err := df.new("test-on-success-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-on-success", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(logs.String()).To(ContainSubstring("on-success-task"))
+		})
+	}
+}
+
 func TestEnsureStep(t *testing.T) {
 	for _, df := range drivers {
 		t.Run(df.name, func(t *testing.T) {
