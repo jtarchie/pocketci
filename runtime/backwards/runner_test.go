@@ -118,3 +118,33 @@ func TestDoStep(t *testing.T) {
 		})
 	}
 }
+
+func TestEnsureStep(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "../../backwards/steps/ensure.yml")
+
+			var logs strings.Builder
+
+			logger := debugLogger(&logs)
+
+			driver, err := df.new("test-ensure-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-ensure", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(logs.String()).To(ContainSubstring("ensure-task"))
+			assert.Expect(logs.String()).To(ContainSubstring("step.ensure.failed"))
+		})
+	}
+}
