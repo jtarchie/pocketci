@@ -29,107 +29,7 @@ func (h *TaskHandler) Execute(sc *StepContext, step *config.Step, pathPrefix str
 	sc.ExecutedTasks = append(sc.ExecutedTasks, taskName)
 	sc.ExecutedTasksMu.Unlock()
 
-	storageKey := fmt.Sprintf("%s/%s/tasks/%s", sc.BaseStorageKey(), pathPrefix, taskName)
-
-	startedAt := time.Now()
-
-	err := sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
-		"status":     "pending",
-		"started_at": startedAt.Format(time.RFC3339),
-	})
-	if err != nil {
-		return fmt.Errorf("storage set pending: %w", err)
-	}
-
-	command := buildCommand(step.TaskConfig)
-
-	task := orchestra.Task{
-		ID:      fmt.Sprintf("%s-%s", sc.JobName, taskName),
-		Command: command,
-		Env:     step.TaskConfig.Env,
-		Image:   resolveImage(step.TaskConfig),
-	}
-
-	// Use a timeout context if configured.
-	execCtx := sc.Ctx
-	if step.Timeout > 0 {
-		var cancel context.CancelFunc
-		execCtx, cancel = context.WithTimeout(sc.Ctx, step.Timeout)
-
-		defer cancel()
-	}
-
-	container, err := sc.Driver.RunContainer(sc.Ctx, task)
-	if err != nil {
-		return &TaskErroredError{TaskName: taskName, Err: err}
-	}
-
-	defer func() { _ = container.Cleanup(sc.Ctx) }()
-
-	status, err := waitForContainer(execCtx, container)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			elapsed := time.Since(startedAt)
-
-			_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
-				"status":     "abort",
-				"started_at": startedAt.Format(time.RFC3339),
-				"elapsed":    elapsed.String(),
-			})
-
-			return &TaskAbortedError{TaskName: taskName}
-		}
-
-		return &TaskErroredError{TaskName: taskName, Err: err}
-	}
-
-	exitCode := status.ExitCode()
-	elapsed := time.Since(startedAt)
-
-	var stdout bytes.Buffer
-
-	err = container.Logs(sc.Ctx, &stdout, &stdout, false)
-	if err != nil {
-		sc.Logger.Error("task.logs.error", "task", taskName, "err", err)
-	}
-
-	resultStatus := "success"
-	if exitCode != 0 {
-		resultStatus = "failure"
-		sc.Logger.Debug("task.failed", "task", taskName, "code", exitCode)
-	}
-
-	err = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
-		"status":     resultStatus,
-		"code":       exitCode,
-		"started_at": startedAt.Format(time.RFC3339),
-		"elapsed":    elapsed.String(),
-	})
-	if err != nil {
-		return fmt.Errorf("storage set result: %w", err)
-	}
-
-	if step.Assert != nil && step.Assert.Code != nil {
-		if exitCode != *step.Assert.Code {
-			return &AssertionError{
-				Message: fmt.Sprintf("task %q: expected exit code %d, got %d", taskName, *step.Assert.Code, exitCode),
-			}
-		}
-	}
-
-	if step.Assert != nil && step.Assert.Stdout != "" {
-		if !strings.Contains(stdout.String(), step.Assert.Stdout) {
-			return &AssertionError{
-				Message: fmt.Sprintf("task %q: stdout does not contain %q", taskName, step.Assert.Stdout),
-			}
-		}
-	}
-
-	if exitCode != 0 {
-		return &TaskFailedError{TaskName: taskName, Code: exitCode}
-	}
-
-	return nil
+	return h.runTask(sc, step, pathPrefix, taskName, step.TaskConfig.Env)
 }
 
 func (h *TaskHandler) executeParallel(sc *StepContext, step *config.Step, pathPrefix string) error {
@@ -161,7 +61,12 @@ func (h *TaskHandler) executeParallel(sc *StepContext, step *config.Step, pathPr
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			err := h.runIndexedTask(sc, step, pathPrefix, index, count)
+			indexedName := fmt.Sprintf("%s-%d", step.Task, index)
+			env := cloneEnv(step.TaskConfig.Env)
+			env["CI_TASK_INDEX"] = strconv.Itoa(index)
+			env["CI_TASK_COUNT"] = strconv.Itoa(count)
+
+			err := h.runTask(sc, step, pathPrefix, indexedName, env)
 			if err != nil {
 				mu.Lock()
 				firstErr = higherPriorityError(firstErr, err)
@@ -175,13 +80,8 @@ func (h *TaskHandler) executeParallel(sc *StepContext, step *config.Step, pathPr
 	return firstErr
 }
 
-func (h *TaskHandler) runIndexedTask(sc *StepContext, step *config.Step, pathPrefix string, index, count int) error {
-	taskName := fmt.Sprintf("%s-%d", step.Task, index)
-
-	env := cloneEnv(step.TaskConfig.Env)
-	env["CI_TASK_INDEX"] = strconv.Itoa(index)
-	env["CI_TASK_COUNT"] = strconv.Itoa(count)
-
+// runTask executes a single container task with the given name and environment.
+func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, taskName string, env map[string]string) error {
 	storageKey := fmt.Sprintf("%s/%s/tasks/%s", sc.BaseStorageKey(), pathPrefix, taskName)
 
 	startedAt := time.Now()
@@ -194,11 +94,9 @@ func (h *TaskHandler) runIndexedTask(sc *StepContext, step *config.Step, pathPre
 		return fmt.Errorf("storage set pending: %w", err)
 	}
 
-	command := buildCommand(step.TaskConfig)
-
 	task := orchestra.Task{
 		ID:      fmt.Sprintf("%s-%s", sc.JobName, taskName),
-		Command: command,
+		Command: buildCommand(step.TaskConfig),
 		Env:     env,
 		Image:   resolveImage(step.TaskConfig),
 	}
