@@ -17,7 +17,10 @@ type TaskHandler struct{}
 
 func (h *TaskHandler) Execute(sc *StepContext, step *config.Step, pathPrefix string) error {
 	taskName := step.Task
+
+	sc.ExecutedTasksMu.Lock()
 	sc.ExecutedTasks = append(sc.ExecutedTasks, taskName)
+	sc.ExecutedTasksMu.Unlock()
 
 	storageKey := fmt.Sprintf("%s/%s/tasks/%s", sc.BaseStorageKey(), pathPrefix, taskName)
 

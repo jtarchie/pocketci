@@ -35,9 +35,10 @@ func newJobRunner(
 		logger:  logger,
 		runID:   runID,
 		handlers: map[string]StepHandler{
-			"task": &TaskHandler{},
-			"try":  &TryHandler{},
-			"do":   &DoHandler{},
+			"task":        &TaskHandler{},
+			"try":         &TryHandler{},
+			"do":          &DoHandler{},
+			"in_parallel": &InParallelHandler{},
 		},
 	}
 }
@@ -53,12 +54,13 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	}
 
 	sc := &StepContext{
-		Ctx:     ctx,
-		Driver:  jr.driver,
-		Storage: jr.storage,
-		Logger:  jr.logger,
-		RunID:   jr.runID,
-		JobName: jr.job.Name,
+		Ctx:         ctx,
+		Driver:      jr.driver,
+		Storage:     jr.storage,
+		Logger:      jr.logger,
+		RunID:       jr.runID,
+		JobName:     jr.job.Name,
+		MaxInFlight: jr.job.MaxInFlight,
 	}
 	sc.ProcessStep = func(step *config.Step, pathPrefix string) error {
 		return jr.processStep(sc, step, pathPrefix)
@@ -75,6 +77,8 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 			break
 		}
 	}
+
+	planErr = jr.runJobHooks(sc, planErr)
 
 	if planErr != nil {
 		_ = jr.storage.Set(ctx, jobKey, storage.Payload{
@@ -102,6 +106,51 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	return nil
 }
 
+// runJobHooks runs job-level hooks (on_failure, on_abort, on_error, on_success, ensure)
+// and returns the remaining planErr (nil if a hook handled it).
+func (jr *JobRunner) runJobHooks(sc *StepContext, planErr error) error {
+	jobFailed := planErr != nil || sc.HadFailure
+
+	if jobFailed {
+		switch {
+		case isAbortError(planErr) && jr.job.OnAbort != nil:
+			sc.Logger.Debug(planErr.Error())
+
+			if abortErr := jr.processStep(sc, jr.job.OnAbort, "job/on_abort"); abortErr != nil {
+				sc.Logger.Warn("job.on_abort.failed", "job", jr.job.Name, "error", abortErr)
+			}
+
+			planErr = nil
+		case isErroredError(planErr) && jr.job.OnError != nil:
+			sc.Logger.Debug(planErr.Error())
+
+			if errorErr := jr.processStep(sc, jr.job.OnError, "job/on_error"); errorErr != nil {
+				sc.Logger.Warn("job.on_error.failed", "job", jr.job.Name, "error", errorErr)
+			}
+
+			planErr = nil
+		case (isFailedError(planErr) || planErr == nil) && jr.job.OnFailure != nil:
+			if failureErr := jr.processStep(sc, jr.job.OnFailure, "job/on_failure"); failureErr != nil {
+				sc.Logger.Warn("job.on_failure.failed", "job", jr.job.Name, "error", failureErr)
+			}
+
+			planErr = nil
+		}
+
+		if jr.job.Ensure != nil {
+			if ensureErr := jr.processStep(sc, jr.job.Ensure, "job/ensure"); ensureErr != nil {
+				sc.Logger.Warn("job.ensure.failed", "job", jr.job.Name, "error", ensureErr)
+			}
+		}
+	} else if jr.job.OnSuccess != nil {
+		if successErr := jr.processStep(sc, jr.job.OnSuccess, "job/on_success"); successErr != nil {
+			sc.Logger.Warn("job.on_success.failed", "job", jr.job.Name, "error", successErr)
+		}
+	}
+
+	return planErr
+}
+
 func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix string) error {
 	stepType := identifyStepType(step)
 	if stepType == "" {
@@ -124,6 +173,7 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 		}
 	case isAbortError(stepErr) && step.OnAbort != nil:
 		sc.Logger.Debug(stepErr.Error())
+		sc.HadFailure = true
 
 		abortPrefix := fmt.Sprintf("%s/on_abort", pathPrefix)
 		if abortErr := jr.processStep(sc, step.OnAbort, abortPrefix); abortErr != nil {
@@ -133,6 +183,7 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 		stepErr = nil
 	case isErroredError(stepErr) && step.OnError != nil:
 		sc.Logger.Debug(stepErr.Error())
+		sc.HadFailure = true
 
 		errorPrefix := fmt.Sprintf("%s/on_error", pathPrefix)
 		if errorErr := jr.processStep(sc, step.OnError, errorPrefix); errorErr != nil {
@@ -141,6 +192,8 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 
 		stepErr = nil
 	case isFailedError(stepErr) && step.OnFailure != nil:
+		sc.HadFailure = true
+
 		failurePrefix := fmt.Sprintf("%s/on_failure", pathPrefix)
 		if failureErr := jr.processStep(sc, step.OnFailure, failurePrefix); failureErr != nil {
 			sc.Logger.Warn("step.on_failure.failed", "prefix", pathPrefix, "error", failureErr)
@@ -168,12 +221,18 @@ func identifyStepType(step *config.Step) string {
 		return "try"
 	case len(step.Do) > 0:
 		return "do"
+	case len(step.InParallel.Steps) > 0:
+		return "in_parallel"
 	default:
 		return ""
 	}
 }
 
 func (jr *JobRunner) validateAssertions(sc *StepContext) error {
+	if jr.job.Assert == nil {
+		return nil
+	}
+
 	return validateExecution(fmt.Sprintf("job %q", jr.job.Name), jr.job.Assert.Execution, sc.ExecutedTasks)
 }
 

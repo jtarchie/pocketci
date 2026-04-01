@@ -238,6 +238,32 @@ func TestOnSuccessStep(t *testing.T) {
 	}
 }
 
+func TestInParallelStep(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "../../backwards/steps/in_parallel.yml")
+
+			logger := discardLogger()
+
+			driver, err := df.new("test-in-parallel-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-in-parallel", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
 func TestEnsureStep(t *testing.T) {
 	for _, df := range drivers {
 		t.Run(df.name, func(t *testing.T) {

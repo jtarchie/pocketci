@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync"
 
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
@@ -18,14 +19,17 @@ type StepHandler interface {
 
 // StepContext carries shared state through step execution.
 type StepContext struct {
-	Ctx           context.Context
-	Driver        orchestra.Driver
-	Storage       storage.Driver
-	Logger        *slog.Logger
-	RunID         string
-	JobName       string
-	ExecutedTasks []string
-	ProcessStep   func(step *config.Step, pathPrefix string) error
+	Ctx             context.Context
+	Driver          orchestra.Driver
+	Storage         storage.Driver
+	Logger          *slog.Logger
+	RunID           string
+	JobName         string
+	ExecutedTasks   []string
+	ExecutedTasksMu sync.Mutex
+	MaxInFlight     int
+	HadFailure      bool // true when a step failed, even if handled by a step-level hook
+	ProcessStep     func(step *config.Step, pathPrefix string) error
 }
 
 // BaseStorageKey returns the storage prefix for the current job.
