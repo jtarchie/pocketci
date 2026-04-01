@@ -61,29 +61,6 @@ func (r *Runner) Run(ctx context.Context) error {
 }
 
 func (r *Runner) validateAssertions(executedJobs []string) error {
-	if r.config.Assert.Execution == nil {
-		return nil
-	}
-
-	expected := r.config.Assert.Execution
-	got := executedJobs
-
-	if len(expected) != len(got) {
-		return &AssertionError{
-			Message: fmt.Sprintf("pipeline execution: expected %s, got %s",
-				formatList(expected), formatList(got)),
-		}
-	}
-
-	for i := range expected {
-		if expected[i] != got[i] {
-			return &AssertionError{
-				Message: fmt.Sprintf("pipeline execution[%d]: expected %q, got %q",
-					i, expected[i], got[i]),
-			}
-		}
-	}
-
-	return nil
+	return validateExecution("pipeline", r.config.Assert.Execution, executedJobs)
 }
 

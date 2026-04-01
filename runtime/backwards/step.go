@@ -42,6 +42,32 @@ func statusFromErr(err error) string {
 	return "success"
 }
 
+// validateExecution compares expected vs actual execution order and returns an
+// AssertionError if they differ. The label identifies the scope (e.g. "pipeline", "job \"name\"").
+func validateExecution(label string, expected, got []string) error {
+	if expected == nil {
+		return nil
+	}
+
+	if len(expected) != len(got) {
+		return &AssertionError{
+			Message: fmt.Sprintf("%s execution: expected %s, got %s",
+				label, formatList(expected), formatList(got)),
+		}
+	}
+
+	for i := range expected {
+		if expected[i] != got[i] {
+			return &AssertionError{
+				Message: fmt.Sprintf("%s execution[%d]: expected %q, got %q",
+					label, i, expected[i], got[i]),
+			}
+		}
+	}
+
+	return nil
+}
+
 // zeroPadWithLength zero-pads num based on the number of digits in (length-1).
 func zeroPadWithLength(num, length int) string {
 	if length <= 1 {

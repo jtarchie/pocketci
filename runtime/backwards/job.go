@@ -140,30 +140,7 @@ func identifyStepType(step *config.Step) string {
 }
 
 func (jr *JobRunner) validateAssertions(sc *StepContext) error {
-	if jr.job.Assert.Execution == nil {
-		return nil
-	}
-
-	expected := jr.job.Assert.Execution
-	got := sc.ExecutedTasks
-
-	if len(expected) != len(got) {
-		return &AssertionError{
-			Message: fmt.Sprintf("job %q execution: expected %s, got %s",
-				jr.job.Name, formatList(expected), formatList(got)),
-		}
-	}
-
-	for i := range expected {
-		if expected[i] != got[i] {
-			return &AssertionError{
-				Message: fmt.Sprintf("job %q execution[%d]: expected %q, got %q",
-					jr.job.Name, i, expected[i], got[i]),
-			}
-		}
-	}
-
-	return nil
+	return validateExecution(fmt.Sprintf("job %q", jr.job.Name), jr.job.Assert.Execution, sc.ExecutedTasks)
 }
 
 func formatList(items []string) string {
