@@ -5,6 +5,19 @@ assert:
 jobs:
   - name: error-job
     plan:
+      - task: error-entry
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: sh
+            args: ["-c", "echo error-entry"]
+        assert:
+          code: 0
+          stdout: "error-entry"
       - task: erroring-task
         config:
           platform: linux
@@ -30,5 +43,6 @@ jobs:
             code: 0
     assert:
       execution:
+        - "error-entry"
         - "erroring-task"
         - "on-erroring-task"

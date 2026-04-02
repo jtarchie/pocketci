@@ -5,6 +5,19 @@ assert:
 jobs:
   - name: abort-job
     plan:
+      - task: abort-entry
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: sh
+            args: ["-c", "echo abort-entry"]
+        assert:
+          code: 0
+          stdout: "abort-entry"
       - task: abort-task
         config:
           platform: linux
@@ -32,5 +45,6 @@ jobs:
             code: 0
     assert:
       execution:
+        - "abort-entry"
         - "abort-task"
         - "on-abort-task"

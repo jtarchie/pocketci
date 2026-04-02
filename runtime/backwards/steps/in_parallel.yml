@@ -11,6 +11,19 @@ jobs:
   # No job-level execution assert since parallel task ordering is non-deterministic.
   - name: test-in-parallel-limit
     plan:
+      - task: limit-entry
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: sh
+            args: ["-c", "echo entry"]
+        assert:
+          code: 0
+          stdout: "entry"
       - in_parallel:
           limit: 2
           steps:

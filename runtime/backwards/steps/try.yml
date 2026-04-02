@@ -5,6 +5,19 @@ assert:
 jobs:
   - name: success-job
     plan:
+      - task: try-entry
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: sh
+            args: ["-c", "echo try-entry"]
+        assert:
+          code: 0
+          stdout: "try-entry"
       - try:
           - task: try-task
             config:
@@ -20,4 +33,5 @@ jobs:
               code: 1
     assert:
       execution:
+        - "try-entry"
         - "try-task"

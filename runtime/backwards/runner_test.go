@@ -554,15 +554,6 @@ func collectStepsWithAssertions(cfg *configpkg.Config) []stepLocation {
 	return result
 }
 
-// skipJobMutate lists YAML files that fail before reaching assertion validation
-// in the Go-native runner, so mutating their job asserts doesn't produce
-// "assertion failed" errors.
-var skipJobMutate = map[string]bool{}
-
-// skipStepMutate lists YAML files whose step-level assertions can't be
-// mutation-tested through the Go-native runner.
-var skipStepMutate = map[string]bool{}
-
 func TestMutateJobAsserts(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
@@ -574,10 +565,6 @@ func TestMutateJobAsserts(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			for _, match := range matches {
 				t.Run(filepath.Base(match), func(t *testing.T) {
-					if skipJobMutate[filepath.Base(match)] {
-						t.Skip("not supported by Go-native runner")
-					}
-
 					assert := NewGomegaWithT(t)
 
 					cfg := loadConfig(t, match)
@@ -618,17 +605,9 @@ func TestMutateStepAsserts(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			for _, match := range matches {
 				t.Run(filepath.Base(match), func(t *testing.T) {
-					if skipStepMutate[filepath.Base(match)] {
-						t.Skip("not supported by Go-native runner")
-					}
-
 					cfg := loadConfig(t, match)
 					locations := collectStepsWithAssertions(cfg)
-
-					if len(locations) == 0 {
-						t.Skip("No step-level assertions found")
-						return
-					}
+					assert.Expect(locations).NotTo(BeEmpty(), "every step YAML must have at least one step-level assertion")
 
 					for _, loc := range locations {
 						t.Run(loc.name, func(t *testing.T) {
