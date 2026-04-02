@@ -34,6 +34,7 @@ type StepContext struct {
 	KnownVolumes    map[string]string // maps mount name → driver volume name, shared across tasks in a job
 	Resources       config.Resources
 	ResourceTypes   config.ResourceTypes
+	JobParams       map[string]string // webhook trigger params, injected as base env into task steps
 }
 
 // BaseStorageKey returns the storage prefix for the current job.

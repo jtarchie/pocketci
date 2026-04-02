@@ -35,7 +35,7 @@ func (h *TaskHandler) Execute(sc *StepContext, step *config.Step, pathPrefix str
 
 	var env map[string]string
 	if step.TaskConfig != nil {
-		env = step.TaskConfig.Env
+		env = mergeJobParams(sc.JobParams, step.TaskConfig.Env)
 	}
 
 	return h.runTask(sc, step, pathPrefix, taskName, env)
@@ -71,7 +71,7 @@ func (h *TaskHandler) executeParallel(sc *StepContext, step *config.Step, pathPr
 			defer func() { <-sem }()
 
 			indexedName := fmt.Sprintf("%s-%d", step.Task, index)
-			env := cloneEnv(step.TaskConfig.Env)
+			env := cloneEnv(mergeJobParams(sc.JobParams, step.TaskConfig.Env))
 			env["CI_TASK_INDEX"] = strconv.Itoa(index)
 			env["CI_TASK_COUNT"] = strconv.Itoa(count)
 
@@ -116,7 +116,7 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 	}
 
 	if env == nil && taskConfig != nil {
-		env = taskConfig.Env
+		env = mergeJobParams(sc.JobParams, taskConfig.Env)
 	}
 
 	storageKey := fmt.Sprintf("%s/%s/tasks/%s", sc.BaseStorageKey(), pathPrefix, taskName)
@@ -226,6 +226,25 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 	}
 
 	return nil
+}
+
+// mergeJobParams returns a new env map with jobParams as the base layer
+// and stepEnv as the override layer. Step env takes precedence.
+func mergeJobParams(jobParams, stepEnv map[string]string) map[string]string {
+	if len(jobParams) == 0 {
+		return stepEnv
+	}
+
+	merged := make(map[string]string, len(jobParams)+len(stepEnv))
+	for k, v := range jobParams {
+		merged[k] = v
+	}
+
+	for k, v := range stepEnv {
+		merged[k] = v // step env overrides job params
+	}
+
+	return merged
 }
 
 func cloneEnv(original map[string]string) map[string]string {

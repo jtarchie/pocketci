@@ -74,6 +74,7 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		KnownVolumes:  make(map[string]string),
 		Resources:     jr.resources,
 		ResourceTypes: jr.resourceTypes,
+		JobParams:     extractJobParams(jr.job),
 	}
 	sc.ProcessStep = func(step *config.Step, pathPrefix string) error {
 		return jr.processStep(sc, step, pathPrefix)
@@ -273,6 +274,14 @@ func (jr *JobRunner) validateAssertions(sc *StepContext) error {
 	}
 
 	return validateExecution(fmt.Sprintf("job %q", jr.job.Name), jr.job.Assert.Execution, sc.ExecutedTasks)
+}
+
+func extractJobParams(job *config.Job) map[string]string {
+	if job.Triggers == nil || job.Triggers.Webhook == nil {
+		return nil
+	}
+
+	return job.Triggers.Webhook.Params
 }
 
 func formatList(items []string) string {

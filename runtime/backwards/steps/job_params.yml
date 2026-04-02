@@ -1,0 +1,115 @@
+assert:
+  execution:
+    - "test-job-params-basic"
+    - "test-job-params-override"
+    - "test-job-params-in-do"
+
+jobs:
+  # Test 1: Basic job params injection as env vars
+  - name: test-job-params-basic
+    triggers:
+      webhook:
+        params:
+          DEPLOY_ENV: "staging"
+          VERSION: "1.2.3"
+    plan:
+      - task: check-params
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                echo "DEPLOY_ENV=$DEPLOY_ENV VERSION=$VERSION"
+                if [ "$DEPLOY_ENV" != "staging" ]; then
+                  echo "ERROR: DEPLOY_ENV not set"
+                  exit 1
+                fi
+                if [ "$VERSION" != "1.2.3" ]; then
+                  echo "ERROR: VERSION not set"
+                  exit 1
+                fi
+        assert:
+          code: 0
+          stdout: "DEPLOY_ENV=staging"
+
+    assert:
+      execution:
+        - "check-params"
+
+  # Test 2: Step env overrides job params
+  - name: test-job-params-override
+    triggers:
+      webhook:
+        params:
+          DEPLOY_ENV: "staging"
+          EXTRA: "from-params"
+    plan:
+      - task: check-override
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          env:
+            DEPLOY_ENV: "production"
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                echo "DEPLOY_ENV=$DEPLOY_ENV EXTRA=$EXTRA"
+                if [ "$DEPLOY_ENV" != "production" ]; then
+                  echo "ERROR: step env should override job params"
+                  exit 1
+                fi
+                if [ "$EXTRA" != "from-params" ]; then
+                  echo "ERROR: non-overridden param should still be present"
+                  exit 1
+                fi
+        assert:
+          code: 0
+          stdout: "DEPLOY_ENV=production"
+
+    assert:
+      execution:
+        - "check-override"
+
+  # Test 3: Job params injected into task inside do block
+  - name: test-job-params-in-do
+    triggers:
+      webhook:
+        params:
+          BUILD_NUM: "42"
+    plan:
+      - do:
+          - task: nested-check
+            config:
+              platform: linux
+              image_resource:
+                type: registry-image
+                source:
+                  repository: busybox
+              run:
+                path: sh
+                args:
+                  - -c
+                  - |
+                    echo "BUILD_NUM=$BUILD_NUM"
+                    if [ "$BUILD_NUM" != "42" ]; then
+                      echo "ERROR: BUILD_NUM not injected into do step"
+                      exit 1
+                    fi
+            assert:
+              code: 0
+              stdout: "BUILD_NUM=42"
+
+    assert:
+      execution:
+        - "nested-check"
