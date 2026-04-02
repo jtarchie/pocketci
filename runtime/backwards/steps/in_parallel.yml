@@ -1,0 +1,137 @@
+assert:
+  execution:
+    - test-in-parallel-limit
+    - test-in-parallel-fail-fast
+    - test-in-parallel-fail-slow
+    - test-in-parallel-ensure
+    - test-in-parallel-max-in-flight-precedence
+
+jobs:
+  # Test 1: Basic limit enforcement - 3 tasks with limit: 2, all succeed.
+  # No job-level execution assert since parallel task ordering is non-deterministic.
+  - name: test-in-parallel-limit
+    plan:
+      - in_parallel:
+          limit: 2
+          steps:
+            - task: limit-a
+              config: &success
+                platform: linux
+                image_resource:
+                  type: registry-image
+                  source:
+                    repository: busybox
+                run:
+                  path: sh
+                  args: ["-c", "echo done"]
+            - task: limit-b
+              config: *success
+            - task: limit-c
+              config: *success
+
+  # Test 2: fail_fast: true stops launching new tasks after first failure.
+  # limit: 1 makes execution sequential for deterministic assert.execution.
+  - name: test-in-parallel-fail-fast
+    plan:
+      - in_parallel:
+          limit: 1
+          fail_fast: true
+          steps:
+            - task: ff-fail-first
+              config: &failure
+                platform: linux
+                image_resource:
+                  type: registry-image
+                  source:
+                    repository: busybox
+                run:
+                  path: sh
+                  args: ["-c", "exit 1"]
+            - task: ff-should-skip
+              config: *success
+        on_failure:
+          task: ff-block-handler
+          config: *success
+    on_failure:
+      task: ff-job-handler
+      config: *success
+    assert:
+      execution:
+        - ff-fail-first
+        - ff-block-handler
+        - ff-job-handler
+
+  # Test 3: fail_fast: false - all tasks run even when one fails.
+  # limit: 1 for deterministic ordering; on_failure fires on block and job.
+  - name: test-in-parallel-fail-slow
+    plan:
+      - in_parallel:
+          limit: 1
+          fail_fast: false
+          steps:
+            - task: fs-first
+              config: *success
+            - task: fs-fail
+              config: *failure
+            - task: fs-third
+              config: *success
+        on_failure:
+          task: fs-block-handler
+          config: *success
+    on_failure:
+      task: fs-job-handler
+      config: *success
+    assert:
+      execution:
+        - fs-first
+        - fs-fail
+        - fs-third
+        - fs-block-handler
+        - fs-job-handler
+
+  # Test 4: ensure hook always fires even when in_parallel fails.
+  - name: test-in-parallel-ensure
+    plan:
+      - in_parallel:
+          steps:
+            - task: ensure-fail
+              config: *failure
+        ensure:
+          task: ensure-cleanup
+          config: *success
+    on_failure:
+      task: ensure-job-handler
+      config: *success
+    assert:
+      execution:
+        - ensure-fail
+        - ensure-cleanup
+        - ensure-job-handler
+
+  # Test 5: job max_in_flight takes precedence over in_parallel limit.
+  # max_in_flight: 1 overrides limit: 5 → only one task starts at a time.
+  # With fail_fast: true, only the first (failing) task ever runs.
+  - name: test-in-parallel-max-in-flight-precedence
+    max_in_flight: 1
+    plan:
+      - in_parallel:
+          limit: 5
+          fail_fast: true
+          steps:
+            - task: mif-first-fail
+              config: *failure
+            - task: mif-would-skip
+              config: *success
+            - task: mif-would-also-skip
+              config: *success
+        on_failure:
+          task: mif-block-handler
+          config: *success
+    on_failure:
+      task: mif-job-handler
+      config: *success
+    assert:
+      execution:
+        - mif-first-fail
+        - mif-block-handler
+        - mif-job-handler

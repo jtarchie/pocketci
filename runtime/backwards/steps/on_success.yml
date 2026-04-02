@@ -1,0 +1,37 @@
+assert:
+  execution:
+    - "success-job"
+
+jobs:
+  - name: success-job
+    plan:
+      - task: success-task
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: sh
+            args: ["-c", "echo success-task && exit 0"]
+        assert:
+          code: 0
+        on_success:
+          task: on-success-task
+          config:
+            platform: linux
+            image_resource:
+              type: registry-image
+              source:
+                repository: busybox
+            run:
+              path: sh
+              args: ["-c", "echo 'on-success-task'"]
+          assert:
+            stdout: "on-success-task"
+            code: 0
+    assert:
+      execution:
+        - "success-task"
+        - "on-success-task"

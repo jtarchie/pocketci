@@ -1,0 +1,46 @@
+---
+# Test file for cache step behavior in backwards compatibility
+
+assert:
+  execution:
+    - cache-test
+
+jobs:
+  - name: cache-test
+    plan:
+      - task: write-cache
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: busybox }
+          caches:
+            - path: cache
+          run:
+            path: sh
+            args:
+              - -c
+              - echo "cached" > ./cache/data.txt && cat ./cache/data.txt
+        assert:
+          stdout: cached
+          code: 0
+
+      - task: read-cache
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: busybox }
+          caches:
+            - path: cache
+          run:
+            path: cat
+            args:
+              - ./cache/data.txt
+        assert:
+          stdout: cached
+          code: 0
+    assert:
+      execution:
+        - write-cache
+        - read-cache

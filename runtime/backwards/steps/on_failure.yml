@@ -1,0 +1,37 @@
+assert:
+  execution:
+    - "failing-job"
+
+jobs:
+  - name: failing-job
+    plan:
+      - task: failing-task
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: sh
+            args: ["-c", "echo failing-task && exit 1"]
+        assert:
+          code: 1
+        on_failure:
+          task: on-failure-task
+          config:
+            platform: linux
+            image_resource:
+              type: registry-image
+              source:
+                repository: busybox
+            run:
+              path: sh
+              args: ["-c", "echo 'on-failure-task'"]
+          assert:
+            stdout: "on-failure-task"
+            code: 0
+    assert:
+      execution:
+        - "failing-task"
+        - "on-failure-task"

@@ -71,7 +71,7 @@ func TestTryStep(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/try.yml")
+			cfg := loadConfig(t, "steps/try.yml")
 
 			logger := discardLogger()
 
@@ -97,7 +97,7 @@ func TestDoStep(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/do.yml")
+			cfg := loadConfig(t, "steps/do.yml")
 
 			var logs strings.Builder
 
@@ -126,7 +126,7 @@ func TestOnFailureStep(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/on_failure.yml")
+			cfg := loadConfig(t, "steps/on_failure.yml")
 
 			var logs strings.Builder
 
@@ -156,7 +156,7 @@ func TestOnErrorStep(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/on_error.yml")
+			cfg := loadConfig(t, "steps/on_error.yml")
 
 			var logs strings.Builder
 
@@ -186,7 +186,7 @@ func TestOnAbortStep(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/on_abort.yml")
+			cfg := loadConfig(t, "steps/on_abort.yml")
 
 			var logs strings.Builder
 
@@ -216,7 +216,7 @@ func TestOnSuccessStep(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/on_success.yml")
+			cfg := loadConfig(t, "steps/on_success.yml")
 
 			var logs strings.Builder
 
@@ -245,7 +245,7 @@ func TestInParallelStep(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/in_parallel.yml")
+			cfg := loadConfig(t, "steps/in_parallel.yml")
 
 			logger := discardLogger()
 
@@ -271,7 +271,7 @@ func TestParallelismStep(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/parallelism.yml")
+			cfg := loadConfig(t, "steps/parallelism.yml")
 
 			logger := discardLogger()
 
@@ -297,7 +297,7 @@ func TestEnsureStep(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/ensure.yml")
+			cfg := loadConfig(t, "steps/ensure.yml")
 
 			var logs strings.Builder
 
@@ -327,7 +327,7 @@ func TestSkippedSteps(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/skipped_steps.yml")
+			cfg := loadConfig(t, "steps/skipped_steps.yml")
 
 			logger := discardLogger()
 
@@ -353,7 +353,7 @@ func TestCachesStep(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/caches.yml")
+			cfg := loadConfig(t, "steps/caches.yml")
 
 			logger := discardLogger()
 
@@ -379,7 +379,7 @@ func TestAttemptsStep(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/attempts.yml")
+			cfg := loadConfig(t, "steps/attempts.yml")
 
 			logger := discardLogger()
 
@@ -405,7 +405,7 @@ func TestAcrossStep(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/across.yml")
+			cfg := loadConfig(t, "steps/across.yml")
 
 			logger := discardLogger()
 
@@ -431,7 +431,7 @@ func TestTaskFileStep(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/task_file.yml")
+			cfg := loadConfig(t, "steps/task_file.yml")
 
 			logger := discardLogger()
 
@@ -457,7 +457,7 @@ func TestTaskURIStep(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/task_uri.yml")
+			cfg := loadConfig(t, "steps/task_uri.yml")
 
 			logger := discardLogger()
 
@@ -487,7 +487,7 @@ func TestStderrAssertionStep(t *testing.T) {
 
 			assert := NewGomegaWithT(t)
 
-			cfg := loadConfig(t, "../../backwards/steps/stderr.yml")
+			cfg := loadConfig(t, "steps/stderr.yml")
 
 			logger := discardLogger()
 
@@ -566,7 +566,7 @@ var skipStepMutate = map[string]bool{}
 func TestMutateJobAsserts(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
-	matches, err := filepath.Glob("../../backwards/steps/*.yml")
+	matches, err := filepath.Glob("steps/*.yml")
 	assert.Expect(err).NotTo(HaveOccurred())
 	assert.Expect(matches).NotTo(BeEmpty())
 
@@ -610,7 +610,7 @@ func TestMutateJobAsserts(t *testing.T) {
 func TestMutateStepAsserts(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
-	matches, err := filepath.Glob("../../backwards/steps/*.yml")
+	matches, err := filepath.Glob("steps/*.yml")
 	assert.Expect(err).NotTo(HaveOccurred())
 	assert.Expect(matches).NotTo(BeEmpty())
 
@@ -676,7 +676,7 @@ func TestCrossRunPassed(t *testing.T) {
 			t.Run("within-run cascade", func(t *testing.T) {
 				assert := NewGomegaWithT(t)
 
-				cfg := loadConfig(t, "../../backwards/steps/cross_run_passed.yml")
+				cfg := loadConfig(t, "steps/cross_run_passed.yml")
 				logger := discardLogger()
 
 				driver, err := df.new("test-cross-run-"+df.name, logger)
@@ -700,7 +700,7 @@ func TestCrossRunPassed(t *testing.T) {
 				storagePath := filepath.Join(t.TempDir(), "cross-run.db")
 				logger := discardLogger()
 
-				cfg := loadConfig(t, "../../backwards/steps/cross_run_passed.yml")
+				cfg := loadConfig(t, "steps/cross_run_passed.yml")
 
 				driver, err := df.new("test-cross-run2-"+df.name, logger)
 				assert.Expect(err).NotTo(HaveOccurred())
@@ -747,7 +747,7 @@ func TestCrossRunPassed(t *testing.T) {
 				storagePath := filepath.Join(t.TempDir(), "blocked.db")
 				logger := discardLogger()
 
-				cfg := loadConfig(t, "../../backwards/steps/cross_run_passed.yml")
+				cfg := loadConfig(t, "steps/cross_run_passed.yml")
 
 				driver, err := df.new("test-cross-run3-"+df.name, logger)
 				assert.Expect(err).NotTo(HaveOccurred())

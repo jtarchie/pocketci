@@ -1,0 +1,36 @@
+assert:
+  execution:
+    - "abort-job"
+
+jobs:
+  - name: abort-job
+    plan:
+      - task: abort-task
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: sh
+            args: ["-c", "sleep 10"]
+        timeout: 1ms # this forces the abort
+        on_abort:
+          task: on-abort-task
+          config:
+            platform: linux
+            image_resource:
+              type: registry-image
+              source:
+                repository: busybox
+            run:
+              path: sh
+              args: ["-c", "echo 'on-abort-task'"]
+          assert:
+            stdout: "on-abort-task"
+            code: 0
+    assert:
+      execution:
+        - "abort-task"
+        - "on-abort-task"

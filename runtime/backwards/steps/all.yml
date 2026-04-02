@@ -1,0 +1,300 @@
+assert:
+  execution:
+    - test-job
+    - test-job-hooks
+    - test-job-failure-hooks
+    - test-job-error-hooks
+    - test-job-abort-hooks
+
+jobs:
+  - name: test-job
+    plan:
+      - task: task-1
+        config: &success
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: busybox
+              tag: latest
+          run:
+            path: sh
+            args: ["-c", "echo 'hello world'"]
+        assert:
+          stdout: hello world
+          code: 0
+      - in_parallel:
+          steps:
+            - task: parallel-task-2
+              config: *success
+            - task: parallel-task-3
+              config: *success
+      - do:
+          - task: do-task-1
+            config: *success
+          - task: do-task-2
+            config: *success
+        on_success:
+          task: success-do-task
+          config: *success
+        ensure:
+          task: ensure-do-task
+          config: *success
+      - try: #on_failure
+          - task: try-fail-task-1
+            config: *success
+          - task: try-fail-task-2
+            config: *success
+          - do:
+              - task: do-fail-task
+                config: &failure
+                  platform: linux
+                  image_resource:
+                    type: docker-image
+                    source:
+                      repository: busybox
+                      tag: latest
+                  run:
+                    path: sh
+                    args: ["-c", "exit 1"]
+            on_failure:
+              task: failure-do-fail-task
+              config: *success
+            on_success: # should never be called
+              task: success-do-fail-task
+              config: *success
+            ensure:
+              task: ensure-do-fail-task
+              config: *success
+        on_failure:
+          task: failure-try-fail-task
+          config: *success
+        on_error: # should never be called
+          task: error-try-fail-task
+          config: *success
+        on_success: # should never be called
+          task: success-try-fail-task
+          config: *success
+        ensure:
+          task: ensure-try-fail-task
+          config: *success
+      - try: #on_error
+          - task: try-error-task-1
+            config: *success
+          - task: try-error-task-2
+            config: *success
+          - do:
+              - task: do-error-task
+                config: &failure
+                  platform: linux
+                  image_resource:
+                    type: docker-image
+                    source:
+                      repository: busybox
+                      tag: latest
+                  run:
+                    path: this-doesnt-exist-please-no-image
+            on_failure: # should never be called
+              task: failure-do-error-task
+              config: *success
+            on_error:
+              task: error-do-error-task
+              config: *success
+            on_success: # should never be called
+              task: success-do-error-task
+              config: *success
+            ensure:
+              task: ensure-do-error-task
+              config: *success
+        on_failure: # should never be called
+          task: failure-try-error-task
+          config: *success
+        on_error:
+          task: error-try-error-task
+          config: *success
+        on_success: #should never be called
+          task: success-try-error-task
+          config: *success
+        ensure:
+          task: ensure-try-error-task
+          config: *success
+      - try: #on_abort
+          - task: try-abort-task-1
+            config: *success
+          - task: try-abort-task-2
+            config: *success
+          - do:
+              - task: do-abort-task
+                timeout: 1ms
+                config:
+                  platform: linux
+                  image_resource:
+                    type: docker-image
+                    source:
+                      repository: busybox
+                      tag: latest
+                  run:
+                    path: sh
+                    args: ["-c", "sleep 10"]
+            on_failure: # should never be called
+              task: failure-do-abort-task
+              config: *success
+            on_error: # should never be called
+              task: error-do-abort-task
+              config: *success
+            on_abort:
+              task: abort-do-abort-task
+              config: *success
+            on_success: # should never be called
+              task: success-do-abort-task
+              config: *success
+            ensure:
+              task: ensure-do-abort-task
+              config: *success
+        on_failure: # should never be called
+          task: failure-try-abort-task
+          config: *success
+        on_error: # should never be called
+          task: error-try-abort-task
+          config: *success
+        on_abort:
+          task: abort-try-abort-task
+          config: *success
+        on_success: # should never be called
+          task: success-try-abort-task
+          config: *success
+        ensure:
+          task: ensure-try-abort-task
+          config: *success
+    assert:
+      # this is the expected order of the tasks to run in
+      # ensuring some tasks don't actually run
+      execution:
+        - "task-1"
+        - "parallel-task-2"
+        - "parallel-task-3"
+        - "do-task-1"
+        - "do-task-2"
+        - "success-do-task"
+        - "ensure-do-task"
+        - "try-fail-task-1"
+        - "try-fail-task-2"
+        - "do-fail-task"
+        - "failure-do-fail-task"
+        - "ensure-do-fail-task"
+        - "failure-try-fail-task"
+        - "ensure-try-fail-task"
+        - "try-error-task-1"
+        - "try-error-task-2"
+        - "do-error-task"
+        - "error-do-error-task"
+        - "ensure-do-error-task"
+        - "error-try-error-task"
+        - "ensure-try-error-task"
+        - "try-abort-task-1"
+        - "try-abort-task-2"
+        - "do-abort-task"
+        - "abort-do-abort-task"
+        - "ensure-do-abort-task"
+        - "abort-try-abort-task"
+        - "ensure-try-abort-task"
+
+  - name: test-job-hooks
+    plan:
+      - task: successful-task
+        config: &success
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: busybox
+              tag: latest
+          run:
+            path: sh
+            args: ["-c", "exit 0"]
+    on_success:
+      task: job-success-hook
+      config: *success
+    ensure:
+      task: job-ensure-hook
+      config: *success
+    assert:
+      execution:
+        - "successful-task"
+        - "job-success-hook"
+        - "job-ensure-hook"
+
+  - name: test-job-failure-hooks
+    plan:
+      - task: failing-task
+        config: &failure
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: busybox
+              tag: latest
+          run:
+            path: sh
+            args: ["-c", "exit 1"]
+    on_failure:
+      task: job-failure-hook
+      config: *success
+    ensure:
+      task: job-ensure-hook
+      config: *success
+    assert:
+      execution:
+        - "failing-task"
+        - "job-failure-hook"
+        - "job-ensure-hook"
+
+  - name: test-job-error-hooks
+    plan:
+      - task: error-task
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: busybox
+              tag: latest
+          run:
+            path: command-that-does-not-exist
+    on_error:
+      task: job-error-hook
+      config: *success
+    ensure:
+      task: job-ensure-hook
+      config: *success
+    assert:
+      execution:
+        - "error-task"
+        - "job-error-hook"
+        - "job-ensure-hook"
+
+  - name: test-job-abort-hooks
+    plan:
+      - task: abort-task
+        timeout: 1ms
+        config:
+          platform: linux
+          image_resource:
+            type: docker-image
+            source:
+              repository: busybox
+              tag: latest
+          run:
+            path: sh
+            args: ["-c", "sleep 10"]
+    on_abort:
+      task: job-abort-hook
+      config: *success
+    ensure:
+      task: job-ensure-hook
+      config: *success
+    assert:
+      execution:
+        - "abort-task"
+        - "job-abort-hook"
+        - "job-ensure-hook"
