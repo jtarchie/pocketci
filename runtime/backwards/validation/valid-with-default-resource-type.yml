@@ -1,0 +1,28 @@
+---
+# This pipeline should pass validation because 'git' resource type is defined
+resource_types:
+  - name: git-resource
+    type: registry-image
+    source:
+      repository: concourse/git-resource
+
+resources:
+  - name: my-repo
+    type: git-resource
+    source:
+      uri: https://github.com/example/repo.git
+
+jobs:
+  - name: test-job
+    plan:
+      - get: my-repo
+      - task: test-task
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: echo
+            args: ["hello"]

@@ -508,6 +508,33 @@ func TestStderrAssertionStep(t *testing.T) {
 	}
 }
 
+func TestValidateResourceTypes(t *testing.T) {
+	t.Run("undefined resource type", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		cfg := loadConfig(t, "validation/undefined-resource-type.yml")
+		err := backwards.ValidateConfig(cfg)
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("resource type"))
+	})
+
+	t.Run("valid with resource type", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		cfg := loadConfig(t, "validation/valid-with-resource-type.yml")
+		err := backwards.ValidateConfig(cfg)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("valid with default resource type", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		cfg := loadConfig(t, "validation/valid-with-default-resource-type.yml")
+		err := backwards.ValidateConfig(cfg)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+}
+
 type stepLocation struct {
 	jobIdx  int
 	stepIdx int

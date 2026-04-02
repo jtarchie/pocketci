@@ -1,0 +1,23 @@
+---
+# This pipeline should fail validation because it uses a resource type
+# 'custom-resource' that is not defined in resource_types
+resources:
+  - name: my-repo
+    type: custom-resource
+    source:
+      uri: https://github.com/example/repo.git
+
+jobs:
+  - name: test-job
+    plan:
+      - get: my-repo
+      - task: test-task
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: echo
+            args: ["hello"]

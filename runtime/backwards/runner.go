@@ -10,6 +10,24 @@ import (
 	"github.com/jtarchie/pocketci/storage"
 )
 
+// ValidateConfig checks that every resource references a defined resource type.
+// The "registry-image" type is built-in and always available.
+func ValidateConfig(cfg *config.Config) error {
+	validTypes := map[string]bool{"registry-image": true}
+
+	for _, rt := range cfg.ResourceTypes {
+		validTypes[rt.Name] = true
+	}
+
+	for _, resource := range cfg.Resources {
+		if !validTypes[resource.Type] {
+			return fmt.Errorf("resource %q has undefined resource type %q", resource.Name, resource.Type)
+		}
+	}
+
+	return nil
+}
+
 // Runner executes a parsed pipeline Config using Go-native execution.
 type Runner struct {
 	config  *config.Config
