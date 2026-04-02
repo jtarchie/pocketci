@@ -158,6 +158,10 @@ type Step struct {
 	// marshal/unmarshal round-trips.
 	Params map[string]string `yaml:"params,omitempty"`
 
+	Notify  any    `yaml:"notify,omitempty"`  // string or []string — notification config name(s)
+	Message string `yaml:"message,omitempty"` // Go template message with Sprig functions
+	Async   bool   `yaml:"async,omitempty"`   // fire-and-forget mode
+
 	Do        Steps `yaml:"do,omitempty"`
 	Ensure    *Step `yaml:"ensure,omitempty"`
 	OnAbort   *Step `yaml:"on_abort,omitempty"`
@@ -180,6 +184,33 @@ type Step struct {
 }
 
 type Steps []Step
+
+// NotifyNames returns the notification config names as a string slice.
+// Handles both single-string and list-of-strings YAML representations.
+func (s *Step) NotifyNames() []string {
+	switch v := s.Notify.(type) {
+	case string:
+		if v == "" {
+			return nil
+		}
+
+		return []string{v}
+	case []any:
+		names := make([]string, 0, len(v))
+
+		for _, item := range v {
+			if str, ok := item.(string); ok {
+				names = append(names, str)
+			}
+		}
+
+		return names
+	case []string:
+		return v
+	default:
+		return nil
+	}
+}
 
 // WebhookTriggerConfig holds the filter expression and optional parameter
 // extraction map for webhook-based job triggers.

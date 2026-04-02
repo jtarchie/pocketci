@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/goccy/go-yaml"
 	configpkg "github.com/jtarchie/pocketci/backwards"
@@ -19,6 +21,7 @@ import (
 	"github.com/jtarchie/pocketci/orchestra/native"
 	_ "github.com/jtarchie/pocketci/resources/mock"
 	backwards "github.com/jtarchie/pocketci/runtime/backwards"
+	"github.com/jtarchie/pocketci/runtime/jsapi"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
 )
@@ -1288,4 +1291,370 @@ func TestTaskURIFileSchemeStorageTracking(t *testing.T) {
 			assert.Expect(payload["volume"]).To(Equal("task-output"))
 		})
 	}
+}
+
+func TestNotifyStepSingle(t *testing.T) {
+	t.Parallel()
+
+	assert := NewGomegaWithT(t)
+
+	var mu sync.Mutex
+
+	var received int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		received++
+		mu.Unlock()
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger := discardLogger()
+	notifier := jsapi.NewNotifier(logger)
+	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
+		"test-webhook": {Type: "http", URL: server.URL},
+	})
+	notifier.SetContext(jsapi.NotifyContext{
+		PipelineName: "test-pipeline",
+		Status:       "pending",
+	})
+
+	store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-notify-single", logger)
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	defer func() { _ = store.Close() }()
+
+	cfg := &configpkg.Config{
+		Jobs: []configpkg.Job{{
+			Name: "notify-job",
+			Plan: configpkg.Steps{{
+				Notify:  "test-webhook",
+				Message: "Build completed",
+			}},
+		}},
+	}
+
+	runner := backwards.New(cfg, nil, store, logger, "test-run", notifier)
+	err = runner.Run(context.Background())
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	assert.Expect(received).To(Equal(1))
+
+	payload, err := store.Get(context.Background(), "/pipeline/test-run/jobs/notify-job/0/notify/test-webhook")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(payload["status"]).To(Equal("success"))
+}
+
+func TestNotifyStepMultiple(t *testing.T) {
+	t.Parallel()
+
+	assert := NewGomegaWithT(t)
+
+	var mu sync.Mutex
+
+	var received int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		received++
+		mu.Unlock()
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger := discardLogger()
+	notifier := jsapi.NewNotifier(logger)
+	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
+		"webhook-1": {Type: "http", URL: server.URL + "/hook1"},
+		"webhook-2": {Type: "http", URL: server.URL + "/hook2"},
+	})
+	notifier.SetContext(jsapi.NotifyContext{
+		PipelineName: "test-pipeline",
+		Status:       "pending",
+	})
+
+	store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-notify-multi", logger)
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	defer func() { _ = store.Close() }()
+
+	cfg := &configpkg.Config{
+		Jobs: []configpkg.Job{{
+			Name: "notify-job",
+			Plan: configpkg.Steps{{
+				Notify:  []any{"webhook-1", "webhook-2"},
+				Message: "Deploy done",
+			}},
+		}},
+	}
+
+	runner := backwards.New(cfg, nil, store, logger, "test-run", notifier)
+	err = runner.Run(context.Background())
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	assert.Expect(received).To(Equal(2))
+
+	payload, err := store.Get(context.Background(), "/pipeline/test-run/jobs/notify-job/0/notify/webhook-1-webhook-2")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(payload["status"]).To(Equal("success"))
+}
+
+func TestNotifyStepFailure(t *testing.T) {
+	t.Parallel()
+
+	assert := NewGomegaWithT(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	logger := discardLogger()
+	notifier := jsapi.NewNotifier(logger)
+	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
+		"failing-webhook": {Type: "http", URL: server.URL},
+	})
+	notifier.SetContext(jsapi.NotifyContext{
+		PipelineName: "test-pipeline",
+		Status:       "pending",
+	})
+
+	store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-notify-fail", logger)
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	defer func() { _ = store.Close() }()
+
+	cfg := &configpkg.Config{
+		Jobs: []configpkg.Job{{
+			Name: "notify-job",
+			Plan: configpkg.Steps{{
+				Notify:  "failing-webhook",
+				Message: "This should fail",
+			}},
+		}},
+	}
+
+	runner := backwards.New(cfg, nil, store, logger, "test-run", notifier)
+	err = runner.Run(context.Background())
+	assert.Expect(err).To(HaveOccurred())
+
+	payload, err := store.Get(context.Background(), "/pipeline/test-run/jobs/notify-job/0/notify/failing-webhook")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(payload["status"]).To(Equal("failure"))
+}
+
+func TestNotifyStepAsync(t *testing.T) {
+	t.Parallel()
+
+	assert := NewGomegaWithT(t)
+
+	var mu sync.Mutex
+
+	var received int
+
+	done := make(chan struct{}, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		received++
+		mu.Unlock()
+
+		select {
+		case done <- struct{}{}:
+		default:
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger := discardLogger()
+	notifier := jsapi.NewNotifier(logger)
+	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
+		"async-webhook": {Type: "http", URL: server.URL},
+	})
+	notifier.SetContext(jsapi.NotifyContext{
+		PipelineName: "test-pipeline",
+		Status:       "pending",
+	})
+
+	store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-notify-async", logger)
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	defer func() { _ = store.Close() }()
+
+	cfg := &configpkg.Config{
+		Jobs: []configpkg.Job{{
+			Name: "notify-job",
+			Plan: configpkg.Steps{{
+				Notify:  "async-webhook",
+				Message: "Async notification",
+				Async:   true,
+			}},
+		}},
+	}
+
+	runner := backwards.New(cfg, nil, store, logger, "test-run", notifier)
+	err = runner.Run(context.Background())
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	// Storage should be success immediately (async doesn't block).
+	payload, err := store.Get(context.Background(), "/pipeline/test-run/jobs/notify-job/0/notify/async-webhook")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(payload["status"]).To(Equal("success"))
+
+	// Wait for the async goroutine to complete.
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for async notification")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	assert.Expect(received).To(Equal(1))
+}
+
+func TestNotifyStepNilNotifier(t *testing.T) {
+	t.Parallel()
+
+	assert := NewGomegaWithT(t)
+
+	logger := discardLogger()
+
+	store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-notify-nil", logger)
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	defer func() { _ = store.Close() }()
+
+	cfg := &configpkg.Config{
+		Jobs: []configpkg.Job{{
+			Name: "notify-job",
+			Plan: configpkg.Steps{{
+				Notify:  "some-webhook",
+				Message: "Should fail",
+			}},
+		}},
+	}
+
+	// Pass nil notifier.
+	runner := backwards.New(cfg, nil, store, logger, "test-run", nil)
+	err = runner.Run(context.Background())
+	assert.Expect(err).To(HaveOccurred())
+
+	payload, err := store.Get(context.Background(), "/pipeline/test-run/jobs/notify-job/0/notify/some-webhook")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(payload["status"]).To(Equal("failure"))
+}
+
+func TestNotifyYAMLParsing(t *testing.T) {
+	t.Parallel()
+
+	assert := NewGomegaWithT(t)
+
+	// Single string form.
+	singleYAML := []byte(`notify: slack-channel
+message: "Build done"
+async: false`)
+
+	var step configpkg.Step
+
+	err := yaml.UnmarshalWithOptions(singleYAML, &step, yaml.Strict())
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(step.NotifyNames()).To(Equal([]string{"slack-channel"}))
+	assert.Expect(step.Message).To(Equal("Build done"))
+	assert.Expect(step.Async).To(BeFalse())
+
+	// List of strings form.
+	multiYAML := []byte(`notify:
+  - slack-channel
+  - teams-webhook
+message: "Build done"`)
+
+	var step2 configpkg.Step
+
+	err = yaml.UnmarshalWithOptions(multiYAML, &step2, yaml.Strict())
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(step2.NotifyNames()).To(Equal([]string{"slack-channel", "teams-webhook"}))
+	assert.Expect(step2.Message).To(Equal("Build done"))
+}
+
+func TestNotifyStepIntegration(t *testing.T) {
+	t.Parallel()
+
+	assert := NewGomegaWithT(t)
+
+	var mu sync.Mutex
+
+	var received int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		received++
+		mu.Unlock()
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	logger := discardLogger()
+
+	store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-notify-int", logger)
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	defer func() { _ = store.Close() }()
+
+	notifier := jsapi.NewNotifier(logger)
+	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
+		"hook-1": {Type: "http", URL: server.URL + "/hook1"},
+		"hook-2": {Type: "http", URL: server.URL + "/hook2"},
+	})
+	notifier.SetContext(jsapi.NotifyContext{
+		PipelineName: "integration-pipeline",
+		Status:       "pending",
+	})
+
+	cfg := &configpkg.Config{
+		Jobs: []configpkg.Job{{
+			Name: "notify-multi-step",
+			Plan: configpkg.Steps{
+				{
+					Notify:  "hook-1",
+					Message: "First notification",
+				},
+				{
+					Notify:  "hook-2",
+					Message: "Second notification",
+				},
+			},
+		}},
+	}
+
+	runner := backwards.New(cfg, nil, store, logger, "test-run", notifier)
+	err = runner.Run(context.Background())
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	assert.Expect(received).To(Equal(2))
+
+	// Verify both steps recorded success in storage.
+	payload, err := store.Get(context.Background(), "/pipeline/test-run/jobs/notify-multi-step/0/notify/hook-1")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(payload["status"]).To(Equal("success"))
+
+	payload, err = store.Get(context.Background(), "/pipeline/test-run/jobs/notify-multi-step/1/notify/hook-2")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(payload["status"]).To(Equal("success"))
 }

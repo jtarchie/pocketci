@@ -55,6 +55,7 @@ func newJobRunner(
 			"try":         &TryHandler{},
 			"do":          &DoHandler{},
 			"in_parallel": &InParallelHandler{},
+		"notify":      &NotifyHandler{},
 		},
 	}
 }
@@ -297,6 +298,8 @@ func identifyStepType(step *config.Step) string {
 		return "get"
 	case step.Put != "":
 		return "put"
+	case step.Notify != nil:
+		return "notify"
 	case len(step.Try) > 0:
 		return "try"
 	case len(step.Do) > 0:
@@ -324,6 +327,8 @@ func stepStorageIdentifier(step *config.Step) string {
 		return "get/" + step.Get
 	case step.Put != "":
 		return "put/" + step.Put
+	case step.Notify != nil:
+		return "notify/" + notifyIdentifier(step)
 	case len(step.Do) > 0:
 		return "do"
 	case len(step.Try) > 0:
