@@ -174,9 +174,9 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 	exitCode := status.ExitCode()
 	elapsed := time.Since(startedAt)
 
-	var stdout bytes.Buffer
+	var stdout, stderr bytes.Buffer
 
-	err = container.Logs(sc.Ctx, &stdout, &stdout, false)
+	err = container.Logs(sc.Ctx, &stdout, &stderr, false)
 	if err != nil {
 		sc.Logger.Error("task.logs.error", "task", taskName, "err", err)
 	}
@@ -209,6 +209,14 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		if !strings.Contains(stdout.String(), step.Assert.Stdout) {
 			return &AssertionError{
 				Message: fmt.Sprintf("task %q: stdout does not contain %q", taskName, step.Assert.Stdout),
+			}
+		}
+	}
+
+	if step.Assert != nil && step.Assert.Stderr != "" {
+		if !strings.Contains(stderr.String(), step.Assert.Stderr) {
+			return &AssertionError{
+				Message: fmt.Sprintf("task %q: stderr does not contain %q", taskName, step.Assert.Stderr),
 			}
 		}
 	}

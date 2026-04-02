@@ -478,6 +478,36 @@ func TestTaskURIStep(t *testing.T) {
 	}
 }
 
+func TestStderrAssertionStep(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			if df.name == "native" {
+				t.Skip("native driver does not separate stderr from stdout")
+			}
+
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "../../backwards/steps/stderr.yml")
+
+			logger := discardLogger()
+
+			driver, err := df.new("test-stderr-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-stderr", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
 type stepLocation struct {
 	jobIdx  int
 	stepIdx int
