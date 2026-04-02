@@ -38,10 +38,7 @@ func (h *PutHandler) Execute(sc *StepContext, step *config.Step, pathPrefix stri
 
 	isNative := sc.Driver.Name() == "native" && resources.IsNative(resource.Type)
 
-	var params map[string]string
-	if step.PutConfig != nil {
-		params = step.PutConfig.Params
-	}
+	params := step.Params
 
 	// Phase 1: Push (out).
 	var version map[string]string

@@ -848,31 +848,32 @@ func TestGetMockEvery(t *testing.T) {
 }
 
 func TestPutBasic(t *testing.T) {
-	// This test uses the native mock resource which auto-generates versions
-	// without params. The concourse/mock-resource Docker image requires
-	// params.version for /opt/resource/out, so this test is native-only.
-	assert := NewGomegaWithT(t)
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
 
-	cfg := loadConfig(t, "steps/put_basic.yml")
-	logger := discardLogger()
+			cfg := loadConfig(t, "steps/put_basic.yml")
+			logger := discardLogger()
 
-	driver, err := native.New(context.Background(), native.Config{Namespace: "test-put-basic"}, logger)
-	assert.Expect(err).NotTo(HaveOccurred())
+			driver, err := df.new("test-put-basic-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
 
-	defer func() { _ = driver.Close() }()
+			defer func() { _ = driver.Close() }()
 
-	store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-put-basic", logger)
-	assert.Expect(err).NotTo(HaveOccurred())
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-put-basic", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
 
-	defer func() { _ = store.Close() }()
+			defer func() { _ = store.Close() }()
 
-	runner := backwards.New(cfg, driver, store, logger, "test-run")
-	err = runner.Run(context.Background())
-	assert.Expect(err).NotTo(HaveOccurred())
+			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
 
-	// Verify version was persisted.
-	versions, err := backwards.ListResourceVersions(context.Background(), store, "default/my-output", 0)
-	assert.Expect(err).NotTo(HaveOccurred())
-	assert.Expect(len(versions)).To(Equal(1))
-	assert.Expect(versions[0].Version["version"]).NotTo(BeEmpty())
+			// Verify version was persisted.
+			versions, err := backwards.ListResourceVersions(context.Background(), store, "default/my-output", 0)
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(len(versions)).To(Equal(1))
+			assert.Expect(versions[0].Version["version"]).To(Equal("42"))
+		})
+	}
 }

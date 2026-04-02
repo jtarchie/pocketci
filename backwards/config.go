@@ -55,11 +55,10 @@ type TaskConfig struct {
 }
 
 type GetConfig struct {
-	Resource string            `yaml:"resource,omitempty"`
-	Passed   []string          `yaml:"passed,omitempty"`
-	Params   map[string]string `yaml:"params,omitempty"`
-	Trigger  bool              `yaml:"trigger,omitempty"`
-	Version  any               `yaml:"version,omitempty"` // "latest" | "every" | map[string]string (pinned)
+	Resource string   `yaml:"resource,omitempty"`
+	Passed   []string `yaml:"passed,omitempty"`
+	Trigger  bool     `yaml:"trigger,omitempty"`
+	Version  any      `yaml:"version,omitempty"` // "latest" | "every" | map[string]string (pinned)
 }
 
 // GetVersionMode returns the version mode: "latest", "every", or "pinned".
@@ -101,8 +100,6 @@ func (g *GetConfig) GetPinnedVersion() map[string]string {
 }
 
 type PutConfig struct {
-	Resource  string            `yaml:"resource,omitempty"`
-	Params    map[string]string `yaml:"params,omitempty"`
 	GetParams map[string]string `yaml:"get_params,omitempty"`
 	Inputs    []string          `yaml:"inputs,omitempty"`
 	NoGet     bool              `yaml:"no_get,omitempty"`
@@ -154,6 +151,11 @@ type Step struct {
 
 	Put       string     `yaml:"put,omitempty"`
 	PutConfig *PutConfig `yaml:",inline,omitempty"`
+
+	// Params is shared by get and put steps. It lives on Step (not in the
+	// inline GetConfig/PutConfig) to avoid duplicate YAML keys during
+	// marshal/unmarshal round-trips.
+	Params map[string]string `yaml:"params,omitempty"`
 
 	Do        Steps `yaml:"do,omitempty"`
 	Ensure    *Step `yaml:"ensure,omitempty"`

@@ -262,7 +262,7 @@ func (h *GetHandler) fetchNative(
 	_, err = res.In(sc.Ctx, vol.Path(), resources.InRequest{
 		Source:  resource.Source,
 		Version: version,
-		Params:  paramsToAnyMap(step.GetConfig.Params),
+		Params:  paramsToAnyMap(step.Params),
 	})
 	if err != nil {
 		return fmt.Errorf("native fetch %q: %w", resource.Name, err)

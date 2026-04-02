@@ -1,5 +1,6 @@
-# Test basic put step with mock resource (native).
-# The native mock resource auto-generates versions without params.
+# Test basic put step with mock resource.
+# Uses params to specify version, which both the native mock and
+# concourse/mock-resource Docker image support.
 
 assert:
   execution:
@@ -20,6 +21,8 @@ jobs:
   - name: test-put
     plan:
       - put: my-output
+        params:
+          version: "42"
       - task: verify-put
         config:
           platform: linux
@@ -30,9 +33,10 @@ jobs:
           inputs:
             - name: my-output
           run:
-            path: sh
-            args: ["-c", "test -f my-output/version && cat my-output/version"]
+            path: cat
+            args: ["my-output/version"]
         assert:
+          stdout: "42"
           code: 0
     assert:
       execution:
