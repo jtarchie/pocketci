@@ -904,6 +904,100 @@ func TestPutBasic(t *testing.T) {
 	}
 }
 
+func TestPrewritePendingJobs(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			t.Run("dependsOn metadata persists after execution", func(t *testing.T) {
+				assert := NewGomegaWithT(t)
+
+				cfg := loadConfig(t, "steps/cross_run_passed.yml")
+				logger := discardLogger()
+
+				driver, err := df.new("test-prewrite-"+df.name, logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				defer func() { _ = driver.Close() }()
+
+				store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-prewrite", logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				defer func() { _ = store.Close() }()
+
+				runner := backwards.New(cfg, driver, store, logger, "test-run")
+				err = runner.Run(context.Background())
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				// build has no passed constraints -> dependsOn is empty
+				buildPayload, err := store.Get(context.Background(), "/pipeline/test-run/jobs/build")
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(buildPayload["status"]).To(Equal("success"))
+				assert.Expect(buildPayload["dependsOn"]).To(Equal([]any{}))
+
+				// deploy depends on build via passed constraint
+				deployPayload, err := store.Get(context.Background(), "/pipeline/test-run/jobs/deploy")
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(deployPayload["status"]).To(Equal("success"))
+				assert.Expect(deployPayload["dependsOn"]).To(Equal([]any{"build"}))
+			})
+
+			t.Run("blockedBy metadata for unsatisfied dependencies", func(t *testing.T) {
+				assert := NewGomegaWithT(t)
+
+				// Use a pipeline where deploy depends on build via passed,
+				// but remove the build job so deploy never runs and the
+				// pre-write pending record with blockedBy is the final state.
+				cfg := loadConfig(t, "steps/cross_run_passed.yml")
+
+				// Keep only the deploy job (remove build) so build never
+				// executes and deploy stays pending with blockedBy.
+				var deployOnly []configpkg.Job
+
+				for _, j := range cfg.Jobs {
+					if j.Name == "deploy" {
+						deployOnly = append(deployOnly, j)
+					}
+				}
+
+				cfg.Jobs = deployOnly
+				cfg.Assert.Execution = nil // remove pipeline assertions since build won't run
+
+				logger := discardLogger()
+
+				driver, err := df.new("test-prewrite-blocked-"+df.name, logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				defer func() { _ = driver.Close() }()
+
+				store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-prewrite-blocked", logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				defer func() { _ = store.Close() }()
+
+				runner := backwards.New(cfg, driver, store, logger, "test-run")
+				err = runner.Run(context.Background())
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				// deploy was never executed because build (its dependency)
+				// never ran; the pre-write pending record is the final state.
+				deployPayload, err := store.Get(context.Background(), "/pipeline/test-run/jobs/deploy")
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(deployPayload["status"]).To(Equal("pending"))
+				assert.Expect(deployPayload["dependsOn"]).To(Equal([]any{"build"}))
+
+				// blockedBy should list build with "never-run" status
+				blockedBy, ok := deployPayload["blockedBy"].([]any)
+				assert.Expect(ok).To(BeTrue(), fmt.Sprintf("expected blockedBy to be []any, got %T", deployPayload["blockedBy"]))
+				assert.Expect(blockedBy).To(HaveLen(1))
+
+				entry, ok := blockedBy[0].(map[string]any)
+				assert.Expect(ok).To(BeTrue())
+				assert.Expect(entry["job"]).To(Equal("build"))
+				assert.Expect(entry["lastStatus"]).To(Equal("never-run"))
+			})
+		})
+	}
+}
+
 func TestJobParams(t *testing.T) {
 	for _, df := range drivers {
 		t.Run(df.name, func(t *testing.T) {

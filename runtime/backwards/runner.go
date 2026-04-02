@@ -59,6 +59,8 @@ func (r *Runner) Run(ctx context.Context) error {
 	jobResults := make(map[string]bool)
 	var executedJobs []string
 
+	r.prewriteJobStates(ctx)
+
 	var runJob func(job *config.Job) error
 	runJob = func(job *config.Job) error {
 		if _, done := jobResults[job.Name]; done {
@@ -160,6 +162,88 @@ func (r *Runner) findDependentJobs(jobName string) []*config.Job {
 	}
 
 	return result
+}
+
+// extractJobDependencies returns a deduplicated list of job names referenced
+// by passed constraints in the job's plan.
+func extractJobDependencies(plan []config.Step) []string {
+	var deps []string
+
+	seen := make(map[string]bool)
+
+	for _, step := range plan {
+		if step.Get != "" {
+			for _, passed := range step.GetConfig.Passed {
+				if !seen[passed] {
+					seen[passed] = true
+					deps = append(deps, passed)
+				}
+			}
+		}
+	}
+
+	if deps == nil {
+		deps = []string{}
+	}
+
+	return deps
+}
+
+// prewriteJobStates writes all jobs to storage as pending with dependency
+// metadata so the UI can render the full pipeline graph before execution begins.
+func (r *Runner) prewriteJobStates(ctx context.Context) {
+	for i := range r.config.Jobs {
+		job := &r.config.Jobs[i]
+		dependsOn := extractJobDependencies(job.Plan)
+
+		payload := storage.Payload{
+			"status":    "pending",
+			"dependsOn": dependsOn,
+		}
+
+		var blockedBy []map[string]string
+
+		for _, step := range job.Plan {
+			if step.Get != "" && len(step.GetConfig.Passed) > 0 {
+				for _, dep := range step.GetConfig.Passed {
+					lastStatus, err := r.storage.GetMostRecentJobStatus(ctx, "", dep)
+					if err != nil {
+						r.logger.Warn("prewrite.blocked-by.lookup.failed",
+							slog.String("job", job.Name),
+							slog.String("dependency", dep),
+							slog.Any("error", err),
+						)
+
+						lastStatus = "never-run"
+					}
+
+					if lastStatus != "success" {
+						if lastStatus == "" {
+							lastStatus = "never-run"
+						}
+
+						blockedBy = append(blockedBy, map[string]string{
+							"job":        dep,
+							"lastStatus": lastStatus,
+						})
+					}
+				}
+			}
+		}
+
+		if len(blockedBy) > 0 {
+			payload["blockedBy"] = blockedBy
+		}
+
+		jobKey := fmt.Sprintf("/pipeline/%s/jobs/%s", r.runID, job.Name)
+
+		if err := r.storage.Set(ctx, jobKey, payload); err != nil {
+			r.logger.Warn("prewrite.job.failed",
+				slog.String("job", job.Name),
+				slog.Any("error", err),
+			)
+		}
+	}
 }
 
 func (r *Runner) validateAssertions(executedJobs []string) error {
