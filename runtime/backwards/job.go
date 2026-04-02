@@ -96,6 +96,20 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		if err := jr.processStep(sc, &step, padded); err != nil {
 			planErr = err
 
+			// Mark remaining unprocessed steps as skipped in storage.
+			for j := i + 1; j < len(jr.job.Plan); j++ {
+				skippedStep := jr.job.Plan[j]
+				identifier := stepStorageIdentifier(&skippedStep)
+				if identifier != "" {
+					skippedPadded := zeroPadWithLength(j, len(jr.job.Plan))
+					skippedKey := fmt.Sprintf("%s/%s/%s", sc.BaseStorageKey(), skippedPadded, identifier)
+
+					_ = jr.storage.Set(ctx, skippedKey, storage.Payload{
+						"status": "skipped",
+					})
+				}
+			}
+
 			break
 		}
 	}
@@ -282,6 +296,27 @@ func (jr *JobRunner) validateAssertions(sc *StepContext) error {
 	}
 
 	return validateExecution(fmt.Sprintf("job %q", jr.job.Name), jr.job.Assert.Execution, sc.ExecutedTasks)
+}
+
+func stepStorageIdentifier(step *config.Step) string {
+	switch {
+	case step.Task != "":
+		return "tasks/" + step.Task
+	case step.Get != "":
+		return "get/" + step.Get
+	case step.Put != "":
+		return "put/" + step.Put
+	case len(step.Do) > 0:
+		return "do"
+	case len(step.Try) > 0:
+		return "try"
+	case len(step.InParallel.Steps) > 0:
+		return "in_parallel"
+	case len(step.Across) > 0:
+		return "across"
+	default:
+		return ""
+	}
 }
 
 func extractJobParams(job *config.Job) map[string]string {

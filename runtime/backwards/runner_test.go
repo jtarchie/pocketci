@@ -373,6 +373,43 @@ func TestSkippedSteps(t *testing.T) {
 			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
+
+			// Verify failing-task has "failure" status.
+			results, err := store.GetAll(context.Background(), "/pipeline/test-run/", []string{"status"})
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			var failingTaskFound bool
+			for _, result := range results {
+				if strings.Contains(result.Path, "tasks/failing-task") {
+					status, ok := result.Payload["status"].(string)
+					assert.Expect(ok).To(BeTrue())
+					assert.Expect(status).To(Equal("failure"))
+					failingTaskFound = true
+				}
+			}
+			assert.Expect(failingTaskFound).To(BeTrue(), "expected failing-task in storage")
+
+			// Verify exactly 2 skipped entries.
+			skippedPaths := map[string]bool{}
+			for _, result := range results {
+				status, ok := result.Payload["status"].(string)
+				if ok && status == "skipped" {
+					skippedPaths[result.Path] = true
+				}
+			}
+			assert.Expect(skippedPaths).To(HaveLen(2), "expected 2 skipped tasks, got: %v", skippedPaths)
+
+			var foundA, foundB bool
+			for path := range skippedPaths {
+				if strings.Contains(path, "tasks/skipped-task-a") {
+					foundA = true
+				}
+				if strings.Contains(path, "tasks/skipped-task-b") {
+					foundB = true
+				}
+			}
+			assert.Expect(foundA).To(BeTrue(), "expected skipped-task-a in skipped entries")
+			assert.Expect(foundB).To(BeTrue(), "expected skipped-task-b in skipped entries")
 		})
 	}
 }
