@@ -527,15 +527,11 @@ func collectStepsWithAssertions(cfg *configpkg.Config) []stepLocation {
 // skipJobMutate lists YAML files that fail before reaching assertion validation
 // in the Go-native runner, so mutating their job asserts doesn't produce
 // "assertion failed" errors.
-var skipJobMutate = map[string]bool{
-	"cross_run_passed.yml": true, // uses get steps with resources (unsupported)
-}
+var skipJobMutate = map[string]bool{}
 
 // skipStepMutate lists YAML files whose step-level assertions can't be
 // mutation-tested through the Go-native runner.
-var skipStepMutate = map[string]bool{
-	"cross_run_passed.yml": true, // uses get steps with resources (unsupported)
-}
+var skipStepMutate = map[string]bool{}
 
 func TestMutateJobAsserts(t *testing.T) {
 	assert := NewGomegaWithT(t)
@@ -640,6 +636,111 @@ func TestMutateStepAsserts(t *testing.T) {
 					}
 				})
 			}
+		})
+	}
+}
+
+func TestCrossRunPassed(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			t.Run("within-run cascade", func(t *testing.T) {
+				assert := NewGomegaWithT(t)
+
+				cfg := loadConfig(t, "../../backwards/steps/cross_run_passed.yml")
+				logger := discardLogger()
+
+				driver, err := df.new("test-cross-run-"+df.name, logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				defer func() { _ = driver.Close() }()
+
+				store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-cross-run", logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				defer func() { _ = store.Close() }()
+
+				runner := backwards.New(cfg, driver, store, logger, "test-run")
+				err = runner.Run(context.Background())
+				assert.Expect(err).NotTo(HaveOccurred())
+			})
+
+			t.Run("second run uses prior run status", func(t *testing.T) {
+				assert := NewGomegaWithT(t)
+
+				storagePath := filepath.Join(t.TempDir(), "cross-run.db")
+				logger := discardLogger()
+
+				cfg := loadConfig(t, "../../backwards/steps/cross_run_passed.yml")
+
+				driver, err := df.new("test-cross-run2-"+df.name, logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				defer func() { _ = driver.Close() }()
+
+				store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: storagePath}, "test-cross-ns", logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				defer func() { _ = store.Close() }()
+
+				// Run 1: both build and deploy execute via within-run cascade
+				runner1 := backwards.New(cfg, driver, store, logger, "run-1")
+				err = runner1.Run(context.Background())
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				// Run 2: deploy's passed constraint satisfied by run-1's build success
+				runner2 := backwards.New(cfg, driver, store, logger, "run-2")
+				err = runner2.Run(context.Background())
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				// Verify both runs wrote job statuses
+				results1, err := store.GetAll(context.Background(), "/pipeline/run-1/jobs/", []string{"status"})
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(len(results1)).To(BeNumerically(">=", 2))
+
+				results2, err := store.GetAll(context.Background(), "/pipeline/run-2/jobs/", []string{"status"})
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(len(results2)).To(BeNumerically(">=", 2))
+
+				// Verify cross-run queries
+				status, err := store.GetMostRecentJobStatus(context.Background(), "", "build")
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(status).To(Equal("success"))
+
+				status, err = store.GetMostRecentJobStatus(context.Background(), "", "deploy")
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(status).To(Equal("success"))
+			})
+
+			t.Run("both jobs succeed in storage", func(t *testing.T) {
+				assert := NewGomegaWithT(t)
+
+				storagePath := filepath.Join(t.TempDir(), "blocked.db")
+				logger := discardLogger()
+
+				cfg := loadConfig(t, "../../backwards/steps/cross_run_passed.yml")
+
+				driver, err := df.new("test-cross-run3-"+df.name, logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				defer func() { _ = driver.Close() }()
+
+				store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: storagePath}, "test-blocked-ns", logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				defer func() { _ = store.Close() }()
+
+				runner := backwards.New(cfg, driver, store, logger, "run-blocked")
+				err = runner.Run(context.Background())
+				assert.Expect(err).NotTo(HaveOccurred())
+
+				buildPayload, err := store.Get(context.Background(), "/pipeline/run-blocked/jobs/build")
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(buildPayload["status"]).To(Equal("success"))
+
+				deployPayload, err := store.Get(context.Background(), "/pipeline/run-blocked/jobs/deploy")
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(deployPayload["status"]).To(Equal("success"))
+			})
 		})
 	}
 }

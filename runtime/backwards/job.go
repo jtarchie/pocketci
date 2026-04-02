@@ -37,6 +37,7 @@ func newJobRunner(
 		runID:   runID,
 		handlers: map[string]StepHandler{
 			"task":        &TaskHandler{},
+			"get":         &GetHandler{},
 			"try":         &TryHandler{},
 			"do":          &DoHandler{},
 			"in_parallel": &InParallelHandler{},
@@ -242,6 +243,8 @@ func identifyStepType(step *config.Step) string {
 	switch {
 	case step.Task != "":
 		return "task"
+	case step.Get != "":
+		return "get"
 	case len(step.Try) > 0:
 		return "try"
 	case len(step.Do) > 0:
