@@ -14,14 +14,15 @@ import (
 
 // JobRunner executes a single job's plan.
 type JobRunner struct {
-	job           *config.Job
-	driver        orchestra.Driver
-	storage       storage.Driver
-	logger        *slog.Logger
-	runID         string
-	handlers      map[string]StepHandler
-	resources     config.Resources
-	resourceTypes config.ResourceTypes
+	job                 *config.Job
+	driver              orchestra.Driver
+	storage             storage.Driver
+	logger              *slog.Logger
+	runID               string
+	handlers            map[string]StepHandler
+	resources           config.Resources
+	resourceTypes       config.ResourceTypes
+	pipelineMaxInFlight int
 }
 
 func newJobRunner(
@@ -32,15 +33,17 @@ func newJobRunner(
 	runID string,
 	resources config.Resources,
 	resourceTypes config.ResourceTypes,
+	pipelineMaxInFlight int,
 ) *JobRunner {
 	return &JobRunner{
-		job:           job,
-		driver:        driver,
-		storage:       store,
-		logger:        logger,
-		runID:         runID,
-		resources:     resources,
-		resourceTypes: resourceTypes,
+		job:                 job,
+		driver:              driver,
+		storage:             store,
+		logger:              logger,
+		runID:               runID,
+		resources:           resources,
+		resourceTypes:       resourceTypes,
+		pipelineMaxInFlight: pipelineMaxInFlight,
 		handlers: map[string]StepHandler{
 			"task":        &TaskHandler{},
 			"get":         &GetHandler{},
@@ -69,7 +72,7 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		Logger:        jr.logger,
 		RunID:         jr.runID,
 		JobName:       jr.job.Name,
-		MaxInFlight:   jr.job.MaxInFlight,
+		MaxInFlight:   resolveEffectiveMaxInFlight(jr.job.MaxInFlight, jr.pipelineMaxInFlight),
 		CacheVolumes:  make(map[string]string),
 		KnownVolumes:  make(map[string]string),
 		Resources:     jr.resources,
@@ -282,6 +285,16 @@ func extractJobParams(job *config.Job) map[string]string {
 	}
 
 	return job.Triggers.Webhook.Params
+}
+
+// resolveEffectiveMaxInFlight returns the effective max_in_flight for a job.
+// Priority: job-level > pipeline-level > 0 (not set).
+func resolveEffectiveMaxInFlight(jobLevel, pipelineLevel int) int {
+	if jobLevel > 0 {
+		return jobLevel
+	}
+
+	return pipelineLevel
 }
 
 func formatList(items []string) string {

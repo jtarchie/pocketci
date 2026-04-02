@@ -65,7 +65,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			return nil
 		}
 
-		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.config.Resources, r.config.ResourceTypes)
+		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight)
 
 		err := jr.Run(ctx)
 		if err != nil {

@@ -267,6 +267,32 @@ func TestInParallelStep(t *testing.T) {
 	}
 }
 
+func TestPipelineMaxInFlightStep(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "steps/pipeline_max_in_flight.yml")
+
+			logger := discardLogger()
+
+			driver, err := df.new("test-pipeline-mif-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-pipeline-mif", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
 func TestParallelismStep(t *testing.T) {
 	for _, df := range drivers {
 		t.Run(df.name, func(t *testing.T) {

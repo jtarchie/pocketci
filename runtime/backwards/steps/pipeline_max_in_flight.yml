@@ -1,0 +1,56 @@
+# Pipeline-level max_in_flight overrides step-level limit when no job-level
+# max_in_flight is set.
+# pipeline max_in_flight: 1 overrides in_parallel limit: 5.
+# With fail_fast: true and sequential execution, only the first (failing) task runs.
+max_in_flight: 1
+
+assert:
+  execution:
+    - test-pipeline-mif-overrides-step
+
+jobs:
+  - name: test-pipeline-mif-overrides-step
+    plan:
+      - task: pmif-entry
+        config: &success
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: sh
+            args: ["-c", "echo entry"]
+        assert:
+          code: 0
+          stdout: "entry"
+      - in_parallel:
+          limit: 5
+          fail_fast: true
+          steps:
+            - task: pmif-first-fail
+              config: &failure
+                platform: linux
+                image_resource:
+                  type: registry-image
+                  source:
+                    repository: busybox
+                run:
+                  path: sh
+                  args: ["-c", "exit 1"]
+            - task: pmif-would-skip
+              config: *success
+            - task: pmif-would-also-skip
+              config: *success
+        on_failure:
+          task: pmif-block-handler
+          config: *success
+    on_failure:
+      task: pmif-job-handler
+      config: *success
+    assert:
+      execution:
+        - pmif-entry
+        - pmif-first-fail
+        - pmif-block-handler
+        - pmif-job-handler
