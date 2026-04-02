@@ -32,6 +32,8 @@ type StepContext struct {
 	ProcessStep     func(step *config.Step, pathPrefix string) error
 	CacheVolumes    map[string]string // maps cache path → volume name, shared across tasks in a job
 	KnownVolumes    map[string]string // maps mount name → driver volume name, shared across tasks in a job
+	Resources       config.Resources
+	ResourceTypes   config.ResourceTypes
 }
 
 // BaseStorageKey returns the storage prefix for the current job.

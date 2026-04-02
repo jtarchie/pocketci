@@ -15,6 +15,7 @@ import (
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/orchestra/docker"
 	"github.com/jtarchie/pocketci/orchestra/native"
+	_ "github.com/jtarchie/pocketci/resources/mock"
 	backwards "github.com/jtarchie/pocketci/runtime/backwards"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
@@ -779,4 +780,99 @@ func TestCrossRunPassed(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestGetVersionModes(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "steps/version_modes.yml")
+			logger := discardLogger()
+
+			driver, err := df.new("test-get-modes-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-get-modes", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
+func TestGetMockEvery(t *testing.T) {
+	// This test uses the native mock resource's incrementing counter.
+	// The concourse/mock-resource Docker image behaves differently,
+	// so this test only runs on the native driver.
+	assert := NewGomegaWithT(t)
+
+	cfg := loadConfig(t, "steps/mock_every.yml")
+	logger := discardLogger()
+
+	driver, err := native.New(context.Background(), native.Config{Namespace: "test-mock-every"}, logger)
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	defer func() { _ = driver.Close() }()
+
+	storagePath := filepath.Join(t.TempDir(), "mock-every.db")
+
+	store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: storagePath}, "test-mock-every-ns", logger)
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	defer func() { _ = store.Close() }()
+
+	// Run 1: should fetch the first version.
+	runner := backwards.New(cfg, driver, store, logger, "run-1")
+	err = runner.Run(context.Background())
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	versions1, err := backwards.ListResourceVersions(context.Background(), store, "default/counter", 0)
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(len(versions1)).To(BeNumerically(">=", 1))
+
+	// Run 2: should fetch a new version (counter increments).
+	runner2 := backwards.New(cfg, driver, store, logger, "run-2")
+	err = runner2.Run(context.Background())
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	versions2, err := backwards.ListResourceVersions(context.Background(), store, "default/counter", 0)
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(len(versions2)).To(BeNumerically(">", len(versions1)))
+}
+
+func TestPutBasic(t *testing.T) {
+	// This test uses the native mock resource which auto-generates versions
+	// without params. The concourse/mock-resource Docker image requires
+	// params.version for /opt/resource/out, so this test is native-only.
+	assert := NewGomegaWithT(t)
+
+	cfg := loadConfig(t, "steps/put_basic.yml")
+	logger := discardLogger()
+
+	driver, err := native.New(context.Background(), native.Config{Namespace: "test-put-basic"}, logger)
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	defer func() { _ = driver.Close() }()
+
+	store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-put-basic", logger)
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	defer func() { _ = store.Close() }()
+
+	runner := backwards.New(cfg, driver, store, logger, "test-run")
+	err = runner.Run(context.Background())
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	// Verify version was persisted.
+	versions, err := backwards.ListResourceVersions(context.Background(), store, "default/my-output", 0)
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(len(versions)).To(Equal(1))
+	assert.Expect(versions[0].Version["version"]).NotTo(BeEmpty())
 }

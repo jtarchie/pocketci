@@ -14,12 +14,14 @@ import (
 
 // JobRunner executes a single job's plan.
 type JobRunner struct {
-	job      *config.Job
-	driver   orchestra.Driver
-	storage  storage.Driver
-	logger   *slog.Logger
-	runID    string
-	handlers map[string]StepHandler
+	job           *config.Job
+	driver        orchestra.Driver
+	storage       storage.Driver
+	logger        *slog.Logger
+	runID         string
+	handlers      map[string]StepHandler
+	resources     config.Resources
+	resourceTypes config.ResourceTypes
 }
 
 func newJobRunner(
@@ -28,16 +30,21 @@ func newJobRunner(
 	store storage.Driver,
 	logger *slog.Logger,
 	runID string,
+	resources config.Resources,
+	resourceTypes config.ResourceTypes,
 ) *JobRunner {
 	return &JobRunner{
-		job:     job,
-		driver:  driver,
-		storage: store,
-		logger:  logger,
-		runID:   runID,
+		job:           job,
+		driver:        driver,
+		storage:       store,
+		logger:        logger,
+		runID:         runID,
+		resources:     resources,
+		resourceTypes: resourceTypes,
 		handlers: map[string]StepHandler{
 			"task":        &TaskHandler{},
 			"get":         &GetHandler{},
+			"put":         &PutHandler{},
 			"try":         &TryHandler{},
 			"do":          &DoHandler{},
 			"in_parallel": &InParallelHandler{},
@@ -56,15 +63,17 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	}
 
 	sc := &StepContext{
-		Ctx:          ctx,
-		Driver:       jr.driver,
-		Storage:      jr.storage,
-		Logger:       jr.logger,
-		RunID:        jr.runID,
-		JobName:      jr.job.Name,
-		MaxInFlight:  jr.job.MaxInFlight,
-		CacheVolumes: make(map[string]string),
-		KnownVolumes: make(map[string]string),
+		Ctx:           ctx,
+		Driver:        jr.driver,
+		Storage:       jr.storage,
+		Logger:        jr.logger,
+		RunID:         jr.runID,
+		JobName:       jr.job.Name,
+		MaxInFlight:   jr.job.MaxInFlight,
+		CacheVolumes:  make(map[string]string),
+		KnownVolumes:  make(map[string]string),
+		Resources:     jr.resources,
+		ResourceTypes: jr.resourceTypes,
 	}
 	sc.ProcessStep = func(step *config.Step, pathPrefix string) error {
 		return jr.processStep(sc, step, pathPrefix)
@@ -245,6 +254,8 @@ func identifyStepType(step *config.Step) string {
 		return "task"
 	case step.Get != "":
 		return "get"
+	case step.Put != "":
+		return "put"
 	case len(step.Try) > 0:
 		return "try"
 	case len(step.Do) > 0:

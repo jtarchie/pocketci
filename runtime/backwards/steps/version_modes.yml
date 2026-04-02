@@ -1,0 +1,103 @@
+assert:
+  execution:
+    - test-version-latest
+    - test-version-pinned
+    - test-version-every
+
+# Note: When using native driver, resource types marked as 'mock' use the native mock resource
+# which is registered via resources.Register("mock", ...) in Go
+
+resource_types:
+  - name: mock
+    type: registry-image
+    source:
+      repository: concourse/mock-resource
+
+resources:
+  - name: my-resource
+    type: mock
+    source:
+      force_version: "1"
+  - name: pinned-resource
+    type: mock
+    source:
+      force_version: "42"
+  - name: every-resource
+    type: mock
+    source: {}
+
+jobs:
+  # Test version: latest (default) - gets most recent version
+  - name: test-version-latest
+    plan:
+      - get: my-resource
+        # version: latest is implicit when omitted
+      - task: verify-latest
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          inputs:
+            - name: my-resource
+          run:
+            path: sh
+            args: ["-c", "cat my-resource/version"]
+        assert:
+          stdout: "1"
+          code: 0
+    assert:
+      execution:
+        - verify-latest
+
+  # Test version: pinned - uses exact version specified
+  - name: test-version-pinned
+    plan:
+      - get: pinned-resource
+        version:
+          version: "42"
+      - task: verify-pinned
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          inputs:
+            - name: pinned-resource
+          run:
+            path: sh
+            args: ["-c", "cat pinned-resource/version"]
+        assert:
+          stdout: "42"
+          code: 0
+    assert:
+      execution:
+        - verify-pinned
+
+  # Test version: every - processes new versions since last check
+  - name: test-version-every
+    plan:
+      - get: every-resource
+        version: every
+      - task: verify-every
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          inputs:
+            - name: every-resource
+          run:
+            path: sh
+            args: [
+              "-c",
+              "cat every-resource/version && test -f every-resource/version",
+            ]
+        assert:
+          code: 0
+    assert:
+      execution:
+        - verify-every

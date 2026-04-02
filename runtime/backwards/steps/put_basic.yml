@@ -1,0 +1,39 @@
+# Test basic put step with mock resource (native).
+# The native mock resource auto-generates versions without params.
+
+assert:
+  execution:
+    - test-put
+
+resource_types:
+  - name: mock
+    type: registry-image
+    source:
+      repository: concourse/mock-resource
+
+resources:
+  - name: my-output
+    type: mock
+    source: {}
+
+jobs:
+  - name: test-put
+    plan:
+      - put: my-output
+      - task: verify-put
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          inputs:
+            - name: my-output
+          run:
+            path: sh
+            args: ["-c", "test -f my-output/version && cat my-output/version"]
+        assert:
+          code: 0
+    assert:
+      execution:
+        - verify-put
