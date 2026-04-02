@@ -197,6 +197,9 @@ func (jr *JobRunner) runJobHooks(sc *StepContext, planErr error) error {
 }
 
 func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix string) error {
+	// Inject webhook trigger params into task env before dispatch.
+	injectJobParams(sc.JobParams, step)
+
 	// Handle across expansion before normal step dispatch.
 	if len(step.Across) > 0 {
 		return executeAcross(sc, step, pathPrefix, func(s *config.Step, prefix string) error {
@@ -269,6 +272,21 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 	}
 
 	return stepErr
+}
+
+// injectJobParams merges webhook trigger params into the step's TaskConfig.Env
+// before handler dispatch. Only task steps with an inline config are affected;
+// file/URI-based configs are re-injected after loading inside runTask.
+func injectJobParams(jobParams map[string]string, step *config.Step) {
+	if len(jobParams) == 0 {
+		return
+	}
+
+	if step.Task == "" || step.TaskConfig == nil {
+		return
+	}
+
+	step.TaskConfig.Env = mergeJobParams(jobParams, step.TaskConfig.Env)
 }
 
 func identifyStepType(step *config.Step) string {

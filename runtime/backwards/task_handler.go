@@ -36,7 +36,7 @@ func (h *TaskHandler) Execute(sc *StepContext, step *config.Step, pathPrefix str
 
 	var env map[string]string
 	if step.TaskConfig != nil {
-		env = mergeJobParams(sc.JobParams, step.TaskConfig.Env)
+		env = step.TaskConfig.Env
 	}
 
 	return h.runTask(sc, step, pathPrefix, taskName, env)
@@ -72,7 +72,7 @@ func (h *TaskHandler) executeParallel(sc *StepContext, step *config.Step, pathPr
 			defer func() { <-sem }()
 
 			indexedName := fmt.Sprintf("%s-%d", step.Task, index)
-			env := cloneEnv(mergeJobParams(sc.JobParams, step.TaskConfig.Env))
+			env := cloneEnv(step.TaskConfig.Env)
 			env["CI_TASK_INDEX"] = strconv.Itoa(index)
 			env["CI_TASK_COUNT"] = strconv.Itoa(count)
 

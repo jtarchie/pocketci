@@ -3,6 +3,7 @@ assert:
     - "test-job-params-basic"
     - "test-job-params-override"
     - "test-job-params-in-do"
+    - "test-job-params-in-hook"
 
 jobs:
   # Test 1: Basic job params injection as env vars
@@ -113,3 +114,47 @@ jobs:
     assert:
       execution:
         - "nested-check"
+
+  # Test 4: Job params available in on_success hook task
+  - name: test-job-params-in-hook
+    triggers:
+      webhook:
+        params:
+          HOOK_VAR: "from-params"
+    plan:
+      - task: trigger-success
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: sh
+            args: ["-c", "echo ok"]
+        on_success:
+          task: check-hook-params
+          config:
+            platform: linux
+            image_resource:
+              type: registry-image
+              source:
+                repository: busybox
+            run:
+              path: sh
+              args:
+                - -c
+                - |
+                    echo "HOOK_VAR=$HOOK_VAR"
+                    if [ "$HOOK_VAR" != "from-params" ]; then
+                      echo "ERROR: HOOK_VAR not set in on_success"
+                      exit 1
+                    fi
+          assert:
+            code: 0
+            stdout: "HOOK_VAR=from-params"
+
+    assert:
+      execution:
+        - "trigger-success"
+        - "check-hook-params"
