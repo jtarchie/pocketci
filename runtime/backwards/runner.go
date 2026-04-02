@@ -119,12 +119,13 @@ func ValidateConfig(cfg *config.Config) error {
 
 // Runner executes a parsed pipeline Config using Go-native execution.
 type Runner struct {
-	config   *config.Config
-	driver   orchestra.Driver
-	storage  storage.Driver
-	logger   *slog.Logger
-	runID    string
-	notifier *jsapi.Notifier
+	config     *config.Config
+	driver     orchestra.Driver
+	storage    storage.Driver
+	logger     *slog.Logger
+	runID      string
+	notifier   *jsapi.Notifier
+	targetJobs []string
 }
 
 // New creates a Runner for the given pipeline config.
@@ -135,14 +136,16 @@ func New(
 	logger *slog.Logger,
 	runID string,
 	notifier *jsapi.Notifier,
+	targetJobs []string,
 ) *Runner {
 	return &Runner{
-		config:   cfg,
-		driver:   driver,
-		storage:  store,
-		logger:   logger,
-		runID:    runID,
-		notifier: notifier,
+		config:     cfg,
+		driver:     driver,
+		storage:    store,
+		logger:     logger,
+		runID:      runID,
+		notifier:   notifier,
+		targetJobs: targetJobs,
 	}
 }
 
@@ -183,12 +186,18 @@ func (r *Runner) Run(ctx context.Context) error {
 		return nil
 	}
 
-	for i := range r.config.Jobs {
-		job := &r.config.Jobs[i]
+	if len(r.targetJobs) > 0 {
+		if err := r.runTargetedJobs(ctx, runJob, jobResults); err != nil {
+			return err
+		}
+	} else {
+		for i := range r.config.Jobs {
+			job := &r.config.Jobs[i]
 
-		if r.canJobRun(ctx, job, jobResults) {
-			if err := runJob(job); err != nil {
-				return err
+			if r.canJobRun(ctx, job, jobResults) {
+				if err := runJob(job); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -337,6 +346,66 @@ func (r *Runner) prewriteJobStates(ctx context.Context) {
 			)
 		}
 	}
+}
+
+// runTargetedJobs executes only the specified target jobs and their downstream
+// dependents, marking all other jobs as skipped in storage.
+func (r *Runner) runTargetedJobs(
+	ctx context.Context,
+	runJob func(job *config.Job) error,
+	jobResults map[string]bool,
+) error {
+	jobsByName := make(map[string]*config.Job, len(r.config.Jobs))
+	for i := range r.config.Jobs {
+		jobsByName[r.config.Jobs[i].Name] = &r.config.Jobs[i]
+	}
+
+	for _, jobName := range r.targetJobs {
+		job, exists := jobsByName[jobName]
+		if !exists {
+			return fmt.Errorf("target job %q not found in pipeline", jobName)
+		}
+
+		if !r.canJobRun(ctx, job, jobResults) {
+			jobKey := fmt.Sprintf("/pipeline/%s/jobs/%s", r.runID, job.Name)
+
+			if err := r.storage.Set(ctx, jobKey, storage.Payload{
+				"status": "skipped",
+				"reason": "passed constraints not satisfied",
+			}); err != nil {
+				r.logger.Warn("targeted.skip.failed",
+					slog.String("job", job.Name),
+					slog.Any("error", err),
+				)
+			}
+
+			continue
+		}
+
+		if err := runJob(job); err != nil {
+			return err
+		}
+	}
+
+	// Mark remaining non-executed jobs as skipped.
+	for i := range r.config.Jobs {
+		job := &r.config.Jobs[i]
+
+		if _, executed := jobResults[job.Name]; !executed {
+			jobKey := fmt.Sprintf("/pipeline/%s/jobs/%s", r.runID, job.Name)
+
+			if err := r.storage.Set(ctx, jobKey, storage.Payload{
+				"status": "skipped",
+			}); err != nil {
+				r.logger.Warn("targeted.mark-skipped.failed",
+					slog.String("job", job.Name),
+					slog.Any("error", err),
+				)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (r *Runner) validateAssertions(executedJobs []string) error {

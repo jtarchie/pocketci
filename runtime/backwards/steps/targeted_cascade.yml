@@ -1,0 +1,70 @@
+# Test pipeline for targeted execution with cascade via passed constraints.
+# When "build" is targeted, it cascades to "test" then "deploy".
+resource_types:
+  - name: mock
+    type: registry-image
+    source:
+      repository: concourse/mock-resource
+
+resources:
+  - name: source-code
+    type: mock
+    source:
+      force_version: "1.0"
+
+assert:
+  execution:
+    - build
+    - test
+    - deploy
+
+jobs:
+  - name: build
+    plan:
+      - get: source-code
+      - task: compile
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: echo
+            args: ["build complete"]
+        assert:
+          code: 0
+
+  - name: test
+    plan:
+      - get: source-code
+        passed: [build]
+      - task: run-tests
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: echo
+            args: ["tests pass"]
+        assert:
+          code: 0
+
+  - name: deploy
+    plan:
+      - get: source-code
+        passed: [test]
+      - task: deploy-app
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: echo
+            args: ["deploy complete"]
+        assert:
+          code: 0
