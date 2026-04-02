@@ -4,6 +4,7 @@ import (
 	"time"
 
 	agent "github.com/jtarchie/pocketci/runtime/agent"
+	"github.com/jtarchie/pocketci/runtime/jsapi"
 )
 
 // https://github.com/concourse/concourse/blob/master/atc/config.go
@@ -257,8 +258,9 @@ type Config struct {
 	Assert struct {
 		Execution []string `yaml:"execution,omitempty"`
 	} `yaml:"assert,omitempty"`
-	MaxInFlight   int           `yaml:"max_in_flight,omitempty"`
-	Jobs          Jobs          `validate:"required,min=1,dive" yaml:"jobs"`
-	Resources     Resources     `yaml:"resources"`
-	ResourceTypes ResourceTypes `yaml:"resource_types"`
+	MaxInFlight   int                           `yaml:"max_in_flight,omitempty"`
+	Notifications map[string]jsapi.NotifyConfig `yaml:"notifications,omitempty"`
+	Jobs          Jobs                          `validate:"required,min=1,dive" yaml:"jobs"`
+	Resources     Resources                     `yaml:"resources"`
+	ResourceTypes ResourceTypes                 `yaml:"resource_types"`
 }

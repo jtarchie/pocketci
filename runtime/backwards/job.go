@@ -9,6 +9,7 @@ import (
 
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/storage"
 )
 
@@ -23,6 +24,7 @@ type JobRunner struct {
 	resources           config.Resources
 	resourceTypes       config.ResourceTypes
 	pipelineMaxInFlight int
+	notifier            *jsapi.Notifier
 }
 
 func newJobRunner(
@@ -34,6 +36,7 @@ func newJobRunner(
 	resources config.Resources,
 	resourceTypes config.ResourceTypes,
 	pipelineMaxInFlight int,
+	notifier *jsapi.Notifier,
 ) *JobRunner {
 	return &JobRunner{
 		job:                 job,
@@ -44,6 +47,7 @@ func newJobRunner(
 		resources:           resources,
 		resourceTypes:       resourceTypes,
 		pipelineMaxInFlight: pipelineMaxInFlight,
+		notifier:            notifier,
 		handlers: map[string]StepHandler{
 			"task":        &TaskHandler{},
 			"get":         &GetHandler{},
@@ -78,6 +82,7 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		Resources:     jr.resources,
 		ResourceTypes: jr.resourceTypes,
 		JobParams:     extractJobParams(jr.job),
+		Notifier:      jr.notifier,
 	}
 	sc.ProcessStep = func(step *config.Step, pathPrefix string) error {
 		return jr.processStep(sc, step, pathPrefix)
@@ -206,7 +211,7 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 	// on_success / on_abort / on_error / on_failure hooks run before ensure.
 	switch {
 	case stepErr == nil && step.OnSuccess != nil:
-		successPrefix := fmt.Sprintf("%s/on_success", pathPrefix)
+		successPrefix := pathPrefix + "/on_success"
 		if successErr := jr.processStep(sc, step.OnSuccess, successPrefix); successErr != nil {
 			stepErr = successErr
 		}
@@ -214,7 +219,7 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 		sc.Logger.Debug(stepErr.Error())
 		sc.HadFailure = true
 
-		abortPrefix := fmt.Sprintf("%s/on_abort", pathPrefix)
+		abortPrefix := pathPrefix + "/on_abort"
 		if abortErr := jr.processStep(sc, step.OnAbort, abortPrefix); abortErr != nil {
 			sc.Logger.Warn("step.on_abort.failed", "prefix", pathPrefix, "error", abortErr)
 		}
@@ -224,7 +229,7 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 		sc.Logger.Debug(stepErr.Error())
 		sc.HadFailure = true
 
-		errorPrefix := fmt.Sprintf("%s/on_error", pathPrefix)
+		errorPrefix := pathPrefix + "/on_error"
 		if errorErr := jr.processStep(sc, step.OnError, errorPrefix); errorErr != nil {
 			sc.Logger.Warn("step.on_error.failed", "prefix", pathPrefix, "error", errorErr)
 		}
@@ -233,7 +238,7 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 	case isFailedError(stepErr) && step.OnFailure != nil:
 		sc.HadFailure = true
 
-		failurePrefix := fmt.Sprintf("%s/on_failure", pathPrefix)
+		failurePrefix := pathPrefix + "/on_failure"
 		if failureErr := jr.processStep(sc, step.OnFailure, failurePrefix); failureErr != nil {
 			sc.Logger.Warn("step.on_failure.failed", "prefix", pathPrefix, "error", failureErr)
 		}
@@ -243,7 +248,7 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 
 	// Ensure hook always runs regardless of step success/failure.
 	if step.Ensure != nil {
-		ensurePrefix := fmt.Sprintf("%s/ensure", pathPrefix)
+		ensurePrefix := pathPrefix + "/ensure"
 		if ensureErr := jr.processStep(sc, step.Ensure, ensurePrefix); ensureErr != nil {
 			sc.Logger.Warn("step.ensure.failed", "prefix", pathPrefix, "error", ensureErr)
 		}

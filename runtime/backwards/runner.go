@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/storage"
 )
 
@@ -117,11 +119,12 @@ func ValidateConfig(cfg *config.Config) error {
 
 // Runner executes a parsed pipeline Config using Go-native execution.
 type Runner struct {
-	config  *config.Config
-	driver  orchestra.Driver
-	storage storage.Driver
-	logger  *slog.Logger
-	runID   string
+	config   *config.Config
+	driver   orchestra.Driver
+	storage  storage.Driver
+	logger   *slog.Logger
+	runID    string
+	notifier *jsapi.Notifier
 }
 
 // New creates a Runner for the given pipeline config.
@@ -131,13 +134,15 @@ func New(
 	store storage.Driver,
 	logger *slog.Logger,
 	runID string,
+	notifier *jsapi.Notifier,
 ) *Runner {
 	return &Runner{
-		config:  cfg,
-		driver:  driver,
-		storage: store,
-		logger:  logger,
-		runID:   runID,
+		config:   cfg,
+		driver:   driver,
+		storage:  store,
+		logger:   logger,
+		runID:    runID,
+		notifier: notifier,
 	}
 }
 
@@ -146,6 +151,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	jobResults := make(map[string]bool)
 	var executedJobs []string
 
+	r.initNotifier()
 	r.prewriteJobStates(ctx)
 
 	var runJob func(job *config.Job) error
@@ -154,7 +160,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			return nil
 		}
 
-		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight)
+		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight, r.notifier)
 
 		err := jr.Run(ctx)
 		if err != nil {
@@ -335,4 +341,29 @@ func (r *Runner) prewriteJobStates(ctx context.Context) {
 
 func (r *Runner) validateAssertions(executedJobs []string) error {
 	return validateExecution("pipeline", r.config.Assert.Execution, executedJobs)
+}
+
+// initNotifier configures the notification subsystem with pipeline-level configs and context.
+func (r *Runner) initNotifier() {
+	if r.notifier == nil {
+		return
+	}
+
+	if len(r.config.Notifications) > 0 {
+		r.notifier.SetConfigs(r.config.Notifications)
+	}
+
+	pipelineName := "unknown"
+	if len(r.config.Jobs) > 0 {
+		pipelineName = r.config.Jobs[0].Name
+	}
+
+	r.notifier.SetContext(jsapi.NotifyContext{
+		PipelineName: pipelineName,
+		BuildID:      r.runID,
+		Status:       "pending",
+		StartTime:    time.Now().UTC().Format(time.RFC3339),
+		Environment:  map[string]string{},
+		TaskResults:  map[string]any{},
+	})
 }

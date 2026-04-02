@@ -65,7 +65,7 @@ type AssertionError struct {
 }
 
 func (e *AssertionError) Error() string {
-	return fmt.Sprintf("assertion failed: %s", e.Message)
+	return "assertion failed: " + e.Message
 }
 
 func (e *AssertionError) Unwrap() error {

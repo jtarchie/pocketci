@@ -40,7 +40,7 @@ func (jr *JobRunner) executeWithAttempts(sc *StepContext, step *config.Step, pat
 	// Run the appropriate hook once after all attempts.
 	if succeeded {
 		if step.OnSuccess != nil {
-			successPrefix := fmt.Sprintf("%s/on_success", pathPrefix)
+			successPrefix := pathPrefix + "/on_success"
 			if err := jr.processStep(sc, step.OnSuccess, successPrefix); err != nil {
 				lastErr = err
 			}
@@ -51,7 +51,7 @@ func (jr *JobRunner) executeWithAttempts(sc *StepContext, step *config.Step, pat
 			sc.Logger.Debug(lastErr.Error())
 			sc.HadFailure = true
 
-			abortPrefix := fmt.Sprintf("%s/on_abort", pathPrefix)
+			abortPrefix := pathPrefix + "/on_abort"
 			if err := jr.processStep(sc, step.OnAbort, abortPrefix); err != nil {
 				sc.Logger.Warn("step.on_abort.failed", "prefix", pathPrefix, "error", err)
 			}
@@ -61,7 +61,7 @@ func (jr *JobRunner) executeWithAttempts(sc *StepContext, step *config.Step, pat
 			sc.Logger.Debug(lastErr.Error())
 			sc.HadFailure = true
 
-			errorPrefix := fmt.Sprintf("%s/on_error", pathPrefix)
+			errorPrefix := pathPrefix + "/on_error"
 			if err := jr.processStep(sc, step.OnError, errorPrefix); err != nil {
 				sc.Logger.Warn("step.on_error.failed", "prefix", pathPrefix, "error", err)
 			}
@@ -70,7 +70,7 @@ func (jr *JobRunner) executeWithAttempts(sc *StepContext, step *config.Step, pat
 		case isFailedError(lastErr) && step.OnFailure != nil:
 			sc.HadFailure = true
 
-			failurePrefix := fmt.Sprintf("%s/on_failure", pathPrefix)
+			failurePrefix := pathPrefix + "/on_failure"
 			if err := jr.processStep(sc, step.OnFailure, failurePrefix); err != nil {
 				sc.Logger.Warn("step.on_failure.failed", "prefix", pathPrefix, "error", err)
 			}
@@ -81,7 +81,7 @@ func (jr *JobRunner) executeWithAttempts(sc *StepContext, step *config.Step, pat
 
 	// Ensure always runs after attempts and hooks.
 	if step.Ensure != nil {
-		ensurePrefix := fmt.Sprintf("%s/ensure", pathPrefix)
+		ensurePrefix := pathPrefix + "/ensure"
 		if err := jr.processStep(sc, step.Ensure, ensurePrefix); err != nil {
 			sc.Logger.Warn("step.ensure.failed", "prefix", pathPrefix, "error", err)
 		}

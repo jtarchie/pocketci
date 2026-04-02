@@ -22,7 +22,7 @@ import (
 )
 
 func discardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }
 
 func debugLogger(w io.Writer) *slog.Logger {
@@ -86,7 +86,7 @@ func TestTryStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -114,7 +114,7 @@ func TestDoStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(logs.String()).To(ContainSubstring("ensure-task"))
@@ -143,7 +143,7 @@ func TestOnFailureStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(logs.String()).To(ContainSubstring("task.failed"))
@@ -173,7 +173,7 @@ func TestOnErrorStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(logs.String()).To(ContainSubstring("Task erroring-task errored"))
@@ -203,7 +203,7 @@ func TestOnAbortStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(logs.String()).To(ContainSubstring("Task abort-task aborted"))
@@ -233,7 +233,7 @@ func TestOnSuccessStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(logs.String()).To(ContainSubstring("on-success-task"))
@@ -260,7 +260,7 @@ func TestInParallelStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -286,7 +286,7 @@ func TestPipelineMaxInFlightStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -312,7 +312,7 @@ func TestParallelismStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -340,7 +340,7 @@ func TestEnsureStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(logs.String()).To(ContainSubstring("ensure-task"))
@@ -368,7 +368,7 @@ func TestSkippedSteps(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -394,7 +394,7 @@ func TestCachesStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -420,7 +420,7 @@ func TestAttemptsStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -446,7 +446,7 @@ func TestAcrossStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -472,7 +472,7 @@ func TestTaskFileStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -498,7 +498,7 @@ func TestTaskURIStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -528,7 +528,7 @@ func TestStderrAssertionStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -684,7 +684,7 @@ func TestMutateJobAsserts(t *testing.T) {
 
 					defer func() { _ = store.Close() }()
 
-					runner := backwards.New(cfg, driver, store, logger, "test-run")
+					runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 					err = runner.Run(context.Background())
 					assert.Expect(err).To(HaveOccurred())
 					assert.Expect(err.Error()).To(ContainSubstring("assertion failed"))
@@ -737,7 +737,7 @@ func TestMutateStepAsserts(t *testing.T) {
 
 							defer func() { _ = store.Close() }()
 
-							runner := backwards.New(mutated, driver, store, logger, "test-run")
+							runner := backwards.New(mutated, driver, store, logger, "test-run", nil)
 							err = runner.Run(context.Background())
 							assert.Expect(err).To(HaveOccurred())
 							assert.Expect(err.Error()).To(ContainSubstring("assertion failed"))
@@ -768,7 +768,7 @@ func TestCrossRunPassed(t *testing.T) {
 
 				defer func() { _ = store.Close() }()
 
-				runner := backwards.New(cfg, driver, store, logger, "test-run")
+				runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 				err = runner.Run(context.Background())
 				assert.Expect(err).NotTo(HaveOccurred())
 			})
@@ -792,12 +792,12 @@ func TestCrossRunPassed(t *testing.T) {
 				defer func() { _ = store.Close() }()
 
 				// Run 1: both build and deploy execute via within-run cascade
-				runner1 := backwards.New(cfg, driver, store, logger, "run-1")
+				runner1 := backwards.New(cfg, driver, store, logger, "run-1", nil)
 				err = runner1.Run(context.Background())
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				// Run 2: deploy's passed constraint satisfied by run-1's build success
-				runner2 := backwards.New(cfg, driver, store, logger, "run-2")
+				runner2 := backwards.New(cfg, driver, store, logger, "run-2", nil)
 				err = runner2.Run(context.Background())
 				assert.Expect(err).NotTo(HaveOccurred())
 
@@ -838,7 +838,7 @@ func TestCrossRunPassed(t *testing.T) {
 
 				defer func() { _ = store.Close() }()
 
-				runner := backwards.New(cfg, driver, store, logger, "run-blocked")
+				runner := backwards.New(cfg, driver, store, logger, "run-blocked", nil)
 				err = runner.Run(context.Background())
 				assert.Expect(err).NotTo(HaveOccurred())
 
@@ -872,7 +872,7 @@ func TestGetVersionModes(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -901,7 +901,7 @@ func TestGetMockEvery(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	// Run 1: should fetch the first version.
-	runner := backwards.New(cfg, driver, store, logger, "run-1")
+	runner := backwards.New(cfg, driver, store, logger, "run-1", nil)
 	err = runner.Run(context.Background())
 	assert.Expect(err).NotTo(HaveOccurred())
 
@@ -910,7 +910,7 @@ func TestGetMockEvery(t *testing.T) {
 	assert.Expect(len(versions1)).To(BeNumerically(">=", 1))
 
 	// Run 2: should fetch a new version (counter increments).
-	runner2 := backwards.New(cfg, driver, store, logger, "run-2")
+	runner2 := backwards.New(cfg, driver, store, logger, "run-2", nil)
 	err = runner2.Run(context.Background())
 	assert.Expect(err).NotTo(HaveOccurred())
 
@@ -937,7 +937,7 @@ func TestPutBasic(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 
@@ -969,7 +969,7 @@ func TestPrewritePendingJobs(t *testing.T) {
 
 				defer func() { _ = store.Close() }()
 
-				runner := backwards.New(cfg, driver, store, logger, "test-run")
+				runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 				err = runner.Run(context.Background())
 				assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1019,7 +1019,7 @@ func TestPrewritePendingJobs(t *testing.T) {
 
 				defer func() { _ = store.Close() }()
 
-				runner := backwards.New(cfg, driver, store, logger, "test-run")
+				runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 				err = runner.Run(context.Background())
 				assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1062,7 +1062,7 @@ func TestJobParams(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run")
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})

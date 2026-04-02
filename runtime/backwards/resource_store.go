@@ -26,7 +26,7 @@ func hashString(s string) string {
 		h = h*31 ^ uint32(ch)
 	}
 
-	return fmt.Sprintf("%x", h)
+	return strconv.FormatUint(uint64(h), 16)
 }
 
 func rvMetaKey(name string) string {

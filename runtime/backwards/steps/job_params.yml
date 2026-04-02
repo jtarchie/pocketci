@@ -25,15 +25,15 @@ jobs:
             args:
               - -c
               - |
-                echo "DEPLOY_ENV=$DEPLOY_ENV VERSION=$VERSION"
-                if [ "$DEPLOY_ENV" != "staging" ]; then
-                  echo "ERROR: DEPLOY_ENV not set"
-                  exit 1
-                fi
-                if [ "$VERSION" != "1.2.3" ]; then
-                  echo "ERROR: VERSION not set"
-                  exit 1
-                fi
+                  echo "DEPLOY_ENV=$DEPLOY_ENV VERSION=$VERSION"
+                  if [ "$DEPLOY_ENV" != "staging" ]; then
+                    echo "ERROR: DEPLOY_ENV not set"
+                    exit 1
+                  fi
+                  if [ "$VERSION" != "1.2.3" ]; then
+                    echo "ERROR: VERSION not set"
+                    exit 1
+                  fi
         assert:
           code: 0
           stdout: "DEPLOY_ENV=staging"
@@ -64,15 +64,15 @@ jobs:
             args:
               - -c
               - |
-                echo "DEPLOY_ENV=$DEPLOY_ENV EXTRA=$EXTRA"
-                if [ "$DEPLOY_ENV" != "production" ]; then
-                  echo "ERROR: step env should override job params"
-                  exit 1
-                fi
-                if [ "$EXTRA" != "from-params" ]; then
-                  echo "ERROR: non-overridden param should still be present"
-                  exit 1
-                fi
+                  echo "DEPLOY_ENV=$DEPLOY_ENV EXTRA=$EXTRA"
+                  if [ "$DEPLOY_ENV" != "production" ]; then
+                    echo "ERROR: step env should override job params"
+                    exit 1
+                  fi
+                  if [ "$EXTRA" != "from-params" ]; then
+                    echo "ERROR: non-overridden param should still be present"
+                    exit 1
+                  fi
         assert:
           code: 0
           stdout: "DEPLOY_ENV=production"
@@ -101,11 +101,11 @@ jobs:
                 args:
                   - -c
                   - |
-                    echo "BUILD_NUM=$BUILD_NUM"
-                    if [ "$BUILD_NUM" != "42" ]; then
-                      echo "ERROR: BUILD_NUM not injected into do step"
-                      exit 1
-                    fi
+                      echo "BUILD_NUM=$BUILD_NUM"
+                      if [ "$BUILD_NUM" != "42" ]; then
+                        echo "ERROR: BUILD_NUM not injected into do step"
+                        exit 1
+                      fi
             assert:
               code: 0
               stdout: "BUILD_NUM=42"

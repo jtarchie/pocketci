@@ -9,6 +9,7 @@ import (
 
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/storage"
 )
 
@@ -35,6 +36,7 @@ type StepContext struct {
 	Resources       config.Resources
 	ResourceTypes   config.ResourceTypes
 	JobParams       map[string]string // webhook trigger params, injected as base env into task steps
+	Notifier        *jsapi.Notifier
 }
 
 // BaseStorageKey returns the storage prefix for the current job.
