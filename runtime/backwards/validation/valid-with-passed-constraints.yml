@@ -1,0 +1,35 @@
+---
+resources:
+  - name: my-repo
+    type: registry-image
+    source:
+      repository: busybox
+
+jobs:
+  - name: build
+    plan:
+      - get: my-repo
+      - task: build-task
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: echo
+            args: ["building"]
+  - name: deploy
+    plan:
+      - get: my-repo
+        passed: [build]
+      - task: deploy-task
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: echo
+            args: ["deploying"]

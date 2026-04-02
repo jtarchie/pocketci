@@ -1,0 +1,36 @@
+---
+resources:
+  - name: my-repo
+    type: registry-image
+    source:
+      repository: busybox
+
+jobs:
+  - name: job-a
+    plan:
+      - get: my-repo
+        passed: [job-b]
+      - task: task-a
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: echo
+            args: ["a"]
+  - name: job-b
+    plan:
+      - get: my-repo
+        passed: [job-a]
+      - task: task-b
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: echo
+            args: ["b"]

@@ -562,6 +562,52 @@ func TestValidateResourceTypes(t *testing.T) {
 	})
 }
 
+func TestValidateConfig(t *testing.T) {
+	t.Run("duplicate job names", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		cfg := loadConfig(t, "validation/duplicate-job-names.yml")
+		err := backwards.ValidateConfig(cfg)
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("duplicate job name"))
+	})
+
+	t.Run("get step references undefined resource", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		cfg := loadConfig(t, "validation/undefined-resource-in-get.yml")
+		err := backwards.ValidateConfig(cfg)
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("undefined resource"))
+	})
+
+	t.Run("passed constraint references unknown job", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		cfg := loadConfig(t, "validation/passed-references-unknown-job.yml")
+		err := backwards.ValidateConfig(cfg)
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("unknown job"))
+	})
+
+	t.Run("circular passed constraint", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		cfg := loadConfig(t, "validation/circular-passed-constraint.yml")
+		err := backwards.ValidateConfig(cfg)
+		assert.Expect(err).To(HaveOccurred())
+		assert.Expect(err.Error()).To(ContainSubstring("circular passed constraint"))
+	})
+
+	t.Run("valid pipeline with passed constraints", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+
+		cfg := loadConfig(t, "validation/valid-with-passed-constraints.yml")
+		err := backwards.ValidateConfig(cfg)
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+}
+
 type stepLocation struct {
 	jobIdx  int
 	stepIdx int

@@ -1,0 +1,21 @@
+---
+resources:
+  - name: my-repo
+    type: registry-image
+    source:
+      repository: busybox
+
+jobs:
+  - name: test-job
+    plan:
+      - get: nonexistent-resource
+      - task: test-task
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: echo
+            args: ["hello"]

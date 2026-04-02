@@ -10,8 +10,9 @@ import (
 	"github.com/jtarchie/pocketci/storage"
 )
 
-// ValidateConfig checks that every resource references a defined resource type.
-// The "registry-image" type is built-in and always available.
+// ValidateConfig validates the pipeline configuration before execution.
+// It checks resource types, job name uniqueness, resource references,
+// passed constraint validity, and circular dependency detection.
 func ValidateConfig(cfg *config.Config) error {
 	validTypes := map[string]bool{"registry-image": true}
 
@@ -22,6 +23,92 @@ func ValidateConfig(cfg *config.Config) error {
 	for _, resource := range cfg.Resources {
 		if !validTypes[resource.Type] {
 			return fmt.Errorf("resource %q has undefined resource type %q", resource.Name, resource.Type)
+		}
+	}
+
+	// Job names must be unique.
+	jobNames := make(map[string]bool, len(cfg.Jobs))
+	for _, job := range cfg.Jobs {
+		if jobNames[job.Name] {
+			return fmt.Errorf("duplicate job name %q", job.Name)
+		}
+
+		jobNames[job.Name] = true
+	}
+
+	// Get steps must reference defined resources.
+	resourceNames := make(map[string]bool, len(cfg.Resources))
+	for _, r := range cfg.Resources {
+		resourceNames[r.Name] = true
+	}
+
+	for _, job := range cfg.Jobs {
+		for _, step := range job.Plan {
+			if step.Get != "" {
+				ref := step.Get
+				if step.GetConfig.Resource != "" {
+					ref = step.GetConfig.Resource
+				}
+
+				if !resourceNames[ref] {
+					return fmt.Errorf("job %q references undefined resource %q", job.Name, ref)
+				}
+			}
+		}
+	}
+
+	// Passed constraints must reference existing jobs.
+	for _, job := range cfg.Jobs {
+		for _, step := range job.Plan {
+			if step.Get != "" {
+				for _, dep := range step.GetConfig.Passed {
+					if !jobNames[dep] {
+						return fmt.Errorf("job %q step %q has passed constraint referencing unknown job %q", job.Name, step.Get, dep)
+					}
+				}
+			}
+		}
+	}
+
+	// Detect circular dependencies in passed constraints using DFS.
+	adj := make(map[string][]string, len(cfg.Jobs))
+	for _, job := range cfg.Jobs {
+		adj[job.Name] = extractJobDependencies(job.Plan)
+	}
+
+	const (
+		white = 0
+		gray  = 1
+		black = 2
+	)
+
+	color := make(map[string]int, len(cfg.Jobs))
+
+	var visit func(string) error
+	visit = func(name string) error {
+		color[name] = gray
+
+		for _, dep := range adj[name] {
+			switch color[dep] {
+			case gray:
+				return fmt.Errorf("circular passed constraint: %s -> %s", name, dep)
+			case white:
+				if err := visit(dep); err != nil {
+					return err
+				}
+			}
+		}
+
+		color[name] = black
+
+		return nil
+	}
+
+	for _, job := range cfg.Jobs {
+		if color[job.Name] == white {
+			if err := visit(job.Name); err != nil {
+				return err
+			}
 		}
 	}
 
