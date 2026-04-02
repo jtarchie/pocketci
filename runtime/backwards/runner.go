@@ -124,6 +124,7 @@ type Runner struct {
 	storage    storage.Driver
 	logger     *slog.Logger
 	runID      string
+	pipelineID string
 	notifier   *jsapi.Notifier
 	targetJobs []string
 }
@@ -135,6 +136,7 @@ func New(
 	store storage.Driver,
 	logger *slog.Logger,
 	runID string,
+	pipelineID string,
 	notifier *jsapi.Notifier,
 	targetJobs []string,
 ) *Runner {
@@ -144,6 +146,7 @@ func New(
 		storage:    store,
 		logger:     logger,
 		runID:      runID,
+		pipelineID: pipelineID,
 		notifier:   notifier,
 		targetJobs: targetJobs,
 	}
@@ -163,7 +166,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			return nil
 		}
 
-		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight, r.notifier)
+		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.pipelineID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight, r.notifier)
 
 		err := jr.Run(ctx)
 		if err != nil {

@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/storage"
 )
+
+const gatePollInterval = 2 * time.Second
 
 // JobRunner executes a single job's plan.
 type JobRunner struct {
@@ -20,6 +24,7 @@ type JobRunner struct {
 	storage             storage.Driver
 	logger              *slog.Logger
 	runID               string
+	pipelineID          string
 	handlers            map[string]StepHandler
 	resources           config.Resources
 	resourceTypes       config.ResourceTypes
@@ -33,6 +38,7 @@ func newJobRunner(
 	store storage.Driver,
 	logger *slog.Logger,
 	runID string,
+	pipelineID string,
 	resources config.Resources,
 	resourceTypes config.ResourceTypes,
 	pipelineMaxInFlight int,
@@ -44,6 +50,7 @@ func newJobRunner(
 		storage:             store,
 		logger:              logger,
 		runID:               runID,
+		pipelineID:          pipelineID,
 		resources:           resources,
 		resourceTypes:       resourceTypes,
 		pipelineMaxInFlight: pipelineMaxInFlight,
@@ -87,6 +94,14 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	}
 	sc.ProcessStep = func(step *config.Step, pathPrefix string) error {
 		return jr.processStep(sc, step, pathPrefix)
+	}
+
+	if jr.job.Gate != nil {
+		if err := jr.runGate(ctx); err != nil {
+			_ = jr.storage.Set(ctx, jobKey, storage.Payload{"status": "failure"})
+
+			return fmt.Errorf("gate: %w", err)
+		}
 	}
 
 	var planErr error
@@ -348,6 +363,75 @@ func extractJobParams(job *config.Job) map[string]string {
 	}
 
 	return job.Triggers.Webhook.Params
+}
+
+func (jr *JobRunner) runGate(ctx context.Context) error {
+	gateID := uuid.New().String()
+	gate := &storage.Gate{
+		ID:         gateID,
+		RunID:      jr.runID,
+		PipelineID: jr.pipelineID,
+		Name:       jr.job.Name,
+		Status:     storage.GateStatusPending,
+		Message:    jr.job.Gate.Message,
+	}
+
+	createdAt := time.Now()
+
+	if err := jr.storage.SaveGate(ctx, gate); err != nil {
+		return fmt.Errorf("save gate: %w", err)
+	}
+
+	return jr.pollGate(ctx, gateID, createdAt)
+}
+
+func (jr *JobRunner) pollGate(ctx context.Context, gateID string, createdAt time.Time) error {
+	var deadline time.Time
+
+	if jr.job.Gate.Timeout != "" {
+		dur, err := time.ParseDuration(jr.job.Gate.Timeout)
+		if err != nil {
+			return fmt.Errorf("invalid timeout %q: %w", jr.job.Gate.Timeout, err)
+		}
+
+		deadline = createdAt.Add(dur)
+	}
+
+	for {
+		if !deadline.IsZero() && time.Now().After(deadline) {
+			if err := jr.storage.ResolveGate(ctx, gateID, storage.GateStatusTimedOut, "timeout"); err != nil {
+				jr.logger.Error("gate.resolve.timeout.failed",
+					slog.String("gate_id", gateID),
+					slog.String("job", jr.job.Name),
+					slog.Any("error", err),
+				)
+			}
+
+			return fmt.Errorf("gate %q: timed out", jr.job.Name)
+		}
+
+		gate, err := jr.storage.GetGate(ctx, gateID)
+		if err != nil {
+			return fmt.Errorf("gate %q: poll failed: %w", jr.job.Name, err)
+		}
+
+		switch gate.Status {
+		case storage.GateStatusApproved:
+			return nil
+		case storage.GateStatusRejected:
+			return fmt.Errorf("gate %q: rejected by %s", jr.job.Name, gate.ApprovedBy)
+		case storage.GateStatusTimedOut:
+			return fmt.Errorf("gate %q: timed out", jr.job.Name)
+		case storage.GateStatusPending:
+			// continue polling
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(gatePollInterval):
+		}
+	}
 }
 
 // resolveEffectiveMaxInFlight returns the effective max_in_flight for a job.
