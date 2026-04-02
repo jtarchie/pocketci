@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -95,19 +96,14 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 	taskConfig := step.TaskConfig
 
 	if step.File != "" {
-		loaded, err := loadTaskConfigFromVolume(sc, step.File)
+		loaded, err := trackLoadFile(sc, step.File, pathPrefix)
 		if err != nil {
 			return &TaskErroredError{TaskName: taskName, Err: err}
 		}
 
 		taskConfig = loaded
 	} else if step.URI != "" {
-		path, err := parseFileURI(step.URI)
-		if err != nil {
-			return &TaskErroredError{TaskName: taskName, Err: err}
-		}
-
-		loaded, err := loadTaskConfigFromVolume(sc, path)
+		loaded, err := trackLoadURI(sc, step.URI, pathPrefix)
 		if err != nil {
 			return &TaskErroredError{TaskName: taskName, Err: err}
 		}
@@ -475,16 +471,171 @@ func extractFileFromTar(reader io.Reader, targetPath string) ([]byte, error) {
 	}
 }
 
-// parseFileURI extracts the volume path from a file:// URI.
-func parseFileURI(uri string) (string, error) {
-	if !strings.HasPrefix(uri, "file://") {
-		return "", fmt.Errorf("unsupported URI scheme in %q; only file:// is supported", uri)
+type uriScheme int
+
+const (
+	schemeFile uriScheme = iota
+	schemeHTTP
+)
+
+// parseURI classifies a URI by scheme and returns the relevant path/URL.
+// For file:// URIs it returns the volume path (with ".." validation).
+// For http:// and https:// it returns the full URI unchanged.
+func parseURI(uri string) (uriScheme, string, error) {
+	if strings.HasPrefix(uri, "file://") {
+		path := strings.TrimPrefix(uri, "file://")
+		if strings.Contains(path, "..") {
+			return 0, "", fmt.Errorf("file:// URI must not contain \"..\" path segments: %q", uri)
+		}
+
+		return schemeFile, path, nil
 	}
 
-	path := strings.TrimPrefix(uri, "file://")
-	if strings.Contains(path, "..") {
-		return "", fmt.Errorf("file:// URI must not contain \"..\" path segments: %q", uri)
+	if strings.HasPrefix(uri, "http://") || strings.HasPrefix(uri, "https://") {
+		return schemeHTTP, uri, nil
 	}
 
-	return path, nil
+	return 0, "", fmt.Errorf("unsupported URI scheme in %q; supported: file://, http://, https://", uri)
+}
+
+// loadTaskConfigFromHTTP fetches a task config YAML from an HTTP(S) URL.
+func loadTaskConfigFromHTTP(ctx context.Context, uri string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request for %s: %w", uri, err)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching %s: %w", uri, err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("HTTP %d fetching %s", resp.StatusCode, uri)
+	}
+
+	const maxBodySize = 10 << 20 // 10MB
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBodySize))
+	if err != nil {
+		return nil, fmt.Errorf("reading response from %s: %w", uri, err)
+	}
+
+	return data, nil
+}
+
+// trackLoadFile wraps loadTaskConfigFromVolume with storage status tracking.
+func trackLoadFile(sc *StepContext, filePath, pathPrefix string) (*config.TaskConfig, error) {
+	mountName := strings.SplitN(filePath, "/", 2)[0]
+	storageKey := fmt.Sprintf("%s/%s/load-file", sc.BaseStorageKey(), pathPrefix)
+	startedAt := time.Now()
+
+	_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+		"status":     "pending",
+		"file":       filePath,
+		"volume":     mountName,
+		"started_at": startedAt.Format(time.RFC3339),
+	})
+
+	loaded, err := loadTaskConfigFromVolume(sc, filePath)
+	elapsed := time.Since(startedAt)
+
+	if err != nil {
+		errMsg := err.Error()
+
+		_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+			"status":       "failure",
+			"file":         filePath,
+			"volume":       mountName,
+			"started_at":   startedAt.Format(time.RFC3339),
+			"elapsed":      elapsed.String(),
+			"errorMessage": errMsg,
+			"logs":         []any{map[string]string{"type": "stderr", "content": errMsg}},
+		})
+
+		return nil, err
+	}
+
+	_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+		"status":     "success",
+		"file":       filePath,
+		"volume":     mountName,
+		"started_at": startedAt.Format(time.RFC3339),
+		"elapsed":    elapsed.String(),
+		"logs":       []any{map[string]string{"type": "stdout", "content": fmt.Sprintf("loaded %s from volume %s", filePath, mountName)}},
+	})
+
+	return loaded, nil
+}
+
+// trackLoadURI wraps URI loading with storage status tracking.
+// For file:// URIs it delegates to trackLoadFile.
+// For http(s):// URIs it fetches remotely and parses YAML.
+func trackLoadURI(sc *StepContext, uri, pathPrefix string) (*config.TaskConfig, error) {
+	scheme, value, err := parseURI(uri)
+	if err != nil {
+		return nil, err
+	}
+
+	if scheme == schemeFile {
+		return trackLoadFile(sc, value, pathPrefix)
+	}
+
+	storageKey := fmt.Sprintf("%s/%s/load-uri", sc.BaseStorageKey(), pathPrefix)
+	startedAt := time.Now()
+
+	_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+		"status":     "pending",
+		"uri":        uri,
+		"started_at": startedAt.Format(time.RFC3339),
+	})
+
+	data, err := loadTaskConfigFromHTTP(sc.Ctx, uri)
+	elapsed := time.Since(startedAt)
+
+	if err != nil {
+		errMsg := err.Error()
+
+		_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+			"status":       "failure",
+			"uri":          uri,
+			"started_at":   startedAt.Format(time.RFC3339),
+			"elapsed":      elapsed.String(),
+			"errorMessage": errMsg,
+			"logs":         []any{map[string]string{"type": "stderr", "content": errMsg}},
+		})
+
+		return nil, err
+	}
+
+	var taskConfig config.TaskConfig
+
+	if err := yaml.UnmarshalWithOptions(data, &taskConfig, yaml.Strict()); err != nil {
+		errMsg := fmt.Sprintf("parsing task config from %s: %s", uri, err.Error())
+
+		_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+			"status":       "failure",
+			"uri":          uri,
+			"started_at":   startedAt.Format(time.RFC3339),
+			"elapsed":      elapsed.String(),
+			"errorMessage": errMsg,
+			"logs":         []any{map[string]string{"type": "stderr", "content": errMsg}},
+		})
+
+		return nil, fmt.Errorf("parsing task config from %q: %w", uri, err)
+	}
+
+	_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+		"status":     "success",
+		"uri":        uri,
+		"started_at": startedAt.Format(time.RFC3339),
+		"elapsed":    elapsed.String(),
+		"logs":       []any{map[string]string{"type": "stdout", "content": "loaded config from " + uri}},
+	})
+
+	return &taskConfig, nil
 }

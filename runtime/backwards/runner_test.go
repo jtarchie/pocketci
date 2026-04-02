@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1065,6 +1067,188 @@ func TestJobParams(t *testing.T) {
 			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
+		})
+	}
+}
+
+func TestTaskURIHTTPStep(t *testing.T) {
+	taskYAML := `
+image_resource:
+  type: registry-image
+  source:
+    repository: busybox
+run:
+  path: sh
+  args: ["-c", "echo HTTP-SUCCESS"]
+`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/yaml")
+		_, _ = fmt.Fprint(w, taskYAML)
+	}))
+	defer server.Close()
+
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+			logger := discardLogger()
+
+			exitCode := 0
+			cfg := &configpkg.Config{
+				Jobs: configpkg.Jobs{
+					{
+						Name: "http-job",
+						Plan: configpkg.Steps{
+							{
+								Task: "http-task",
+								URI:  server.URL + "/task.yml",
+								Assert: &struct {
+									Code   *int   `yaml:"code,omitempty"`
+									Stderr string `yaml:"stderr,omitempty"`
+									Stdout string `yaml:"stdout,omitempty"`
+								}{
+									Code:   &exitCode,
+									Stdout: "HTTP-SUCCESS",
+								},
+							},
+						},
+					},
+				},
+			}
+
+			driver, err := df.new("test-http-uri-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-http-uri", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			// Verify storage has load-uri entry with success status.
+			payload, err := store.Get(context.Background(), "/pipeline/test-run/jobs/http-job/0/load-uri")
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(payload["status"]).To(Equal("success"))
+			assert.Expect(payload["uri"]).To(Equal(server.URL + "/task.yml"))
+			assert.Expect(payload["elapsed"]).NotTo(BeEmpty())
+		})
+	}
+}
+
+func TestTaskURIHTTPErrorStep(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+			logger := discardLogger()
+
+			cfg := &configpkg.Config{
+				Jobs: configpkg.Jobs{
+					{
+						Name: "http-error-job",
+						Plan: configpkg.Steps{
+							{
+								Task: "http-error-task",
+								URI:  server.URL + "/missing.yml",
+							},
+						},
+					},
+				},
+			}
+
+			driver, err := df.new("test-http-err-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-http-err", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
+			err = runner.Run(context.Background())
+			assert.Expect(err).To(HaveOccurred())
+			assert.Expect(err.Error()).To(ContainSubstring("http-error-task errored"))
+
+			// Verify storage has load-uri entry with failure status.
+			payload, err := store.Get(context.Background(), "/pipeline/test-run/jobs/http-error-job/0/load-uri")
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(payload["status"]).To(Equal("failure"))
+			assert.Expect(payload["errorMessage"]).To(ContainSubstring("HTTP 404"))
+		})
+	}
+}
+
+func TestTaskFileStorageTracking(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "steps/task_file.yml")
+			logger := discardLogger()
+
+			driver, err := df.new("test-file-track-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-file-track", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			// The second step (index 1) loads from file.
+			payload, err := store.Get(context.Background(), "/pipeline/test-run/jobs/success-job/1/load-file")
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(payload["status"]).To(Equal("success"))
+			assert.Expect(payload["file"]).To(Equal("task-output/task_file.yml"))
+			assert.Expect(payload["volume"]).To(Equal("task-output"))
+			assert.Expect(payload["elapsed"]).NotTo(BeEmpty())
+		})
+	}
+}
+
+func TestTaskURIFileSchemeStorageTracking(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			cfg := loadConfig(t, "steps/task_uri.yml")
+			logger := discardLogger()
+
+			driver, err := df.new("test-uri-file-track-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-uri-file-track", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run", nil)
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			// file:// URIs delegate to trackLoadFile, so storage key is load-file.
+			payload, err := store.Get(context.Background(), "/pipeline/test-run/jobs/success-job/1/load-file")
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(payload["status"]).To(Equal("success"))
+			assert.Expect(payload["file"]).To(Equal("task-output/task_file.yml"))
+			assert.Expect(payload["volume"]).To(Equal("task-output"))
 		})
 	}
 }

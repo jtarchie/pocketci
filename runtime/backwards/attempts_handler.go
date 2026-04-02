@@ -1,8 +1,6 @@
 package backwards
 
 import (
-	"fmt"
-
 	config "github.com/jtarchie/pocketci/backwards"
 )
 
