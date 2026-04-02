@@ -203,3 +203,4 @@ backwards/deno.lock
 
 .claude/settings.*
 docs/.vitepress/cache/
+.scratch/
