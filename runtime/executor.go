@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"time"
 
+	backwards "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
+	runtimebackwards "github.com/jtarchie/pocketci/runtime/backwards"
 	"github.com/jtarchie/pocketci/runtime/support"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
@@ -73,6 +75,9 @@ type ExecutorOptions struct {
 	// TriggerCallback, if set, allows pipeline code to trigger other pipelines
 	// via the triggerPipeline() JS API.
 	TriggerCallback func(ctx context.Context, pipelineName string, jobs []string, args []string) (string, error)
+	// ContentType indicates the pipeline content format. When set to
+	// ContentTypeYAML the Go-native runner is used instead of the JS VM.
+	ContentType storage.ContentType
 }
 
 // ExecutePipeline executes a pipeline with the given content and driver factory.
@@ -128,6 +133,39 @@ func ExecutePipeline(
 	}
 
 	logger.Info("pipeline.executing")
+
+	if opts.ContentType == storage.ContentTypeYAML {
+		cfg, err := backwards.ParseConfig(content)
+		if err != nil {
+			return fmt.Errorf("could not parse YAML pipeline: %w", err)
+		}
+
+		runID := opts.RunID
+		if runID == "" {
+			runID = namespace
+		}
+
+		runner := runtimebackwards.New(cfg, driver, store, logger, runID, opts.PipelineID,
+			runtimebackwards.RunnerOptions{
+				SecretsManager: opts.SecretsManager,
+				WebhookData:    opts.WebhookData,
+				TargetJobs:     opts.TargetJobs,
+				DedupTTL:       opts.DedupTTL,
+			},
+		)
+
+		if err := runner.Run(ctx); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return fmt.Errorf("execution cancelled: %w", err)
+			}
+
+			return fmt.Errorf("could not execute pipeline: %w", err)
+		}
+
+		logger.Info("pipeline.completed.success")
+
+		return nil
+	}
 
 	js := NewJS(logger)
 

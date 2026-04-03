@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,8 +38,30 @@ func youtubeIDStyle(input string) string {
 	return encoded
 }
 
-func createLogger() (*strings.Builder, *slog.Logger) {
-	logs := &strings.Builder{}
+// safeBuffer is a mutex-protected buffer safe for concurrent writes from
+// background goroutines (e.g. native container goroutines) and reads from the
+// test goroutine.
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *safeBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.Write(p)
+}
+
+func (b *safeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.String()
+}
+
+func createLogger() (*safeBuffer, *slog.Logger) {
+	logs := &safeBuffer{}
 	logger := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	}))
@@ -790,10 +813,10 @@ func TestVersionEveryWithMock(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		// Test that pipeline with properly defined resource type passes validation
-		// We're just testing that validation doesn't reject it
-		pipeline, err := backwards.NewPipeline("validation/valid-with-resource-type.yml")
+		contents, err := os.ReadFile("validation/valid-with-resource-type.yml")
 		assert.Expect(err).NotTo(HaveOccurred())
-		assert.Expect(pipeline).NotTo(BeEmpty())
+		err = backwards.ValidatePipeline(contents)
+		assert.Expect(err).NotTo(HaveOccurred())
 	})
 
 	t.Run("validates explicitly defined resource types are recognized", func(t *testing.T) {
@@ -802,10 +825,10 @@ func TestVersionEveryWithMock(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
 		// Test that pipeline with explicitly defined git resource type passes validation
-		// This should not fail during validation
-		pipeline, err := backwards.NewPipeline("validation/valid-with-default-resource-type.yml")
+		contents, err := os.ReadFile("validation/valid-with-default-resource-type.yml")
 		assert.Expect(err).NotTo(HaveOccurred())
-		assert.Expect(pipeline).NotTo(BeEmpty())
+		err = backwards.ValidatePipeline(contents)
+		assert.Expect(err).NotTo(HaveOccurred())
 	})
 
 	t.Run("task with file URI loads config from volume", func(t *testing.T) {

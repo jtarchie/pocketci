@@ -8,7 +8,7 @@ import (
 	"github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/orchestra/native"
-	"github.com/jtarchie/pocketci/runtime"
+	runtimebackwards "github.com/jtarchie/pocketci/runtime/backwards"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/storage"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
@@ -37,16 +37,17 @@ func runYAMLPipeline(t *testing.T, yamlContent string, webhookData *jsapi.Webhoo
 	t.Helper()
 	assert := NewGomegaWithT(t)
 
-	pipeline, err := backwards.NewPipelineFromContent(yamlContent)
+	cfg, err := backwards.ParseConfig(yamlContent)
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	driver := setupNativeDriver(t)
 	store := setupStorage(t)
 
-	js := runtime.NewJS(slog.Default())
-	return js.ExecuteWithOptions(context.Background(), pipeline, driver, store, runtime.ExecuteOptions{
-		WebhookData: webhookData,
-	})
+	runner := runtimebackwards.New(cfg, driver, store, slog.Default(), "test-run", "",
+		runtimebackwards.RunnerOptions{WebhookData: webhookData},
+	)
+
+	return runner.Run(context.Background())
 }
 
 const simpleEchoYAML = `
@@ -149,15 +150,6 @@ func TestWebhookTriggerYAML(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 	})
 
-	t.Run("transpiled JS contains webhook_trigger field", func(t *testing.T) {
-		t.Parallel()
-		assert := NewGomegaWithT(t)
-		js, err := backwards.NewPipelineFromContent(webhookGatedYAML)
-		assert.Expect(err).NotTo(HaveOccurred())
-		assert.Expect(js).To(ContainSubstring("webhook_trigger"))
-		// The YAML value is JSON-encoded in the JS bundle, so double quotes are escaped.
-		assert.Expect(js).To(ContainSubstring(`provider == \"github\"`))
-	})
 }
 
 // ── triggers: webhook ────────────────────────────────────────────────────────
@@ -314,15 +306,4 @@ func TestTriggersWebhook(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 	})
 
-	t.Run("transpiled JS contains triggers.webhook fields", func(t *testing.T) {
-		t.Parallel()
-		assert := NewGomegaWithT(t)
-		js, err := backwards.NewPipelineFromContent(triggersWebhookParamsYAML)
-		assert.Expect(err).NotTo(HaveOccurred())
-		assert.Expect(js).To(ContainSubstring(`"triggers"`))
-		assert.Expect(js).To(ContainSubstring(`"filter"`))
-		assert.Expect(js).To(ContainSubstring(`"params"`))
-		assert.Expect(js).To(ContainSubstring(`MY_PROVIDER`))
-		assert.Expect(js).To(ContainSubstring(`MY_EVENT`))
-	})
 }

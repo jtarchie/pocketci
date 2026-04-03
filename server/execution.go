@@ -574,6 +574,7 @@ func (s *ExecutionService) buildExecutorOptions(pipeline *storage.Pipeline, opts
 		AuthProvider: opts.authProvider,
 		User:         opts.user,
 		Args:         opts.args,
+		ContentType:  pipeline.ContentType,
 	}
 
 	if IsFeatureEnabled(FeatureSecrets, s.AllowedFeatures) {
@@ -1059,19 +1060,9 @@ func (s *ExecutionService) resolveDriverFactory(ctx context.Context, pipeline *s
 	}
 }
 
-// resolveExecutableContent returns JS/TS content ready for the runtime.
-// When the pipeline was stored as YAML it is transpiled on the fly so that
-// the latest pipeline_runner.ts bundle is always used. JS and TS content is
-// returned as-is.
+// resolveExecutableContent returns the pipeline content ready for the runtime.
+// YAML pipelines are executed natively by the Go runner (ContentType is passed
+// via ExecutorOptions); JS and TS content is returned as-is for the Goja VM.
 func resolveExecutableContent(pipeline *storage.Pipeline) (string, error) {
-	if pipeline.ContentType == storage.ContentTypeYAML {
-		ts, err := backwards.NewPipelineFromContent(pipeline.Content)
-		if err != nil {
-			return "", fmt.Errorf("could not transpile YAML pipeline %q: %w", pipeline.Name, err)
-		}
-
-		return ts, nil
-	}
-
 	return pipeline.Content, nil
 }

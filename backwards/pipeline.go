@@ -2,7 +2,6 @@ package backwards
 
 import (
 	"bytes"
-	_ "embed"
 	"errors"
 	"fmt"
 	"os"
@@ -14,10 +13,6 @@ import (
 	sprig "github.com/go-task/slim-sprig/v3"
 	"github.com/goccy/go-yaml"
 )
-
-//go:generate go run github.com/evanw/esbuild/... --minify --tree-shaking=true --platform=neutral --bundle --outfile=bundle.js src/index.ts
-//go:embed bundle.js
-var pipelineJS string
 
 // preprocessYAML checks for an opt-in template marker ("pocketci: template" on
 // the first line) and renders the YAML using Go text/template with Sprig functions.
@@ -45,15 +40,6 @@ func preprocessYAML(content []byte) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
-}
-
-func NewPipeline(filename string) (string, error) {
-	contents, err := os.ReadFile(filename)
-	if err != nil {
-		return "", fmt.Errorf("could not read pipeline: %w", err)
-	}
-
-	return NewPipelineFromContent(string(contents))
 }
 
 // ParseConfig unmarshals a Concourse YAML pipeline content into a Config.
@@ -85,66 +71,6 @@ func LoadConfig(filename string) (*Config, error) {
 	}
 
 	return &cfg, nil
-}
-
-// NewPipelineFromContent transpiles a YAML pipeline string into a TypeScript
-// pipeline definition that can be executed by the JS runtime. Unlike NewPipeline
-// it accepts content directly instead of reading from a file.
-func NewPipelineFromContent(content string) (string, error) {
-	var config Config
-
-	// Preprocess YAML templates if opted in
-	processed, err := preprocessYAML([]byte(content))
-	if err != nil {
-		return "", err
-	}
-
-	err = yaml.Unmarshal(processed, &config)
-	if err != nil {
-		return "", fmt.Errorf("could not unmarshal pipeline: %w", err)
-	}
-
-	validate := validator.New(validator.WithRequiredStructEnabled())
-
-	err = validate.Struct(config)
-	if err != nil {
-		return "", fmt.Errorf("could not validate pipeline: %w", err)
-	}
-
-	if err := validateResourceTypes(&config); err != nil {
-		return "", err
-	}
-
-	if err := validateSteps(config.Jobs); err != nil {
-		return "", err
-	}
-
-	if err := validateConcurrency(&config); err != nil {
-		return "", err
-	}
-
-	if err := validateInputOutputWiring(config.Jobs); err != nil {
-		return "", err
-	}
-
-	if err := validateDependsOn(config.Jobs); err != nil {
-		return "", err
-	}
-
-	if err := validateGateConfigs(config.Jobs); err != nil {
-		return "", err
-	}
-
-	jsonBytes, err := yaml.MarshalWithOptions(config, yaml.JSON())
-	if err != nil {
-		return "", fmt.Errorf("could not marshal pipeline: %w", err)
-	}
-
-	pipeline := "const config = " + string(jsonBytes) + ";\n" +
-		pipelineJS +
-		"\n; const pipeline = createPipeline(config); export { pipeline };"
-
-	return pipeline, nil
 }
 
 // ValidatePipeline validates that the given YAML content is a well-formed

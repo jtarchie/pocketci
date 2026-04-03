@@ -1,6 +1,0 @@
-{
-  "nodeModulesDir": "auto",
-  "imports": {
-    "p-map": "npm:p-map@^7.0.0"
-  }
-}

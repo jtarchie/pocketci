@@ -58,24 +58,6 @@ func TestAgentStepConfig(t *testing.T) {
 		assert.Expect(step.AgentLimits.MaxTotalTokens).To(Equal(int32(500000)))
 	})
 
-	t.Run("NewPipeline transpiles agent step with LLM config to JS", func(t *testing.T) {
-		t.Parallel()
-
-		assert := NewGomegaWithT(t)
-
-		js, err := backwards.NewPipeline("testdata/agent-with-llm.yml")
-		assert.Expect(err).NotTo(HaveOccurred())
-
-		// The generated JS should include config fields so job_runner.ts can read them.
-		assert.Expect(js).To(ContainSubstring("review-code-agent"))
-		assert.Expect(js).To(ContainSubstring(`"temperature"`))
-		assert.Expect(js).To(ContainSubstring(`"max_tokens"`))
-		assert.Expect(js).To(ContainSubstring(`"thinking"`))
-		assert.Expect(js).To(ContainSubstring(`contextGuard`))
-		assert.Expect(js).To(ContainSubstring(`"safety"`))
-		assert.Expect(js).To(ContainSubstring(`"limits"`))
-	})
-
 	t.Run("agent step without LLM config is still valid", func(t *testing.T) {
 		t.Parallel()
 
@@ -169,61 +151,12 @@ jobs:
 		assert.Expect(step.Prompt).To(BeEmpty())
 	})
 
-	t.Run("transpiles agent step with file field to JS", func(t *testing.T) {
-		t.Parallel()
-
-		assert := NewGomegaWithT(t)
-
-		js, err := backwards.NewPipelineFromContent(`
-jobs:
-  - name: review
-    plan:
-      - agent: my-agent
-        file: repo/agents/review.yml
-        config:
-          platform: linux
-          image_resource:
-            type: registry-image
-            source: { repository: alpine }
-          inputs:
-            - name: repo
-`)
-		assert.Expect(err).NotTo(HaveOccurred())
-		assert.Expect(js).To(ContainSubstring("my-agent"))
-		assert.Expect(js).To(ContainSubstring("repo/agents/review.yml"))
-	})
-
-	t.Run("transpiles agent step with prompt_file field to JS", func(t *testing.T) {
-		t.Parallel()
-
-		assert := NewGomegaWithT(t)
-
-		js, err := backwards.NewPipelineFromContent(`
-jobs:
-  - name: review
-    plan:
-      - agent: my-agent
-        prompt_file: repo/prompts/review.md
-        model: openrouter/google/gemini-3.1-flash-lite-preview
-        config:
-          platform: linux
-          image_resource:
-            type: registry-image
-            source: { repository: alpine }
-          inputs:
-            - name: repo
-`)
-		assert.Expect(err).NotTo(HaveOccurred())
-		assert.Expect(js).To(ContainSubstring("my-agent"))
-		assert.Expect(js).To(ContainSubstring("repo/prompts/review.md"))
-	})
-
 	t.Run("validation rejects agent step without prompt, file, or prompt_file", func(t *testing.T) {
 		t.Parallel()
 
 		assert := NewGomegaWithT(t)
 
-		_, err := backwards.NewPipelineFromContent(`
+		err := backwards.ValidatePipeline([]byte(`
 jobs:
   - name: review
     plan:
@@ -234,7 +167,7 @@ jobs:
           image_resource:
             type: registry-image
             source: { repository: alpine }
-`)
+`))
 		assert.Expect(err).To(HaveOccurred())
 		assert.Expect(err.Error()).To(ContainSubstring("agent step"))
 		assert.Expect(err.Error()).To(ContainSubstring("requires prompt, prompt_file, file, or uri"))
@@ -245,7 +178,7 @@ jobs:
 
 		assert := NewGomegaWithT(t)
 
-		_, err := backwards.NewPipelineFromContent(`
+		err := backwards.ValidatePipeline([]byte(`
 jobs:
   - name: review
     plan:
@@ -258,7 +191,7 @@ jobs:
             source: { repository: alpine }
           inputs:
             - name: repo
-`)
+`))
 		assert.Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -267,7 +200,7 @@ jobs:
 
 		assert := NewGomegaWithT(t)
 
-		_, err := backwards.NewPipelineFromContent(`
+		err := backwards.ValidatePipeline([]byte(`
 jobs:
   - name: review
     plan:
@@ -281,7 +214,7 @@ jobs:
             source: { repository: alpine }
           inputs:
             - name: repo
-`)
+`))
 		assert.Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -421,65 +354,4 @@ jobs:
 		assert.Expect(step.Tools[1].TaskConfig.Image).To(Equal("python:3.12"))
 	})
 
-	t.Run("transpiles tool with own container image to JS", func(t *testing.T) {
-		t.Parallel()
-
-		assert := NewGomegaWithT(t)
-
-		js, err := backwards.NewPipelineFromContent(`
-jobs:
-  - name: review
-    plan:
-      - agent: orchestrator
-        prompt: Call your sub-agents
-        model: anthropic/claude-sonnet-4-20250514
-        config:
-          platform: linux
-          image: alpine/git
-        tools:
-          - agent: shared-reviewer
-            prompt: Uses parent container
-          - agent: custom-reviewer
-            prompt: Uses own container
-            config:
-              platform: linux
-              image: python:3.12
-`)
-		assert.Expect(err).NotTo(HaveOccurred())
-		assert.Expect(js).To(ContainSubstring("shared-reviewer"))
-		assert.Expect(js).To(ContainSubstring("custom-reviewer"))
-		assert.Expect(js).To(ContainSubstring("python:3.12"))
-	})
-
-	t.Run("transpiles agent step with tools to JS", func(t *testing.T) {
-		t.Parallel()
-
-		assert := NewGomegaWithT(t)
-
-		js, err := backwards.NewPipelineFromContent(`
-jobs:
-  - name: review
-    plan:
-      - agent: orchestrator
-        file: repo/agents/orchestrator.yml
-        config:
-          platform: linux
-          image_resource:
-            type: registry-image
-            source: { repository: alpine/git }
-          inputs:
-            - name: repo
-        tools:
-          - agent: code-quality-reviewer
-            file: repo/agents/code-quality.yml
-          - agent: security-reviewer
-            prompt: Check for security issues
-            model: openrouter/google/gemini-3.1-flash-lite-preview
-`)
-		assert.Expect(err).NotTo(HaveOccurred())
-		assert.Expect(js).To(ContainSubstring("orchestrator"))
-		assert.Expect(js).To(ContainSubstring("tools"))
-		assert.Expect(js).To(ContainSubstring("code-quality-reviewer"))
-		assert.Expect(js).To(ContainSubstring("security-reviewer"))
-	})
 }
