@@ -47,8 +47,14 @@ func paramsToAnyMap(params map[string]string) map[string]any {
 }
 
 // getScopedResourceName returns a scoped name for resource version storage.
-func getScopedResourceName(resourceName string) string {
-	return "default/" + resourceName
+// pipelineID is used to scope versions per-pipeline, matching the JS runtime's
+// behaviour of `${pipelineID}/${resourceName}`.
+func getScopedResourceName(pipelineID, resourceName string) string {
+	if pipelineID == "" {
+		pipelineID = "default"
+	}
+
+	return pipelineID + "/" + resourceName
 }
 
 // runResourceContainer runs a container task for resource operations (check, in, out).

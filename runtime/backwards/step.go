@@ -20,6 +20,16 @@ type StepHandler interface {
 	Execute(ctx *StepContext, step *config.Step, pathPrefix string) error
 }
 
+// FailureKind identifies the type of failure that was handled by a step hook.
+type FailureKind int
+
+const (
+	FailureKindNone    FailureKind = 0
+	FailureKindFailed  FailureKind = 1
+	FailureKindErrored FailureKind = 2
+	FailureKindAborted FailureKind = 3
+)
+
 // StepContext carries shared state through step execution.
 type StepContext struct {
 	Ctx             context.Context
@@ -31,8 +41,18 @@ type StepContext struct {
 	ExecutedTasks   []string
 	ExecutedTasksMu sync.Mutex
 	MaxInFlight     int
-	HadFailure      bool // true when a step failed, even if handled by a step-level hook
-	ProcessStep     func(step *config.Step, pathPrefix string) error
+	// FailureCount tracks how many failures have been handled by step-level hooks.
+	// Use the delta between before/after handler.Execute to detect per-step failures.
+	FailureCount    int
+	// LastFailureKind is the kind of the most recently handled failure.
+	LastFailureKind FailureKind
+	// PreRegisteredTasks holds task names that were already appended to
+	// ExecutedTasks (e.g. by InParallelHandler) to avoid double-counting.
+	PreRegisteredTasks map[string]bool
+	// CacheVolumeObjects holds the volume objects for each cache path so that
+	// Cleanup() can be called after task execution to persist contents to S3.
+	CacheVolumeObjects map[string]orchestra.Volume
+	ProcessStep        func(step *config.Step, pathPrefix string) error
 	CacheVolumes    map[string]string // maps cache path → volume name, shared across tasks in a job
 	KnownVolumes    map[string]string // maps mount name → driver volume name, shared across tasks in a job
 	Resources       config.Resources

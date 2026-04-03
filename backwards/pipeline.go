@@ -66,6 +66,27 @@ func ParseConfig(content string) (*Config, error) {
 	return &cfg, nil
 }
 
+// LoadConfig reads a YAML pipeline file from disk, applies Go template
+// preprocessing (if opted in), and returns the parsed Config.
+func LoadConfig(filename string) (*Config, error) {
+	contents, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("could not read pipeline: %w", err)
+	}
+
+	processed, err := preprocessYAML(contents)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(processed, &cfg); err != nil {
+		return nil, fmt.Errorf("could not unmarshal pipeline: %w", err)
+	}
+
+	return &cfg, nil
+}
+
 // NewPipelineFromContent transpiles a YAML pipeline string into a TypeScript
 // pipeline definition that can be executed by the JS runtime. Unlike NewPipeline
 // it accepts content directly instead of reading from a file.

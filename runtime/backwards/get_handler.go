@@ -37,7 +37,7 @@ func (h *GetHandler) Execute(sc *StepContext, step *config.Step, pathPrefix stri
 	}
 
 	versionMode := step.GetConfig.GetVersionMode()
-	scopedName := getScopedResourceName(resourceName)
+	scopedName := getScopedResourceName(sc.PipelineID, resourceName)
 	isNative := sc.Driver.Name() == "native" && resources.IsNative(resource.Type)
 
 	version, err := h.resolveVersionToFetch(sc, step, resource, resourceType, versionMode, scopedName, isNative, pathPrefix)

@@ -27,6 +27,25 @@ func (h *InParallelHandler) Execute(sc *StepContext, step *config.Step, pathPref
 	limit := resolveLimit(sc, step.InParallel.Limit, len(steps))
 	failFast := step.InParallel.FailFast
 
+	// Pre-populate ExecutedTasks in declaration order for direct task steps
+	// so that assertion ordering is deterministic even under concurrent execution.
+	// Mark them as pre-registered so TaskHandler won't append them a second time.
+	// Only safe when fail_fast is false — with fail_fast some tasks may be skipped
+	// and should not appear in ExecutedTasks.
+	if !failFast {
+		sc.ExecutedTasksMu.Lock()
+		for _, s := range steps {
+			if s.Task != "" {
+				sc.ExecutedTasks = append(sc.ExecutedTasks, s.Task)
+				if sc.PreRegisteredTasks == nil {
+					sc.PreRegisteredTasks = make(map[string]bool)
+				}
+				sc.PreRegisteredTasks[s.Task] = true
+			}
+		}
+		sc.ExecutedTasksMu.Unlock()
+	}
+
 	sem := make(chan struct{}, limit)
 
 	var wg sync.WaitGroup

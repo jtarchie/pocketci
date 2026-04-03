@@ -111,8 +111,9 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		RunID:          jr.runID,
 		JobName:        jr.job.Name,
 		MaxInFlight:    resolveEffectiveMaxInFlight(jr.job.MaxInFlight, jr.pipelineMaxInFlight),
-		CacheVolumes:   make(map[string]string),
-		KnownVolumes:   make(map[string]string),
+		CacheVolumes:       make(map[string]string),
+		CacheVolumeObjects: make(map[string]orchestra.Volume),
+		KnownVolumes:       make(map[string]string),
 		Resources:      jr.resources,
 		ResourceTypes:  jr.resourceTypes,
 		JobParams:      extractJobParams(jr.job, jr.webhookData),
@@ -124,6 +125,17 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	sc.ProcessStep = func(step *config.Step, pathPrefix string) error {
 		return jr.processStep(sc, step, pathPrefix)
 	}
+
+	// Clean up cache volumes at job end so S3-backed caches are persisted.
+	// This must happen after all tasks (including hooks) finish — not per-task —
+	// so volumes remain live for tasks sharing the same cache within a job.
+	defer func() {
+		for path, vol := range sc.CacheVolumeObjects {
+			if err := vol.Cleanup(sc.Ctx); err != nil {
+				jr.logger.Warn("cache.volume.cleanup.failed", "path", path, "err", err)
+			}
+		}
+	}()
 
 	if jr.job.Gate != nil {
 		if err := jr.runGate(ctx); err != nil {
@@ -164,7 +176,8 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	// Always validate job-level assertions, even after plan errors.
 	if assertErr := jr.validateAssertions(sc); assertErr != nil {
 		_ = jr.storage.Set(ctx, jobKey, storage.Payload{
-			"status": "failure",
+			"status":       "failure",
+			"errorMessage": assertErr.Error(),
 		})
 
 		return assertErr
@@ -179,16 +192,22 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 
 		if isStepAssertionErr || jr.job.Assert == nil {
 			_ = jr.storage.Set(ctx, jobKey, storage.Payload{
-				"status": "failure",
+				"status":       "failure",
+				"errorMessage": planErr.Error(),
 			})
 
 			return planErr
 		}
 	}
 
-	err = jr.storage.Set(ctx, jobKey, storage.Payload{
-		"status": "success",
-	})
+	// When a task failed but the job-level assertion cleared planErr, still
+	// record the error message so the UI can show why a task failed.
+	successPayload := storage.Payload{"status": "success"}
+	if planErr != nil {
+		successPayload["errorMessage"] = planErr.Error()
+	}
+
+	err = jr.storage.Set(ctx, jobKey, successPayload)
 	if err != nil {
 		return fmt.Errorf("storage set success: %w", err)
 	}
@@ -199,27 +218,59 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 // runJobHooks runs job-level hooks (on_failure, on_abort, on_error, on_success, ensure)
 // and returns the remaining planErr (nil if a hook handled it).
 func (jr *JobRunner) runJobHooks(sc *StepContext, planErr error) error {
-	jobFailed := planErr != nil || sc.HadFailure
+	// Assertion errors are test correctness failures, not task failures.
+	// They must propagate without being consumed by job-level hooks.
+	if errors.Is(planErr, ErrAssertionFailed) {
+		if jr.job.Ensure != nil {
+			if ensureErr := jr.processStep(sc, jr.job.Ensure, "job/ensure"); ensureErr != nil {
+				jr.logger.Warn("job.ensure.failed", "job", jr.job.Name, "error", ensureErr)
+			}
+		}
+
+		return planErr
+	}
+
+	jobFailed := planErr != nil || sc.FailureCount > 0
+
+	// Determine the effective failure kind for job-level hook dispatch.
+	// When planErr is nil but a step-level failure was handled, use LastFailureKind.
+	effectiveKind := FailureKindNone
+	if planErr != nil {
+		switch {
+		case isAbortError(planErr):
+			effectiveKind = FailureKindAborted
+		case isErroredError(planErr):
+			effectiveKind = FailureKindErrored
+		case isFailedError(planErr):
+			effectiveKind = FailureKindFailed
+		}
+	} else if sc.FailureCount > 0 {
+		effectiveKind = sc.LastFailureKind
+	}
 
 	if jobFailed {
 		switch {
-		case isAbortError(planErr) && jr.job.OnAbort != nil:
-			sc.Logger.Debug(planErr.Error())
+		case effectiveKind == FailureKindAborted && jr.job.OnAbort != nil:
+			if planErr != nil {
+				sc.Logger.Debug(planErr.Error())
+			}
 
 			if abortErr := jr.processStep(sc, jr.job.OnAbort, "job/on_abort"); abortErr != nil {
 				sc.Logger.Warn("job.on_abort.failed", "job", jr.job.Name, "error", abortErr)
 			}
 
 			planErr = nil
-		case isErroredError(planErr) && jr.job.OnError != nil:
-			sc.Logger.Debug(planErr.Error())
+		case effectiveKind == FailureKindErrored && jr.job.OnError != nil:
+			if planErr != nil {
+				sc.Logger.Debug(planErr.Error())
+			}
 
 			if errorErr := jr.processStep(sc, jr.job.OnError, "job/on_error"); errorErr != nil {
 				sc.Logger.Warn("job.on_error.failed", "job", jr.job.Name, "error", errorErr)
 			}
 
 			planErr = nil
-		case (isFailedError(planErr) || planErr == nil) && jr.job.OnFailure != nil:
+		case (effectiveKind == FailureKindFailed || effectiveKind == FailureKindNone) && jr.job.OnFailure != nil:
 			if failureErr := jr.processStep(sc, jr.job.OnFailure, "job/on_failure"); failureErr != nil {
 				sc.Logger.Warn("job.on_failure.failed", "job", jr.job.Name, "error", failureErr)
 			}
@@ -227,14 +278,16 @@ func (jr *JobRunner) runJobHooks(sc *StepContext, planErr error) error {
 			planErr = nil
 		}
 
-		if jr.job.Ensure != nil {
-			if ensureErr := jr.processStep(sc, jr.job.Ensure, "job/ensure"); ensureErr != nil {
-				sc.Logger.Warn("job.ensure.failed", "job", jr.job.Name, "error", ensureErr)
-			}
-		}
 	} else if jr.job.OnSuccess != nil {
 		if successErr := jr.processStep(sc, jr.job.OnSuccess, "job/on_success"); successErr != nil {
 			sc.Logger.Warn("job.on_success.failed", "job", jr.job.Name, "error", successErr)
+		}
+	}
+
+	// Ensure always runs regardless of job success or failure.
+	if jr.job.Ensure != nil {
+		if ensureErr := jr.processStep(sc, jr.job.Ensure, "job/ensure"); ensureErr != nil {
+			sc.Logger.Warn("job.ensure.failed", "job", jr.job.Name, "error", ensureErr)
 		}
 	}
 
@@ -268,18 +321,43 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 		return fmt.Errorf("no handler registered for step type %q", stepType)
 	}
 
+	failureBefore := sc.FailureCount
 	stepErr := handler.Execute(sc, step, pathPrefix)
 
 	// on_success / on_abort / on_error / on_failure hooks run before ensure.
+	// When stepErr is nil but FailureCount increased during execution (i.e. a
+	// nested step had a failure handled by its own hook), dispatch the outer
+	// hook based on LastFailureKind rather than firing on_success.
+	failureInside := sc.FailureCount > failureBefore && stepErr == nil
 	switch {
-	case stepErr == nil && step.OnSuccess != nil:
+	case stepErr == nil && !failureInside && step.OnSuccess != nil:
 		successPrefix := pathPrefix + "/on_success"
 		if successErr := jr.processStep(sc, step.OnSuccess, successPrefix); successErr != nil {
 			stepErr = successErr
 		}
+	case failureInside && sc.LastFailureKind == FailureKindAborted && step.OnAbort != nil:
+		sc.Logger.Debug("try.abort.outer")
+
+		abortPrefix := pathPrefix + "/on_abort"
+		if abortErr := jr.processStep(sc, step.OnAbort, abortPrefix); abortErr != nil {
+			sc.Logger.Warn("step.on_abort.failed", "prefix", pathPrefix, "error", abortErr)
+		}
+	case failureInside && sc.LastFailureKind == FailureKindErrored && step.OnError != nil:
+		sc.Logger.Debug("try.error.outer")
+
+		errorPrefix := pathPrefix + "/on_error"
+		if errorErr := jr.processStep(sc, step.OnError, errorPrefix); errorErr != nil {
+			sc.Logger.Warn("step.on_error.failed", "prefix", pathPrefix, "error", errorErr)
+		}
+	case failureInside && step.OnFailure != nil:
+		failurePrefix := pathPrefix + "/on_failure"
+		if failureErr := jr.processStep(sc, step.OnFailure, failurePrefix); failureErr != nil {
+			sc.Logger.Warn("step.on_failure.failed", "prefix", pathPrefix, "error", failureErr)
+		}
 	case isAbortError(stepErr) && step.OnAbort != nil:
 		sc.Logger.Debug(stepErr.Error())
-		sc.HadFailure = true
+		sc.FailureCount++
+		sc.LastFailureKind = FailureKindAborted
 
 		abortPrefix := pathPrefix + "/on_abort"
 		if abortErr := jr.processStep(sc, step.OnAbort, abortPrefix); abortErr != nil {
@@ -289,7 +367,8 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 		stepErr = nil
 	case isErroredError(stepErr) && step.OnError != nil:
 		sc.Logger.Debug(stepErr.Error())
-		sc.HadFailure = true
+		sc.FailureCount++
+		sc.LastFailureKind = FailureKindErrored
 
 		errorPrefix := pathPrefix + "/on_error"
 		if errorErr := jr.processStep(sc, step.OnError, errorPrefix); errorErr != nil {
@@ -298,7 +377,8 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 
 		stepErr = nil
 	case isFailedError(stepErr) && step.OnFailure != nil:
-		sc.HadFailure = true
+		sc.FailureCount++
+		sc.LastFailureKind = FailureKindFailed
 
 		failurePrefix := pathPrefix + "/on_failure"
 		if failureErr := jr.processStep(sc, step.OnFailure, failurePrefix); failureErr != nil {

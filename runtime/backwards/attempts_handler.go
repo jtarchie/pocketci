@@ -1,6 +1,8 @@
 package backwards
 
 import (
+	"fmt"
+
 	config "github.com/jtarchie/pocketci/backwards"
 )
 
@@ -23,7 +25,8 @@ func (jr *JobRunner) executeWithAttempts(sc *StepContext, step *config.Step, pat
 	succeeded := false
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		if err := jr.processStep(sc, &stripped, pathPrefix); err != nil {
+		attemptPrefix := fmt.Sprintf("%s/attempt/%d", pathPrefix, attempt)
+		if err := jr.processStep(sc, &stripped, attemptPrefix); err != nil {
 			lastErr = err
 			sc.Logger.Debug("attempt.failed", "attempt", attempt, "max", maxAttempts, "err", err)
 
@@ -47,7 +50,8 @@ func (jr *JobRunner) executeWithAttempts(sc *StepContext, step *config.Step, pat
 		switch {
 		case isAbortError(lastErr) && step.OnAbort != nil:
 			sc.Logger.Debug(lastErr.Error())
-			sc.HadFailure = true
+			sc.FailureCount++
+			sc.LastFailureKind = FailureKindAborted
 
 			abortPrefix := pathPrefix + "/on_abort"
 			if err := jr.processStep(sc, step.OnAbort, abortPrefix); err != nil {
@@ -57,7 +61,8 @@ func (jr *JobRunner) executeWithAttempts(sc *StepContext, step *config.Step, pat
 			lastErr = nil
 		case isErroredError(lastErr) && step.OnError != nil:
 			sc.Logger.Debug(lastErr.Error())
-			sc.HadFailure = true
+			sc.FailureCount++
+			sc.LastFailureKind = FailureKindErrored
 
 			errorPrefix := pathPrefix + "/on_error"
 			if err := jr.processStep(sc, step.OnError, errorPrefix); err != nil {
@@ -66,7 +71,8 @@ func (jr *JobRunner) executeWithAttempts(sc *StepContext, step *config.Step, pat
 
 			lastErr = nil
 		case isFailedError(lastErr) && step.OnFailure != nil:
-			sc.HadFailure = true
+			sc.FailureCount++
+			sc.LastFailureKind = FailureKindFailed
 
 			failurePrefix := pathPrefix + "/on_failure"
 			if err := jr.processStep(sc, step.OnFailure, failurePrefix); err != nil {

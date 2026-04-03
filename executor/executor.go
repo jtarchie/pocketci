@@ -24,9 +24,11 @@ import (
 	"github.com/jtarchie/pocketci/orchestra/k8s"
 	"github.com/jtarchie/pocketci/orchestra/native"
 	"github.com/jtarchie/pocketci/runtime"
+	runtimebackwards "github.com/jtarchie/pocketci/runtime/backwards"
 	"github.com/jtarchie/pocketci/s3config"
 	"github.com/jtarchie/pocketci/secrets"
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
+	"github.com/jtarchie/pocketci/storage"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	"strings"
 )
@@ -109,11 +111,6 @@ func (c *Execute) Run(logger *slog.Logger) error {
 	// Handle signals in a separate goroutine
 	go handleSignals(ctx, cancel, logger, sigs)
 
-	pipeline, err := loadPipeline(pipelinePath)
-	if err != nil {
-		return err
-	}
-
 	// Use a unique namespace per invocation to avoid container name collisions
 	// when multiple tests run the same pipeline+driver in parallel.
 	var nonce [4]byte
@@ -149,6 +146,16 @@ func (c *Execute) Run(logger *slog.Logger) error {
 		defer func() { _ = secretsManager.Close() }()
 	}
 
+	extension := strings.ToLower(filepath.Ext(pipelinePath))
+	if extension == ".yml" || extension == ".yaml" {
+		return c.runYAMLPipeline(ctx, pipelinePath, runtimeID, driver, storage, secretsManager, logger)
+	}
+
+	pipeline, err := loadPipeline(pipelinePath)
+	if err != nil {
+		return err
+	}
+
 	js := runtime.NewJS(logger)
 
 	opts := runtime.ExecuteOptions{
@@ -167,7 +174,45 @@ func (c *Execute) Run(logger *slog.Logger) error {
 
 	err = js.ExecuteWithOptions(ctx, pipeline, driver, storage, opts)
 	if err != nil {
-		// Check if the error was due to context cancellation
+		if errors.Is(err, context.Canceled) {
+			return fmt.Errorf("execution cancelled: %w", err)
+		}
+
+		return fmt.Errorf("could not execute pipeline: %w", err)
+	}
+
+	return nil
+}
+
+func (c *Execute) runYAMLPipeline(
+	ctx context.Context,
+	pipelinePath, runtimeID string,
+	driver orchestra.Driver,
+	store storage.Driver,
+	secretsManager secrets.Manager,
+	logger *slog.Logger,
+) error {
+	cfg, err := backwards.LoadConfig(pipelinePath)
+	if err != nil {
+		return fmt.Errorf("could not load YAML pipeline: %w", err)
+	}
+
+	if err := runtimebackwards.ValidateConfig(cfg); err != nil {
+		return fmt.Errorf("invalid pipeline: %w", err)
+	}
+
+	runID := c.RunID
+	if runID == "" {
+		runID = runtimeID
+	}
+
+	runner := runtimebackwards.New(cfg, driver, store, logger, runID, runtimeID,
+		runtimebackwards.RunnerOptions{
+			SecretsManager: secretsManager,
+		},
+	)
+
+	if err := runner.Run(ctx); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return fmt.Errorf("execution cancelled: %w", err)
 		}
@@ -187,19 +232,8 @@ func parseSecretFlag(s string) (string, string, bool) {
 	return key, value, true
 }
 
-// loadPipeline reads and bundles a pipeline from disk, supporting both
-// YAML (Concourse compat) and JS/TS formats.
+// loadPipeline bundles a JS/TS pipeline from disk.
 func loadPipeline(pipelinePath string) (string, error) {
-	extension := filepath.Ext(pipelinePath)
-	if extension == ".yml" || extension == ".yaml" {
-		pipeline, err := backwards.NewPipeline(pipelinePath)
-		if err != nil {
-			return "", fmt.Errorf("could not create pipeline from YAML: %w", err)
-		}
-
-		return pipeline, nil
-	}
-
 	result := api.Build(api.BuildOptions{
 		EntryPoints:      []string{pipelinePath},
 		Bundle:           true,

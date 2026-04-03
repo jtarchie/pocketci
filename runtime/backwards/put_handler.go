@@ -79,7 +79,7 @@ func (h *PutHandler) Execute(sc *StepContext, step *config.Step, pathPrefix stri
 		}
 	}
 
-	scopedName := getScopedResourceName(resourceName)
+	scopedName := getScopedResourceName(sc.PipelineID, resourceName)
 
 	if saveErr := SaveResourceVersion(sc.Ctx, sc.Storage, scopedName, version, sc.JobName); saveErr != nil {
 		return fmt.Errorf("put step save version: %w", saveErr)
