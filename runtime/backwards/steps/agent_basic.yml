@@ -1,0 +1,27 @@
+assert:
+  execution:
+    - "agent-test"
+
+jobs:
+  - name: agent-test
+    plan:
+      - task: pre-check
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: echo
+            args: ["ready"]
+        assert:
+          code: 0
+      - agent: test-agent
+        prompt: "Say hello"
+        model: "test/mock-model"
+        config:
+          platform: linux
+          image: busybox
+    assert:
+      execution: [pre-check, test-agent]

@@ -20,8 +20,11 @@ import (
 	"github.com/jtarchie/pocketci/orchestra/docker"
 	"github.com/jtarchie/pocketci/orchestra/native"
 	_ "github.com/jtarchie/pocketci/resources/mock"
+	"github.com/jtarchie/pocketci/runtime/agent"
 	backwards "github.com/jtarchie/pocketci/runtime/backwards"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
+	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
+	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
@@ -29,6 +32,23 @@ import (
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
+}
+
+// stubAgentRunner returns a no-op AgentRunFunc that always succeeds.
+// Used by mutation tests so agent steps don't require real LLM credentials.
+func stubAgentRunner() backwards.AgentRunFunc {
+	return func(
+		ctx context.Context,
+		runner pipelinerunner.Runner,
+		sm secrets.Manager,
+		pipelineID string,
+		cfg agent.AgentConfig,
+	) (*agent.AgentResult, error) {
+		return &agent.AgentResult{
+			Text:   "stub",
+			Status: "success",
+		}, nil
+	}
 }
 
 func debugLogger(w io.Writer) *slog.Logger {
@@ -727,7 +747,9 @@ func TestMutateJobAsserts(t *testing.T) {
 
 					defer func() { _ = store.Close() }()
 
-					runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
+					runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{
+						AgentRunFunc: stubAgentRunner(),
+					})
 					err = runner.Run(context.Background())
 					assert.Expect(err).To(HaveOccurred())
 					assert.Expect(err.Error()).To(ContainSubstring("assertion failed"))
@@ -780,7 +802,9 @@ func TestMutateStepAsserts(t *testing.T) {
 
 							defer func() { _ = store.Close() }()
 
-							runner := backwards.New(mutated, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
+							runner := backwards.New(mutated, driver, store, logger, "test-run", "", backwards.RunnerOptions{
+								AgentRunFunc: stubAgentRunner(),
+							})
 							err = runner.Run(context.Background())
 							assert.Expect(err).To(HaveOccurred())
 							assert.Expect(err.Error()).To(ContainSubstring("assertion failed"))

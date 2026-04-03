@@ -406,7 +406,8 @@ func waitForContainer(ctx context.Context, container orchestra.Container) (orche
 
 // loadTaskConfigFromVolume reads a YAML task config from a volume.
 // The filePath format is "mount-name/relative/path/to/file.yml".
-func loadTaskConfigFromVolume(sc *StepContext, filePath string) (*config.TaskConfig, error) {
+// loadRawBytesFromVolume reads raw bytes from a file inside a mounted volume.
+func loadRawBytesFromVolume(sc *StepContext, filePath string) ([]byte, error) {
 	parts := strings.SplitN(filePath, "/", 2)
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid file path %q: expected mount-name/path", filePath)
@@ -435,6 +436,15 @@ func loadTaskConfigFromVolume(sc *StepContext, filePath string) (*config.TaskCon
 	content, err := extractFileFromTar(tarReader, relativePath)
 	if err != nil {
 		return nil, fmt.Errorf("extracting file %q: %w", relativePath, err)
+	}
+
+	return content, nil
+}
+
+func loadTaskConfigFromVolume(sc *StepContext, filePath string) (*config.TaskConfig, error) {
+	content, err := loadRawBytesFromVolume(sc, filePath)
+	if err != nil {
+		return nil, err
 	}
 
 	var taskConfig config.TaskConfig

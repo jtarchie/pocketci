@@ -10,6 +10,8 @@ import (
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
+	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
+	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
 )
 
@@ -37,6 +39,9 @@ type StepContext struct {
 	ResourceTypes   config.ResourceTypes
 	JobParams       map[string]string // webhook trigger params, injected as base env into task steps
 	Notifier        *jsapi.Notifier
+	PipelineRunner  pipelinerunner.Runner // for agent sandbox/volume creation
+	SecretsManager  secrets.Manager       // for agent API key resolution
+	PipelineID      string                // pipeline scope for secrets
 }
 
 // BaseStorageKey returns the storage prefix for the current job.

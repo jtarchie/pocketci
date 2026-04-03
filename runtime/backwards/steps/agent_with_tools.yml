@@ -1,0 +1,39 @@
+assert:
+  execution:
+    - "tool-test"
+
+jobs:
+  - name: tool-test
+    plan:
+      - task: pre-check
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: echo
+            args: ["ready"]
+        assert:
+          code: 0
+      - agent: tool-agent
+        prompt: "Use tools"
+        model: "test/mock-model"
+        config:
+          platform: linux
+          image: busybox
+        tools:
+          - agent: sub-agent
+            prompt: "I am a sub-agent"
+            model: "test/sub-model"
+          - task: my-tool
+            description: "A test tool"
+            config:
+              platform: linux
+              image: busybox
+              run:
+                path: echo
+                args: ["hello"]
+    assert:
+      execution: [pre-check, tool-agent]

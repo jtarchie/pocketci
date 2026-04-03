@@ -1,0 +1,533 @@
+package backwards
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/goccy/go-yaml"
+	config "github.com/jtarchie/pocketci/backwards"
+	"github.com/jtarchie/pocketci/runtime/agent"
+	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
+	"github.com/jtarchie/pocketci/secrets"
+	"github.com/jtarchie/pocketci/storage"
+)
+
+// AgentRunFunc is the signature for executing an LLM agent step.
+// Defaults to agent.RunAgent; overridden in tests.
+type AgentRunFunc func(
+	ctx context.Context,
+	runner pipelinerunner.Runner,
+	sm secrets.Manager,
+	pipelineID string,
+	cfg agent.AgentConfig,
+) (*agent.AgentResult, error)
+
+// AgentHandler executes agent steps by delegating to the LLM agent runtime.
+type AgentHandler struct {
+	// runAgent executes the agent. Nil means use agent.RunAgent.
+	runAgent AgentRunFunc
+}
+
+func (h *AgentHandler) Execute(sc *StepContext, step *config.Step, pathPrefix string) error {
+	agentStep := step
+
+	// Phase 1: Config loading and merging.
+	if step.File != "" || step.URI != "" {
+		merged, err := mergeAgentExternalConfig(sc, step, pathPrefix)
+		if err != nil {
+			return &TaskErroredError{TaskName: step.Agent, Err: err}
+		}
+
+		agentStep = merged
+	} else if step.PromptFile != "" {
+		contents, err := loadRawBytesFromVolume(sc, step.PromptFile)
+		if err != nil {
+			return &TaskErroredError{TaskName: step.Agent, Err: fmt.Errorf("loading prompt_file %q: %w", step.PromptFile, err)}
+		}
+
+		agentStep = copyStep(step)
+		agentStep.Prompt = string(contents)
+	}
+
+	sc.ExecutedTasksMu.Lock()
+	sc.ExecutedTasks = append(sc.ExecutedTasks, agentStep.Agent)
+	sc.ExecutedTasksMu.Unlock()
+
+	// Phase 2: Image resolution.
+	image := resolveAgentImage(agentStep)
+
+	// Phase 3: Tool resolution.
+	tools, err := resolveAgentTools(sc, agentStep, pathPrefix)
+	if err != nil {
+		return &TaskErroredError{TaskName: agentStep.Agent, Err: fmt.Errorf("resolving tools: %w", err)}
+	}
+
+	// Phase 4: Volume management.
+	mounts, outputVolumePath, err := resolveAgentMounts(sc, agentStep)
+	if err != nil {
+		return &TaskErroredError{TaskName: agentStep.Agent, Err: fmt.Errorf("resolving mounts: %w", err)}
+	}
+
+	// Phase 5: Storage keys.
+	hooksStorageKey := fmt.Sprintf("%s/%s", sc.BaseStorageKey(), pathPrefix)
+	storageKey := hooksStorageKey + "/run"
+	auditBaseKey := fmt.Sprintf("/agent-audit/%s/jobs/%s/%s/events", sc.RunID, sc.JobName, pathPrefix)
+
+	// Phase 6: State tracking and throttled persistence.
+	var (
+		mu                sync.Mutex
+		accumulatedOutput string
+		latestUsage       *agent.AgentUsage
+		auditLog          []agent.AuditEvent
+	)
+
+	startedAt := time.Now()
+
+	_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+		"status":     "pending",
+		"started_at": startedAt.Format(time.RFC3339),
+	})
+
+	throttle := newThrottledPersister(500*time.Millisecond, func() {
+		mu.Lock()
+		defer mu.Unlock()
+
+		_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+			"status":     "running",
+			"started_at": startedAt.Format(time.RFC3339),
+			"stdout":     accumulatedOutput,
+			"usage":      latestUsage,
+			"audit_log":  auditLog,
+		})
+	})
+
+	// Phase 7: Build AgentConfig and call RunAgent.
+	agentConfig := agent.AgentConfig{
+		Name:             agentStep.Agent,
+		Prompt:           agentStep.Prompt,
+		Model:            agentStep.Model,
+		Image:            image,
+		Mounts:           mounts,
+		OutputVolumePath: outputVolumePath,
+		LLM:              agentStep.AgentLLM,
+		Thinking:         agentStep.AgentThinking,
+		Safety:           agentStep.AgentSafety,
+		ContextGuard:     agentStep.AgentContextGuard,
+		Limits:           agentStep.AgentLimits,
+		Context:          agentStep.AgentContext,
+		Validation:       agentStep.AgentValidation,
+		OutputSchema:     agentStep.AgentOutputSchema,
+		ToolTimeout:      agentStep.AgentToolTimeout,
+		Storage:          sc.Storage,
+		Namespace:        sc.JobName,
+		RunID:            sc.RunID,
+		PipelineID:       sc.PipelineID,
+		OnUsage: func(usage agent.AgentUsage) {
+			mu.Lock()
+			latestUsage = &usage
+			mu.Unlock()
+
+			throttle.trigger()
+		},
+		OnAuditEvent: func(event agent.AuditEvent) {
+			mu.Lock()
+			auditLog = append(auditLog, event)
+			idx := len(auditLog) - 1
+			mu.Unlock()
+
+			_ = sc.Storage.Set(sc.Ctx, fmt.Sprintf("%s/%d", auditBaseKey, idx), storage.Payload{
+				"timestamp":    event.Timestamp,
+				"invocationId": event.InvocationID,
+				"author":       event.Author,
+				"type":         event.Type,
+				"text":         event.Text,
+				"toolName":     event.ToolName,
+				"toolCallId":   event.ToolCallID,
+				"toolArgs":     event.ToolArgs,
+				"toolResult":   event.ToolResult,
+				"usage":        event.Usage,
+				"index":        idx,
+			})
+
+			throttle.trigger()
+		},
+		OnOutput: func(stream, data string) {
+			mu.Lock()
+			accumulatedOutput += data
+			mu.Unlock()
+
+			throttle.trigger()
+		},
+	}
+
+	if len(tools) > 0 {
+		agentConfig.Tools = tools
+	}
+
+	runFn := h.runAgent
+	if runFn == nil {
+		runFn = agent.RunAgent
+	}
+
+	result, runErr := runFn(sc.Ctx, sc.PipelineRunner, sc.SecretsManager, sc.PipelineID, agentConfig)
+
+	// Phase 8: Result handling.
+	elapsed := time.Since(startedAt)
+
+	if runErr != nil {
+		mu.Lock()
+		output := accumulatedOutput
+		usage := latestUsage
+		log := auditLog
+		mu.Unlock()
+
+		_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+			"status":        "failure",
+			"started_at":    startedAt.Format(time.RFC3339),
+			"elapsed":       elapsed.String(),
+			"stdout":        output,
+			"error_message": runErr.Error(),
+			"usage":         usage,
+			"audit_log":     log,
+		})
+
+		return &TaskFailedError{TaskName: agentStep.Agent, Code: 1}
+	}
+
+	throttle.flush()
+
+	mu.Lock()
+	usage := latestUsage
+	if usage == nil && result != nil {
+		usage = &result.Usage
+	}
+	mu.Unlock()
+
+	status := "success"
+	if result.Status == "limit_exceeded" {
+		status = "limit_exceeded"
+	}
+
+	_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+		"status":     status,
+		"started_at": startedAt.Format(time.RFC3339),
+		"elapsed":    elapsed.String(),
+		"stdout":     result.Text,
+		"usage":      usage,
+		"audit_log":  result.AuditLog,
+	})
+
+	return nil
+}
+
+// mergeAgentExternalConfig loads a YAML config from the step's file or URI
+// and merges it with inline step fields. Returns the step unchanged if
+// neither field is set.
+func mergeAgentExternalConfig(sc *StepContext, step *config.Step, pathPrefix string) (*config.Step, error) {
+	contents, err := loadAgentConfig(sc, step, pathPrefix)
+	if err != nil {
+		return nil, err
+	}
+
+	if contents == nil {
+		return step, nil
+	}
+
+	return mergeAgentFromContents(contents, step), nil
+}
+
+// loadAgentConfig loads raw YAML bytes from a step's file or URI field.
+func loadAgentConfig(sc *StepContext, step *config.Step, pathPrefix string) ([]byte, error) {
+	if step.File != "" {
+		return loadRawBytesFromVolume(sc, step.File)
+	}
+
+	if step.URI != "" {
+		scheme, value, err := parseURI(step.URI)
+		if err != nil {
+			return nil, err
+		}
+
+		if scheme == schemeFile {
+			return loadRawBytesFromVolume(sc, value)
+		}
+
+		return loadTaskConfigFromHTTP(sc.Ctx, value)
+	}
+
+	return nil, nil
+}
+
+// mergeAgentFromContents parses YAML contents and merges with inline step
+// fields. Inline values override loaded values (shallow merge).
+// Prompts are concatenated so loaded and inline prompts are both included.
+func mergeAgentFromContents(contents []byte, inlineStep *config.Step) *config.Step {
+	var fileFields map[string]interface{}
+	if err := yaml.Unmarshal(contents, &fileFields); err != nil {
+		return inlineStep
+	}
+
+	merged := copyStep(inlineStep)
+
+	// Inherit fields from file if not set inline.
+	if merged.Prompt == "" {
+		if p, ok := fileFields["prompt"].(string); ok {
+			merged.Prompt = p
+		}
+	} else if p, ok := fileFields["prompt"].(string); ok {
+		// Concatenate: file prompt + inline prompt.
+		merged.Prompt = p + "\n" + merged.Prompt
+	}
+
+	if merged.Model == "" {
+		if m, ok := fileFields["model"].(string); ok {
+			merged.Model = m
+		}
+	}
+
+	if merged.TaskConfig == nil {
+		if _, ok := fileFields["config"]; ok {
+			// Re-unmarshal the full contents to get a typed config.
+			var full struct {
+				Config *config.TaskConfig `yaml:"config,omitempty"`
+			}
+
+			if err := yaml.Unmarshal(contents, &full); err == nil && full.Config != nil {
+				merged.TaskConfig = full.Config
+			}
+		}
+	}
+
+	if merged.AgentContext == nil {
+		if _, ok := fileFields["context"]; ok {
+			var full struct {
+				Context *agent.AgentContext `yaml:"context,omitempty"`
+			}
+
+			if err := yaml.Unmarshal(contents, &full); err == nil && full.Context != nil {
+				merged.AgentContext = full.Context
+			}
+		}
+	}
+
+	return merged
+}
+
+// resolveAgentImage returns the container image for the agent step.
+func resolveAgentImage(step *config.Step) string {
+	if step.TaskConfig != nil {
+		if step.TaskConfig.Image != "" {
+			return step.TaskConfig.Image
+		}
+
+		if step.TaskConfig.ImageResource.Source != nil {
+			if repo, ok := step.TaskConfig.ImageResource.Source["repository"].(string); ok {
+				return repo
+			}
+		}
+	}
+
+	return "busybox"
+}
+
+// resolveAgentTools builds tool definitions from the step's tools array.
+func resolveAgentTools(sc *StepContext, step *config.Step, pathPrefix string) ([]agent.ToolDef, error) {
+	if len(step.Tools) == 0 {
+		return nil, nil
+	}
+
+	storageKeyPrefix := fmt.Sprintf("%s/%s", sc.BaseStorageKey(), pathPrefix)
+
+	var tools []agent.ToolDef
+
+	for i := range step.Tools {
+		tool := &step.Tools[i]
+
+		if tool.Agent != "" {
+			// Agent tool — resolve from file/uri if needed.
+			subStep, err := mergeAgentExternalConfig(sc, tool, pathPrefix)
+			if err != nil {
+				return nil, fmt.Errorf("resolving agent tool %q: %w", tool.Agent, err)
+			}
+
+			subImage := resolveAgentImage(subStep)
+			if subImage == "busybox" {
+				subImage = "" // let parent image be used
+			}
+
+			tools = append(tools, agent.ToolDef{
+				Name:             subStep.Agent,
+				Prompt:           subStep.Prompt,
+				Model:            subStep.Model,
+				Image:            subImage,
+				StorageKeyPrefix: storageKeyPrefix,
+			})
+		} else if tool.Task != "" {
+			// Task tool — container command exposed as a tool.
+			taskConfig := tool.TaskConfig
+
+			if tool.File != "" || tool.URI != "" {
+				contents, err := loadAgentConfig(sc, tool, pathPrefix)
+				if err == nil && contents != nil {
+					var fileCfg config.TaskConfig
+					if yamlErr := yaml.Unmarshal(contents, &fileCfg); yamlErr == nil {
+						if taskConfig == nil {
+							taskConfig = &fileCfg
+						} else {
+							// Inline overrides file (shallow merge).
+							if taskConfig.Run == nil {
+								taskConfig.Run = fileCfg.Run
+							}
+
+							if taskConfig.Image == "" {
+								taskConfig.Image = fileCfg.Image
+							}
+						}
+					}
+				}
+			}
+
+			toolImage := ""
+			var cmdPath string
+			var cmdArgs []string
+			var env map[string]string
+
+			if taskConfig != nil {
+				toolImage = resolveAgentImage(&config.Step{TaskConfig: taskConfig})
+				if toolImage == "busybox" {
+					toolImage = ""
+				}
+
+				if taskConfig.Run != nil {
+					cmdPath = taskConfig.Run.Path
+					cmdArgs = taskConfig.Run.Args
+				}
+
+				env = taskConfig.Env
+			}
+
+			tools = append(tools, agent.ToolDef{
+				Name:             tool.Task,
+				IsTask:           true,
+				Description:      tool.Description,
+				Image:            toolImage,
+				CommandPath:      cmdPath,
+				CommandArgs:      cmdArgs,
+				Env:              env,
+				StorageKeyPrefix: storageKeyPrefix,
+			})
+		}
+	}
+
+	return tools, nil
+}
+
+// resolveAgentMounts builds the mounts map for an agent step.
+// It collects declared inputs, auto-mounts context.tasks volumes,
+// and auto-creates output volumes. Returns the mounts map and the
+// output volume path (first output name).
+func resolveAgentMounts(sc *StepContext, step *config.Step) (map[string]pipelinerunner.VolumeResult, string, error) {
+	mounts := make(map[string]pipelinerunner.VolumeResult)
+
+	// Collect declared input mounts.
+	if step.TaskConfig != nil {
+		for _, input := range step.TaskConfig.Inputs {
+			if volName, ok := sc.KnownVolumes[input.Name]; ok {
+				mounts[input.Name] = pipelinerunner.VolumeResult{Name: volName}
+			}
+		}
+	}
+
+	// Auto-mount volumes for agents referenced in context.tasks.
+	if step.AgentContext != nil {
+		for _, ct := range step.AgentContext.Tasks {
+			if _, alreadyMounted := mounts[ct.Name]; alreadyMounted {
+				continue
+			}
+
+			if volName, ok := sc.KnownVolumes[ct.Name]; ok {
+				mounts[ct.Name] = pipelinerunner.VolumeResult{Name: volName}
+			}
+		}
+	}
+
+	// Determine outputs: explicit or auto-create one named after the agent.
+	var outputs []config.Output
+
+	if step.TaskConfig != nil && len(step.TaskConfig.Outputs) > 0 {
+		outputs = step.TaskConfig.Outputs
+	} else {
+		outputs = []config.Output{{Name: step.Agent}}
+	}
+
+	for _, output := range outputs {
+		volName, ok := sc.KnownVolumes[output.Name]
+		if !ok {
+			volName = fmt.Sprintf("vol-%s-%s", sc.RunID, output.Name)
+			sc.KnownVolumes[output.Name] = volName
+		}
+
+		mounts[output.Name] = pipelinerunner.VolumeResult{Name: volName}
+	}
+
+	outputVolumePath := ""
+	if len(outputs) > 0 {
+		outputVolumePath = outputs[0].Name
+	}
+
+	return mounts, outputVolumePath, nil
+}
+
+// copyStep creates a shallow copy of a Step.
+func copyStep(step *config.Step) *config.Step {
+	copied := *step
+
+	return &copied
+}
+
+// throttledPersister implements a simple time-based throttle for storage writes.
+// Callbacks are invoked synchronously from the agent runtime, so no goroutine is needed.
+type throttledPersister struct {
+	mu            sync.Mutex
+	lastPersistAt time.Time
+	pending       bool
+	interval      time.Duration
+	fn            func()
+}
+
+func newThrottledPersister(interval time.Duration, fn func()) *throttledPersister {
+	return &throttledPersister{
+		interval: interval,
+		fn:       fn,
+	}
+}
+
+func (tp *throttledPersister) trigger() {
+	tp.mu.Lock()
+	defer tp.mu.Unlock()
+
+	if time.Since(tp.lastPersistAt) < tp.interval {
+		tp.pending = true
+
+		return
+	}
+
+	tp.doPersist()
+}
+
+func (tp *throttledPersister) flush() {
+	tp.mu.Lock()
+	defer tp.mu.Unlock()
+
+	if tp.pending {
+		tp.doPersist()
+	}
+}
+
+func (tp *throttledPersister) doPersist() {
+	tp.pending = false
+	tp.lastPersistAt = time.Now()
+	tp.fn()
+}

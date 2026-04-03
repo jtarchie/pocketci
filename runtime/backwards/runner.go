@@ -9,6 +9,7 @@ import (
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
+	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
 )
 
@@ -119,24 +120,28 @@ func ValidateConfig(cfg *config.Config) error {
 
 // RunnerOptions holds optional configuration for a Runner.
 type RunnerOptions struct {
-	Notifier    *jsapi.Notifier
-	TargetJobs  []string
-	WebhookData *jsapi.WebhookData
-	DedupTTL    time.Duration
+	Notifier       *jsapi.Notifier
+	TargetJobs     []string
+	WebhookData    *jsapi.WebhookData
+	DedupTTL       time.Duration
+	SecretsManager secrets.Manager
+	AgentRunFunc   AgentRunFunc // override for testing; nil uses agent.RunAgent
 }
 
 // Runner executes a parsed pipeline Config using Go-native execution.
 type Runner struct {
-	config      *config.Config
-	driver      orchestra.Driver
-	storage     storage.Driver
-	logger      *slog.Logger
-	runID       string
-	pipelineID  string
-	notifier    *jsapi.Notifier
-	targetJobs  []string
-	webhookData *jsapi.WebhookData
-	dedupTTL    time.Duration
+	config         *config.Config
+	driver         orchestra.Driver
+	storage        storage.Driver
+	logger         *slog.Logger
+	runID          string
+	pipelineID     string
+	notifier       *jsapi.Notifier
+	targetJobs     []string
+	webhookData    *jsapi.WebhookData
+	dedupTTL       time.Duration
+	secretsManager secrets.Manager
+	AgentRunFunc   AgentRunFunc
 }
 
 // New creates a Runner for the given pipeline config.
@@ -150,16 +155,18 @@ func New(
 	opts RunnerOptions,
 ) *Runner {
 	return &Runner{
-		config:      cfg,
-		driver:      driver,
-		storage:     store,
-		logger:      logger,
-		runID:       runID,
-		pipelineID:  pipelineID,
-		notifier:    opts.Notifier,
-		targetJobs:  opts.TargetJobs,
-		webhookData: opts.WebhookData,
-		dedupTTL:    opts.DedupTTL,
+		config:         cfg,
+		driver:         driver,
+		storage:        store,
+		logger:         logger,
+		runID:          runID,
+		pipelineID:     pipelineID,
+		notifier:       opts.Notifier,
+		targetJobs:     opts.TargetJobs,
+		webhookData:    opts.WebhookData,
+		dedupTTL:       opts.DedupTTL,
+		secretsManager: opts.SecretsManager,
+		AgentRunFunc:   opts.AgentRunFunc,
 	}
 }
 
@@ -177,7 +184,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			return nil
 		}
 
-		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.pipelineID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight, r.notifier, r.webhookData, r.dedupTTL)
+		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.pipelineID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight, r.notifier, r.webhookData, r.dedupTTL, r.secretsManager, r.AgentRunFunc)
 
 		err := jr.Run(ctx)
 		if err != nil {

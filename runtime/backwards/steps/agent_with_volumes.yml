@@ -1,0 +1,31 @@
+assert:
+  execution:
+    - "volume-test"
+
+jobs:
+  - name: volume-test
+    plan:
+      - task: setup
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          outputs:
+            - name: my-data
+          run:
+            path: sh
+            args: ["-c", "echo test > my-data/file.txt"]
+        assert:
+          code: 0
+      - agent: vol-agent
+        prompt: "Read the data"
+        model: "test/mock-model"
+        config:
+          platform: linux
+          image: busybox
+          inputs:
+            - name: my-data
+    assert:
+      execution: [setup, vol-agent]

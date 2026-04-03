@@ -145,6 +145,8 @@ type Step struct {
 	AgentContext      *agent.AgentContext            `yaml:"context,omitempty"`
 	AgentValidation   *agent.AgentValidationConfig   `yaml:"validation,omitempty"`
 	AgentToolTimeout  string                         `yaml:"tool_timeout,omitempty"`
+	AgentOutputSchema map[string]interface{}         `yaml:"output_schema,omitempty" json:"output_schema,omitempty"`
+	Description       string                         `yaml:"description,omitempty"  json:"description,omitempty"`
 	Tools             Steps                          `yaml:"tools,omitempty"`
 
 	Get       string    `yaml:"get,omitempty"`
