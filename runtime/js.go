@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -401,21 +400,7 @@ func (j *JS) evaluateWebhookDedup(ctx context.Context, store storage.Driver, opt
 
 // buildWebhookEnv constructs a filter.WebhookEnv from webhook data.
 func buildWebhookEnv(wd *jsapi.WebhookData) filter.WebhookEnv {
-	env := filter.WebhookEnv{
-		Provider:  wd.Provider,
-		EventType: wd.EventType,
-		Method:    wd.Method,
-		Headers:   wd.Headers,
-		Query:     wd.Query,
-		Body:      wd.Body,
-	}
-
-	var payload map[string]any
-	if jsonErr := json.Unmarshal([]byte(wd.Body), &payload); jsonErr == nil {
-		env.Payload = payload
-	}
-
-	return env
+	return filter.BuildWebhookEnv(wd)
 }
 
 // setupTriggerPipeline registers the triggerPipeline() global function on the VM.

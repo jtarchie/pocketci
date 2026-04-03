@@ -13,6 +13,7 @@ import (
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/storage"
+	"github.com/jtarchie/pocketci/webhooks/filter"
 )
 
 const gatePollInterval = 2 * time.Second
@@ -30,6 +31,8 @@ type JobRunner struct {
 	resourceTypes       config.ResourceTypes
 	pipelineMaxInFlight int
 	notifier            *jsapi.Notifier
+	webhookData         *jsapi.WebhookData
+	dedupTTL            time.Duration
 }
 
 func newJobRunner(
@@ -43,6 +46,8 @@ func newJobRunner(
 	resourceTypes config.ResourceTypes,
 	pipelineMaxInFlight int,
 	notifier *jsapi.Notifier,
+	webhookData *jsapi.WebhookData,
+	dedupTTL time.Duration,
 ) *JobRunner {
 	return &JobRunner{
 		job:                 job,
@@ -55,6 +60,8 @@ func newJobRunner(
 		resourceTypes:       resourceTypes,
 		pipelineMaxInFlight: pipelineMaxInFlight,
 		notifier:            notifier,
+		webhookData:         webhookData,
+		dedupTTL:            dedupTTL,
 		handlers: map[string]StepHandler{
 			"task":        &TaskHandler{},
 			"get":         &GetHandler{},
@@ -62,7 +69,7 @@ func newJobRunner(
 			"try":         &TryHandler{},
 			"do":          &DoHandler{},
 			"in_parallel": &InParallelHandler{},
-		"notify":      &NotifyHandler{},
+			"notify":      &NotifyHandler{},
 		},
 	}
 }
@@ -77,6 +84,16 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("storage set pending: %w", err)
 	}
 
+	// Evaluate webhook filter before executing the job.
+	if skip := jr.evaluateWebhookFilter(ctx, jobKey); skip {
+		return nil
+	}
+
+	// Evaluate webhook dedup before executing the job.
+	if skip := jr.evaluateWebhookDedup(ctx, jobKey); skip {
+		return nil
+	}
+
 	sc := &StepContext{
 		Ctx:           ctx,
 		Driver:        jr.driver,
@@ -89,7 +106,7 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		KnownVolumes:  make(map[string]string),
 		Resources:     jr.resources,
 		ResourceTypes: jr.resourceTypes,
-		JobParams:     extractJobParams(jr.job),
+		JobParams:     extractJobParams(jr.job, jr.webhookData),
 		Notifier:      jr.notifier,
 	}
 	sc.ProcessStep = func(step *config.Step, pathPrefix string) error {
@@ -357,12 +374,117 @@ func stepStorageIdentifier(step *config.Step) string {
 	}
 }
 
-func extractJobParams(job *config.Job) map[string]string {
-	if job.Triggers == nil || job.Triggers.Webhook == nil {
+// defaultDedupTTL is the default time-to-live for webhook dedup entries.
+const defaultDedupTTL = 7 * 24 * time.Hour
+
+// evaluateWebhookFilter checks the webhook filter expression. Returns true if
+// the job should be skipped (filter didn't match or errored).
+func (jr *JobRunner) evaluateWebhookFilter(ctx context.Context, jobKey string) bool {
+	webhookFilter := ""
+	if jr.job.Triggers != nil && jr.job.Triggers.Webhook != nil {
+		webhookFilter = jr.job.Triggers.Webhook.Filter
+	}
+
+	if webhookFilter == "" {
+		webhookFilter = jr.job.WebhookTrigger // deprecated field
+	}
+
+	if webhookFilter == "" || jr.webhookData == nil {
+		return false // no filter or manual trigger — always run
+	}
+
+	env := filter.BuildWebhookEnv(jr.webhookData)
+
+	pass, err := filter.Evaluate(webhookFilter, env)
+	if err != nil {
+		jr.logger.Error("webhook.filter.failed", slog.String("error", err.Error()), slog.String("expression", webhookFilter))
+
+		pass = false
+	}
+
+	if !pass {
+		_ = jr.storage.Set(ctx, jobKey, storage.Payload{"status": "skipped"})
+
+		return true
+	}
+
+	return false
+}
+
+// evaluateWebhookDedup checks the dedup key expression. Returns true if
+// the job should be skipped (duplicate webhook).
+func (jr *JobRunner) evaluateWebhookDedup(ctx context.Context, jobKey string) bool {
+	if jr.job.Triggers == nil || jr.job.Triggers.Webhook == nil || jr.job.Triggers.Webhook.DedupKey == "" {
+		return false
+	}
+
+	if jr.webhookData == nil {
+		return false // manual triggers are never duplicates
+	}
+
+	env := filter.BuildWebhookEnv(jr.webhookData)
+
+	keyHash, err := filter.DedupKeyHash(jr.job.Triggers.Webhook.DedupKey, env)
+	if err != nil {
+		jr.logger.Error("webhook.dedup.eval.failed", slog.String("error", err.Error()))
+
+		return false // on error, don't skip
+	}
+
+	if keyHash == nil {
+		return false // empty key, no dedup
+	}
+
+	ttl := jr.dedupTTL
+	if ttl == 0 {
+		ttl = defaultDedupTTL
+	}
+
+	cutoff := time.Now().UTC().Add(-ttl)
+	if _, pruneErr := jr.storage.PruneWebhookDedup(ctx, cutoff); pruneErr != nil {
+		jr.logger.Warn("webhook.dedup.prune.failed", slog.String("error", pruneErr.Error()))
+	}
+
+	isDup, err := jr.storage.RecordWebhookDedup(ctx, jr.pipelineID, keyHash)
+	if err != nil {
+		jr.logger.Error("webhook.dedup.record.failed", slog.String("error", err.Error()))
+
+		return false
+	}
+
+	if isDup {
+		_ = jr.storage.Set(ctx, jobKey, storage.Payload{"status": "skipped"})
+
+		return true
+	}
+
+	return false
+}
+
+func extractJobParams(job *config.Job, webhookData *jsapi.WebhookData) map[string]string {
+	if job.Triggers == nil || job.Triggers.Webhook == nil || len(job.Triggers.Webhook.Params) == 0 {
 		return nil
 	}
 
-	return job.Triggers.Webhook.Params
+	if webhookData == nil {
+		return make(map[string]string) // manual trigger: empty params
+	}
+
+	env := filter.BuildWebhookEnv(webhookData)
+	result := make(map[string]string, len(job.Triggers.Webhook.Params))
+
+	for key, expression := range job.Triggers.Webhook.Params {
+		val, err := filter.EvaluateString(expression, env)
+		if err != nil {
+			slog.Error("webhook.params.eval.failed", slog.String("key", key), slog.String("error", err.Error()))
+
+			continue
+		}
+
+		result[key] = val
+	}
+
+	return result
 }
 
 func (jr *JobRunner) runGate(ctx context.Context) error {

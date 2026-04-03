@@ -92,7 +92,7 @@ func TestTryStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -120,7 +120,7 @@ func TestDoStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(logs.String()).To(ContainSubstring("ensure-task"))
@@ -149,7 +149,7 @@ func TestOnFailureStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(logs.String()).To(ContainSubstring("task.failed"))
@@ -179,7 +179,7 @@ func TestOnErrorStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(logs.String()).To(ContainSubstring("Task erroring-task errored"))
@@ -209,7 +209,7 @@ func TestOnAbortStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(logs.String()).To(ContainSubstring("Task abort-task aborted"))
@@ -239,7 +239,7 @@ func TestOnSuccessStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(logs.String()).To(ContainSubstring("on-success-task"))
@@ -266,7 +266,7 @@ func TestInParallelStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -292,7 +292,7 @@ func TestPipelineMaxInFlightStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -318,7 +318,7 @@ func TestParallelismStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -346,7 +346,7 @@ func TestEnsureStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(logs.String()).To(ContainSubstring("ensure-task"))
@@ -374,7 +374,7 @@ func TestSkippedSteps(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 
@@ -437,7 +437,7 @@ func TestCachesStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -463,7 +463,7 @@ func TestAttemptsStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -489,7 +489,7 @@ func TestAcrossStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -515,7 +515,7 @@ func TestTaskFileStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -541,7 +541,7 @@ func TestTaskURIStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -571,7 +571,7 @@ func TestStderrAssertionStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -727,7 +727,7 @@ func TestMutateJobAsserts(t *testing.T) {
 
 					defer func() { _ = store.Close() }()
 
-					runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+					runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 					err = runner.Run(context.Background())
 					assert.Expect(err).To(HaveOccurred())
 					assert.Expect(err.Error()).To(ContainSubstring("assertion failed"))
@@ -780,7 +780,7 @@ func TestMutateStepAsserts(t *testing.T) {
 
 							defer func() { _ = store.Close() }()
 
-							runner := backwards.New(mutated, driver, store, logger, "test-run", "", nil, nil)
+							runner := backwards.New(mutated, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 							err = runner.Run(context.Background())
 							assert.Expect(err).To(HaveOccurred())
 							assert.Expect(err.Error()).To(ContainSubstring("assertion failed"))
@@ -811,7 +811,7 @@ func TestCrossRunPassed(t *testing.T) {
 
 				defer func() { _ = store.Close() }()
 
-				runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+				runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 				err = runner.Run(context.Background())
 				assert.Expect(err).NotTo(HaveOccurred())
 			})
@@ -835,12 +835,12 @@ func TestCrossRunPassed(t *testing.T) {
 				defer func() { _ = store.Close() }()
 
 				// Run 1: both build and deploy execute via within-run cascade
-				runner1 := backwards.New(cfg, driver, store, logger, "run-1", "", nil, nil)
+				runner1 := backwards.New(cfg, driver, store, logger, "run-1", "", backwards.RunnerOptions{})
 				err = runner1.Run(context.Background())
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				// Run 2: deploy's passed constraint satisfied by run-1's build success
-				runner2 := backwards.New(cfg, driver, store, logger, "run-2", "", nil, nil)
+				runner2 := backwards.New(cfg, driver, store, logger, "run-2", "", backwards.RunnerOptions{})
 				err = runner2.Run(context.Background())
 				assert.Expect(err).NotTo(HaveOccurred())
 
@@ -881,7 +881,7 @@ func TestCrossRunPassed(t *testing.T) {
 
 				defer func() { _ = store.Close() }()
 
-				runner := backwards.New(cfg, driver, store, logger, "run-blocked", "", nil, nil)
+				runner := backwards.New(cfg, driver, store, logger, "run-blocked", "", backwards.RunnerOptions{})
 				err = runner.Run(context.Background())
 				assert.Expect(err).NotTo(HaveOccurred())
 
@@ -915,7 +915,7 @@ func TestGetVersionModes(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -944,7 +944,7 @@ func TestGetMockEvery(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	// Run 1: should fetch the first version.
-	runner := backwards.New(cfg, driver, store, logger, "run-1", "", nil, nil)
+	runner := backwards.New(cfg, driver, store, logger, "run-1", "", backwards.RunnerOptions{})
 	err = runner.Run(context.Background())
 	assert.Expect(err).NotTo(HaveOccurred())
 
@@ -953,7 +953,7 @@ func TestGetMockEvery(t *testing.T) {
 	assert.Expect(len(versions1)).To(BeNumerically(">=", 1))
 
 	// Run 2: should fetch a new version (counter increments).
-	runner2 := backwards.New(cfg, driver, store, logger, "run-2", "", nil, nil)
+	runner2 := backwards.New(cfg, driver, store, logger, "run-2", "", backwards.RunnerOptions{})
 	err = runner2.Run(context.Background())
 	assert.Expect(err).NotTo(HaveOccurred())
 
@@ -980,7 +980,7 @@ func TestPutBasic(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1012,7 +1012,7 @@ func TestPrewritePendingJobs(t *testing.T) {
 
 				defer func() { _ = store.Close() }()
 
-				runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+				runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 				err = runner.Run(context.Background())
 				assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1062,7 +1062,7 @@ func TestPrewritePendingJobs(t *testing.T) {
 
 				defer func() { _ = store.Close() }()
 
-				runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+				runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 				err = runner.Run(context.Background())
 				assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1105,7 +1105,12 @@ func TestJobParams(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{
+				WebhookData: &jsapi.WebhookData{
+					Provider: "github", EventType: "push", Method: "POST",
+					Headers: map[string]string{}, Query: map[string]string{}, Body: "{}",
+				},
+			})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 		})
@@ -1166,7 +1171,7 @@ run:
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1215,7 +1220,7 @@ func TestTaskURIHTTPErrorStep(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).To(HaveOccurred())
 			assert.Expect(err.Error()).To(ContainSubstring("http-error-task errored"))
@@ -1247,7 +1252,7 @@ func TestTaskFileStorageTracking(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1280,7 +1285,7 @@ func TestTaskURIFileSchemeStorageTracking(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, nil)
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1337,7 +1342,7 @@ func TestNotifyStepSingle(t *testing.T) {
 		}},
 	}
 
-	runner := backwards.New(cfg, nil, store, logger, "test-run", "", notifier, nil)
+	runner := backwards.New(cfg, nil, store, logger, "test-run", "", backwards.RunnerOptions{Notifier: notifier})
 	err = runner.Run(context.Background())
 	assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1395,7 +1400,7 @@ func TestNotifyStepMultiple(t *testing.T) {
 		}},
 	}
 
-	runner := backwards.New(cfg, nil, store, logger, "test-run", "", notifier, nil)
+	runner := backwards.New(cfg, nil, store, logger, "test-run", "", backwards.RunnerOptions{Notifier: notifier})
 	err = runner.Run(context.Background())
 	assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1444,7 +1449,7 @@ func TestNotifyStepFailure(t *testing.T) {
 		}},
 	}
 
-	runner := backwards.New(cfg, nil, store, logger, "test-run", "", notifier, nil)
+	runner := backwards.New(cfg, nil, store, logger, "test-run", "", backwards.RunnerOptions{Notifier: notifier})
 	err = runner.Run(context.Background())
 	assert.Expect(err).To(HaveOccurred())
 
@@ -1504,7 +1509,7 @@ func TestNotifyStepAsync(t *testing.T) {
 		}},
 	}
 
-	runner := backwards.New(cfg, nil, store, logger, "test-run", "", notifier, nil)
+	runner := backwards.New(cfg, nil, store, logger, "test-run", "", backwards.RunnerOptions{Notifier: notifier})
 	err = runner.Run(context.Background())
 	assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1549,7 +1554,7 @@ func TestNotifyStepNilNotifier(t *testing.T) {
 	}
 
 	// Pass nil notifier.
-	runner := backwards.New(cfg, nil, store, logger, "test-run", "", nil, nil)
+	runner := backwards.New(cfg, nil, store, logger, "test-run", "", backwards.RunnerOptions{})
 	err = runner.Run(context.Background())
 	assert.Expect(err).To(HaveOccurred())
 
@@ -1641,7 +1646,7 @@ func TestNotifyStepIntegration(t *testing.T) {
 		}},
 	}
 
-	runner := backwards.New(cfg, nil, store, logger, "test-run", "", notifier, nil)
+	runner := backwards.New(cfg, nil, store, logger, "test-run", "", backwards.RunnerOptions{Notifier: notifier})
 	err = runner.Run(context.Background())
 	assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1706,7 +1711,7 @@ func TestTargetedJobsRunsOnlyTargeted(t *testing.T) {
 		},
 	}
 
-	runner := backwards.New(cfg, nil, store, logger, "test-run", "", notifier, []string{"job-b"})
+	runner := backwards.New(cfg, nil, store, logger, "test-run", "", backwards.RunnerOptions{Notifier: notifier, TargetJobs: []string{"job-b"}})
 	err = runner.Run(context.Background())
 	assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1746,7 +1751,7 @@ func TestTargetedJobsNotFound(t *testing.T) {
 		},
 	}
 
-	runner := backwards.New(cfg, nil, store, logger, "test-run", "", nil, []string{"nonexistent-job"})
+	runner := backwards.New(cfg, nil, store, logger, "test-run", "", backwards.RunnerOptions{TargetJobs: []string{"nonexistent-job"}})
 	err = runner.Run(context.Background())
 	assert.Expect(err).To(HaveOccurred())
 	assert.Expect(err.Error()).To(ContainSubstring(`target job "nonexistent-job" not found`))
@@ -1776,7 +1781,7 @@ func TestTargetedJobsUnsatisfiedPassedSkipped(t *testing.T) {
 		},
 	}
 
-	runner := backwards.New(cfg, nil, store, logger, "test-run", "", nil, []string{"deploy"})
+	runner := backwards.New(cfg, nil, store, logger, "test-run", "", backwards.RunnerOptions{TargetJobs: []string{"deploy"}})
 	err = runner.Run(context.Background())
 	assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1810,7 +1815,7 @@ func TestTargetedJobsCascade(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, []string{"build"})
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{TargetJobs: []string{"build"}})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1860,7 +1865,7 @@ func TestTargetedJobsAssertionsValidate(t *testing.T) {
 			},
 		}
 
-		runner := backwards.New(cfg, nil, store, logger, "test-run", "", notifier, []string{"job-a"})
+		runner := backwards.New(cfg, nil, store, logger, "test-run", "", backwards.RunnerOptions{Notifier: notifier, TargetJobs: []string{"job-a"}})
 		err = runner.Run(context.Background())
 		assert.Expect(err).NotTo(HaveOccurred())
 	})
@@ -1899,7 +1904,7 @@ func TestTargetedJobsAssertionsValidate(t *testing.T) {
 			},
 		}
 
-		runner := backwards.New(cfg, nil, store, logger, "test-run", "", notifier, []string{"job-a"})
+		runner := backwards.New(cfg, nil, store, logger, "test-run", "", backwards.RunnerOptions{Notifier: notifier, TargetJobs: []string{"job-a"}})
 		err = runner.Run(context.Background())
 		assert.Expect(err).To(HaveOccurred())
 		assert.Expect(err.Error()).To(ContainSubstring("assertion"))
@@ -1927,7 +1932,7 @@ func TestTargetedJobsCrossRunPassedSatisfied(t *testing.T) {
 			// Run 1: full execution (no targeting) — all three jobs run.
 			cfg1 := loadConfig(t, "steps/targeted_cascade.yml")
 
-			runner1 := backwards.New(cfg1, driver, store, logger, "run-1", "", nil, nil)
+			runner1 := backwards.New(cfg1, driver, store, logger, "run-1", "", backwards.RunnerOptions{})
 			err = runner1.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1936,7 +1941,7 @@ func TestTargetedJobsCrossRunPassedSatisfied(t *testing.T) {
 			cfg2 := loadConfig(t, "steps/targeted_cascade.yml")
 			cfg2.Assert.Execution = []string{"deploy"}
 
-			runner2 := backwards.New(cfg2, driver, store, logger, "run-2", "", nil, []string{"deploy"})
+			runner2 := backwards.New(cfg2, driver, store, logger, "run-2", "", backwards.RunnerOptions{TargetJobs: []string{"deploy"}})
 			err = runner2.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 
@@ -1973,7 +1978,7 @@ func TestTargetedJobsEmptyTargetRunsAll(t *testing.T) {
 			defer func() { _ = store.Close() }()
 
 			// Empty target list should behave like nil — run all jobs.
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "", nil, []string{})
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{TargetJobs: []string{}})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 
@@ -2041,7 +2046,7 @@ func TestGateApproved(t *testing.T) {
 		}
 	}()
 
-	runner := backwards.New(cfg, nil, store, logger, run.ID, pipeline.ID, notifier, nil)
+	runner := backwards.New(cfg, nil, store, logger, run.ID, pipeline.ID, backwards.RunnerOptions{Notifier: notifier})
 	err = runner.Run(ctx)
 	assert.Expect(err).NotTo(HaveOccurred())
 
@@ -2094,7 +2099,7 @@ func TestGateRejected(t *testing.T) {
 		}
 	}()
 
-	runner := backwards.New(cfg, nil, store, logger, run.ID, pipeline.ID, nil, nil)
+	runner := backwards.New(cfg, nil, store, logger, run.ID, pipeline.ID, backwards.RunnerOptions{})
 	err = runner.Run(ctx)
 	assert.Expect(err).To(HaveOccurred())
 	assert.Expect(err.Error()).To(ContainSubstring("rejected"))
@@ -2132,8 +2137,528 @@ func TestGateTimeout(t *testing.T) {
 		}},
 	}
 
-	runner := backwards.New(cfg, nil, store, logger, run.ID, pipeline.ID, nil, nil)
+	runner := backwards.New(cfg, nil, store, logger, run.ID, pipeline.ID, backwards.RunnerOptions{})
 	err = runner.Run(ctx)
 	assert.Expect(err).To(HaveOccurred())
 	assert.Expect(err.Error()).To(ContainSubstring("timed out"))
+}
+
+// ── Webhook Trigger Filter/Dedup/Params ─────────────────────────────────────
+
+func githubWebhookData() *jsapi.WebhookData {
+	return &jsapi.WebhookData{
+		Provider:  "github",
+		EventType: "push",
+		Method:    "POST",
+		Headers:   map[string]string{"X-GitHub-Delivery": "abc-123"},
+		Query:     map[string]string{},
+		Body:      "{}",
+	}
+}
+
+func newNativeDriver(t *testing.T, namespace string) orchestra.Driver {
+	t.Helper()
+
+	driver, err := native.New(context.Background(), native.Config{Namespace: namespace}, discardLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = driver.Close() })
+
+	return driver
+}
+
+func TestWebhookFilter(t *testing.T) {
+	t.Run("manual trigger always runs with filter set", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+		logger := discardLogger()
+		driver := newNativeDriver(t, "test-filter-manual")
+
+		cfg := &configpkg.Config{
+			Jobs: configpkg.Jobs{{
+				Name: "filtered-job",
+				Triggers: &configpkg.Triggers{
+					Webhook: &configpkg.WebhookTriggerConfig{
+						Filter: `provider == "github"`,
+					},
+				},
+				Plan: configpkg.Steps{{
+					Task: "echo-task",
+					TaskConfig: &configpkg.TaskConfig{
+						Platform:      "linux",
+						ImageResource: configpkg.ImageResource{Type: "registry-image", Source: map[string]any{"repository": "busybox"}},
+						Run:           &configpkg.TaskConfigRun{Path: "echo", Args: []string{"hello"}},
+					},
+				}},
+			}},
+		}
+
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-filter", logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		// nil WebhookData = manual trigger, job should run
+		runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
+		err = runner.Run(context.Background())
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		results, err := store.GetAll(context.Background(), "/pipeline/test-run/jobs/filtered-job", []string{"status"})
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(results).NotTo(BeEmpty())
+		assert.Expect(results[len(results)-1].Payload["status"]).To(Equal("success"))
+	})
+
+	t.Run("matching expression runs the job", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+		logger := discardLogger()
+		driver := newNativeDriver(t, "test-filter-match")
+
+		cfg := &configpkg.Config{
+			Jobs: configpkg.Jobs{{
+				Name: "filtered-job",
+				Triggers: &configpkg.Triggers{
+					Webhook: &configpkg.WebhookTriggerConfig{
+						Filter: `provider == "github"`,
+					},
+				},
+				Plan: configpkg.Steps{{
+					Task: "echo-task",
+					TaskConfig: &configpkg.TaskConfig{
+						Platform:      "linux",
+						ImageResource: configpkg.ImageResource{Type: "registry-image", Source: map[string]any{"repository": "busybox"}},
+						Run:           &configpkg.TaskConfigRun{Path: "echo", Args: []string{"hello"}},
+					},
+				}},
+			}},
+		}
+
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-filter", logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{
+			WebhookData: githubWebhookData(),
+		})
+		err = runner.Run(context.Background())
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		results, err := store.GetAll(context.Background(), "/pipeline/test-run/jobs/filtered-job", []string{"status"})
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(results).NotTo(BeEmpty())
+		assert.Expect(results[len(results)-1].Payload["status"]).To(Equal("success"))
+	})
+
+	t.Run("non-matching expression skips the job", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+		logger := discardLogger()
+
+		cfg := &configpkg.Config{
+			Jobs: configpkg.Jobs{{
+				Name: "filtered-job",
+				Triggers: &configpkg.Triggers{
+					Webhook: &configpkg.WebhookTriggerConfig{
+						Filter: `provider == "github"`,
+					},
+				},
+				Plan: configpkg.Steps{{
+					Task: "failing-task",
+					TaskConfig: &configpkg.TaskConfig{
+						Platform:      "linux",
+						ImageResource: configpkg.ImageResource{Type: "registry-image", Source: map[string]any{"repository": "busybox"}},
+						Run:           &configpkg.TaskConfigRun{Path: "sh", Args: []string{"-c", "exit 1"}},
+					},
+				}},
+			}},
+		}
+
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-filter", logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		// Slack provider does not match filter — job should be skipped, NOT fail
+		runner := backwards.New(cfg, nil, store, logger, "test-run", "", backwards.RunnerOptions{
+			WebhookData: &jsapi.WebhookData{
+				Provider: "slack", EventType: "message", Method: "POST",
+				Headers: map[string]string{}, Query: map[string]string{}, Body: "{}",
+			},
+		})
+		err = runner.Run(context.Background())
+		assert.Expect(err).NotTo(HaveOccurred()) // skipped, not failed
+
+		results, err := store.GetAll(context.Background(), "/pipeline/test-run/jobs/filtered-job", []string{"status"})
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(results).NotTo(BeEmpty())
+		assert.Expect(results[len(results)-1].Payload["status"]).To(Equal("skipped"))
+	})
+
+	t.Run("no filter with webhook present runs the job", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+		logger := discardLogger()
+		driver := newNativeDriver(t, "test-filter-nofilter")
+
+		cfg := &configpkg.Config{
+			Jobs: configpkg.Jobs{{
+				Name: "no-filter-job",
+				Plan: configpkg.Steps{{
+					Task: "echo-task",
+					TaskConfig: &configpkg.TaskConfig{
+						Platform:      "linux",
+						ImageResource: configpkg.ImageResource{Type: "registry-image", Source: map[string]any{"repository": "busybox"}},
+						Run:           &configpkg.TaskConfigRun{Path: "echo", Args: []string{"hello"}},
+					},
+				}},
+			}},
+		}
+
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-filter", logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{
+			WebhookData: githubWebhookData(),
+		})
+		err = runner.Run(context.Background())
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("deprecated webhook_trigger field works", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+		logger := discardLogger()
+		driver := newNativeDriver(t, "test-filter-deprecated")
+
+		cfg := &configpkg.Config{
+			Jobs: configpkg.Jobs{{
+				Name:           "deprecated-filter-job",
+				WebhookTrigger: `provider == "github"`,
+				Plan: configpkg.Steps{{
+					Task: "echo-task",
+					TaskConfig: &configpkg.TaskConfig{
+						Platform:      "linux",
+						ImageResource: configpkg.ImageResource{Type: "registry-image", Source: map[string]any{"repository": "busybox"}},
+						Run:           &configpkg.TaskConfigRun{Path: "echo", Args: []string{"hello"}},
+					},
+				}},
+			}},
+		}
+
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-filter", logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{
+			WebhookData: githubWebhookData(),
+		})
+		err = runner.Run(context.Background())
+		assert.Expect(err).NotTo(HaveOccurred())
+	})
+}
+
+func TestWebhookParams(t *testing.T) {
+	t.Run("provider and eventType injected as env vars", func(t *testing.T) {
+		for _, df := range drivers {
+			t.Run(df.name, func(t *testing.T) {
+				assert := NewGomegaWithT(t)
+				logger := discardLogger()
+
+				driver, err := df.new("test-wh-params-"+df.name, logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = driver.Close() }()
+
+				cfg := &configpkg.Config{
+					Jobs: configpkg.Jobs{{
+						Name: "params-job",
+						Triggers: &configpkg.Triggers{
+							Webhook: &configpkg.WebhookTriggerConfig{
+								Params: map[string]string{
+									"MY_PROVIDER": "provider",
+									"MY_EVENT":    "eventType",
+								},
+							},
+						},
+						Plan: configpkg.Steps{{
+							Task: "check-params",
+							TaskConfig: &configpkg.TaskConfig{
+								Platform:      "linux",
+								ImageResource: configpkg.ImageResource{Type: "registry-image", Source: map[string]any{"repository": "busybox"}},
+								Run: &configpkg.TaskConfigRun{
+									Path: "sh",
+									Args: []string{"-c", `test "$MY_PROVIDER" = "github" && test "$MY_EVENT" = "pull_request"`},
+								},
+							},
+						}},
+					}},
+				}
+
+				store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-wh-params", logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = store.Close() }()
+
+				runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{
+					WebhookData: &jsapi.WebhookData{
+						Provider: "github", EventType: "pull_request", Method: "POST",
+						Headers: map[string]string{}, Query: map[string]string{}, Body: "{}",
+					},
+				})
+				err = runner.Run(context.Background())
+				assert.Expect(err).NotTo(HaveOccurred())
+			})
+		}
+	})
+
+	t.Run("payload fields injected as env vars", func(t *testing.T) {
+		for _, df := range drivers {
+			t.Run(df.name, func(t *testing.T) {
+				assert := NewGomegaWithT(t)
+				logger := discardLogger()
+
+				driver, err := df.new("test-wh-payload-"+df.name, logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = driver.Close() }()
+
+				cfg := &configpkg.Config{
+					Jobs: configpkg.Jobs{{
+						Name: "payload-job",
+						Triggers: &configpkg.Triggers{
+							Webhook: &configpkg.WebhookTriggerConfig{
+								Params: map[string]string{
+									"PR_NUMBER": `string(payload.number)`,
+									"PR_REPO":   `"https://github.com/" + payload.pull_request.head.repo.full_name + ".git"`,
+								},
+							},
+						},
+						Plan: configpkg.Steps{{
+							Task: "check-payload",
+							TaskConfig: &configpkg.TaskConfig{
+								Platform:      "linux",
+								ImageResource: configpkg.ImageResource{Type: "registry-image", Source: map[string]any{"repository": "busybox"}},
+								Run: &configpkg.TaskConfigRun{
+									Path: "sh",
+									Args: []string{"-c", `test "$PR_NUMBER" = "42" && test "$PR_REPO" = "https://github.com/org/repo.git"`},
+								},
+							},
+						}},
+					}},
+				}
+
+				store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-wh-payload", logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = store.Close() }()
+
+				body := `{"number":42,"pull_request":{"head":{"repo":{"full_name":"org/repo"}}}}`
+				runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{
+					WebhookData: &jsapi.WebhookData{
+						Provider: "github", EventType: "pull_request", Method: "POST",
+						Headers: map[string]string{}, Query: map[string]string{}, Body: body,
+					},
+				})
+				err = runner.Run(context.Background())
+				assert.Expect(err).NotTo(HaveOccurred())
+			})
+		}
+	})
+
+	t.Run("empty params on manual trigger", func(t *testing.T) {
+		for _, df := range drivers {
+			t.Run(df.name, func(t *testing.T) {
+				assert := NewGomegaWithT(t)
+				logger := discardLogger()
+
+				driver, err := df.new("test-wh-manual-"+df.name, logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = driver.Close() }()
+
+				cfg := &configpkg.Config{
+					Jobs: configpkg.Jobs{{
+						Name: "manual-params-job",
+						Triggers: &configpkg.Triggers{
+							Webhook: &configpkg.WebhookTriggerConfig{
+								Params: map[string]string{
+									"MY_PROVIDER": "provider",
+								},
+							},
+						},
+						Plan: configpkg.Steps{{
+							Task: "echo-task",
+							TaskConfig: &configpkg.TaskConfig{
+								Platform:      "linux",
+								ImageResource: configpkg.ImageResource{Type: "registry-image", Source: map[string]any{"repository": "busybox"}},
+								Run:           &configpkg.TaskConfigRun{Path: "echo", Args: []string{"hello"}},
+							},
+						}},
+					}},
+				}
+
+				store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-manual-params", logger)
+				assert.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = store.Close() }()
+
+				// nil WebhookData = manual trigger; params should be empty, job should still run
+				runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
+				err = runner.Run(context.Background())
+				assert.Expect(err).NotTo(HaveOccurred())
+			})
+		}
+	})
+}
+
+func TestWebhookDedup(t *testing.T) {
+	t.Run("manual trigger is never a duplicate", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+		logger := discardLogger()
+		driver := newNativeDriver(t, "test-dedup-manual")
+
+		cfg := &configpkg.Config{
+			Jobs: configpkg.Jobs{{
+				Name: "dedup-job",
+				Triggers: &configpkg.Triggers{
+					Webhook: &configpkg.WebhookTriggerConfig{
+						DedupKey: `headers["X-GitHub-Delivery"]`,
+					},
+				},
+				Plan: configpkg.Steps{{
+					Task: "echo-task",
+					TaskConfig: &configpkg.TaskConfig{
+						Platform:      "linux",
+						ImageResource: configpkg.ImageResource{Type: "registry-image", Source: map[string]any{"repository": "busybox"}},
+						Run:           &configpkg.TaskConfigRun{Path: "echo", Args: []string{"hello"}},
+					},
+				}},
+			}},
+		}
+
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-dedup", logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
+		err = runner.Run(context.Background())
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		results, err := store.GetAll(context.Background(), "/pipeline/test-run/jobs/dedup-job", []string{"status"})
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(results).NotTo(BeEmpty())
+		assert.Expect(results[len(results)-1].Payload["status"]).To(Equal("success"))
+	})
+
+	t.Run("first call runs, second call is duplicate", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+		logger := discardLogger()
+		driver := newNativeDriver(t, "test-dedup-dup")
+
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-dedup", logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		pipeline, err := store.SavePipeline(context.Background(), "test-dedup-pipeline", "content", "native", "")
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		cfg := &configpkg.Config{
+			Jobs: configpkg.Jobs{{
+				Name: "dedup-job",
+				Triggers: &configpkg.Triggers{
+					Webhook: &configpkg.WebhookTriggerConfig{
+						DedupKey: `headers["X-GitHub-Delivery"]`,
+					},
+				},
+				Plan: configpkg.Steps{{
+					Task: "echo-task",
+					TaskConfig: &configpkg.TaskConfig{
+						Platform:      "linux",
+						ImageResource: configpkg.ImageResource{Type: "registry-image", Source: map[string]any{"repository": "busybox"}},
+						Run:           &configpkg.TaskConfigRun{Path: "echo", Args: []string{"hello"}},
+					},
+				}},
+			}},
+		}
+
+		webhookData := &jsapi.WebhookData{
+			Provider: "github", EventType: "push", Method: "POST",
+			Headers: map[string]string{"X-GitHub-Delivery": "abc-123"},
+			Query:   map[string]string{}, Body: "{}",
+		}
+
+		// Run 1: not a duplicate
+		runner1 := backwards.New(cfg, driver, store, logger, "run-1", pipeline.ID, backwards.RunnerOptions{
+			WebhookData: webhookData,
+		})
+		err = runner1.Run(context.Background())
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		results1, err := store.GetAll(context.Background(), "/pipeline/run-1/jobs/dedup-job", []string{"status"})
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(results1).NotTo(BeEmpty())
+		assert.Expect(results1[len(results1)-1].Payload["status"]).To(Equal("success"))
+
+		// Run 2: same webhook data — should be a duplicate (skipped)
+		runner2 := backwards.New(cfg, driver, store, logger, "run-2", pipeline.ID, backwards.RunnerOptions{
+			WebhookData: webhookData,
+		})
+		err = runner2.Run(context.Background())
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		results2, err := store.GetAll(context.Background(), "/pipeline/run-2/jobs/dedup-job", []string{"status"})
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(results2).NotTo(BeEmpty())
+		assert.Expect(results2[len(results2)-1].Payload["status"]).To(Equal("skipped"))
+	})
+
+	t.Run("different keys are not duplicates", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+		logger := discardLogger()
+		driver := newNativeDriver(t, "test-dedup-diff")
+
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-dedup", logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		pipeline, err := store.SavePipeline(context.Background(), "test-dedup-pipeline", "content", "native", "")
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		cfg := &configpkg.Config{
+			Jobs: configpkg.Jobs{{
+				Name: "dedup-job",
+				Triggers: &configpkg.Triggers{
+					Webhook: &configpkg.WebhookTriggerConfig{
+						DedupKey: `headers["X-GitHub-Delivery"]`,
+					},
+				},
+				Plan: configpkg.Steps{{
+					Task: "echo-task",
+					TaskConfig: &configpkg.TaskConfig{
+						Platform:      "linux",
+						ImageResource: configpkg.ImageResource{Type: "registry-image", Source: map[string]any{"repository": "busybox"}},
+						Run:           &configpkg.TaskConfigRun{Path: "echo", Args: []string{"hello"}},
+					},
+				}},
+			}},
+		}
+
+		// Run 1: first delivery
+		runner1 := backwards.New(cfg, driver, store, logger, "run-1", pipeline.ID, backwards.RunnerOptions{
+			WebhookData: &jsapi.WebhookData{
+				Provider: "github", EventType: "push", Method: "POST",
+				Headers: map[string]string{"X-GitHub-Delivery": "first"},
+				Query:   map[string]string{}, Body: "{}",
+			},
+		})
+		err = runner1.Run(context.Background())
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		// Run 2: different delivery — not a duplicate
+		runner2 := backwards.New(cfg, driver, store, logger, "run-2", pipeline.ID, backwards.RunnerOptions{
+			WebhookData: &jsapi.WebhookData{
+				Provider: "github", EventType: "push", Method: "POST",
+				Headers: map[string]string{"X-GitHub-Delivery": "second"},
+				Query:   map[string]string{}, Body: "{}",
+			},
+		})
+		err = runner2.Run(context.Background())
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		results2, err := store.GetAll(context.Background(), "/pipeline/run-2/jobs/dedup-job", []string{"status"})
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(results2).NotTo(BeEmpty())
+		assert.Expect(results2[len(results2)-1].Payload["status"]).To(Equal("success"))
+	})
 }

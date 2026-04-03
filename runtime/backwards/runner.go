@@ -117,16 +117,26 @@ func ValidateConfig(cfg *config.Config) error {
 	return nil
 }
 
+// RunnerOptions holds optional configuration for a Runner.
+type RunnerOptions struct {
+	Notifier    *jsapi.Notifier
+	TargetJobs  []string
+	WebhookData *jsapi.WebhookData
+	DedupTTL    time.Duration
+}
+
 // Runner executes a parsed pipeline Config using Go-native execution.
 type Runner struct {
-	config     *config.Config
-	driver     orchestra.Driver
-	storage    storage.Driver
-	logger     *slog.Logger
-	runID      string
-	pipelineID string
-	notifier   *jsapi.Notifier
-	targetJobs []string
+	config      *config.Config
+	driver      orchestra.Driver
+	storage     storage.Driver
+	logger      *slog.Logger
+	runID       string
+	pipelineID  string
+	notifier    *jsapi.Notifier
+	targetJobs  []string
+	webhookData *jsapi.WebhookData
+	dedupTTL    time.Duration
 }
 
 // New creates a Runner for the given pipeline config.
@@ -137,18 +147,19 @@ func New(
 	logger *slog.Logger,
 	runID string,
 	pipelineID string,
-	notifier *jsapi.Notifier,
-	targetJobs []string,
+	opts RunnerOptions,
 ) *Runner {
 	return &Runner{
-		config:     cfg,
-		driver:     driver,
-		storage:    store,
-		logger:     logger,
-		runID:      runID,
-		pipelineID: pipelineID,
-		notifier:   notifier,
-		targetJobs: targetJobs,
+		config:      cfg,
+		driver:      driver,
+		storage:     store,
+		logger:      logger,
+		runID:       runID,
+		pipelineID:  pipelineID,
+		notifier:    opts.Notifier,
+		targetJobs:  opts.TargetJobs,
+		webhookData: opts.WebhookData,
+		dedupTTL:    opts.DedupTTL,
 	}
 }
 
@@ -166,7 +177,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			return nil
 		}
 
-		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.pipelineID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight, r.notifier)
+		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.pipelineID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight, r.notifier, r.webhookData, r.dedupTTL)
 
 		err := jr.Run(ctx)
 		if err != nil {

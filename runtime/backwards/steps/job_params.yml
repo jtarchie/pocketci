@@ -11,8 +11,8 @@ jobs:
     triggers:
       webhook:
         params:
-          DEPLOY_ENV: "staging"
-          VERSION: "1.2.3"
+          DEPLOY_ENV: '"staging"'
+          VERSION: '"1.2.3"'
     plan:
       - task: check-params
         config:
@@ -48,8 +48,8 @@ jobs:
     triggers:
       webhook:
         params:
-          DEPLOY_ENV: "staging"
-          EXTRA: "from-params"
+          DEPLOY_ENV: '"staging"'
+          EXTRA: '"from-params"'
     plan:
       - task: check-override
         config:
@@ -87,7 +87,7 @@ jobs:
     triggers:
       webhook:
         params:
-          BUILD_NUM: "42"
+          BUILD_NUM: '"42"'
     plan:
       - do:
           - task: nested-check
@@ -120,7 +120,7 @@ jobs:
     triggers:
       webhook:
         params:
-          HOOK_VAR: "from-params"
+          HOOK_VAR: '"from-params"'
     plan:
       - task: trigger-success
         config:

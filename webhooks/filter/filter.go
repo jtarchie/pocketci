@@ -3,9 +3,11 @@
 package filter
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/expr-lang/expr"
+	"github.com/jtarchie/pocketci/runtime/jsapi"
 )
 
 // WebhookEnv is the expression environment exposing webhook metadata.
@@ -60,4 +62,24 @@ func EvaluateString(expression string, env WebhookEnv) (string, error) {
 	}
 
 	return fmt.Sprintf("%v", result), nil
+}
+
+// BuildWebhookEnv constructs a WebhookEnv from webhook data.
+// The Body field is JSON-decoded into Payload when possible.
+func BuildWebhookEnv(wd *jsapi.WebhookData) WebhookEnv {
+	env := WebhookEnv{
+		Provider:  wd.Provider,
+		EventType: wd.EventType,
+		Method:    wd.Method,
+		Headers:   wd.Headers,
+		Query:     wd.Query,
+		Body:      wd.Body,
+	}
+
+	var payload map[string]any
+	if jsonErr := json.Unmarshal([]byte(wd.Body), &payload); jsonErr == nil {
+		env.Payload = payload
+	}
+
+	return env
 }
