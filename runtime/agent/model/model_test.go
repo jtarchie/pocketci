@@ -39,7 +39,7 @@ func TestSplitModel(t *testing.T) {
 func TestResolve_UnknownProvider(t *testing.T) {
 	t.Parallel()
 	assert := NewGomegaWithT(t)
-	_, err := model.Resolve("unknown-provider", "model-x", "key", nil, nil)
+	_, err := model.Resolve("unknown-provider", "model-x", "key", nil, nil, nil)
 	assert.Expect(err).To(HaveOccurred())
 	assert.Expect(err.Error()).To(ContainSubstring("unknown provider"))
 }
