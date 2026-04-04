@@ -240,4 +240,3 @@ func (h *GetHandler) resolveEveryVersion(
 	// All versions already processed — return the last available.
 	return versions[len(versions)-1], nil
 }
-

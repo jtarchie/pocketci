@@ -176,4 +176,3 @@ func (h *PutHandler) pushContainer(
 
 	return result.Version, nil
 }
-
