@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -11,6 +12,7 @@ import (
 )
 
 var version = "dev"
+var commit = "none"
 
 type CLI struct {
 	Execute  commands.Execute  `cmd:"" help:"Execute a pipeline locally"`
@@ -27,7 +29,7 @@ type CLI struct {
 
 func main() {
 	cli := &CLI{}
-	ctx := kong.Parse(cli, kong.Vars{"version": version})
+	ctx := kong.Parse(cli, kong.Vars{"version": fmt.Sprintf("%s (%s)", version, commit)})
 
 	if cli.LogFormat == "json" {
 		slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{

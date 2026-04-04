@@ -24,6 +24,7 @@ builds:
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
     flags:
       - -trimpath
 
