@@ -15,85 +15,128 @@ import (
 // AgentHandler executes agent steps by delegating to the LLM agent runtime.
 type AgentHandler struct{}
 
+// agentRunState holds mutex-protected state accumulated during agent execution.
+type agentRunState struct {
+	mu                sync.Mutex
+	accumulatedOutput string
+	latestUsage       *agent.AgentUsage
+	auditLog          []agent.AuditEvent
+}
+
+// agentRunContext holds the resolved resources needed to run an agent step.
+type agentRunContext struct {
+	tools            []agent.ToolDef
+	mounts           map[string]pipelinerunner.VolumeResult
+	outputVolumePath string
+	storageKey       string
+	hooksStorageKey  string
+	auditBaseKey     string
+}
+
 func (h *AgentHandler) Execute(sc *StepContext, step *config.Step, pathPrefix string) error {
-	agentStep := step
-
-	// Phase 1: Config loading and merging.
-	if step.File != "" || step.URI != "" {
-		merged, err := mergeAgentExternalConfig(sc, step, pathPrefix)
-		if err != nil {
-			return &TaskErroredError{TaskName: step.Agent, Err: err}
-		}
-
-		agentStep = merged
-	} else if step.PromptFile != "" {
-		contents, err := loadRawBytesFromVolume(sc, step.PromptFile)
-		if err != nil {
-			return &TaskErroredError{TaskName: step.Agent, Err: fmt.Errorf("loading prompt_file %q: %w", step.PromptFile, err)}
-		}
-
-		agentStep = copyStep(step)
-		agentStep.Prompt = string(contents)
+	agentStep, err := h.loadAgentStep(sc, step, pathPrefix)
+	if err != nil {
+		return err
 	}
 
 	sc.appendExecutedTask(agentStep.Agent)
 
-	// Phase 2: Image resolution.
-	image := resolveAgentImage(agentStep)
-
-	// Phase 3: Tool resolution.
-	tools, err := resolveAgentTools(sc, agentStep, pathPrefix)
+	arc, err := h.prepareAgentRun(sc, agentStep, pathPrefix)
 	if err != nil {
-		return &TaskErroredError{TaskName: agentStep.Agent, Err: fmt.Errorf("resolving tools: %w", err)}
+		return &TaskErroredError{TaskName: agentStep.Agent, Err: err}
 	}
 
-	// Phase 4: Volume management.
-	mounts, outputVolumePath, err := resolveAgentMounts(sc, agentStep)
-	if err != nil {
-		return &TaskErroredError{TaskName: agentStep.Agent, Err: fmt.Errorf("resolving mounts: %w", err)}
-	}
-
-	// Phase 5: Storage keys.
-	hooksStorageKey := fmt.Sprintf("%s/%s", sc.BaseStorageKey(), pathPrefix)
-	storageKey := hooksStorageKey + "/run"
-	auditBaseKey := fmt.Sprintf("/agent-audit/%s/jobs/%s/%s/events", sc.RunID, sc.JobName, pathPrefix)
-
-	// Phase 6: State tracking and throttled persistence.
-	var (
-		mu                sync.Mutex
-		accumulatedOutput string
-		latestUsage       *agent.AgentUsage
-		auditLog          []agent.AuditEvent
-	)
-
+	state := &agentRunState{}
 	startedAt := time.Now()
 
-	_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+	_ = sc.Storage.Set(sc.Ctx, arc.storageKey, storage.Payload{
 		"status":     "pending",
 		"started_at": startedAt.Format(time.RFC3339),
 	})
 
 	throttle := newThrottledPersister(500*time.Millisecond, func() {
-		mu.Lock()
-		defer mu.Unlock()
+		state.mu.Lock()
+		defer state.mu.Unlock()
 
-		_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+		_ = sc.Storage.Set(sc.Ctx, arc.storageKey, storage.Payload{
 			"status":     "running",
 			"started_at": startedAt.Format(time.RFC3339),
-			"stdout":     accumulatedOutput,
-			"usage":      latestUsage,
-			"audit_log":  auditLog,
+			"stdout":     state.accumulatedOutput,
+			"usage":      state.latestUsage,
+			"audit_log":  state.auditLog,
 		})
 	})
 
-	// Phase 7: Build AgentConfig and call RunAgent.
-	agentConfig := agent.AgentConfig{
+	agentConfig := h.buildAgentConfig(sc, agentStep, arc, startedAt, state, throttle)
+
+	result, runErr := agent.RunAgent(sc.Ctx, sc.PipelineRunner, sc.SecretsManager, sc.PipelineID, agentConfig)
+
+	return h.finalizeAgentRun(sc, agentStep, arc, result, runErr, startedAt, state, throttle)
+}
+
+// loadAgentStep resolves the final step config by loading and merging any
+// external file/URI or inline prompt_file. Returns the original step unchanged
+// if no external config is referenced.
+func (h *AgentHandler) loadAgentStep(sc *StepContext, step *config.Step, pathPrefix string) (*config.Step, error) {
+	if step.File != "" || step.URI != "" {
+		merged, err := mergeAgentExternalConfig(sc, step, pathPrefix)
+		if err != nil {
+			return nil, &TaskErroredError{TaskName: step.Agent, Err: err}
+		}
+
+		return merged, nil
+	}
+
+	if step.PromptFile != "" {
+		contents, err := loadRawBytesFromVolume(sc, step.PromptFile)
+		if err != nil {
+			return nil, &TaskErroredError{TaskName: step.Agent, Err: fmt.Errorf("loading prompt_file %q: %w", step.PromptFile, err)}
+		}
+
+		agentStep := copyStep(step)
+		agentStep.Prompt = string(contents)
+
+		return agentStep, nil
+	}
+
+	return step, nil
+}
+
+// prepareAgentRun resolves tools, mounts, and storage keys for the agent step.
+func (h *AgentHandler) prepareAgentRun(sc *StepContext, agentStep *config.Step, pathPrefix string) (agentRunContext, error) {
+	tools, err := resolveAgentTools(sc, agentStep, pathPrefix)
+	if err != nil {
+		return agentRunContext{}, fmt.Errorf("resolving tools: %w", err)
+	}
+
+	mounts, outputVolumePath, err := resolveAgentMounts(sc, agentStep)
+	if err != nil {
+		return agentRunContext{}, fmt.Errorf("resolving mounts: %w", err)
+	}
+
+	hooksStorageKey := fmt.Sprintf("%s/%s", sc.BaseStorageKey(), pathPrefix)
+
+	return agentRunContext{
+		tools:            tools,
+		mounts:           mounts,
+		outputVolumePath: outputVolumePath,
+		hooksStorageKey:  hooksStorageKey,
+		storageKey:       hooksStorageKey + "/run",
+		auditBaseKey:     fmt.Sprintf("/agent-audit/%s/jobs/%s/%s/events", sc.RunID, sc.JobName, pathPrefix),
+	}, nil
+}
+
+// buildAgentConfig constructs the agent.AgentConfig with all callbacks wired up.
+func (h *AgentHandler) buildAgentConfig(sc *StepContext, agentStep *config.Step, arc agentRunContext, startedAt time.Time, state *agentRunState, throttle *throttledPersister) agent.AgentConfig {
+	image := resolveAgentImage(agentStep)
+
+	cfg := agent.AgentConfig{
 		Name:             agentStep.Agent,
 		Prompt:           agentStep.Prompt,
 		Model:            agentStep.Model,
 		Image:            image,
-		Mounts:           mounts,
-		OutputVolumePath: outputVolumePath,
+		Mounts:           arc.mounts,
+		OutputVolumePath: arc.outputVolumePath,
 		LLM:              agentStep.AgentLLM,
 		Thinking:         agentStep.AgentThinking,
 		Safety:           agentStep.AgentSafety,
@@ -109,19 +152,19 @@ func (h *AgentHandler) Execute(sc *StepContext, step *config.Step, pathPrefix st
 		PipelineID:       sc.PipelineID,
 		BaseURLOverrides: sc.AgentBaseURLs,
 		OnUsage: func(usage agent.AgentUsage) {
-			mu.Lock()
-			latestUsage = &usage
-			mu.Unlock()
+			state.mu.Lock()
+			state.latestUsage = &usage
+			state.mu.Unlock()
 
 			throttle.trigger()
 		},
 		OnAuditEvent: func(event agent.AuditEvent) {
-			mu.Lock()
-			auditLog = append(auditLog, event)
-			idx := len(auditLog) - 1
-			mu.Unlock()
+			state.mu.Lock()
+			state.auditLog = append(state.auditLog, event)
+			idx := len(state.auditLog) - 1
+			state.mu.Unlock()
 
-			_ = sc.Storage.Set(sc.Ctx, fmt.Sprintf("%s/%d", auditBaseKey, idx), storage.Payload{
+			_ = sc.Storage.Set(sc.Ctx, fmt.Sprintf("%s/%d", arc.auditBaseKey, idx), storage.Payload{
 				"timestamp":    event.Timestamp,
 				"invocationId": event.InvocationID,
 				"author":       event.Author,
@@ -137,32 +180,34 @@ func (h *AgentHandler) Execute(sc *StepContext, step *config.Step, pathPrefix st
 
 			throttle.trigger()
 		},
-		OnOutput: func(stream, data string) {
-			mu.Lock()
-			accumulatedOutput += data
-			mu.Unlock()
+		OnOutput: func(_, data string) {
+			state.mu.Lock()
+			state.accumulatedOutput += data
+			state.mu.Unlock()
 
 			throttle.trigger()
 		},
 	}
 
-	if len(tools) > 0 {
-		agentConfig.Tools = tools
+	if len(arc.tools) > 0 {
+		cfg.Tools = arc.tools
 	}
 
-	result, runErr := agent.RunAgent(sc.Ctx, sc.PipelineRunner, sc.SecretsManager, sc.PipelineID, agentConfig)
+	return cfg
+}
 
-	// Phase 8: Result handling.
+// finalizeAgentRun writes the final storage status and returns the step error.
+func (h *AgentHandler) finalizeAgentRun(sc *StepContext, agentStep *config.Step, arc agentRunContext, result *agent.AgentResult, runErr error, startedAt time.Time, state *agentRunState, throttle *throttledPersister) error {
 	elapsed := time.Since(startedAt)
 
 	if runErr != nil {
-		mu.Lock()
-		output := accumulatedOutput
-		usage := latestUsage
-		log := auditLog
-		mu.Unlock()
+		state.mu.Lock()
+		output := state.accumulatedOutput
+		usage := state.latestUsage
+		log := state.auditLog
+		state.mu.Unlock()
 
-		_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+		_ = sc.Storage.Set(sc.Ctx, arc.storageKey, storage.Payload{
 			"status":        "failure",
 			"started_at":    startedAt.Format(time.RFC3339),
 			"elapsed":       elapsed.String(),
@@ -177,19 +222,19 @@ func (h *AgentHandler) Execute(sc *StepContext, step *config.Step, pathPrefix st
 
 	throttle.flush()
 
-	mu.Lock()
-	usage := latestUsage
+	state.mu.Lock()
+	usage := state.latestUsage
 	if usage == nil && result != nil {
 		usage = &result.Usage
 	}
-	mu.Unlock()
+	state.mu.Unlock()
 
 	status := "success"
 	if result.Status == "limit_exceeded" {
 		status = "limit_exceeded"
 	}
 
-	_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+	_ = sc.Storage.Set(sc.Ctx, arc.storageKey, storage.Payload{
 		"status":     status,
 		"started_at": startedAt.Format(time.RFC3339),
 		"elapsed":    elapsed.String(),
