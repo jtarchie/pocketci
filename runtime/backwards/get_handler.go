@@ -164,9 +164,7 @@ func (h *GetHandler) checkNative(
 		versions[i] = v
 	}
 
-	sc.ExecutedTasksMu.Lock()
-	sc.ExecutedTasks = append(sc.ExecutedTasks, "check-"+resource.Name)
-	sc.ExecutedTasksMu.Unlock()
+	sc.appendExecutedTask("check-" + resource.Name)
 
 	return versions, nil
 }
@@ -199,9 +197,7 @@ func (h *GetHandler) checkContainer(
 		return nil, fmt.Errorf("container check %q: %w", resource.Name, err)
 	}
 
-	sc.ExecutedTasksMu.Lock()
-	sc.ExecutedTasks = append(sc.ExecutedTasks, "check-"+resource.Name)
-	sc.ExecutedTasksMu.Unlock()
+	sc.appendExecutedTask("check-" + resource.Name)
 
 	var versions []map[string]string
 	if err := json.Unmarshal([]byte(stdout), &versions); err != nil {
@@ -253,7 +249,7 @@ func (h *GetHandler) fetchNative(
 	step *config.Step,
 	storageKey string,
 ) error {
-	volName := fmt.Sprintf("vol-%s-%s", sc.RunID, resource.Name)
+	volName := resourceVolumeName(sc.RunID, resource.Name)
 
 	vol, err := sc.Driver.CreateVolume(sc.Ctx, volName, 0)
 	if err != nil {
@@ -276,9 +272,7 @@ func (h *GetHandler) fetchNative(
 		return fmt.Errorf("native fetch %q: %w", resource.Name, err)
 	}
 
-	sc.ExecutedTasksMu.Lock()
-	sc.ExecutedTasks = append(sc.ExecutedTasks, "get-"+resource.Name)
-	sc.ExecutedTasksMu.Unlock()
+	sc.appendExecutedTask("get-" + resource.Name)
 
 	return nil
 }
@@ -292,7 +286,7 @@ func (h *GetHandler) fetchContainer(
 	pathPrefix string,
 ) error {
 	image, _ := resourceType.Source["repository"].(string)
-	volName := fmt.Sprintf("vol-%s-%s", sc.RunID, resourceName)
+	volName := resourceVolumeName(sc.RunID, resourceName)
 	sc.KnownVolumes[resourceName] = volName
 
 	mounts := orchestra.Mounts{
@@ -314,9 +308,7 @@ func (h *GetHandler) fetchContainer(
 		return fmt.Errorf("container fetch %q: %w", resourceName, err)
 	}
 
-	sc.ExecutedTasksMu.Lock()
-	sc.ExecutedTasks = append(sc.ExecutedTasks, "get-"+resourceName)
-	sc.ExecutedTasksMu.Unlock()
+	sc.appendExecutedTask("get-" + resourceName)
 
 	return nil
 }

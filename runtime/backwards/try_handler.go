@@ -37,14 +37,7 @@ func (h *TryHandler) Execute(sc *StepContext, step *config.Step, pathPrefix stri
 			// step-level hook inside processStep.
 			if sc.FailureCount == failureBefore {
 				sc.FailureCount++
-				switch {
-				case isAbortError(stepErr):
-					sc.LastFailureKind = FailureKindAborted
-				case isErroredError(stepErr):
-					sc.LastFailureKind = FailureKindErrored
-				default:
-					sc.LastFailureKind = FailureKindFailed
-				}
+				sc.LastFailureKind = failureKindFromErr(stepErr)
 			}
 
 			break

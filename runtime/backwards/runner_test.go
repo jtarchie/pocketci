@@ -293,7 +293,7 @@ func TestOnAbortStep(t *testing.T) {
 			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
-			assert.Expect(logs.String()).To(ContainSubstring("Task abort-task aborted"))
+			assert.Expect(logs.String()).To(ContainSubstring(`abort-task\" aborted`))
 			assert.Expect(logs.String()).To(ContainSubstring("on-abort-task"))
 		})
 	}

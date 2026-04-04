@@ -51,11 +51,7 @@ func (h *TaskHandler) executeParallel(sc *StepContext, step *config.Step, pathPr
 
 	// Pre-populate ExecutedTasks for deterministic assertion order.
 	for i := 1; i <= count; i++ {
-		indexedName := fmt.Sprintf("%s-%d", step.Task, i)
-
-		sc.ExecutedTasksMu.Lock()
-		sc.ExecutedTasks = append(sc.ExecutedTasks, indexedName)
-		sc.ExecutedTasksMu.Unlock()
+		sc.appendExecutedTask(fmt.Sprintf("%s-%d", step.Task, i))
 	}
 
 	var wg sync.WaitGroup
@@ -341,7 +337,7 @@ func resolveInputsOutputs(sc *StepContext, cfg *config.TaskConfig) orchestra.Mou
 	for _, output := range cfg.Outputs {
 		volName, ok := sc.KnownVolumes[output.Name]
 		if !ok {
-			volName = fmt.Sprintf("vol-%s-%s", sc.RunID, output.Name)
+			volName = resourceVolumeName(sc.RunID, output.Name)
 			sc.KnownVolumes[output.Name] = volName
 		}
 
@@ -354,7 +350,7 @@ func resolveInputsOutputs(sc *StepContext, cfg *config.TaskConfig) orchestra.Mou
 	for _, input := range cfg.Inputs {
 		volName, ok := sc.KnownVolumes[input.Name]
 		if !ok {
-			volName = fmt.Sprintf("vol-%s-%s", sc.RunID, input.Name)
+			volName = resourceVolumeName(sc.RunID, input.Name)
 			sc.KnownVolumes[input.Name] = volName
 		}
 

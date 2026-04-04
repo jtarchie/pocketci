@@ -42,7 +42,7 @@ type TaskAbortedError struct {
 }
 
 func (e *TaskAbortedError) Error() string {
-	return fmt.Sprintf("Task %s aborted", e.TaskName)
+	return fmt.Sprintf("task %q aborted", e.TaskName)
 }
 
 // TaskErroredError indicates a task encountered an infrastructure error.
@@ -57,6 +57,18 @@ func (e *TaskErroredError) Error() string {
 
 func (e *TaskErroredError) Unwrap() error {
 	return e.Err
+}
+
+// failureKindFromErr classifies an error into a FailureKind.
+func failureKindFromErr(err error) FailureKind {
+	switch {
+	case isAbortError(err):
+		return FailureKindAborted
+	case isErroredError(err):
+		return FailureKindErrored
+	default:
+		return FailureKindFailed
+	}
 }
 
 // AssertionError wraps ErrAssertionFailed with a descriptive message.

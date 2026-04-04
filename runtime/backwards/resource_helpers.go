@@ -46,6 +46,25 @@ func paramsToAnyMap(params map[string]string) map[string]any {
 	return m
 }
 
+// resolveLimit determines the effective concurrency limit.
+// Priority: job MaxInFlight > step limit > step count (unlimited).
+func resolveLimit(sc *StepContext, stepLimit, stepCount int) int {
+	if sc.MaxInFlight > 0 {
+		return sc.MaxInFlight
+	}
+
+	if stepLimit > 0 {
+		return stepLimit
+	}
+
+	return stepCount
+}
+
+// resourceVolumeName returns the driver volume name for a resource mount.
+func resourceVolumeName(runID, name string) string {
+	return fmt.Sprintf("vol-%s-%s", runID, name)
+}
+
 // getScopedResourceName returns a scoped name for resource version storage.
 // pipelineID is used to scope versions per-pipeline, matching the JS runtime's
 // behaviour of `${pipelineID}/${resourceName}`.

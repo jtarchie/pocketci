@@ -36,9 +36,7 @@ func (h *AgentHandler) Execute(sc *StepContext, step *config.Step, pathPrefix st
 		agentStep.Prompt = string(contents)
 	}
 
-	sc.ExecutedTasksMu.Lock()
-	sc.ExecutedTasks = append(sc.ExecutedTasks, agentStep.Agent)
-	sc.ExecutedTasksMu.Unlock()
+	sc.appendExecutedTask(agentStep.Agent)
 
 	// Phase 2: Image resolution.
 	image := resolveAgentImage(agentStep)
@@ -472,7 +470,7 @@ func resolveAgentMounts(sc *StepContext, step *config.Step) (map[string]pipeline
 	for _, output := range outputs {
 		volName, ok := sc.KnownVolumes[output.Name]
 		if !ok {
-			volName = fmt.Sprintf("vol-%s-%s", sc.RunID, output.Name)
+			volName = resourceVolumeName(sc.RunID, output.Name)
 			sc.KnownVolumes[output.Name] = volName
 		}
 

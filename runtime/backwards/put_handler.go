@@ -124,9 +124,7 @@ func (h *PutHandler) pushNative(
 		return nil, fmt.Errorf("native push %q: %w", resource.Name, err)
 	}
 
-	sc.ExecutedTasksMu.Lock()
-	sc.ExecutedTasks = append(sc.ExecutedTasks, "put-"+resource.Name)
-	sc.ExecutedTasksMu.Unlock()
+	sc.appendExecutedTask("put-" + resource.Name)
 
 	return resp.Version, nil
 }
@@ -140,7 +138,7 @@ func (h *PutHandler) pushContainer(
 	pathPrefix string,
 ) (map[string]string, error) {
 	image, _ := resourceType.Source["repository"].(string)
-	volName := fmt.Sprintf("vol-%s-%s", sc.RunID, resourceName)
+	volName := resourceVolumeName(sc.RunID, resourceName)
 	sc.KnownVolumes[resourceName] = volName
 
 	mounts := orchestra.Mounts{
@@ -166,9 +164,7 @@ func (h *PutHandler) pushContainer(
 		return nil, fmt.Errorf("container push %q: %w", resourceName, err)
 	}
 
-	sc.ExecutedTasksMu.Lock()
-	sc.ExecutedTasks = append(sc.ExecutedTasks, "put-"+resourceName)
-	sc.ExecutedTasksMu.Unlock()
+	sc.appendExecutedTask("put-" + resourceName)
 
 	var result struct {
 		Version map[string]string `json:"version"`
@@ -186,7 +182,7 @@ func (h *PutHandler) fetchNative(
 	resource *config.Resource,
 	version map[string]string,
 ) error {
-	volName := fmt.Sprintf("vol-%s-%s", sc.RunID, resource.Name)
+	volName := resourceVolumeName(sc.RunID, resource.Name)
 
 	vol, err := sc.Driver.CreateVolume(sc.Ctx, volName, 0)
 	if err != nil {
@@ -208,9 +204,7 @@ func (h *PutHandler) fetchNative(
 		return fmt.Errorf("native fetch after put %q: %w", resource.Name, err)
 	}
 
-	sc.ExecutedTasksMu.Lock()
-	sc.ExecutedTasks = append(sc.ExecutedTasks, "get-"+resource.Name)
-	sc.ExecutedTasksMu.Unlock()
+	sc.appendExecutedTask("get-" + resource.Name)
 
 	return nil
 }
@@ -224,7 +218,7 @@ func (h *PutHandler) fetchContainer(
 	pathPrefix string,
 ) error {
 	image, _ := resourceType.Source["repository"].(string)
-	volName := fmt.Sprintf("vol-%s-%s", sc.RunID, resourceName)
+	volName := resourceVolumeName(sc.RunID, resourceName)
 	sc.KnownVolumes[resourceName] = volName
 
 	mounts := orchestra.Mounts{
@@ -246,9 +240,7 @@ func (h *PutHandler) fetchContainer(
 		return fmt.Errorf("container fetch after put %q: %w", resourceName, err)
 	}
 
-	sc.ExecutedTasksMu.Lock()
-	sc.ExecutedTasks = append(sc.ExecutedTasks, "get-"+resourceName)
-	sc.ExecutedTasksMu.Unlock()
+	sc.appendExecutedTask("get-" + resourceName)
 
 	return nil
 }

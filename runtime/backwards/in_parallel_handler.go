@@ -101,20 +101,6 @@ func (h *InParallelHandler) Execute(sc *StepContext, step *config.Step, pathPref
 	return firstErr
 }
 
-// resolveLimit determines the effective concurrency limit.
-// Priority: job MaxInFlight > step limit > step count (unlimited).
-func resolveLimit(sc *StepContext, stepLimit, stepCount int) int {
-	if sc.MaxInFlight > 0 {
-		return sc.MaxInFlight
-	}
-
-	if stepLimit > 0 {
-		return stepLimit
-	}
-
-	return stepCount
-}
-
 // errorPriority returns a numeric priority for error types.
 // Higher values take precedence: abort > errored > failed.
 func errorPriority(err error) int {

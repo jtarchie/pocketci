@@ -65,6 +65,13 @@ type StepContext struct {
 	AgentBaseURLs      map[string]string     // overrides agent provider base URLs; used in tests to avoid global state
 }
 
+// appendExecutedTask appends a task name to ExecutedTasks under the mutex.
+func (sc *StepContext) appendExecutedTask(name string) {
+	sc.ExecutedTasksMu.Lock()
+	sc.ExecutedTasks = append(sc.ExecutedTasks, name)
+	sc.ExecutedTasksMu.Unlock()
+}
+
 // BaseStorageKey returns the storage prefix for the current job.
 func (sc *StepContext) BaseStorageKey() string {
 	return fmt.Sprintf("/pipeline/%s/jobs/%s", sc.RunID, sc.JobName)
