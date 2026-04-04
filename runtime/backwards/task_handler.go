@@ -145,6 +145,11 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		Env:     env,
 		Image:   resolveImage(taskConfig),
 		Mounts:  mounts,
+		Privileged: step.Privileged,
+		ContainerLimits: orchestra.ContainerLimits{
+			CPU:    taskConfig.ContainerLimits.CPU,
+			Memory: taskConfig.ContainerLimits.Memory,
+		},
 	}
 
 	execCtx := sc.Ctx

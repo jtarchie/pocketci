@@ -195,6 +195,10 @@ func (h *GetHandler) checkContainer(
 		return nil, fmt.Errorf("container check %q: %w", resource.Name, err)
 	}
 
+	sc.ExecutedTasksMu.Lock()
+	sc.ExecutedTasks = append(sc.ExecutedTasks, "check-"+resource.Name)
+	sc.ExecutedTasksMu.Unlock()
+
 	var versions []map[string]string
 	if err := json.Unmarshal([]byte(stdout), &versions); err != nil {
 		return nil, fmt.Errorf("parse check output for %q: %w", resource.Name, err)
@@ -301,6 +305,10 @@ func (h *GetHandler) fetchContainer(
 	if err != nil {
 		return fmt.Errorf("container fetch %q: %w", resourceName, err)
 	}
+
+	sc.ExecutedTasksMu.Lock()
+	sc.ExecutedTasks = append(sc.ExecutedTasks, "get-"+resourceName)
+	sc.ExecutedTasksMu.Unlock()
 
 	return nil
 }

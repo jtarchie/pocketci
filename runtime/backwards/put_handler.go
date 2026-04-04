@@ -162,6 +162,10 @@ func (h *PutHandler) pushContainer(
 		return nil, fmt.Errorf("container push %q: %w", resourceName, err)
 	}
 
+	sc.ExecutedTasksMu.Lock()
+	sc.ExecutedTasks = append(sc.ExecutedTasks, "put-"+resourceName)
+	sc.ExecutedTasksMu.Unlock()
+
 	var result struct {
 		Version map[string]string `json:"version"`
 	}
@@ -233,6 +237,10 @@ func (h *PutHandler) fetchContainer(
 	if err != nil {
 		return fmt.Errorf("container fetch after put %q: %w", resourceName, err)
 	}
+
+	sc.ExecutedTasksMu.Lock()
+	sc.ExecutedTasks = append(sc.ExecutedTasks, "get-"+resourceName)
+	sc.ExecutedTasksMu.Unlock()
 
 	return nil
 }
