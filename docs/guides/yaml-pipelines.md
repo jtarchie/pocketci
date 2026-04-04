@@ -1,20 +1,24 @@
 # YAML Pipelines
 
-PocketCI supports two pipeline formats: **JavaScript/TypeScript** (the primary format) and **Concourse-compatible YAML**. YAML pipelines are a good fit if you're migrating from [Concourse CI](https://concourse-ci.org) or prefer a declarative style for resource-driven workflows.
+PocketCI supports two pipeline formats: **JavaScript/TypeScript** (the primary
+format) and **Concourse-compatible YAML**. YAML pipelines are a good fit if
+you're migrating from [Concourse CI](https://concourse-ci.org) or prefer a
+declarative style for resource-driven workflows.
 
 ## Pipeline Structure
 
 A YAML pipeline has three top-level sections:
 
 ```yaml
-resource_types: []  # optional — custom resource type definitions
-resources: []       # resources to get/put during jobs
-jobs: []            # the work to execute
+resource_types: [] # optional — custom resource type definitions
+resources: [] # resources to get/put during jobs
+jobs: [] # the work to execute
 ```
 
 ### Resources
 
-Resources represent external artifacts (git repos, S3 buckets, container images, etc.) that jobs fetch or publish:
+Resources represent external artifacts (git repos, S3 buckets, container images,
+etc.) that jobs fetch or publish:
 
 ```yaml
 resource_types:
@@ -30,7 +34,8 @@ resources:
       force_version: "1.0"
 ```
 
-The built-in resource type is `registry-image`. Any additional type must be declared under `resource_types`.
+The built-in resource type is `registry-image`. Any additional type must be
+declared under `resource_types`.
 
 ### Jobs
 
@@ -55,18 +60,18 @@ jobs:
 
 ## Step Types
 
-| Step | Description |
-|------|-------------|
-| `task` | Run a command in a container |
-| `get` | Fetch a resource version |
-| `put` | Publish to a resource |
-| `do` | Group steps sequentially |
-| `try` | Run steps, absorbing failures |
-| `in_parallel` | Run steps concurrently |
-| `across` | Fan-out steps over a set of values |
-| `attempts` | Retry a step on failure |
-| `notify` | Send a notification |
-| `agent` | Run an LLM agent step |
+| Step          | Description                        |
+| ------------- | ---------------------------------- |
+| `task`        | Run a command in a container       |
+| `get`         | Fetch a resource version           |
+| `put`         | Publish to a resource              |
+| `do`          | Group steps sequentially           |
+| `try`         | Run steps, absorbing failures      |
+| `in_parallel` | Run steps concurrently             |
+| `across`      | Fan-out steps over a set of values |
+| `attempts`    | Retry a step on failure            |
+| `notify`      | Send a notification                |
+| `agent`       | Run an LLM agent step              |
 
 ### task
 
@@ -92,7 +97,7 @@ Fetch and publish resources:
 
 ```yaml
 - get: source-code
-  passed: [build]   # only trigger after "build" job succeeds
+  passed: [build] # only trigger after "build" job succeeds
 
 - put: artifact-store
   params:
@@ -137,7 +142,9 @@ Group steps or absorb failures:
 
 ## Job Dependencies
 
-Use `passed` constraints on `get` steps to define a dependency between jobs. The dependent job only runs after the specified job has successfully used the same resource:
+Use `passed` constraints on `get` steps to define a dependency between jobs. The
+dependent job only runs after the specified job has successfully used the same
+resource:
 
 ```yaml
 jobs:
@@ -150,22 +157,23 @@ jobs:
   - name: deploy
     plan:
       - get: source-code
-        passed: [build]   # waits for "build" to succeed
+        passed: [build] # waits for "build" to succeed
       - task: deploy-app
         config: ...
 ```
 
 ## Step and Job Hooks
 
-Hooks run conditionally based on outcome. They can be attached to any step or to the job itself:
+Hooks run conditionally based on outcome. They can be attached to any step or to
+the job itself:
 
-| Hook | Triggers when |
-|------|--------------|
-| `on_success` | Step/job succeeded |
-| `on_failure` | Step/job failed (non-zero exit) |
-| `on_error` | Step/job errored (infrastructure issue) |
-| `on_abort` | Step/job was aborted (timeout or cancellation) |
-| `ensure` | Always — runs regardless of outcome |
+| Hook         | Triggers when                                  |
+| ------------ | ---------------------------------------------- |
+| `on_success` | Step/job succeeded                             |
+| `on_failure` | Step/job failed (non-zero exit)                |
+| `on_error`   | Step/job errored (infrastructure issue)        |
+| `on_abort`   | Step/job was aborted (timeout or cancellation) |
+| `ensure`     | Always — runs regardless of outcome            |
 
 ```yaml
 jobs:
@@ -191,7 +199,7 @@ Limit how many runs of a job can be active simultaneously:
 ```yaml
 jobs:
   - name: deploy
-    max_in_flight: 1   # only one deploy at a time
+    max_in_flight: 1 # only one deploy at a time
     plan:
       - task: deploy
         config: ...
@@ -199,7 +207,8 @@ jobs:
 
 ## Template Preprocessing
 
-YAML pipelines support Go `text/template` syntax for dynamic content. Opt in by adding a comment at the top of the file:
+YAML pipelines support Go `text/template` syntax for dynamic content. Opt in by
+adding a comment at the top of the file:
 
 ```yaml
 # pocketci: template
@@ -214,8 +223,10 @@ See the [Templating guide](../runtime/templating.md) for full details.
 
 ## Known Limitations
 
-PocketCI's YAML support is intentionally scoped. The following are not supported:
+PocketCI's YAML support is intentionally scoped. The following are not
+supported:
 
 - Overlay/btrfs volume management (container runtimes handle volumes natively)
 - Tasks spread across multiple workers within a single job
-- Full Concourse feature parity (this is a compatibility layer, not a reimplementation)
+- Full Concourse feature parity (this is a compatibility layer, not a
+  reimplementation)
