@@ -1,6 +1,7 @@
 package backwards
 
 import (
+	"context"
 	"fmt"
 
 	config "github.com/jtarchie/pocketci/backwards"
@@ -47,15 +48,19 @@ func (h *InParallelHandler) Execute(sc *StepContext, step *config.Step, pathPref
 	}
 
 	var (
-		g    *errgroup.Group
-		gCtx = sc.Ctx
+		g      *errgroup.Group
+		gCtx   = sc.Ctx
+		cancel context.CancelFunc = func() {}
 	)
 
 	if failFast {
-		g, gCtx = errgroup.WithContext(sc.Ctx)
+		gCtx, cancel = context.WithCancel(sc.Ctx)
+		g = &errgroup.Group{}
 	} else {
 		g = &errgroup.Group{}
 	}
+
+	defer cancel()
 
 	sem := semaphore.NewWeighted(int64(limit))
 
@@ -69,9 +74,12 @@ func (h *InParallelHandler) Execute(sc *StepContext, step *config.Step, pathPref
 		innerPrefix := fmt.Sprintf("%s/in_parallel/%s", pathPrefix, zeroPadWithLength(idx, len(steps)))
 
 		g.Go(func() error {
-			defer sem.Release(1)
-
-			return sc.ProcessStep(&s, innerPrefix)
+			err := sc.ProcessStep(&s, innerPrefix)
+			if err != nil {
+				cancel() // cancel context BEFORE releasing semaphore to prevent race
+			}
+			sem.Release(1)
+			return err
 		})
 	}
 
