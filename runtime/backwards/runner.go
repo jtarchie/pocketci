@@ -13,10 +13,7 @@ import (
 	"github.com/jtarchie/pocketci/storage"
 )
 
-// ValidateConfig validates the pipeline configuration before execution.
-// It checks resource types, job name uniqueness, resource references,
-// passed constraint validity, and circular dependency detection.
-func ValidateConfig(cfg *config.Config) error {
+func validateResourceTypes(cfg *config.Config) error {
 	validTypes := map[string]bool{"registry-image": true}
 
 	for _, rt := range cfg.ResourceTypes {
@@ -29,18 +26,26 @@ func ValidateConfig(cfg *config.Config) error {
 		}
 	}
 
-	// Job names must be unique.
+	return nil
+}
+
+func validateJobNames(cfg *config.Config) (map[string]bool, error) {
 	jobNames := make(map[string]bool, len(cfg.Jobs))
+
 	for _, job := range cfg.Jobs {
 		if jobNames[job.Name] {
-			return fmt.Errorf("duplicate job name %q", job.Name)
+			return nil, fmt.Errorf("duplicate job name %q", job.Name)
 		}
 
 		jobNames[job.Name] = true
 	}
 
-	// Get steps must reference defined resources.
+	return jobNames, nil
+}
+
+func validateResourceRefs(cfg *config.Config) error {
 	resourceNames := make(map[string]bool, len(cfg.Resources))
+
 	for _, r := range cfg.Resources {
 		resourceNames[r.Name] = true
 	}
@@ -60,7 +65,10 @@ func ValidateConfig(cfg *config.Config) error {
 		}
 	}
 
-	// Passed constraints must reference existing jobs.
+	return nil
+}
+
+func validatePassedConstraints(cfg *config.Config, jobNames map[string]bool) error {
 	for _, job := range cfg.Jobs {
 		for _, step := range job.Plan {
 			if step.Get != "" {
@@ -73,8 +81,12 @@ func ValidateConfig(cfg *config.Config) error {
 		}
 	}
 
-	// Detect circular dependencies in passed constraints using DFS.
+	return nil
+}
+
+func validateNoCycles(cfg *config.Config) error {
 	adj := make(map[string][]string, len(cfg.Jobs))
+
 	for _, job := range cfg.Jobs {
 		adj[job.Name] = extractJobDependencies(job.Plan)
 	}
@@ -116,6 +128,30 @@ func ValidateConfig(cfg *config.Config) error {
 	}
 
 	return nil
+}
+
+// ValidateConfig validates the pipeline configuration before execution.
+// It checks resource types, job name uniqueness, resource references,
+// passed constraint validity, and circular dependency detection.
+func ValidateConfig(cfg *config.Config) error {
+	if err := validateResourceTypes(cfg); err != nil {
+		return err
+	}
+
+	jobNames, err := validateJobNames(cfg)
+	if err != nil {
+		return err
+	}
+
+	if err := validateResourceRefs(cfg); err != nil {
+		return err
+	}
+
+	if err := validatePassedConstraints(cfg, jobNames); err != nil {
+		return err
+	}
+
+	return validateNoCycles(cfg)
 }
 
 // RunnerOptions holds optional configuration for a Runner.
@@ -312,6 +348,44 @@ func extractJobDependencies(plan []config.Step) []string {
 	return deps
 }
 
+func (r *Runner) computeBlockedBy(ctx context.Context, job *config.Job) []map[string]string {
+	var blockedBy []map[string]string
+
+	for _, step := range job.Plan {
+		if step.Get == "" || len(step.GetConfig.Passed) == 0 {
+			continue
+		}
+
+		for _, dep := range step.GetConfig.Passed {
+			lastStatus, err := r.storage.GetMostRecentJobStatus(ctx, "", dep)
+			if err != nil {
+				r.logger.Warn("prewrite.blocked-by.lookup.failed",
+					slog.String("job", job.Name),
+					slog.String("dependency", dep),
+					slog.Any("error", err),
+				)
+
+				lastStatus = "never-run"
+			}
+
+			if lastStatus == "success" {
+				continue
+			}
+
+			if lastStatus == "" {
+				lastStatus = "never-run"
+			}
+
+			blockedBy = append(blockedBy, map[string]string{
+				"job":        dep,
+				"lastStatus": lastStatus,
+			})
+		}
+	}
+
+	return blockedBy
+}
+
 // prewriteJobStates writes all jobs to storage as pending with dependency
 // metadata so the UI can render the full pipeline graph before execution begins.
 func (r *Runner) prewriteJobStates(ctx context.Context) {
@@ -324,36 +398,7 @@ func (r *Runner) prewriteJobStates(ctx context.Context) {
 			"dependsOn": dependsOn,
 		}
 
-		var blockedBy []map[string]string
-
-		for _, step := range job.Plan {
-			if step.Get != "" && len(step.GetConfig.Passed) > 0 {
-				for _, dep := range step.GetConfig.Passed {
-					lastStatus, err := r.storage.GetMostRecentJobStatus(ctx, "", dep)
-					if err != nil {
-						r.logger.Warn("prewrite.blocked-by.lookup.failed",
-							slog.String("job", job.Name),
-							slog.String("dependency", dep),
-							slog.Any("error", err),
-						)
-
-						lastStatus = "never-run"
-					}
-
-					if lastStatus != "success" {
-						if lastStatus == "" {
-							lastStatus = "never-run"
-						}
-
-						blockedBy = append(blockedBy, map[string]string{
-							"job":        dep,
-							"lastStatus": lastStatus,
-						})
-					}
-				}
-			}
-		}
-
+		blockedBy := r.computeBlockedBy(ctx, job)
 		if len(blockedBy) > 0 {
 			payload["blockedBy"] = blockedBy
 		}

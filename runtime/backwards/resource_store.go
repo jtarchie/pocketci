@@ -113,6 +113,38 @@ func getMetaCount(ctx context.Context, store storage.Driver, name string) (int, 
 	return 0, nil
 }
 
+// updateExistingDedupEntry updates mutable fields of an existing version entry if it's an exact match.
+// Returns (true, nil) on exact match and update, (false, nil) on hash collision, (false, err) on error.
+func updateExistingDedupEntry(ctx context.Context, store storage.Driver, dedupEntry storage.Payload, name, versionJSON, jobName, now string) (bool, error) {
+	existingJSON, ok := dedupEntry["version_json"].(string)
+	if !ok || existingJSON != versionJSON {
+		return false, nil // hash collision
+	}
+
+	var index int
+	if idx, ok := dedupEntry["index"].(float64); ok {
+		index = int(idx)
+	}
+
+	vk := rvVersionKey(name, index)
+
+	existing, err := safeStorageGet(ctx, store, vk)
+	if err != nil {
+		return false, err
+	}
+
+	if existing != nil {
+		existing["job_name"] = jobName
+		existing["fetched_at"] = now
+
+		if err := store.Set(ctx, vk, existing); err != nil {
+			return false, fmt.Errorf("update existing version: %w", err)
+		}
+	}
+
+	return true, nil
+}
+
 // SaveResourceVersion saves a resource version with deduplication.
 // If the version already exists (by hash + JSON match), only mutable fields are updated.
 func SaveResourceVersion(
@@ -136,29 +168,12 @@ func SaveResourceVersion(
 	}
 
 	if dedupEntry != nil {
-		if existingJSON, ok := dedupEntry["version_json"].(string); ok && existingJSON == string(versionJSON) {
-			// Known version — update mutable fields only.
-			var index int
-			if idx, ok := dedupEntry["index"].(float64); ok {
-				index = int(idx)
-			}
+		updated, updateErr := updateExistingDedupEntry(ctx, store, dedupEntry, name, string(versionJSON), jobName, now)
+		if updateErr != nil {
+			return updateErr
+		}
 
-			vk := rvVersionKey(name, index)
-
-			existing, err := safeStorageGet(ctx, store, vk)
-			if err != nil {
-				return err
-			}
-
-			if existing != nil {
-				existing["job_name"] = jobName
-				existing["fetched_at"] = now
-
-				if err := store.Set(ctx, vk, existing); err != nil {
-					return fmt.Errorf("update existing version: %w", err)
-				}
-			}
-
+		if updated {
 			return nil
 		}
 		// Hash collision — fall through and insert as new entry.

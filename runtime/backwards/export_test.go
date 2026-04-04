@@ -6,10 +6,10 @@ import (
 
 // TestStep wraps config.Step fields for test construction.
 type TestStep struct {
-	Image            string
+	Image             string
 	ImageResourceRepo string
-	Prompt           string
-	Model            string
+	Prompt            string
+	Model             string
 }
 
 // ResolveAgentImage exports resolveAgentImage for testing.

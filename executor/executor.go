@@ -151,6 +151,10 @@ func (c *Execute) Run(logger *slog.Logger) error {
 		return c.runYAMLPipeline(ctx, pipelinePath, runtimeID, driver, storage, secretsManager, logger)
 	}
 
+	return c.runJSPipeline(ctx, pipelinePath, runtimeID, driver, storage, secretsManager, logger)
+}
+
+func (c *Execute) runJSPipeline(ctx context.Context, pipelinePath, runtimeID string, driver orchestra.Driver, store storage.Driver, secretsManager secrets.Manager, logger *slog.Logger) error {
 	pipeline, err := loadPipeline(pipelinePath)
 	if err != nil {
 		return err
@@ -167,13 +171,11 @@ func (c *Execute) Run(logger *slog.Logger) error {
 		FetchMaxResponseBytes: int64(c.FetchMaxResponseMB) * 1024 * 1024,
 	}
 
-	// If resuming but no RunID provided, use the runtime ID for consistency
 	if c.Resume && opts.RunID == "" {
 		opts.RunID = runtimeID
 	}
 
-	err = js.ExecuteWithOptions(ctx, pipeline, driver, storage, opts)
-	if err != nil {
+	if err := js.ExecuteWithOptions(ctx, pipeline, driver, store, opts); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return fmt.Errorf("execution cancelled: %w", err)
 		}

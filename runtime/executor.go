@@ -9,8 +9,8 @@ import (
 
 	backwards "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
-	"github.com/jtarchie/pocketci/runtime/jsapi"
 	runtimebackwards "github.com/jtarchie/pocketci/runtime/backwards"
+	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/runtime/support"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
@@ -80,6 +80,27 @@ type ExecutorOptions struct {
 	ContentType storage.ContentType
 }
 
+// initExecutionDriver creates or reuses a driver for pipeline execution.
+// Returns the driver, a cleanup function, the updated logger, and any error.
+func initExecutionDriver(ctx context.Context, opts ExecutorOptions, namespace string, logger *slog.Logger) (orchestra.Driver, func(), *slog.Logger, error) {
+	if opts.Driver != nil {
+		return opts.Driver, func() {}, logger.With("driver", opts.Driver.Name()), nil
+	}
+
+	if opts.DriverFactory == nil {
+		return nil, nil, logger, errors.New("no driver factory configured")
+	}
+
+	driver, err := opts.DriverFactory(ctx, namespace)
+	if err != nil {
+		return nil, nil, logger, fmt.Errorf("could not create orchestrator: %w", err)
+	}
+
+	cleanup := func() { _ = driver.Close() }
+
+	return driver, cleanup, logger.With("driver", driver.Name()), nil
+}
+
 // ExecutePipeline executes a pipeline with the given content and driver factory.
 // It handles driver initialization, execution, and cleanup.
 func ExecutePipeline(
@@ -109,28 +130,12 @@ func ExecutePipeline(
 
 	logger.Info("driver.initialize")
 
-	var driver orchestra.Driver
-
-	if opts.Driver != nil {
-		// Reuse the caller-provided driver (caller manages lifecycle).
-		driver = opts.Driver
-		logger = logger.With("driver", driver.Name())
-	} else {
-		if opts.DriverFactory == nil {
-			return errors.New("no driver factory configured")
-		}
-
-		var err error
-
-		driver, err = opts.DriverFactory(ctx, namespace)
-		if err != nil {
-			return fmt.Errorf("could not create orchestrator: %w", err)
-		}
-
-		defer func() { _ = driver.Close() }()
-
-		logger = logger.With("driver", driver.Name())
+	driver, cleanup, logger, err := initExecutionDriver(ctx, opts, namespace, logger)
+	if err != nil {
+		return err
 	}
+
+	defer cleanup()
 
 	logger.Info("pipeline.executing")
 

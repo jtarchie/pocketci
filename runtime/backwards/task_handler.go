@@ -92,22 +92,20 @@ func (h *TaskHandler) executeParallel(sc *StepContext, step *config.Step, pathPr
 	return firstErr
 }
 
-// runTask executes a single container task with the given name and environment.
-func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, taskName string, env map[string]string) error {
-	// Load task config from file or URI if specified.
+func (h *TaskHandler) loadRunTaskConfig(sc *StepContext, step *config.Step, pathPrefix, taskName string, env map[string]string) (*config.TaskConfig, map[string]string, error) {
 	taskConfig := step.TaskConfig
 
 	if step.File != "" {
 		loaded, err := trackLoadFile(sc, step.File, pathPrefix)
 		if err != nil {
-			return &TaskErroredError{TaskName: taskName, Err: err}
+			return nil, nil, &TaskErroredError{TaskName: taskName, Err: err}
 		}
 
 		taskConfig = loaded
 	} else if step.URI != "" {
 		loaded, err := trackLoadURI(sc, step.URI, pathPrefix)
 		if err != nil {
-			return &TaskErroredError{TaskName: taskName, Err: err}
+			return nil, nil, &TaskErroredError{TaskName: taskName, Err: err}
 		}
 
 		taskConfig = loaded
@@ -117,11 +115,21 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		env = mergeJobParams(sc.JobParams, taskConfig.Env)
 	}
 
+	return taskConfig, env, nil
+}
+
+// runTask executes a single container task with the given name and environment.
+func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, taskName string, env map[string]string) error {
+	taskConfig, env, err := h.loadRunTaskConfig(sc, step, pathPrefix, taskName, env)
+	if err != nil {
+		return err
+	}
+
 	storageKey := fmt.Sprintf("%s/%s/tasks/%s", sc.BaseStorageKey(), pathPrefix, taskName)
 
 	startedAt := time.Now()
 
-	err := sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+	err = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
 		"status":     "pending",
 		"started_at": startedAt.Format(time.RFC3339),
 	})
@@ -197,32 +205,38 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		return fmt.Errorf("storage set result: %w", err)
 	}
 
-	if step.Assert != nil && step.Assert.Code != nil {
-		if exitCode != *step.Assert.Code {
-			return &AssertionError{
-				Message: fmt.Sprintf("task %q: expected exit code %d, got %d", taskName, *step.Assert.Code, exitCode),
-			}
-		}
-	}
-
-	if step.Assert != nil && step.Assert.Stdout != "" {
-		if !strings.Contains(stdout.String(), step.Assert.Stdout) {
-			return &AssertionError{
-				Message: fmt.Sprintf("task %q: stdout does not contain %q", taskName, step.Assert.Stdout),
-			}
-		}
-	}
-
-	if step.Assert != nil && step.Assert.Stderr != "" {
-		if !strings.Contains(stderr.String(), step.Assert.Stderr) {
-			return &AssertionError{
-				Message: fmt.Sprintf("task %q: stderr does not contain %q", taskName, step.Assert.Stderr),
-			}
-		}
+	if err := checkTaskAssertions(step, taskName, exitCode, stdout.String(), stderr.String()); err != nil {
+		return err
 	}
 
 	if exitCode != 0 {
 		return &TaskFailedError{TaskName: taskName, Code: exitCode}
+	}
+
+	return nil
+}
+
+func checkTaskAssertions(step *config.Step, taskName string, exitCode int, stdout, stderr string) error {
+	if step.Assert == nil {
+		return nil
+	}
+
+	if step.Assert.Code != nil && exitCode != *step.Assert.Code {
+		return &AssertionError{
+			Message: fmt.Sprintf("task %q: expected exit code %d, got %d", taskName, *step.Assert.Code, exitCode),
+		}
+	}
+
+	if step.Assert.Stdout != "" && !strings.Contains(stdout, step.Assert.Stdout) {
+		return &AssertionError{
+			Message: fmt.Sprintf("task %q: stdout does not contain %q", taskName, step.Assert.Stdout),
+		}
+	}
+
+	if step.Assert.Stderr != "" && !strings.Contains(stderr, step.Assert.Stderr) {
+		return &AssertionError{
+			Message: fmt.Sprintf("task %q: stderr does not contain %q", taskName, step.Assert.Stderr),
+		}
 	}
 
 	return nil
@@ -277,7 +291,8 @@ func buildCommand(cfg *config.TaskConfig) []string {
 		return nil
 	}
 
-	cmd := []string{cfg.Run.Path}
+	cmd := make([]string, 0, 1+len(cfg.Run.Args))
+	cmd = append(cmd, cfg.Run.Path)
 	cmd = append(cmd, cfg.Run.Args...)
 
 	return cmd
@@ -425,7 +440,7 @@ func waitForContainer(ctx context.Context, container orchestra.Container) (orche
 // loadTaskConfigFromVolume reads a YAML task config from a volume.
 // The filePath format is "mount-name/relative/path/to/file.yml".
 // loadRawBytesFromVolume reads raw bytes from a file inside a mounted volume.
-func loadRawBytesFromVolume(sc *StepContext, filePath string) ([]byte, error) {
+func loadRawBytesFromVolume(sc *StepContext, filePath string) (data []byte, retErr error) {
 	parts := strings.SplitN(filePath, "/", 2)
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid file path %q: expected mount-name/path", filePath)
@@ -449,7 +464,11 @@ func loadRawBytesFromVolume(sc *StepContext, filePath string) ([]byte, error) {
 		return nil, fmt.Errorf("reading file %q from volume %q: %w", relativePath, mountName, err)
 	}
 
-	defer tarReader.Close()
+	defer func() {
+		if closeErr := tarReader.Close(); closeErr != nil && retErr == nil {
+			retErr = closeErr
+		}
+	}()
 
 	content, err := extractFileFromTar(tarReader, relativePath)
 	if err != nil {

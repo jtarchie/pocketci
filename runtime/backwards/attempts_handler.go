@@ -6,6 +6,45 @@ import (
 	config "github.com/jtarchie/pocketci/backwards"
 )
 
+func (jr *JobRunner) runAttemptFailureHook(sc *StepContext, step *config.Step, pathPrefix string, lastErr error) error {
+	switch {
+	case isAbortError(lastErr) && step.OnAbort != nil:
+		sc.Logger.Debug(lastErr.Error())
+		sc.FailureCount++
+		sc.LastFailureKind = FailureKindAborted
+
+		abortPrefix := pathPrefix + "/on_abort"
+		if err := jr.processStep(sc, step.OnAbort, abortPrefix); err != nil {
+			sc.Logger.Warn("step.on_abort.failed", "prefix", pathPrefix, "error", err)
+		}
+
+		return nil
+	case isErroredError(lastErr) && step.OnError != nil:
+		sc.Logger.Debug(lastErr.Error())
+		sc.FailureCount++
+		sc.LastFailureKind = FailureKindErrored
+
+		errorPrefix := pathPrefix + "/on_error"
+		if err := jr.processStep(sc, step.OnError, errorPrefix); err != nil {
+			sc.Logger.Warn("step.on_error.failed", "prefix", pathPrefix, "error", err)
+		}
+
+		return nil
+	case isFailedError(lastErr) && step.OnFailure != nil:
+		sc.FailureCount++
+		sc.LastFailureKind = FailureKindFailed
+
+		failurePrefix := pathPrefix + "/on_failure"
+		if err := jr.processStep(sc, step.OnFailure, failurePrefix); err != nil {
+			sc.Logger.Warn("step.on_failure.failed", "prefix", pathPrefix, "error", err)
+		}
+
+		return nil
+	}
+
+	return lastErr
+}
+
 // executeWithAttempts retries a step up to step.Attempts times.
 // Hooks are stripped from inner attempts and handled once after all attempts.
 func (jr *JobRunner) executeWithAttempts(sc *StepContext, step *config.Step, pathPrefix string) error {
@@ -47,40 +86,7 @@ func (jr *JobRunner) executeWithAttempts(sc *StepContext, step *config.Step, pat
 			}
 		}
 	} else {
-		switch {
-		case isAbortError(lastErr) && step.OnAbort != nil:
-			sc.Logger.Debug(lastErr.Error())
-			sc.FailureCount++
-			sc.LastFailureKind = FailureKindAborted
-
-			abortPrefix := pathPrefix + "/on_abort"
-			if err := jr.processStep(sc, step.OnAbort, abortPrefix); err != nil {
-				sc.Logger.Warn("step.on_abort.failed", "prefix", pathPrefix, "error", err)
-			}
-
-			lastErr = nil
-		case isErroredError(lastErr) && step.OnError != nil:
-			sc.Logger.Debug(lastErr.Error())
-			sc.FailureCount++
-			sc.LastFailureKind = FailureKindErrored
-
-			errorPrefix := pathPrefix + "/on_error"
-			if err := jr.processStep(sc, step.OnError, errorPrefix); err != nil {
-				sc.Logger.Warn("step.on_error.failed", "prefix", pathPrefix, "error", err)
-			}
-
-			lastErr = nil
-		case isFailedError(lastErr) && step.OnFailure != nil:
-			sc.FailureCount++
-			sc.LastFailureKind = FailureKindFailed
-
-			failurePrefix := pathPrefix + "/on_failure"
-			if err := jr.processStep(sc, step.OnFailure, failurePrefix); err != nil {
-				sc.Logger.Warn("step.on_failure.failed", "prefix", pathPrefix, "error", err)
-			}
-
-			lastErr = nil
-		}
+		lastErr = jr.runAttemptFailureHook(sc, step, pathPrefix, lastErr)
 	}
 
 	// Ensure always runs after attempts and hooks.

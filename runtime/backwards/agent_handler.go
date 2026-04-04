@@ -345,83 +345,109 @@ func resolveAgentTools(sc *StepContext, step *config.Step, pathPrefix string) ([
 	for i := range step.Tools {
 		tool := &step.Tools[i]
 
-		if tool.Agent != "" {
-			// Agent tool — resolve from file/uri if needed.
-			subStep, err := mergeAgentExternalConfig(sc, tool, pathPrefix)
+		switch {
+		case tool.Agent != "":
+			def, err := resolveAgentToolDef(sc, tool, pathPrefix, storageKeyPrefix)
 			if err != nil {
-				return nil, fmt.Errorf("resolving agent tool %q: %w", tool.Agent, err)
+				return nil, err
 			}
 
-			subImage := resolveAgentImage(subStep)
-			if subImage == "busybox" {
-				subImage = "" // let parent image be used
+			tools = append(tools, def)
+		case tool.Task != "":
+			def, err := resolveTaskToolDef(sc, tool, pathPrefix, storageKeyPrefix)
+			if err != nil {
+				return nil, err
 			}
 
-			tools = append(tools, agent.ToolDef{
-				Name:             subStep.Agent,
-				Prompt:           subStep.Prompt,
-				Model:            subStep.Model,
-				Image:            subImage,
-				StorageKeyPrefix: storageKeyPrefix,
-			})
-		} else if tool.Task != "" {
-			// Task tool — container command exposed as a tool.
-			taskConfig := tool.TaskConfig
-
-			if tool.File != "" || tool.URI != "" {
-				contents, err := loadAgentConfig(sc, tool, pathPrefix)
-				if err == nil && contents != nil {
-					var fileCfg config.TaskConfig
-					if yamlErr := yaml.Unmarshal(contents, &fileCfg); yamlErr == nil {
-						if taskConfig == nil {
-							taskConfig = &fileCfg
-						} else {
-							// Inline overrides file (shallow merge).
-							if taskConfig.Run == nil {
-								taskConfig.Run = fileCfg.Run
-							}
-
-							if taskConfig.Image == "" {
-								taskConfig.Image = fileCfg.Image
-							}
-						}
-					}
-				}
-			}
-
-			toolImage := ""
-			var cmdPath string
-			var cmdArgs []string
-			var env map[string]string
-
-			if taskConfig != nil {
-				toolImage = resolveAgentImage(&config.Step{TaskConfig: taskConfig})
-				if toolImage == "busybox" {
-					toolImage = ""
-				}
-
-				if taskConfig.Run != nil {
-					cmdPath = taskConfig.Run.Path
-					cmdArgs = taskConfig.Run.Args
-				}
-
-				env = taskConfig.Env
-			}
-
-			tools = append(tools, agent.ToolDef{
-				Name:             tool.Task,
-				IsTask:           true,
-				Description:      tool.Description,
-				Image:            toolImage,
-				CommandPath:      cmdPath,
-				CommandArgs:      cmdArgs,
-				Env:              env,
-				StorageKeyPrefix: storageKeyPrefix,
-			})
+			tools = append(tools, def)
 		}
 	}
 
 	return tools, nil
+}
+
+func resolveAgentToolDef(sc *StepContext, tool *config.Step, pathPrefix, storageKeyPrefix string) (agent.ToolDef, error) {
+	subStep, err := mergeAgentExternalConfig(sc, tool, pathPrefix)
+	if err != nil {
+		return agent.ToolDef{}, fmt.Errorf("resolving agent tool %q: %w", tool.Agent, err)
+	}
+
+	subImage := resolveAgentImage(subStep)
+	if subImage == "busybox" {
+		subImage = ""
+	}
+
+	return agent.ToolDef{
+		Name:             subStep.Agent,
+		Prompt:           subStep.Prompt,
+		Model:            subStep.Model,
+		Image:            subImage,
+		StorageKeyPrefix: storageKeyPrefix,
+	}, nil
+}
+
+func mergeTaskConfigFromFile(sc *StepContext, tool *config.Step, pathPrefix string, taskConfig *config.TaskConfig) *config.TaskConfig {
+	if tool.File == "" && tool.URI == "" {
+		return taskConfig
+	}
+
+	contents, err := loadAgentConfig(sc, tool, pathPrefix)
+	if err != nil || contents == nil {
+		return taskConfig
+	}
+
+	var fileCfg config.TaskConfig
+	if err := yaml.Unmarshal(contents, &fileCfg); err != nil {
+		return taskConfig
+	}
+
+	if taskConfig == nil {
+		return &fileCfg
+	}
+
+	if taskConfig.Run == nil {
+		taskConfig.Run = fileCfg.Run
+	}
+
+	if taskConfig.Image == "" {
+		taskConfig.Image = fileCfg.Image
+	}
+
+	return taskConfig
+}
+
+func resolveTaskToolDef(sc *StepContext, tool *config.Step, pathPrefix, storageKeyPrefix string) (agent.ToolDef, error) {
+	taskConfig := mergeTaskConfigFromFile(sc, tool, pathPrefix, tool.TaskConfig)
+
+	toolImage := ""
+	var cmdPath string
+	var cmdArgs []string
+	var env map[string]string
+
+	if taskConfig != nil {
+		toolImage = resolveAgentImage(&config.Step{TaskConfig: taskConfig})
+		if toolImage == "busybox" {
+			toolImage = ""
+		}
+
+		if taskConfig.Run != nil {
+			cmdPath = taskConfig.Run.Path
+			cmdArgs = taskConfig.Run.Args
+		}
+
+		env = taskConfig.Env
+	}
+
+	return agent.ToolDef{
+		Name:             tool.Task,
+		IsTask:           true,
+		Description:      tool.Description,
+		Image:            toolImage,
+		CommandPath:      cmdPath,
+		CommandArgs:      cmdArgs,
+		Env:              env,
+		StorageKeyPrefix: storageKeyPrefix,
+	}, nil
 }
 
 // resolveAgentMounts builds the mounts map for an agent step.

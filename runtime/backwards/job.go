@@ -104,23 +104,23 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	pr := pipelinerunner.NewPipelineRunner(ctx, jr.driver, jr.storage, jr.logger, jr.job.Name, jr.runID)
 
 	sc := &StepContext{
-		Ctx:            ctx,
-		Driver:         jr.driver,
-		Storage:        jr.storage,
-		Logger:         jr.logger,
-		RunID:          jr.runID,
-		JobName:        jr.job.Name,
-		MaxInFlight:    resolveEffectiveMaxInFlight(jr.job.MaxInFlight, jr.pipelineMaxInFlight),
+		Ctx:                ctx,
+		Driver:             jr.driver,
+		Storage:            jr.storage,
+		Logger:             jr.logger,
+		RunID:              jr.runID,
+		JobName:            jr.job.Name,
+		MaxInFlight:        resolveEffectiveMaxInFlight(jr.job.MaxInFlight, jr.pipelineMaxInFlight),
 		CacheVolumes:       make(map[string]string),
 		CacheVolumeObjects: make(map[string]orchestra.Volume),
 		KnownVolumes:       make(map[string]string),
-		Resources:      jr.resources,
-		ResourceTypes:  jr.resourceTypes,
-		JobParams:      extractJobParams(jr.job, jr.webhookData),
-		Notifier:       jr.notifier,
-		PipelineRunner: pr,
-		SecretsManager: jr.secretsManager,
-		PipelineID:     jr.pipelineID,
+		Resources:          jr.resources,
+		ResourceTypes:      jr.resourceTypes,
+		JobParams:          extractJobParams(jr.job, jr.webhookData),
+		Notifier:           jr.notifier,
+		PipelineRunner:     pr,
+		SecretsManager:     jr.secretsManager,
+		PipelineID:         jr.pipelineID,
 	}
 	sc.ProcessStep = func(step *config.Step, pathPrefix string) error {
 		return jr.processStep(sc, step, pathPrefix)
@@ -129,13 +129,7 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	// Clean up cache volumes at job end so S3-backed caches are persisted.
 	// This must happen after all tasks (including hooks) finish — not per-task —
 	// so volumes remain live for tasks sharing the same cache within a job.
-	defer func() {
-		for path, vol := range sc.CacheVolumeObjects {
-			if err := vol.Cleanup(sc.Ctx); err != nil {
-				jr.logger.Warn("cache.volume.cleanup.failed", "path", path, "err", err)
-			}
-		}
-	}()
+	defer jr.cleanupCacheVolumes(sc)
 
 	if jr.job.Gate != nil {
 		if err := jr.runGate(ctx); err != nil {
@@ -152,20 +146,7 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 
 		if err := jr.processStep(sc, &step, padded); err != nil {
 			planErr = err
-
-			// Mark remaining unprocessed steps as skipped in storage.
-			for j := i + 1; j < len(jr.job.Plan); j++ {
-				skippedStep := jr.job.Plan[j]
-				identifier := stepStorageIdentifier(&skippedStep)
-				if identifier != "" {
-					skippedPadded := zeroPadWithLength(j, len(jr.job.Plan))
-					skippedKey := fmt.Sprintf("%s/%s/%s", sc.BaseStorageKey(), skippedPadded, identifier)
-
-					_ = jr.storage.Set(ctx, skippedKey, storage.Payload{
-						"status": "skipped",
-					})
-				}
-			}
+			jr.markRemainingStepsSkipped(ctx, sc, i+1)
 
 			break
 		}
@@ -215,6 +196,65 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	return nil
 }
 
+func (jr *JobRunner) cleanupCacheVolumes(sc *StepContext) {
+	for path, vol := range sc.CacheVolumeObjects {
+		if err := vol.Cleanup(sc.Ctx); err != nil {
+			jr.logger.Warn("cache.volume.cleanup.failed", "path", path, "err", err)
+		}
+	}
+}
+
+func (jr *JobRunner) markRemainingStepsSkipped(ctx context.Context, sc *StepContext, from int) {
+	for j := from; j < len(jr.job.Plan); j++ {
+		skippedStep := jr.job.Plan[j]
+		identifier := stepStorageIdentifier(&skippedStep)
+
+		if identifier == "" {
+			continue
+		}
+
+		skippedPadded := zeroPadWithLength(j, len(jr.job.Plan))
+		skippedKey := fmt.Sprintf("%s/%s/%s", sc.BaseStorageKey(), skippedPadded, identifier)
+
+		_ = jr.storage.Set(ctx, skippedKey, storage.Payload{
+			"status": "skipped",
+		})
+	}
+}
+
+func (jr *JobRunner) dispatchJobFailureHook(sc *StepContext, effectiveKind FailureKind, planErr error) error {
+	switch {
+	case effectiveKind == FailureKindAborted && jr.job.OnAbort != nil:
+		if planErr != nil {
+			sc.Logger.Debug(planErr.Error())
+		}
+
+		if abortErr := jr.processStep(sc, jr.job.OnAbort, "job/on_abort"); abortErr != nil {
+			sc.Logger.Warn("job.on_abort.failed", "job", jr.job.Name, "error", abortErr)
+		}
+
+		return nil
+	case effectiveKind == FailureKindErrored && jr.job.OnError != nil:
+		if planErr != nil {
+			sc.Logger.Debug(planErr.Error())
+		}
+
+		if errorErr := jr.processStep(sc, jr.job.OnError, "job/on_error"); errorErr != nil {
+			sc.Logger.Warn("job.on_error.failed", "job", jr.job.Name, "error", errorErr)
+		}
+
+		return nil
+	case (effectiveKind == FailureKindFailed || effectiveKind == FailureKindNone) && jr.job.OnFailure != nil:
+		if failureErr := jr.processStep(sc, jr.job.OnFailure, "job/on_failure"); failureErr != nil {
+			sc.Logger.Warn("job.on_failure.failed", "job", jr.job.Name, "error", failureErr)
+		}
+
+		return nil
+	}
+
+	return planErr
+}
+
 // runJobHooks runs job-level hooks (on_failure, on_abort, on_error, on_success, ensure)
 // and returns the remaining planErr (nil if a hook handled it).
 func (jr *JobRunner) runJobHooks(sc *StepContext, planErr error) error {
@@ -249,35 +289,7 @@ func (jr *JobRunner) runJobHooks(sc *StepContext, planErr error) error {
 	}
 
 	if jobFailed {
-		switch {
-		case effectiveKind == FailureKindAborted && jr.job.OnAbort != nil:
-			if planErr != nil {
-				sc.Logger.Debug(planErr.Error())
-			}
-
-			if abortErr := jr.processStep(sc, jr.job.OnAbort, "job/on_abort"); abortErr != nil {
-				sc.Logger.Warn("job.on_abort.failed", "job", jr.job.Name, "error", abortErr)
-			}
-
-			planErr = nil
-		case effectiveKind == FailureKindErrored && jr.job.OnError != nil:
-			if planErr != nil {
-				sc.Logger.Debug(planErr.Error())
-			}
-
-			if errorErr := jr.processStep(sc, jr.job.OnError, "job/on_error"); errorErr != nil {
-				sc.Logger.Warn("job.on_error.failed", "job", jr.job.Name, "error", errorErr)
-			}
-
-			planErr = nil
-		case (effectiveKind == FailureKindFailed || effectiveKind == FailureKindNone) && jr.job.OnFailure != nil:
-			if failureErr := jr.processStep(sc, jr.job.OnFailure, "job/on_failure"); failureErr != nil {
-				sc.Logger.Warn("job.on_failure.failed", "job", jr.job.Name, "error", failureErr)
-			}
-
-			planErr = nil
-		}
-
+		planErr = jr.dispatchJobFailureHook(sc, effectiveKind, planErr)
 	} else if jr.job.OnSuccess != nil {
 		if successErr := jr.processStep(sc, jr.job.OnSuccess, "job/on_success"); successErr != nil {
 			sc.Logger.Warn("job.on_success.failed", "job", jr.job.Name, "error", successErr)
@@ -292,6 +304,96 @@ func (jr *JobRunner) runJobHooks(sc *StepContext, planErr error) error {
 	}
 
 	return planErr
+}
+
+func (jr *JobRunner) dispatchInnerFailureHook(sc *StepContext, step *config.Step, pathPrefix string) {
+	switch {
+	case sc.LastFailureKind == FailureKindAborted && step.OnAbort != nil:
+		sc.Logger.Debug("try.abort.outer")
+
+		abortPrefix := pathPrefix + "/on_abort"
+		if err := jr.processStep(sc, step.OnAbort, abortPrefix); err != nil {
+			sc.Logger.Warn("step.on_abort.failed", "prefix", pathPrefix, "error", err)
+		}
+	case sc.LastFailureKind == FailureKindErrored && step.OnError != nil:
+		sc.Logger.Debug("try.error.outer")
+
+		errorPrefix := pathPrefix + "/on_error"
+		if err := jr.processStep(sc, step.OnError, errorPrefix); err != nil {
+			sc.Logger.Warn("step.on_error.failed", "prefix", pathPrefix, "error", err)
+		}
+	case step.OnFailure != nil:
+		failurePrefix := pathPrefix + "/on_failure"
+		if err := jr.processStep(sc, step.OnFailure, failurePrefix); err != nil {
+			sc.Logger.Warn("step.on_failure.failed", "prefix", pathPrefix, "error", err)
+		}
+	}
+}
+
+// dispatchOuterErrorHook runs the step-level error hook for stepErr.
+// Returns true if a hook consumed the error (stepErr should become nil).
+func (jr *JobRunner) dispatchOuterErrorHook(sc *StepContext, step *config.Step, pathPrefix string, stepErr error) bool {
+	switch {
+	case isAbortError(stepErr) && step.OnAbort != nil:
+		sc.Logger.Debug(stepErr.Error())
+		sc.FailureCount++
+		sc.LastFailureKind = FailureKindAborted
+
+		abortPrefix := pathPrefix + "/on_abort"
+		if err := jr.processStep(sc, step.OnAbort, abortPrefix); err != nil {
+			sc.Logger.Warn("step.on_abort.failed", "prefix", pathPrefix, "error", err)
+		}
+
+		return true
+	case isErroredError(stepErr) && step.OnError != nil:
+		sc.Logger.Debug(stepErr.Error())
+		sc.FailureCount++
+		sc.LastFailureKind = FailureKindErrored
+
+		errorPrefix := pathPrefix + "/on_error"
+		if err := jr.processStep(sc, step.OnError, errorPrefix); err != nil {
+			sc.Logger.Warn("step.on_error.failed", "prefix", pathPrefix, "error", err)
+		}
+
+		return true
+	case isFailedError(stepErr) && step.OnFailure != nil:
+		sc.FailureCount++
+		sc.LastFailureKind = FailureKindFailed
+
+		failurePrefix := pathPrefix + "/on_failure"
+		if err := jr.processStep(sc, step.OnFailure, failurePrefix); err != nil {
+			sc.Logger.Warn("step.on_failure.failed", "prefix", pathPrefix, "error", err)
+		}
+
+		return true
+	}
+
+	return false
+}
+
+func (jr *JobRunner) dispatchStepHook(sc *StepContext, step *config.Step, pathPrefix string, stepErr error, failureBefore int) error {
+	failureInside := sc.FailureCount > failureBefore && stepErr == nil
+
+	if stepErr == nil && !failureInside && step.OnSuccess != nil {
+		successPrefix := pathPrefix + "/on_success"
+		if successErr := jr.processStep(sc, step.OnSuccess, successPrefix); successErr != nil {
+			return successErr
+		}
+
+		return nil
+	}
+
+	if failureInside {
+		jr.dispatchInnerFailureHook(sc, step, pathPrefix)
+
+		return nil
+	}
+
+	if jr.dispatchOuterErrorHook(sc, step, pathPrefix, stepErr) {
+		return nil
+	}
+
+	return stepErr
 }
 
 func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix string) error {
@@ -324,69 +426,7 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 	failureBefore := sc.FailureCount
 	stepErr := handler.Execute(sc, step, pathPrefix)
 
-	// on_success / on_abort / on_error / on_failure hooks run before ensure.
-	// When stepErr is nil but FailureCount increased during execution (i.e. a
-	// nested step had a failure handled by its own hook), dispatch the outer
-	// hook based on LastFailureKind rather than firing on_success.
-	failureInside := sc.FailureCount > failureBefore && stepErr == nil
-	switch {
-	case stepErr == nil && !failureInside && step.OnSuccess != nil:
-		successPrefix := pathPrefix + "/on_success"
-		if successErr := jr.processStep(sc, step.OnSuccess, successPrefix); successErr != nil {
-			stepErr = successErr
-		}
-	case failureInside && sc.LastFailureKind == FailureKindAborted && step.OnAbort != nil:
-		sc.Logger.Debug("try.abort.outer")
-
-		abortPrefix := pathPrefix + "/on_abort"
-		if abortErr := jr.processStep(sc, step.OnAbort, abortPrefix); abortErr != nil {
-			sc.Logger.Warn("step.on_abort.failed", "prefix", pathPrefix, "error", abortErr)
-		}
-	case failureInside && sc.LastFailureKind == FailureKindErrored && step.OnError != nil:
-		sc.Logger.Debug("try.error.outer")
-
-		errorPrefix := pathPrefix + "/on_error"
-		if errorErr := jr.processStep(sc, step.OnError, errorPrefix); errorErr != nil {
-			sc.Logger.Warn("step.on_error.failed", "prefix", pathPrefix, "error", errorErr)
-		}
-	case failureInside && step.OnFailure != nil:
-		failurePrefix := pathPrefix + "/on_failure"
-		if failureErr := jr.processStep(sc, step.OnFailure, failurePrefix); failureErr != nil {
-			sc.Logger.Warn("step.on_failure.failed", "prefix", pathPrefix, "error", failureErr)
-		}
-	case isAbortError(stepErr) && step.OnAbort != nil:
-		sc.Logger.Debug(stepErr.Error())
-		sc.FailureCount++
-		sc.LastFailureKind = FailureKindAborted
-
-		abortPrefix := pathPrefix + "/on_abort"
-		if abortErr := jr.processStep(sc, step.OnAbort, abortPrefix); abortErr != nil {
-			sc.Logger.Warn("step.on_abort.failed", "prefix", pathPrefix, "error", abortErr)
-		}
-
-		stepErr = nil
-	case isErroredError(stepErr) && step.OnError != nil:
-		sc.Logger.Debug(stepErr.Error())
-		sc.FailureCount++
-		sc.LastFailureKind = FailureKindErrored
-
-		errorPrefix := pathPrefix + "/on_error"
-		if errorErr := jr.processStep(sc, step.OnError, errorPrefix); errorErr != nil {
-			sc.Logger.Warn("step.on_error.failed", "prefix", pathPrefix, "error", errorErr)
-		}
-
-		stepErr = nil
-	case isFailedError(stepErr) && step.OnFailure != nil:
-		sc.FailureCount++
-		sc.LastFailureKind = FailureKindFailed
-
-		failurePrefix := pathPrefix + "/on_failure"
-		if failureErr := jr.processStep(sc, step.OnFailure, failurePrefix); failureErr != nil {
-			sc.Logger.Warn("step.on_failure.failed", "prefix", pathPrefix, "error", failureErr)
-		}
-
-		stepErr = nil
-	}
+	stepErr = jr.dispatchStepHook(sc, step, pathPrefix, stepErr, failureBefore)
 
 	// Ensure hook always runs regardless of step success/failure.
 	if step.Ensure != nil {
