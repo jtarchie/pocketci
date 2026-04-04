@@ -1,32 +1,16 @@
-# PocketCI Project — Coding Agent Instructions
+# PocketCI — Coding Agent Instructions
 
-> Trust these instructions. Only search the codebase if information here is
-> incomplete or found to be in error.
+> Trust these instructions. Only search the codebase if information here is incomplete or found to be in error.
 
 ## Project Summary
 
-PocketCI is a local-first CI/CD runtime written in Go
-(`github.com/jtarchie/pocketci`). Pipelines are authored in JavaScript or
-TypeScript and executed inside a Goja VM. The project also supports Concourse
-YAML pipelines via a built-in transpiler. It features pluggable container
-drivers (docker, native, k8s, fly, digitalocean, hetzner, qemu, vz), SQLite
-storage, and an Echo HTTP server with an HTMx + idiomorph UI.
+PocketCI is a local-first CI/CD runtime written in Go (`github.com/jtarchie/pocketci`). Pipelines are authored in JavaScript/TypeScript and executed inside a Goja VM. Supports Concourse YAML pipelines via a built-in transpiler. Features pluggable container drivers (docker, native, k8s, fly, digitalocean, hetzner, qemu, vz), SQLite storage, and an Echo HTTP server with HTMx + idiomorph UI.
 
-**Size:** ~50k lines Go, ~2k TypeScript, 284 Go source files across ~30
-packages. **Module:** `github.com/jtarchie/pocketci`. **Go version:** 1.25+ (see
-`go.mod`). **License:** MIT.
+**Size:** ~50k lines Go, ~2k TypeScript, 284 Go source files, ~30 packages. **Go version:** 1.25.8. **Module:** `github.com/jtarchie/pocketci`. **License:** MIT.
 
-## Prerequisites
+## Build, Test, Lint
 
-`brew bundle` installs all required tools from `Brewfile`: **Go 1.25+**,
-**go-task**, **deno** (v2.x), **shellcheck**, **shfmt**, **minio**. Node.js +
-npm are also required (not in Brewfile — install separately). **Docker must be
-running** for integration tests.
-
-## Build, Test, Lint — Command Reference
-
-All commands must be run from the repo root. The build system is
-[go-task](https://taskfile.dev) (`Taskfile.yml`).
+All commands run from the repo root. Build system: [go-task](https://taskfile.dev) (`Taskfile.yml`).
 
 ### Step 1: Always build first
 
@@ -34,13 +18,7 @@ All commands must be run from the repo root. The build system is
 task build
 ```
 
-This runs `task build:static` (npm install + build in `server/static/`),
-`task
-build:docs` (npm install + VitePress build in `docs/`),
-`task build:backwards` (npm install in `backwards/`), and `go generate ./...`
-(bundles `backwards/src/*.ts` into `backwards/bundle.js` via esbuild). **You
-must run this before testing or linting.** Skipping it causes embed failures and
-stale bundles.
+Runs in order: (1) `cd server/static && npm install && npm run build`, (2) `cd docs && npm install && npm run build`, (3) `go generate ./...` (bundles `backwards/src/*.ts` → `backwards/bundle.js` via esbuild, which is `//go:embed`-ed). **Skipping causes embed failures and stale bundles.**
 
 ### Step 2: Lint and format
 
@@ -48,13 +26,7 @@ stale bundles.
 task fmt
 ```
 
-Runs deno fmt, deno lint, deno check, shellcheck, shfmt, gofmt, and
-golangci-lint (with `--fix` locally, without in CI). Linter config is in
-`.golangci.yml` (v2 format). Key enabled linters: errcheck, govet, staticcheck,
-errorlint, musttag, sloglint, perfsprint, cyclop (max 15), gocognit (min 30),
-contextcheck, containedctx.
-
-To run golangci-lint standalone: `golangci-lint run ./...`
+Runs deno fmt/lint/check, shellcheck, shfmt, gofmt, and `golangci-lint run ./... --fix` (only when `CI != "true"` — in CI it runs via the golangci-lint action without `--fix`). Linter config: `.golangci.yml` (v2 format).
 
 ### Step 3: Run tests
 
@@ -62,21 +34,7 @@ To run golangci-lint standalone: `golangci-lint run ./...`
 go test -race ./... -count=1 -parallel=1
 ```
 
-**Always use all three flags** (`-race`, `-count=1`, `-parallel=1`) — omitting
-any of them causes flaky results. Single package example:
-
-```bash
-go test -race ./storage/... -count=1 -parallel=1
-```
-
-### Step 4: Cleanup after test failures
-
-```bash
-task cleanup
-```
-
-Runs `bin/cleanup.sh` to remove leaked Docker containers and volumes. Always run
-this after test failures that may leave containers behind.
+Always use all three flags — omitting any causes flaky results. Single package: `go test -race ./storage/... -count=1 -parallel=1`. Docker must be running.
 
 ### Full CI (build + lint + test + e2e)
 
@@ -84,71 +42,50 @@ this after test failures that may leave containers behind.
 task
 ```
 
-This is equivalent to `task build && task fmt && task test` (which includes
-cleanup and e2e). The GitHub Actions CI has a **15-minute timeout**.
+Equivalent to `task build && task fmt && task test` (test includes cleanup + Playwright e2e). **15-minute timeout in CI.**
 
-### Replicate CI locally
+### Cleanup after test failures
 
 ```bash
-task build && task fmt && go test -race ./... -count=1 -parallel=1
+task cleanup
 ```
 
-## Critical Build Rules
+Removes leaked Docker containers/volumes. Always run after test failures.
 
-1. **After editing `backwards/src/*.ts`**: always run `go generate ./...` to
-   regenerate `backwards/bundle.js` — it is `//go:embed`-ed and stale bundles
-   cause silent failures.
-2. **After editing `server/static/src/`**: always run `task build:static`.
-3. **After editing `docs/**/*.md` or `docs/.vitepress/`**: always run
-   `task
-   build:docs`.
-4. **After editing `storage/sqlite/schema.sql`**: run tests (schema is directly
-   embedded).
-5. **After editing `server/templates/`**: no rebuild needed (directly embedded
-   at runtime).
+## Critical Rebuild Rules
+
+| Changed files | Required action |
+|---|---|
+| `backwards/src/*.ts` | `go generate ./...` (regenerates embedded `backwards/bundle.js`) |
+| `server/static/src/` | `task build:static` |
+| `docs/**/*.md` or `docs/.vitepress/` | `task build:docs` (docs build uses `deadLinks: "error"`) |
+| `storage/sqlite/schema.sql` | run tests (schema is directly embedded) |
+| `server/templates/` | no rebuild needed (embedded at runtime) |
 
 ## Project Layout
 
-| Path             | Purpose                                                                                     |
-| ---------------- | ------------------------------------------------------------------------------------------- |
-| `main.go`        | CLI entry (kong). Blank imports register plugins                                            |
-| `commands/`      | CLI subcommands: server, pipeline (set/rm/ls/run/pause/unpause), resource, login            |
-| `runtime/`       | Goja VM engine. `js.go` (TS->JS), `runtime.go` (API), `jsapi/`, `runner/`                   |
-| `orchestra/`     | Container layer. `orchestrator.go` (interfaces), `docker/`, `native/`, `k8s/`, `fly/`, etc. |
-| `storage/`       | Persistence. `storage.go` (Driver interface), `sqlite/` (schema.sql embedded)               |
-| `backwards/`     | Concourse YAML -> JS transpiler. `pipeline.go` (go:generate), `src/` (TS)                   |
-| `server/`        | Echo HTTP + HTMx. `router.go`, `templates.go`, `templates/`, `static/`                      |
-| `secrets/`       | Secrets manager (Get/Set/Delete/ListByScope) + backends                                     |
-| `webhooks/`      | Webhook providers (generic, github, slack, honeybadger)                                     |
-| `resources/`     | Concourse-compat resource interface + mock                                                  |
-| `examples/`      | Pipeline examples + integration tests (`examples_test.go`)                                  |
-| `testhelpers/`   | Test utils: `Runner` (pipeline executor), `StartMinIO` (S3 tests)                           |
-| `e2e/`           | Playwright browser tests                                                                    |
-| `observability/` | Telemetry: honeybadger, OpenTelemetry tracing                                               |
-| `cache/`         | Caching implementation                                                                      |
-| `executor/`      | Pipeline executor                                                                           |
-| `s3config/`      | S3 configuration                                                                            |
+| Path | Purpose |
+|---|---|
+| `main.go` | CLI entry (kong). Blank-imports `resources/mock` only |
+| `commands/` | CLI subcommands: server, pipeline (set/rm/ls/run/pause/unpause), resource, login |
+| `runtime/` | Goja VM engine: `js.go` (TS→JS), `runtime.go` (API), `jsapi/`, `runner/` |
+| `orchestra/` | Container layer: `orchestrator.go` (interfaces), `docker/`, `native/`, `k8s/`, `fly/`, etc. |
+| `storage/` | Persistence: `storage.go` (Driver interface), `sqlite/` (schema.sql embedded) |
+| `backwards/` | Concourse YAML→JS transpiler: `pipeline.go` (go:generate), `src/` (TS) |
+| `server/` | Echo HTTP + HTMx: `router.go`, `templates/`, `static/` |
+| `secrets/` | Secrets manager (Get/Set/Delete/ListByScope) + backends |
+| `testhelpers/` | Test utils: `Runner` (pipeline executor), `StartMinIO` (S3 tests) |
+| `examples/` | Pipeline examples + integration tests (`examples_test.go`) |
+| `e2e/` | Playwright browser tests |
+| `observability/` | Telemetry: honeybadger, OpenTelemetry tracing |
 
-### Key configuration files
+**Key config files:** `Taskfile.yml` (all tasks), `.golangci.yml` (linter), `go.mod` (deps), `.github/workflows/go.yml` (CI).
 
-| File                       | Purpose                                        |
-| -------------------------- | ---------------------------------------------- |
-| `Taskfile.yml`             | All build/test/lint tasks                      |
-| `.golangci.yml`            | Linter configuration (golangci-lint v2 format) |
-| `go.mod`                   | Go module + dependency versions                |
-| `Brewfile`                 | Homebrew tool dependencies                     |
-| `.github/workflows/go.yml` | CI pipeline definition                         |
-| `fly.toml`                 | Fly.io deployment config                       |
-| `.goreleaser.yml`          | Release pipeline config                        |
+## Driver Registration
 
-## Plugin Registration
+Drivers are **not** self-registering via `init()`. They are wired via a hard-coded switch statement in `server/create_driver.go`. To add a new driver: implement `orchestra.Driver`, add a case to both switches in `server/create_driver.go` (driver creation and config unmarshalling), and add the import there.
 
-All plugins self-register via `init()` + blank imports. Pattern: the driver
-package defines `func init() { /* register */ }`, and `main.go` (or test files)
-imports with `_ "github.com/jtarchie/pocketci/orchestra/docker"`. New plugins:
-implement the `orchestra.Driver` interface, add `init()`, add blank import.
-
-**In test files**, you must add blank imports for the drivers you need:
+In test files that exercise a specific driver, add blank imports for the drivers needed:
 
 ```go
 import (
@@ -157,96 +94,26 @@ import (
 )
 ```
 
-## Development Practices
+## Code Conventions
 
-### Tests (required for every change)
+**Tests:** Always `package foo_test` (black-box). Use gomega: `assert := NewGomegaWithT(t)`, `assert.Expect(err).NotTo(HaveOccurred())`. Use `sqlite://:memory:` for DB. Use `testhelpers.Runner` for pipeline tests. Use `t.TempDir()` and `t.Cleanup()`. Tests use `go.uber.org/goleak` — ensure goroutines are cleaned up.
 
-- **Black-box packages**: always `package foo_test` (test public API only).
-- **Assertions**: gomega — `assert := NewGomegaWithT(t)`,
-  `assert.Expect(err).NotTo(HaveOccurred())`.
-- **In-memory DB**: always use `sqlite://:memory:` (never file-backed unless
-  testing persistence).
-- **Table-driven tests**: use `Each()` from `storage`/`orchestra`/`secrets`
-  packages.
-- **Helpers**: `testhelpers.Runner` for pipelines, `testhelpers.StartMinIO` for
-  S3 tests. `t.TempDir()` for temp files, `t.Cleanup()` for teardown.
-- **Goroutine leaks**: tests use `go.uber.org/goleak` — ensure goroutines are
-  cleaned up.
+**Logging:** `slog` everywhere — never `log` or `fmt.Println`. Dot-separated message names: `"pipeline.validate.success"`. Use typed attrs: `slog.String()`, `slog.Int()`, `slog.Duration()`. In tests: `slog.New(slog.NewTextHandler(io.Discard, nil))`.
 
-### Logging
+**Errors and JSON tags:** Wrap with `fmt.Errorf("context: %w", err)`. All structs exposed to the Goja VM **must** have `json:"fieldName"` tags (enforced by `musttag` linter — missing tags break marshalling silently).
 
-Use `slog` everywhere — never `log` or `fmt.Println`. Pass `*slog.Logger` via
-parameters. In tests: `slog.New(slog.NewTextHandler(io.Discard, nil))`.
-
-- **Messages**: dot-separated names: `"pipeline.validate.success"`,
-  `"image.pull"`.
-- **Typed attrs**: prefer `slog.String()`, `slog.Int()`, `slog.Duration()`.
-
-### Errors and JSON tags
-
-- Wrap errors with context: `fmt.Errorf("context: %w", err)`.
-- All structs exposed to the Goja VM must have `json:"fieldName"` tags (enforced
-  by `musttag` linter).
-
-### Key interfaces
-
-- `orchestra.Driver` — container orchestration
-- `storage.Driver` — data persistence
-- `secrets.Manager` — secrets management
-- `webhooks.Provider` — webhook integrations
-- Interface compliance: `var _ orchestra.Driver = &Docker{}`
-
-## Linter suppressions (`//nolint`)
-
-Prefer fixing the root cause over suppressing linters. Before adding `//nolint`:
-
-- **`usetesting`**: Use `t.Setenv()` / `t.TempDir()` instead of `os.Setenv` /
-  `os.MkdirTemp` in tests.
-- **`forcetypeassert`**: Use comma-ok (`v, ok := x.(T)`) and return an error if
-  `!ok`.
-- **`noctx`**: Use `http.NewRequestWithContext`; `context.Background()` is
-  acceptable as a last resort in tests.
-- **`errcheck`** on deferred `Close()`: Log the error or use a named return to
-  capture it; for test helpers prefer `t.Cleanup`.
-- **`nilnil`**: Return a sentinel value, a no-op implementation, or restructure
-  to avoid dual-nil returns.
-- **`containedctx`** / **`contextcheck`**: Indicate stored contexts or
-  goroutines outliving their parent. Add a comment explaining the deliberate
-  design (e.g., `// JS VM cannot pass context parameters`).
-- **`gosec`** for `exec.Command`: Add a comment explaining why the input is
-  trusted or controlled.
-
-When suppression is genuinely necessary, always include a reason:
-`//nolint:rulename // reason why`.
+**Linter suppressions:** Prefer fixing root causes over `//nolint`. When unavoidable, always include a reason: `//nolint:rulename // reason`. Use `t.Setenv()`/`t.TempDir()` (not `os.Setenv`/`os.MkdirTemp`) in tests. Use comma-ok type assertions. Use `http.NewRequestWithContext`. Log or capture deferred `Close()` errors.
 
 ## Documentation Requirements
 
-Every user-facing change **must** include corresponding documentation updates:
-
-- New CLI commands or flags → update `docs/cli/` pages and `docs/cli/index.md`
-- New API endpoints → update `docs/api/` pages and `docs/api/index.md`
-- New server options → update `docs/cli/server.md`
-- New feature gates → update `docs/operations/feature-gates.md`
-- New runtime globals or JS/TS API → update `docs/runtime/` pages
-- New guides or workflows → add to `docs/guides/`
-- New operational topics → add to `docs/operations/`
-
-After adding new doc pages:
-
-1. Add the page to the VitePress sidebar in `docs/.vitepress/config.ts`
-2. Add a link from the relevant index page
-3. Run `task build:docs` to verify the build succeeds (`deadLinks: "error"`
-   catches broken links)
+Every user-facing change must include doc updates: new CLI flags → `docs/cli/`, new API endpoints → `docs/api/`, new JS/TS runtime API → `docs/runtime/`. After adding pages: add to sidebar in `docs/.vitepress/config.ts` and link from the index. Run `task build:docs` to verify (broken links are errors).
 
 ## CI Validation
 
-PR gate (`.github/workflows/go.yml`): runs on `ubuntu-latest` with Docker,
-minikube, Node, Deno v2.x, Go stable. Steps: `task build:static` ->
-`task
-build:docs` -> `golangci-lint` -> `task` (full CI). **15-minute timeout.**
+PR gate (`.github/workflows/go.yml`): ubuntu-latest with Docker + minikube, Deno v2.x, Go stable. Sequence: `task build:static` → `task build:docs` → golangci-lint action → `task`. **15-minute timeout.**
 
-Before submitting, always validate locally:
+To replicate locally:
 
 ```bash
-task
+task build && task fmt && go test -race ./... -count=1 -parallel=1
 ```
