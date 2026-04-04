@@ -10,28 +10,27 @@ import (
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/resources"
+	"github.com/samber/lo"
 )
 
 // findResource looks up a resource by name from the pipeline config.
-func findResource(resources config.Resources, name string) (*config.Resource, error) {
-	for i := range resources {
-		if resources[i].Name == name {
-			return &resources[i], nil
-		}
+func findResource(rs config.Resources, name string) (*config.Resource, error) {
+	r, ok := lo.Find(rs, func(r config.Resource) bool { return r.Name == name })
+	if !ok {
+		return nil, fmt.Errorf("resource %q not found", name)
 	}
 
-	return nil, fmt.Errorf("resource %q not found", name)
+	return &r, nil
 }
 
 // findResourceType looks up a resource type by name from the pipeline config.
-func findResourceType(resourceTypes config.ResourceTypes, typeName string) (*config.ResourceType, error) {
-	for i := range resourceTypes {
-		if resourceTypes[i].Name == typeName {
-			return &resourceTypes[i], nil
-		}
+func findResourceType(rts config.ResourceTypes, typeName string) (*config.ResourceType, error) {
+	rt, ok := lo.Find(rts, func(rt config.ResourceType) bool { return rt.Name == typeName })
+	if !ok {
+		return nil, fmt.Errorf("resource type %q not found", typeName)
 	}
 
-	return nil, fmt.Errorf("resource type %q not found", typeName)
+	return &rt, nil
 }
 
 // paramsToAnyMap converts map[string]string to map[string]any for the resources API.
