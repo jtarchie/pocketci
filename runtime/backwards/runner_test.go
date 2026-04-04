@@ -26,13 +26,17 @@ import (
 	"github.com/jtarchie/pocketci/storage"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
+	"go.uber.org/goleak"
 )
 
 func TestMain(m *testing.M) {
 	// TEST_API_KEY must be set before any parallel subtests run. Since all tests
 	// use the same fake value, a single os.Setenv at process start is safe.
 	_ = os.Setenv("TEST_API_KEY", "fake-test-key")
-	os.Exit(m.Run())
+	goleak.VerifyTestMain(m,
+		goleak.IgnoreAnyFunction("net/http.(*persistConn).readLoop"),
+		goleak.IgnoreAnyFunction("net/http.(*persistConn).writeLoop"),
+	)
 }
 
 func discardLogger() *slog.Logger {
