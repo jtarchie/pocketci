@@ -109,6 +109,7 @@ func (h *AgentHandler) Execute(sc *StepContext, step *config.Step, pathPrefix st
 		Namespace:        sc.JobName,
 		RunID:            sc.RunID,
 		PipelineID:       sc.PipelineID,
+		BaseURLOverrides: sc.AgentBaseURLs,
 		OnUsage: func(usage agent.AgentUsage) {
 			mu.Lock()
 			latestUsage = &usage

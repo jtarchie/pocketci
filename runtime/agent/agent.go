@@ -49,7 +49,7 @@ func RunAgent(
 
 	defer func() { _ = sandbox.Close() }()
 
-	llmModel, err := agentmodel.Resolve(provider, modelName, apiKey, config.LLM, config.Thinking)
+	llmModel, err := agentmodel.Resolve(provider, modelName, apiKey, config.LLM, config.Thinking, config.BaseURLOverrides)
 	if err != nil {
 		return nil, fmt.Errorf("agent: %w", err)
 	}

@@ -36,6 +36,7 @@ type JobRunner struct {
 	webhookData         *jsapi.WebhookData
 	dedupTTL            time.Duration
 	secretsManager      secrets.Manager
+	agentBaseURLs       map[string]string
 }
 
 func newJobRunner(
@@ -52,6 +53,7 @@ func newJobRunner(
 	webhookData *jsapi.WebhookData,
 	dedupTTL time.Duration,
 	secretsManager secrets.Manager,
+	agentBaseURLs map[string]string,
 ) *JobRunner {
 	return &JobRunner{
 		job:                 job,
@@ -67,6 +69,7 @@ func newJobRunner(
 		webhookData:         webhookData,
 		dedupTTL:            dedupTTL,
 		secretsManager:      secretsManager,
+		agentBaseURLs:       agentBaseURLs,
 		handlers: map[string]StepHandler{
 			"task":        &TaskHandler{},
 			"get":         &GetHandler{},
@@ -120,6 +123,7 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		PipelineRunner:     pr,
 		SecretsManager:     jr.secretsManager,
 		PipelineID:         jr.pipelineID,
+		AgentBaseURLs:      jr.agentBaseURLs,
 	}
 	sc.ProcessStep = func(step *config.Step, pathPrefix string) error {
 		return jr.processStep(sc, step, pathPrefix)

@@ -28,6 +28,13 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+func TestMain(m *testing.M) {
+	// TEST_API_KEY must be set before any parallel subtests run. Since all tests
+	// use the same fake value, a single os.Setenv at process start is safe.
+	_ = os.Setenv("TEST_API_KEY", "fake-test-key")
+	os.Exit(m.Run())
+}
+
 func discardLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
@@ -39,6 +46,20 @@ func fakeLLMResponse(content string, promptTokens, completionTokens, totalTokens
 }
 
 // configureFakeLLM points the "test" LLM provider at an httptest server returning the given response.
+// fakeLLMBaseURL starts a fake LLM server returning response and returns the base URL to use in RunnerOptions.
+// Use this for parallel tests. For sequential tests use configureFakeLLM.
+func fakeLLMBaseURL(t *testing.T, response string) string {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(response))
+	}))
+	t.Cleanup(server.Close)
+
+	return server.URL + "/v1"
+}
+
 func configureFakeLLM(t *testing.T, response string) {
 	t.Helper()
 
@@ -754,98 +775,97 @@ func collectStepsWithAssertions(cfg *configpkg.Config) []stepLocation {
 }
 
 func TestMutateJobAsserts(t *testing.T) {
+	// Assertion failure logic is driver-agnostic; native avoids Docker overhead.
 	assert := NewGomegaWithT(t)
 
 	matches, err := filepath.Glob("steps/*.yml")
 	assert.Expect(err).NotTo(HaveOccurred())
 	assert.Expect(matches).NotTo(BeEmpty())
 
-	for _, df := range drivers {
-		t.Run(df.name, func(t *testing.T) {
-			for _, match := range matches {
-				t.Run(filepath.Base(match), func(t *testing.T) {
-					assert := NewGomegaWithT(t)
+	nativeDF := drivers[0]
 
-					cfg := loadConfig(t, match)
-					assert.Expect(cfg.Assert.Execution).NotTo(BeEmpty())
+	for _, match := range matches {
+		t.Run(filepath.Base(match), func(t *testing.T) {
+			assert := NewGomegaWithT(t)
 
-					cfg.Assert.Execution[0] = "unknown-job"
+			cfg := loadConfig(t, match)
+			assert.Expect(cfg.Assert.Execution).NotTo(BeEmpty())
 
-					logger := discardLogger()
+			cfg.Assert.Execution[0] = "unknown-job"
 
-					driver, err := df.new("test-mutate-job-"+df.name, logger)
-					assert.Expect(err).NotTo(HaveOccurred())
+			logger := discardLogger()
 
-					defer func() { _ = driver.Close() }()
+			driver, err := nativeDF.new("test-mutate-job-"+strings.TrimSuffix(filepath.Base(match), ".yml"), logger)
+			assert.Expect(err).NotTo(HaveOccurred())
 
-					store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-mutate-job", logger)
-					assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = driver.Close() }()
 
-					defer func() { _ = store.Close() }()
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-mutate-job", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
 
-					configureFakeLLM(t, fakeLLMResponse("stub", 5, 5, 10))
+			defer func() { _ = store.Close() }()
 
-					runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
-					err = runner.Run(context.Background())
-					assert.Expect(err).To(HaveOccurred())
-					assert.Expect(err.Error()).To(ContainSubstring("assertion failed"))
-				})
-			}
+			llmURL := fakeLLMBaseURL(t, fakeLLMResponse("stub", 5, 5, 10))
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{AgentBaseURLs: map[string]string{"test": llmURL}})
+			err = runner.Run(context.Background())
+			assert.Expect(err).To(HaveOccurred())
+			assert.Expect(err.Error()).To(ContainSubstring("assertion failed"))
 		})
 	}
 }
 
 func TestMutateStepAsserts(t *testing.T) {
+	// Assertion failure logic is driver-agnostic; native avoids Docker overhead.
 	assert := NewGomegaWithT(t)
 
 	matches, err := filepath.Glob("steps/*.yml")
 	assert.Expect(err).NotTo(HaveOccurred())
 	assert.Expect(matches).NotTo(BeEmpty())
 
-	for _, df := range drivers {
-		t.Run(df.name, func(t *testing.T) {
-			for _, match := range matches {
-				t.Run(filepath.Base(match), func(t *testing.T) {
-					cfg := loadConfig(t, match)
-					locations := collectStepsWithAssertions(cfg)
-					assert.Expect(locations).NotTo(BeEmpty(), "every step YAML must have at least one step-level assertion")
+	nativeDF := drivers[0]
 
-					for _, loc := range locations {
-						t.Run(loc.name, func(t *testing.T) {
-							assert := NewGomegaWithT(t)
+	for _, match := range matches {
+		t.Run(filepath.Base(match), func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+			cfg := loadConfig(t, match)
+			locations := collectStepsWithAssertions(cfg)
+			assert.Expect(locations).NotTo(BeEmpty(), "every step YAML must have at least one step-level assertion")
 
-							mutated := deepCopyConfig(t, cfg)
-							step := &mutated.Jobs[loc.jobIdx].Plan[loc.stepIdx]
+			for _, loc := range locations {
+				t.Run(loc.name, func(t *testing.T) {
+					assert := NewGomegaWithT(t)
 
-							if step.Assert.Code != nil {
-								wrongCode := *step.Assert.Code + 1
-								step.Assert.Code = &wrongCode
-							} else if step.Assert.Stdout != "" {
-								step.Assert.Stdout = "THIS-WILL-NOT-MATCH-" + step.Assert.Stdout
-							} else if step.Assert.Stderr != "" {
-								step.Assert.Stderr = "THIS-WILL-NOT-MATCH-" + step.Assert.Stderr
-							}
+					mutated := deepCopyConfig(t, cfg)
+					step := &mutated.Jobs[loc.jobIdx].Plan[loc.stepIdx]
 
-							logger := discardLogger()
-
-							driver, err := df.new("test-mutate-step-"+df.name, logger)
-							assert.Expect(err).NotTo(HaveOccurred())
-
-							defer func() { _ = driver.Close() }()
-
-							store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-mutate-step", logger)
-							assert.Expect(err).NotTo(HaveOccurred())
-
-							defer func() { _ = store.Close() }()
-
-							configureFakeLLM(t, fakeLLMResponse("stub", 5, 5, 10))
-
-							runner := backwards.New(mutated, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
-							err = runner.Run(context.Background())
-							assert.Expect(err).To(HaveOccurred())
-							assert.Expect(err.Error()).To(ContainSubstring("assertion failed"))
-						})
+					if step.Assert.Code != nil {
+						wrongCode := *step.Assert.Code + 1
+						step.Assert.Code = &wrongCode
+					} else if step.Assert.Stdout != "" {
+						step.Assert.Stdout = "THIS-WILL-NOT-MATCH-" + step.Assert.Stdout
+					} else if step.Assert.Stderr != "" {
+						step.Assert.Stderr = "THIS-WILL-NOT-MATCH-" + step.Assert.Stderr
 					}
+
+					logger := discardLogger()
+
+					driver, err := nativeDF.new("test-mutate-step-"+strings.TrimSuffix(filepath.Base(match), ".yml")+"-"+loc.name, logger)
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					defer func() { _ = driver.Close() }()
+
+					store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-mutate-step", logger)
+					assert.Expect(err).NotTo(HaveOccurred())
+
+					defer func() { _ = store.Close() }()
+
+					llmURL := fakeLLMBaseURL(t, fakeLLMResponse("stub", 5, 5, 10))
+
+					runner := backwards.New(mutated, driver, store, logger, "test-run", "", backwards.RunnerOptions{AgentBaseURLs: map[string]string{"test": llmURL}})
+					err = runner.Run(context.Background())
+					assert.Expect(err).To(HaveOccurred())
+					assert.Expect(err.Error()).To(ContainSubstring("assertion failed"))
 				})
 			}
 		})

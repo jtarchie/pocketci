@@ -69,7 +69,8 @@ func ResolveSecret(ctx context.Context, sm secrets.Manager, pipelineID, key stri
 // Resolve builds an adk-compatible LLM model from provider + name + key.
 // llmCfg sets temperature and output token limit for all providers.
 // thinkingCfg provides Anthropic-specific extended thinking budget.
-func Resolve(provider, modelName, apiKey string, llmCfg *LLMConfig, thinkingCfg *ThinkingConfig) (adkmodel.LLM, error) {
+// baseURLOverrides, if non-nil, takes precedence over DefaultBaseURLs for URL lookup.
+func Resolve(provider, modelName, apiKey string, llmCfg *LLMConfig, thinkingCfg *ThinkingConfig, baseURLOverrides map[string]string) (adkmodel.LLM, error) {
 	switch provider {
 	case "anthropic":
 		cfg := genaianthropic.Config{
@@ -93,7 +94,11 @@ func Resolve(provider, modelName, apiKey string, llmCfg *LLMConfig, thinkingCfg 
 		return genaianthropic.New(cfg), nil
 	default:
 		// openrouter, openai, ollama, etc. all speak OpenAI-compatible API.
-		baseURL := DefaultBaseURLs[provider]
+		baseURL := baseURLOverrides[provider]
+		if baseURL == "" {
+			baseURL = DefaultBaseURLs[provider]
+		}
+
 		if baseURL == "" {
 			return nil, fmt.Errorf("unknown provider %q: set a base URL or use anthropic/openai/openrouter/ollama", provider)
 		}

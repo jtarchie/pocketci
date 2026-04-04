@@ -91,7 +91,7 @@ func buildSubAgentTool(
 		apiKey = os.Getenv(envKey)
 	}
 
-	subLLM, err := agentmodel.Resolve(provider, modelName, apiKey, nil, nil)
+	subLLM, err := agentmodel.Resolve(provider, modelName, apiKey, nil, nil, parentConfig.BaseURLOverrides)
 	if err != nil {
 		return nil, fmt.Errorf("resolve model: %w", err)
 	}

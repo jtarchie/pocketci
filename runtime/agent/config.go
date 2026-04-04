@@ -56,9 +56,10 @@ type AgentConfig struct {
 	// OnUsage is called whenever cumulative usage changes.
 	OnUsage func(AgentUsage) `json:"-"`
 	// Internal fields populated by Runtime.Agent() — not exposed to JS.
-	Storage     storage.Driver `json:"-"`
-	Namespace   string         `json:"-"`
-	RunID       string         `json:"-"`
-	PipelineID  string         `json:"-"`
-	TriggeredBy string         `json:"-"`
+	Storage          storage.Driver    `json:"-"`
+	Namespace        string            `json:"-"`
+	RunID            string            `json:"-"`
+	PipelineID       string            `json:"-"`
+	TriggeredBy      string            `json:"-"`
+	BaseURLOverrides map[string]string `json:"-"` // overrides DefaultBaseURLs; used in tests to avoid global state
 }

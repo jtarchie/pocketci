@@ -62,6 +62,7 @@ type StepContext struct {
 	PipelineRunner     pipelinerunner.Runner // for agent sandbox/volume creation
 	SecretsManager     secrets.Manager       // for agent API key resolution
 	PipelineID         string                // pipeline scope for secrets
+	AgentBaseURLs      map[string]string     // overrides agent provider base URLs; used in tests to avoid global state
 }
 
 // BaseStorageKey returns the storage prefix for the current job.
