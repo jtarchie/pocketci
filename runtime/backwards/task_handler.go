@@ -140,11 +140,11 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 	mounts := resolveMounts(sc, taskConfig)
 
 	task := orchestra.Task{
-		ID:      fmt.Sprintf("%s-%s", sc.JobName, taskName),
-		Command: buildCommand(taskConfig),
-		Env:     env,
-		Image:   resolveImage(taskConfig),
-		Mounts:  mounts,
+		ID:         fmt.Sprintf("%s-%s", sc.JobName, taskName),
+		Command:    buildCommand(taskConfig),
+		Env:        env,
+		Image:      resolveImage(taskConfig),
+		Mounts:     mounts,
 		Privileged: step.Privileged,
 		ContainerLimits: orchestra.ContainerLimits{
 			CPU:    taskConfig.ContainerLimits.CPU,
