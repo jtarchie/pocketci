@@ -3,11 +3,11 @@ package backwards
 import (
 	"fmt"
 	"strings"
-	"sync"
-	"sync/atomic"
 
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/storage"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 )
 
 // generateCombinations returns the cartesian product of all AcrossVar values.
@@ -113,34 +113,29 @@ func executeAcross(
 		limit = 1
 	}
 
-	sem := make(chan struct{}, limit)
+	var (
+		g    *errgroup.Group
+		gCtx = sc.Ctx
+	)
 
-	var wg sync.WaitGroup
+	if failFast {
+		g, gCtx = errgroup.WithContext(sc.Ctx)
+	} else {
+		g = &errgroup.Group{}
+	}
 
-	var mu sync.Mutex
-
-	var firstErr error
-
-	var failed atomic.Bool
+	sem := semaphore.NewWeighted(int64(limit))
 
 	for i, combination := range combinations {
-		if failFast && failed.Load() {
-			break
+		if err := sem.Acquire(gCtx, 1); err != nil {
+			break // gCtx cancelled (fail-fast triggered by a prior goroutine error)
 		}
 
-		sem <- struct{}{}
+		idx := i
+		combo := combination
 
-		if failFast && failed.Load() {
-			<-sem
-
-			break
-		}
-
-		wg.Add(1)
-
-		go func(idx int, combo map[string]string) {
-			defer wg.Done()
-			defer func() { <-sem }()
+		g.Go(func() error {
+			defer sem.Release(1)
 
 			expanded := expandAcrossStep(step, combo, step.Across)
 
@@ -152,24 +147,18 @@ func executeAcross(
 			varContext := strings.Join(varParts, "_")
 			innerPrefix := fmt.Sprintf("%s/across/%d_%s", pathPrefix, idx, varContext)
 
-			if stepErr := processStep(&expanded, innerPrefix); stepErr != nil {
-				mu.Lock()
-				firstErr = higherPriorityError(firstErr, stepErr)
-				mu.Unlock()
-
-				failed.Store(true)
-			}
-		}(i, combination)
+			return processStep(&expanded, innerPrefix)
+		})
 	}
 
-	wg.Wait()
+	runErr := g.Wait()
 
 	err = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
-		"status": statusFromErr(firstErr),
+		"status": statusFromErr(runErr),
 	})
 	if err != nil {
 		return fmt.Errorf("storage set result: %w", err)
 	}
 
-	return firstErr
+	return runErr
 }

@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/goccy/go-yaml"
@@ -18,6 +17,8 @@ import (
 	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/storage"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 )
 
 // TaskHandler executes task steps by running containers.
@@ -47,45 +48,35 @@ func (h *TaskHandler) Execute(sc *StepContext, step *config.Step, pathPrefix str
 func (h *TaskHandler) executeParallel(sc *StepContext, step *config.Step, pathPrefix string) error {
 	count := step.Parallelism
 	limit := resolveLimit(sc, 0, count)
-	sem := make(chan struct{}, limit)
 
 	// Pre-populate ExecutedTasks for deterministic assertion order.
 	for i := 1; i <= count; i++ {
 		sc.appendExecutedTask(fmt.Sprintf("%s-%d", step.Task, i))
 	}
 
-	var wg sync.WaitGroup
-
-	var mu sync.Mutex
-
-	var firstErr error
+	g, _ := errgroup.WithContext(sc.Ctx)
+	sem := semaphore.NewWeighted(int64(limit))
 
 	for i := 1; i <= count; i++ {
-		sem <- struct{}{} // acquire semaphore slot
+		index := i
 
-		wg.Add(1)
+		if err := sem.Acquire(sc.Ctx, 1); err != nil {
+			break
+		}
 
-		go func(index int) {
-			defer wg.Done()
-			defer func() { <-sem }()
+		g.Go(func() error {
+			defer sem.Release(1)
 
 			indexedName := fmt.Sprintf("%s-%d", step.Task, index)
 			env := cloneEnv(step.TaskConfig.Env)
 			env["CI_TASK_INDEX"] = strconv.Itoa(index)
 			env["CI_TASK_COUNT"] = strconv.Itoa(count)
 
-			err := h.runTask(sc, step, pathPrefix, indexedName, env)
-			if err != nil {
-				mu.Lock()
-				firstErr = higherPriorityError(firstErr, err)
-				mu.Unlock()
-			}
-		}(i)
+			return h.runTask(sc, step, pathPrefix, indexedName, env)
+		})
 	}
 
-	wg.Wait()
-
-	return firstErr
+	return g.Wait()
 }
 
 func (h *TaskHandler) loadRunTaskConfig(sc *StepContext, step *config.Step, pathPrefix, taskName string, env map[string]string) (*config.TaskConfig, map[string]string, error) {

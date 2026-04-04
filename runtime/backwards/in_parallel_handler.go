@@ -2,11 +2,11 @@ package backwards
 
 import (
 	"fmt"
-	"sync"
-	"sync/atomic"
 
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/storage"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 )
 
 // InParallelHandler executes inner steps concurrently with an optional
@@ -46,86 +46,43 @@ func (h *InParallelHandler) Execute(sc *StepContext, step *config.Step, pathPref
 		sc.ExecutedTasksMu.Unlock()
 	}
 
-	sem := make(chan struct{}, limit)
+	var (
+		g    *errgroup.Group
+		gCtx = sc.Ctx
+	)
 
-	var wg sync.WaitGroup
-
-	var mu sync.Mutex
-
-	var firstErr error
-
-	var failed atomic.Bool
-
-	for i, innerStep := range steps {
-		if failFast && failed.Load() {
-			break
-		}
-
-		sem <- struct{}{} // acquire semaphore slot
-
-		// Re-check after acquiring: another goroutine may have failed while we waited.
-		if failFast && failed.Load() {
-			<-sem
-
-			break
-		}
-
-		wg.Add(1)
-
-		go func(idx int, s config.Step) {
-			defer wg.Done()
-			defer func() { <-sem }() // release slot
-
-			innerPrefix := fmt.Sprintf("%s/in_parallel/%s", pathPrefix, zeroPadWithLength(idx, len(steps)))
-			stepErr := sc.ProcessStep(&s, innerPrefix)
-
-			if stepErr != nil {
-				mu.Lock()
-				firstErr = higherPriorityError(firstErr, stepErr)
-				mu.Unlock()
-
-				failed.Store(true)
-			}
-		}(i, innerStep)
+	if failFast {
+		g, gCtx = errgroup.WithContext(sc.Ctx)
+	} else {
+		g = &errgroup.Group{}
 	}
 
-	wg.Wait()
+	sem := semaphore.NewWeighted(int64(limit))
+
+	for i, innerStep := range steps {
+		if err := sem.Acquire(gCtx, 1); err != nil {
+			break // gCtx cancelled (fail-fast triggered by a prior goroutine error)
+		}
+
+		idx := i
+		s := innerStep
+		innerPrefix := fmt.Sprintf("%s/in_parallel/%s", pathPrefix, zeroPadWithLength(idx, len(steps)))
+
+		g.Go(func() error {
+			defer sem.Release(1)
+
+			return sc.ProcessStep(&s, innerPrefix)
+		})
+	}
+
+	runErr := g.Wait()
 
 	err = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
-		"status": statusFromErr(firstErr),
+		"status": statusFromErr(runErr),
 	})
 	if err != nil {
 		return fmt.Errorf("storage set result: %w", err)
 	}
 
-	return firstErr
-}
-
-// errorPriority returns a numeric priority for error types.
-// Higher values take precedence: abort > errored > failed.
-func errorPriority(err error) int {
-	switch {
-	case isAbortError(err):
-		return 3
-	case isErroredError(err):
-		return 2
-	case isFailedError(err):
-		return 1
-	default:
-		return 0
-	}
-}
-
-// higherPriorityError returns the error with higher priority.
-// If existing is nil, incoming is always returned.
-func higherPriorityError(existing, incoming error) error {
-	if existing == nil {
-		return incoming
-	}
-
-	if errorPriority(incoming) > errorPriority(existing) {
-		return incoming
-	}
-
-	return existing
+	return runErr
 }
