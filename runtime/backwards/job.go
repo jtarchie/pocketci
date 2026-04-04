@@ -125,7 +125,7 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		PipelineID:         jr.pipelineID,
 		AgentBaseURLs:      jr.agentBaseURLs,
 	}
-	sc.ProcessStep = func(step *config.Step, pathPrefix string) error {
+	sc.ProcessStep = func(step *config.Step, pathPrefix string) error { //nolint:contextcheck // context flows via sc.Ctx; StepHandler interface cannot accept a context parameter
 		return jr.processStep(sc, step, pathPrefix)
 	}
 
@@ -147,7 +147,7 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	for i, step := range jr.job.Plan {
 		padded := zeroPadWithLength(i, len(jr.job.Plan))
 
-		if err := jr.processStep(sc, &step, padded); err != nil {
+		if err := jr.processStep(sc, &step, padded); err != nil { //nolint:contextcheck // context is in sc.Ctx
 			planErr = err
 			jr.markRemainingStepsSkipped(ctx, sc, i+1)
 
@@ -155,7 +155,7 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		}
 	}
 
-	planErr = jr.runJobHooks(sc, planErr)
+	planErr = jr.runJobHooks(sc, planErr) //nolint:contextcheck // context is in sc.Ctx
 
 	// Always validate job-level assertions, even after plan errors.
 	if assertErr := jr.validateAssertions(sc); assertErr != nil {
