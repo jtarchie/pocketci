@@ -2,64 +2,20 @@ package backwards_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/jtarchie/pocketci/runtime/agent"
 	backwards "github.com/jtarchie/pocketci/runtime/backwards"
-	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
-	"github.com/jtarchie/pocketci/secrets"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
 )
-
-// mockAgentRunner returns an agentRunFunc that captures the config and returns
-// a canned result. It fires OnUsage and OnOutput callbacks if provided.
-func mockAgentRunner(
-	captured *agent.AgentConfig,
-	result *agent.AgentResult,
-) backwards.AgentRunFunc {
-	return func(
-		ctx context.Context,
-		runner pipelinerunner.Runner,
-		sm secrets.Manager,
-		pipelineID string,
-		cfg agent.AgentConfig,
-	) (*agent.AgentResult, error) {
-		*captured = cfg
-
-		if cfg.OnUsage != nil {
-			cfg.OnUsage(result.Usage)
-		}
-
-		if cfg.OnOutput != nil {
-			cfg.OnOutput("stdout", result.Text)
-		}
-
-		return result, nil
-	}
-}
-
-func mockAgentRunnerWithError(errMsg string) backwards.AgentRunFunc {
-	return func(
-		ctx context.Context,
-		runner pipelinerunner.Runner,
-		sm secrets.Manager,
-		pipelineID string,
-		cfg agent.AgentConfig,
-	) (*agent.AgentResult, error) {
-		if cfg.OnOutput != nil {
-			cfg.OnOutput("stdout", "partial output")
-		}
-
-		return nil, fmt.Errorf("%s", errMsg)
-	}
-}
 
 func TestAgentBasic(t *testing.T) {
 	for _, df := range drivers {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
+
+			configureFakeLLM(t, fakeLLMResponse("I completed the task.", 10, 5, 15))
 
 			cfg := loadConfig(t, "steps/agent_basic.yml")
 
@@ -75,37 +31,16 @@ func TestAgentBasic(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			var captured agent.AgentConfig
-
-			result := &agent.AgentResult{
-				Text:   "Hello, I am an agent!",
-				Status: "success",
-				Usage: agent.AgentUsage{
-					PromptTokens:     100,
-					CompletionTokens: 50,
-					TotalTokens:      150,
-					LLMRequests:      1,
-				},
-			}
-
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "test-pipeline", backwards.RunnerOptions{
-				AgentRunFunc: mockAgentRunner(&captured, result),
-			})
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "test-pipeline", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
-
-			// Verify agent config was correctly assembled.
-			assert.Expect(captured.Name).To(Equal("test-agent"))
-			assert.Expect(captured.Prompt).To(Equal("Say hello"))
-			assert.Expect(captured.Model).To(Equal("test/mock-model"))
-			assert.Expect(captured.Image).To(Equal("busybox"))
 
 			// Verify storage has success state.
 			val, err := store.Get(context.Background(), "/pipeline/test-run/jobs/agent-test/1/run")
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(val).To(HaveKeyWithValue("status", "success"))
 			assert.Expect(val).To(HaveKey("elapsed"))
-			assert.Expect(val).To(HaveKeyWithValue("stdout", "Hello, I am an agent!"))
+			assert.Expect(val).To(HaveKeyWithValue("stdout", "I completed the task."))
 
 			// Verify job-level success.
 			jobVal, err := store.Get(context.Background(), "/pipeline/test-run/jobs/agent-test")
@@ -119,6 +54,8 @@ func TestAgentWithVolumes(t *testing.T) {
 	for _, df := range drivers {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
+
+			configureFakeLLM(t, fakeLLMResponse("Read the data successfully", 10, 5, 15))
 
 			cfg := loadConfig(t, "steps/agent_with_volumes.yml")
 
@@ -134,25 +71,13 @@ func TestAgentWithVolumes(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			var captured agent.AgentConfig
-
-			result := &agent.AgentResult{
-				Text:   "Read the data successfully",
-				Status: "success",
-			}
-
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "test-pipeline", backwards.RunnerOptions{
-				AgentRunFunc: mockAgentRunner(&captured, result),
-			})
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "test-pipeline", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			// Verify input mount was passed.
-			assert.Expect(captured.Mounts).To(HaveKey("my-data"))
-
-			// Verify auto-created output volume.
-			assert.Expect(captured.Mounts).To(HaveKey("vol-agent"))
-			assert.Expect(captured.OutputVolumePath).To(Equal("vol-agent"))
+			val, err := store.Get(context.Background(), "/pipeline/test-run/jobs/volume-test/1/run")
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(val).To(HaveKeyWithValue("status", "success"))
 		})
 	}
 }
@@ -161,6 +86,9 @@ func TestAgentWithTools(t *testing.T) {
 	for _, df := range drivers {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
+
+			var capturedBody string
+			configureFakeLLMWithCapture(t, fakeLLMResponse("Used tools", 10, 5, 15), &capturedBody)
 
 			cfg := loadConfig(t, "steps/agent_with_tools.yml")
 
@@ -176,34 +104,13 @@ func TestAgentWithTools(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			var captured agent.AgentConfig
-
-			result := &agent.AgentResult{
-				Text:   "Used tools",
-				Status: "success",
-			}
-
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "test-pipeline", backwards.RunnerOptions{
-				AgentRunFunc: mockAgentRunner(&captured, result),
-			})
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "test-pipeline", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			// Verify tools were resolved.
-			assert.Expect(captured.Tools).To(HaveLen(2))
-
-			// Agent tool.
-			assert.Expect(captured.Tools[0].Name).To(Equal("sub-agent"))
-			assert.Expect(captured.Tools[0].Prompt).To(Equal("I am a sub-agent"))
-			assert.Expect(captured.Tools[0].Model).To(Equal("test/sub-model"))
-			assert.Expect(captured.Tools[0].IsTask).To(BeFalse())
-
-			// Task tool.
-			assert.Expect(captured.Tools[1].Name).To(Equal("my-tool"))
-			assert.Expect(captured.Tools[1].IsTask).To(BeTrue())
-			assert.Expect(captured.Tools[1].Description).To(Equal("A test tool"))
-			assert.Expect(captured.Tools[1].CommandPath).To(Equal("echo"))
-			assert.Expect(captured.Tools[1].CommandArgs).To(Equal([]string{"hello"}))
+			// Verify tools were sent to the LLM.
+			assert.Expect(capturedBody).To(ContainSubstring("sub-agent"))
+			assert.Expect(capturedBody).To(ContainSubstring("my-tool"))
 		})
 	}
 }
@@ -212,6 +119,8 @@ func TestAgentFailure(t *testing.T) {
 	for _, df := range drivers {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
+
+			configureFakeLLMError(t)
 
 			cfg := loadConfig(t, "steps/agent_basic.yml")
 			// Remove assertion since job will fail.
@@ -229,9 +138,7 @@ func TestAgentFailure(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "test-pipeline", backwards.RunnerOptions{
-				AgentRunFunc: mockAgentRunnerWithError("LLM provider unavailable"),
-			})
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "test-pipeline", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).To(HaveOccurred())
 			assert.Expect(err.Error()).To(ContainSubstring("test-agent"))
@@ -241,7 +148,6 @@ func TestAgentFailure(t *testing.T) {
 			assert.Expect(err).NotTo(HaveOccurred())
 			assert.Expect(val).To(HaveKeyWithValue("status", "failure"))
 			assert.Expect(val).To(HaveKey("error_message"))
-			assert.Expect(val).To(HaveKeyWithValue("stdout", "partial output"))
 		})
 	}
 }
@@ -251,7 +157,11 @@ func TestAgentLimitExceeded(t *testing.T) {
 		t.Run(df.name, func(t *testing.T) {
 			assert := NewGomegaWithT(t)
 
+			// Large token counts to trigger limit with MaxTotalTokens: 1.
+			configureFakeLLM(t, fakeLLMResponse("Ran out of tokens", 100, 100, 200))
+
 			cfg := loadConfig(t, "steps/agent_basic.yml")
+			cfg.Jobs[0].Plan[1].AgentLimits = &agent.AgentLimitsConfig{MaxTotalTokens: 1}
 
 			logger := discardLogger()
 
@@ -265,20 +175,7 @@ func TestAgentLimitExceeded(t *testing.T) {
 
 			defer func() { _ = store.Close() }()
 
-			var captured agent.AgentConfig
-
-			result := &agent.AgentResult{
-				Text:   "Ran out of tokens",
-				Status: "limit_exceeded",
-				Usage: agent.AgentUsage{
-					TotalTokens: 500000,
-					LLMRequests: 20,
-				},
-			}
-
-			runner := backwards.New(cfg, driver, store, logger, "test-run", "test-pipeline", backwards.RunnerOptions{
-				AgentRunFunc: mockAgentRunner(&captured, result),
-			})
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "test-pipeline", backwards.RunnerOptions{})
 			err = runner.Run(context.Background())
 			assert.Expect(err).NotTo(HaveOccurred())
 

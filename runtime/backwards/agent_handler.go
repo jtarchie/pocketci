@@ -1,7 +1,6 @@
 package backwards
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -10,25 +9,11 @@ import (
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/runtime/agent"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
-	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
 )
 
-// AgentRunFunc is the signature for executing an LLM agent step.
-// Defaults to agent.RunAgent; overridden in tests.
-type AgentRunFunc func(
-	ctx context.Context,
-	runner pipelinerunner.Runner,
-	sm secrets.Manager,
-	pipelineID string,
-	cfg agent.AgentConfig,
-) (*agent.AgentResult, error)
-
 // AgentHandler executes agent steps by delegating to the LLM agent runtime.
-type AgentHandler struct {
-	// runAgent executes the agent. Nil means use agent.RunAgent.
-	runAgent AgentRunFunc
-}
+type AgentHandler struct{}
 
 func (h *AgentHandler) Execute(sc *StepContext, step *config.Step, pathPrefix string) error {
 	agentStep := step
@@ -166,12 +151,7 @@ func (h *AgentHandler) Execute(sc *StepContext, step *config.Step, pathPrefix st
 		agentConfig.Tools = tools
 	}
 
-	runFn := h.runAgent
-	if runFn == nil {
-		runFn = agent.RunAgent
-	}
-
-	result, runErr := runFn(sc.Ctx, sc.PipelineRunner, sc.SecretsManager, sc.PipelineID, agentConfig)
+	result, runErr := agent.RunAgent(sc.Ctx, sc.PipelineRunner, sc.SecretsManager, sc.PipelineID, agentConfig)
 
 	// Phase 8: Result handling.
 	elapsed := time.Since(startedAt)

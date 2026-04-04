@@ -52,7 +52,6 @@ func newJobRunner(
 	webhookData *jsapi.WebhookData,
 	dedupTTL time.Duration,
 	secretsManager secrets.Manager,
-	agentRun AgentRunFunc,
 ) *JobRunner {
 	return &JobRunner{
 		job:                 job,
@@ -76,7 +75,7 @@ func newJobRunner(
 			"do":          &DoHandler{},
 			"in_parallel": &InParallelHandler{},
 			"notify":      &NotifyHandler{},
-			"agent":       &AgentHandler{runAgent: agentRun},
+			"agent":       &AgentHandler{},
 		},
 	}
 }

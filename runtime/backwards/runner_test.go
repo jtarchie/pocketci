@@ -23,8 +23,6 @@ import (
 	"github.com/jtarchie/pocketci/runtime/agent"
 	backwards "github.com/jtarchie/pocketci/runtime/backwards"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
-	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
-	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
@@ -34,21 +32,59 @@ func discardLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
-// stubAgentRunner returns a no-op AgentRunFunc that always succeeds.
-// Used by mutation tests so agent steps don't require real LLM credentials.
-func stubAgentRunner() backwards.AgentRunFunc {
-	return func(
-		ctx context.Context,
-		runner pipelinerunner.Runner,
-		sm secrets.Manager,
-		pipelineID string,
-		cfg agent.AgentConfig,
-	) (*agent.AgentResult, error) {
-		return &agent.AgentResult{
-			Text:   "stub",
-			Status: "success",
-		}, nil
-	}
+// fakeLLMResponse returns a minimal OpenAI-compatible chat completion JSON.
+func fakeLLMResponse(content string, promptTokens, completionTokens, totalTokens int) string {
+	return fmt.Sprintf(`{"id":"chatcmpl-1","object":"chat.completion","created":1730000000,"model":"mock-model","choices":[{"index":0,"message":{"role":"assistant","content":%q},"finish_reason":"stop"}],"usage":{"prompt_tokens":%d,"completion_tokens":%d,"total_tokens":%d}}`,
+		content, promptTokens, completionTokens, totalTokens)
+}
+
+// configureFakeLLM points the "test" LLM provider at an httptest server returning the given response.
+func configureFakeLLM(t *testing.T, response string) {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(response))
+	}))
+	t.Cleanup(server.Close)
+
+	orig := agent.DefaultBaseURLs["test"]
+	agent.DefaultBaseURLs["test"] = server.URL + "/v1"
+	t.Cleanup(func() { agent.DefaultBaseURLs["test"] = orig })
+	t.Setenv("TEST_API_KEY", "fake-test-key")
+}
+
+// configureFakeLLMWithCapture is like configureFakeLLM but also captures the raw request body.
+func configureFakeLLMWithCapture(t *testing.T, response string, body *string) {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		*body = string(raw)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(response))
+	}))
+	t.Cleanup(server.Close)
+
+	orig := agent.DefaultBaseURLs["test"]
+	agent.DefaultBaseURLs["test"] = server.URL + "/v1"
+	t.Cleanup(func() { agent.DefaultBaseURLs["test"] = orig })
+	t.Setenv("TEST_API_KEY", "fake-test-key")
+}
+
+// configureFakeLLMError points the "test" provider at a server that returns HTTP 500.
+func configureFakeLLMError(t *testing.T) {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"error":{"message":"LLM provider unavailable","type":"server_error"}}`, http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+
+	orig := agent.DefaultBaseURLs["test"]
+	agent.DefaultBaseURLs["test"] = server.URL + "/v1"
+	t.Cleanup(func() { agent.DefaultBaseURLs["test"] = orig })
+	t.Setenv("TEST_API_KEY", "fake-test-key")
 }
 
 func debugLogger(w io.Writer) *slog.Logger {
@@ -747,9 +783,9 @@ func TestMutateJobAsserts(t *testing.T) {
 
 					defer func() { _ = store.Close() }()
 
-					runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{
-						AgentRunFunc: stubAgentRunner(),
-					})
+					configureFakeLLM(t, fakeLLMResponse("stub", 5, 5, 10))
+
+					runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 					err = runner.Run(context.Background())
 					assert.Expect(err).To(HaveOccurred())
 					assert.Expect(err.Error()).To(ContainSubstring("assertion failed"))
@@ -802,9 +838,9 @@ func TestMutateStepAsserts(t *testing.T) {
 
 							defer func() { _ = store.Close() }()
 
-							runner := backwards.New(mutated, driver, store, logger, "test-run", "", backwards.RunnerOptions{
-								AgentRunFunc: stubAgentRunner(),
-							})
+							configureFakeLLM(t, fakeLLMResponse("stub", 5, 5, 10))
+
+							runner := backwards.New(mutated, driver, store, logger, "test-run", "", backwards.RunnerOptions{})
 							err = runner.Run(context.Background())
 							assert.Expect(err).To(HaveOccurred())
 							assert.Expect(err.Error()).To(ContainSubstring("assertion failed"))

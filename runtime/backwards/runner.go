@@ -161,7 +161,6 @@ type RunnerOptions struct {
 	WebhookData    *jsapi.WebhookData
 	DedupTTL       time.Duration
 	SecretsManager secrets.Manager
-	AgentRunFunc   AgentRunFunc // override for testing; nil uses agent.RunAgent
 }
 
 // Runner executes a parsed pipeline Config using Go-native execution.
@@ -177,7 +176,6 @@ type Runner struct {
 	webhookData    *jsapi.WebhookData
 	dedupTTL       time.Duration
 	secretsManager secrets.Manager
-	AgentRunFunc   AgentRunFunc
 }
 
 // New creates a Runner for the given pipeline config.
@@ -202,7 +200,6 @@ func New(
 		webhookData:    opts.WebhookData,
 		dedupTTL:       opts.DedupTTL,
 		secretsManager: opts.SecretsManager,
-		AgentRunFunc:   opts.AgentRunFunc,
 	}
 }
 
@@ -220,7 +217,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			return nil
 		}
 
-		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.pipelineID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight, r.notifier, r.webhookData, r.dedupTTL, r.secretsManager, r.AgentRunFunc)
+		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.pipelineID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight, r.notifier, r.webhookData, r.dedupTTL, r.secretsManager)
 
 		err := jr.Run(ctx)
 		if err != nil {
