@@ -418,26 +418,6 @@ func sanitizeCachePath(path string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-func waitForContainer(ctx context.Context, container orchestra.Container) (orchestra.ContainerStatus, error) {
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("context cancelled: %w", ctx.Err())
-		default:
-			status, err := container.Status(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("container status: %w", err)
-			}
-
-			if status.IsDone() {
-				return status, nil
-			}
-
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-}
-
 // loadTaskConfigFromVolume reads a YAML task config from a volume.
 // The filePath format is "mount-name/relative/path/to/file.yml".
 // loadRawBytesFromVolume reads raw bytes from a file inside a mounted volume.

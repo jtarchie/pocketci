@@ -63,9 +63,9 @@ func (h *PutHandler) Execute(sc *StepContext, step *config.Step, pathPrefix stri
 	noGet := step.PutConfig != nil && step.PutConfig.NoGet
 	if !noGet {
 		if isNative {
-			err = h.fetchNative(sc, resource, version)
+			err = fetchNativeResource(sc, resource, version, nil)
 		} else {
-			err = h.fetchContainer(sc, resource, resourceType, version, resourceName, pathPrefix)
+			err = fetchContainerResource(sc, resource, resourceType, version, resourceName, pathPrefix)
 		}
 
 		if err != nil {
@@ -177,70 +177,3 @@ func (h *PutHandler) pushContainer(
 	return result.Version, nil
 }
 
-func (h *PutHandler) fetchNative(
-	sc *StepContext,
-	resource *config.Resource,
-	version map[string]string,
-) error {
-	volName := resourceVolumeName(sc.RunID, resource.Name)
-
-	vol, err := sc.Driver.CreateVolume(sc.Ctx, volName, 0)
-	if err != nil {
-		return fmt.Errorf("create volume for %q: %w", resource.Name, err)
-	}
-
-	sc.KnownVolumes[resource.Name] = volName
-
-	res, err := resources.Get(resource.Type)
-	if err != nil {
-		return fmt.Errorf("get native resource %q: %w", resource.Type, err)
-	}
-
-	_, err = res.In(sc.Ctx, vol.Path(), resources.InRequest{
-		Source:  resource.Source,
-		Version: version,
-	})
-	if err != nil {
-		return fmt.Errorf("native fetch after put %q: %w", resource.Name, err)
-	}
-
-	sc.appendExecutedTask("get-" + resource.Name)
-
-	return nil
-}
-
-func (h *PutHandler) fetchContainer(
-	sc *StepContext,
-	resource *config.Resource,
-	resourceType *config.ResourceType,
-	version map[string]string,
-	resourceName string,
-	pathPrefix string,
-) error {
-	image, _ := resourceType.Source["repository"].(string)
-	volName := resourceVolumeName(sc.RunID, resourceName)
-	sc.KnownVolumes[resourceName] = volName
-
-	mounts := orchestra.Mounts{
-		{Name: volName, Path: resourceName},
-	}
-
-	stdinData, err := resourceStdinJSON(map[string]any{
-		"source":  resource.Source,
-		"version": version,
-	})
-	if err != nil {
-		return err
-	}
-
-	taskName := fmt.Sprintf("get-%s-%s", resourceName, pathPrefix)
-
-	_, err = runResourceContainer(sc, taskName, image, []string{"/opt/resource/in", "./" + resourceName}, mounts, stdinData)
-	if err != nil {
-		return fmt.Errorf("container fetch after put %q: %w", resourceName, err)
-	}
-
-	sc.appendExecutedTask("get-" + resourceName)
-
-	return nil
-}

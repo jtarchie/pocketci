@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	config "github.com/jtarchie/pocketci/backwards"
-	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/resources"
 	"github.com/jtarchie/pocketci/storage"
 )
@@ -46,9 +45,9 @@ func (h *GetHandler) Execute(sc *StepContext, step *config.Step, pathPrefix stri
 	}
 
 	if isNative {
-		err = h.fetchNative(sc, resource, version, step, storageKey)
+		err = fetchNativeResource(sc, resource, version, step.Params)
 	} else {
-		err = h.fetchContainer(sc, resource, resourceType, version, resourceName, pathPrefix)
+		err = fetchContainerResource(sc, resource, resourceType, version, resourceName, pathPrefix)
 	}
 
 	if err != nil {
@@ -242,73 +241,3 @@ func (h *GetHandler) resolveEveryVersion(
 	return versions[len(versions)-1], nil
 }
 
-func (h *GetHandler) fetchNative(
-	sc *StepContext,
-	resource *config.Resource,
-	version map[string]string,
-	step *config.Step,
-	storageKey string,
-) error {
-	volName := resourceVolumeName(sc.RunID, resource.Name)
-
-	vol, err := sc.Driver.CreateVolume(sc.Ctx, volName, 0)
-	if err != nil {
-		return fmt.Errorf("create volume for %q: %w", resource.Name, err)
-	}
-
-	sc.KnownVolumes[resource.Name] = volName
-
-	res, err := resources.Get(resource.Type)
-	if err != nil {
-		return fmt.Errorf("get native resource %q: %w", resource.Type, err)
-	}
-
-	_, err = res.In(sc.Ctx, vol.Path(), resources.InRequest{
-		Source:  resource.Source,
-		Version: version,
-		Params:  paramsToAnyMap(step.Params),
-	})
-	if err != nil {
-		return fmt.Errorf("native fetch %q: %w", resource.Name, err)
-	}
-
-	sc.appendExecutedTask("get-" + resource.Name)
-
-	return nil
-}
-
-func (h *GetHandler) fetchContainer(
-	sc *StepContext,
-	resource *config.Resource,
-	resourceType *config.ResourceType,
-	version map[string]string,
-	resourceName string,
-	pathPrefix string,
-) error {
-	image, _ := resourceType.Source["repository"].(string)
-	volName := resourceVolumeName(sc.RunID, resourceName)
-	sc.KnownVolumes[resourceName] = volName
-
-	mounts := orchestra.Mounts{
-		{Name: volName, Path: resourceName},
-	}
-
-	stdinData, err := resourceStdinJSON(map[string]any{
-		"source":  resource.Source,
-		"version": version,
-	})
-	if err != nil {
-		return err
-	}
-
-	taskName := fmt.Sprintf("get-%s-%s", resourceName, pathPrefix)
-
-	_, err = runResourceContainer(sc, taskName, image, []string{"/opt/resource/in", "./" + resourceName}, mounts, stdinData)
-	if err != nil {
-		return fmt.Errorf("container fetch %q: %w", resourceName, err)
-	}
-
-	sc.appendExecutedTask("get-" + resourceName)
-
-	return nil
-}

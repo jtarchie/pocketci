@@ -2,12 +2,14 @@ package backwards
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/resources"
 )
 
 // findResource looks up a resource by name from the pipeline config.
@@ -94,7 +96,7 @@ func runResourceContainer(sc *StepContext, taskName, image string, command []str
 
 	defer func() { _ = container.Cleanup(sc.Ctx) }()
 
-	status, err := waitForContainerWithTimeout(sc, container)
+	status, err := waitForContainer(sc.Ctx, container)
 	if err != nil {
 		return "", fmt.Errorf("wait for container %q: %w", taskName, err)
 	}
@@ -113,14 +115,14 @@ func runResourceContainer(sc *StepContext, taskName, image string, command []str
 	return stdout.String(), nil
 }
 
-// waitForContainerWithTimeout polls a container for completion.
-func waitForContainerWithTimeout(sc *StepContext, container orchestra.Container) (orchestra.ContainerStatus, error) {
+// waitForContainer polls a container for completion, respecting context cancellation.
+func waitForContainer(ctx context.Context, container orchestra.Container) (orchestra.ContainerStatus, error) {
 	for {
 		select {
-		case <-sc.Ctx.Done():
-			return nil, fmt.Errorf("context cancelled: %w", sc.Ctx.Err())
+		case <-ctx.Done():
+			return nil, fmt.Errorf("context cancelled: %w", ctx.Err())
 		default:
-			status, err := container.Status(sc.Ctx)
+			status, err := container.Status(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("container status: %w", err)
 			}
@@ -132,6 +134,67 @@ func waitForContainerWithTimeout(sc *StepContext, container orchestra.Container)
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
+}
+
+// fetchNativeResource fetches a resource version using the native resource API.
+// params is nil for put's implicit get (no step params needed).
+func fetchNativeResource(sc *StepContext, resource *config.Resource, version map[string]string, params map[string]string) error {
+	volName := resourceVolumeName(sc.RunID, resource.Name)
+
+	vol, err := sc.Driver.CreateVolume(sc.Ctx, volName, 0)
+	if err != nil {
+		return fmt.Errorf("create volume for %q: %w", resource.Name, err)
+	}
+
+	sc.KnownVolumes[resource.Name] = volName
+
+	res, err := resources.Get(resource.Type)
+	if err != nil {
+		return fmt.Errorf("get native resource %q: %w", resource.Type, err)
+	}
+
+	_, err = res.In(sc.Ctx, vol.Path(), resources.InRequest{
+		Source:  resource.Source,
+		Version: version,
+		Params:  paramsToAnyMap(params),
+	})
+	if err != nil {
+		return fmt.Errorf("native fetch %q: %w", resource.Name, err)
+	}
+
+	sc.appendExecutedTask("get-" + resource.Name)
+
+	return nil
+}
+
+// fetchContainerResource fetches a resource version using a resource container (/opt/resource/in).
+func fetchContainerResource(sc *StepContext, resource *config.Resource, resourceType *config.ResourceType, version map[string]string, resourceName, pathPrefix string) error {
+	image, _ := resourceType.Source["repository"].(string)
+	volName := resourceVolumeName(sc.RunID, resourceName)
+	sc.KnownVolumes[resourceName] = volName
+
+	mounts := orchestra.Mounts{
+		{Name: volName, Path: resourceName},
+	}
+
+	stdinData, err := resourceStdinJSON(map[string]any{
+		"source":  resource.Source,
+		"version": version,
+	})
+	if err != nil {
+		return err
+	}
+
+	taskName := fmt.Sprintf("get-%s-%s", resourceName, pathPrefix)
+
+	_, err = runResourceContainer(sc, taskName, image, []string{"/opt/resource/in", "./" + resourceName}, mounts, stdinData)
+	if err != nil {
+		return fmt.Errorf("container fetch %q: %w", resourceName, err)
+	}
+
+	sc.appendExecutedTask("get-" + resourceName)
+
+	return nil
 }
 
 // resourceStdinJSON builds the JSON stdin payload for a resource container operation.
