@@ -49,6 +49,20 @@ changelog:
       - "^chore:"
       - Merge pull request
 
+brews:
+  - name: pocketci
+    repository:
+      owner: jtarchie
+      name: pocketci
+    homepage: "https://github.com/jtarchie/pocketci"
+    description: "Local-first CI/CD runtime with JavaScript/TypeScript pipelines"
+    license: "MIT"
+    skip_upload: auto
+    install: |
+      bin.install "pocketci"
+    test: |
+      system "#{bin}/pocketci", "--version"
+
 release:
   github:
     owner: jtarchie

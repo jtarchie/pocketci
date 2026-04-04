@@ -35,6 +35,14 @@ If you're coming from Concourse CI, PocketCI also supports YAML pipelines with
 backward compatibility. See the
 [YAML Pipelines guide](docs/guides/yaml-pipelines.md) for details.
 
+## Installation
+
+```bash
+brew install jtarchie/pocketci/pocketci
+```
+
+Or download a pre-built binary from the [releases page](https://github.com/jtarchie/pocketci/releases).
+
 ## Running it
 
 With Docker running, a single command executes a pipeline:
