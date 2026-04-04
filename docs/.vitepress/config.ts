@@ -26,6 +26,7 @@ export default defineConfig({
         { text: "Webhooks", link: "/guides/webhooks" },
         { text: "Scheduling", link: "/guides/scheduling" },
         { text: "MCP", link: "/guides/mcp" },
+        { text: "YAML Pipelines", link: "/guides/yaml-pipelines" },
       ],
       "/operations/": [
         { text: "Overview", link: "/operations/" },

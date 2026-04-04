@@ -4,6 +4,10 @@ The runtime is the JavaScript/TypeScript execution environment for pipelines. It
 provides globals and functions for running containers, managing volumes, sending
 HTTP requests, and accessing pipeline context.
 
+> **YAML pipelines** use a separate execution path and do not have access to
+> this JS API. See the [YAML Pipelines guide](../guides/yaml-pipelines.md) for
+> the Concourse-compatible declarative format.
+
 ## Global API
 
 All pipelines have access to these globals:

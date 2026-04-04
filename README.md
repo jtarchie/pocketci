@@ -32,7 +32,7 @@ full expressiveness of TypeScript -- loops, conditionals, error handling, shared
 volumes -- and it all runs inside containers managed by PocketCI.
 
 If you're coming from Concourse CI, PocketCI also supports YAML pipelines with
-backward compatibility. See the [guides](docs/guides/) for more on both formats.
+backward compatibility. See the [YAML Pipelines guide](docs/guides/yaml-pipelines.md) for details.
 
 ## Running it
 
