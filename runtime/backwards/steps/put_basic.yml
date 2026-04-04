@@ -40,4 +40,6 @@ jobs:
           code: 0
     assert:
       execution:
+        - put-my-output
+        - get-my-output
         - verify-put

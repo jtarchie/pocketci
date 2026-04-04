@@ -49,6 +49,8 @@ jobs:
           code: 0
     assert:
       execution:
+        - check-my-resource
+        - get-my-resource
         - verify-latest
 
   # Test version: pinned - uses exact version specified
@@ -74,6 +76,7 @@ jobs:
           code: 0
     assert:
       execution:
+        - get-pinned-resource
         - verify-pinned
 
   # Test version: every - processes new versions since last check
@@ -100,4 +103,6 @@ jobs:
           code: 0
     assert:
       execution:
+        - check-every-resource
+        - get-every-resource
         - verify-every

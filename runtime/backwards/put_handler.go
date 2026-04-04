@@ -124,6 +124,10 @@ func (h *PutHandler) pushNative(
 		return nil, fmt.Errorf("native push %q: %w", resource.Name, err)
 	}
 
+	sc.ExecutedTasksMu.Lock()
+	sc.ExecutedTasks = append(sc.ExecutedTasks, "put-"+resource.Name)
+	sc.ExecutedTasksMu.Unlock()
+
 	return resp.Version, nil
 }
 
@@ -203,6 +207,10 @@ func (h *PutHandler) fetchNative(
 	if err != nil {
 		return fmt.Errorf("native fetch after put %q: %w", resource.Name, err)
 	}
+
+	sc.ExecutedTasksMu.Lock()
+	sc.ExecutedTasks = append(sc.ExecutedTasks, "get-"+resource.Name)
+	sc.ExecutedTasksMu.Unlock()
 
 	return nil
 }

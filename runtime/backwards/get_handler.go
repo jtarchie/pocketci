@@ -164,6 +164,10 @@ func (h *GetHandler) checkNative(
 		versions[i] = v
 	}
 
+	sc.ExecutedTasksMu.Lock()
+	sc.ExecutedTasks = append(sc.ExecutedTasks, "check-"+resource.Name)
+	sc.ExecutedTasksMu.Unlock()
+
 	return versions, nil
 }
 
@@ -271,6 +275,10 @@ func (h *GetHandler) fetchNative(
 	if err != nil {
 		return fmt.Errorf("native fetch %q: %w", resource.Name, err)
 	}
+
+	sc.ExecutedTasksMu.Lock()
+	sc.ExecutedTasks = append(sc.ExecutedTasks, "get-"+resource.Name)
+	sc.ExecutedTasksMu.Unlock()
 
 	return nil
 }
