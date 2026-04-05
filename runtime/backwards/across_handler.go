@@ -1,6 +1,7 @@
 package backwards
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -114,15 +115,19 @@ func executeAcross(
 	}
 
 	var (
-		g    *errgroup.Group
-		gCtx = sc.Ctx
+		g      *errgroup.Group
+		gCtx   = sc.Ctx
+		cancel context.CancelFunc = func() {}
 	)
 
 	if failFast {
-		g, gCtx = errgroup.WithContext(sc.Ctx)
+		gCtx, cancel = context.WithCancel(sc.Ctx)
+		g = &errgroup.Group{}
 	} else {
 		g = &errgroup.Group{}
 	}
+
+	defer cancel()
 
 	sem := semaphore.NewWeighted(int64(limit))
 
@@ -135,8 +140,6 @@ func executeAcross(
 		combo := combination
 
 		g.Go(func() error {
-			defer sem.Release(1)
-
 			expanded := expandAcrossStep(step, combo, step.Across)
 
 			varParts := make([]string, 0, len(step.Across))
@@ -147,7 +150,12 @@ func executeAcross(
 			varContext := strings.Join(varParts, "_")
 			innerPrefix := fmt.Sprintf("%s/across/%d_%s", pathPrefix, idx, varContext)
 
-			return processStep(&expanded, innerPrefix)
+			err := processStep(&expanded, innerPrefix)
+			if err != nil {
+				cancel() // cancel context BEFORE releasing semaphore to prevent race
+			}
+			sem.Release(1)
+			return err
 		})
 	}
 
