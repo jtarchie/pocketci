@@ -146,7 +146,8 @@ func (r *ResumableRunner) Run(input RunInput) (*RunResult, error) {
 	if existingStep.ShouldRetry() {
 		r.logger.Info("resume.retry_step", "stepID", stepID, "name", input.Name, "previousStatus", existingStep.Status)
 		existingStep.MarkForRetry()
-		if err := r.saveState(); err != nil {
+		err := r.saveState()
+		if err != nil {
 			r.logger.Error("resume.save_state_failed.retry", "stepID", stepID, "err", err)
 		}
 		// Fall through to run fresh
@@ -244,7 +245,8 @@ func (r *ResumableRunner) runStep(stepID string, input RunInput) (*RunResult, er
 		r.logger.Error("resume.save_state_failed.completed", "stepID", stepID, "err", err)
 	}
 
-	if cleanupErr := container.Cleanup(ctx); cleanupErr != nil {
+	cleanupErr := container.Cleanup(ctx)
+	if cleanupErr != nil {
 		r.logger.Error("container.cleanup", "err", cleanupErr)
 	}
 
@@ -313,7 +315,8 @@ func (r *ResumableRunner) waitAndCollectStepResult(ctx context.Context, containe
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			step.Status = StepStatusAborted
 			_ = r.saveState()
-			if cleanupErr := container.Cleanup(context.Background()); cleanupErr != nil { //nolint:contextcheck // cleanup after cancellation needs fresh context
+			cleanupErr := container.Cleanup(context.Background()) //nolint:contextcheck // cleanup after cancellation needs fresh context
+			if cleanupErr != nil {
 				r.logger.Error("container.cleanup.abort", "err", cleanupErr)
 			}
 			return &RunResult{Status: RunAbort}, nil
@@ -331,7 +334,8 @@ func (r *ResumableRunner) waitAndCollectStepResult(ctx context.Context, containe
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			step.Status = StepStatusAborted
 			_ = r.saveState()
-			if cleanupErr := container.Cleanup(context.Background()); cleanupErr != nil { //nolint:contextcheck // cleanup after cancellation needs fresh context
+			cleanupErr := container.Cleanup(context.Background()) //nolint:contextcheck // cleanup after cancellation needs fresh context
+			if cleanupErr != nil {
 				r.logger.Error("container.cleanup.abort", "err", cleanupErr)
 			}
 			return &RunResult{Status: RunAbort}, nil
@@ -454,7 +458,8 @@ func (r *ResumableRunner) CreateVolume(input VolumeInput) (*VolumeResult, error)
 		Path: result.Path,
 	}
 
-	if saveErr := r.saveState(); saveErr != nil {
+	saveErr := r.saveState()
+	if saveErr != nil {
 		r.logger.Error("resume.save_state_failed.volume", "name", input.Name, "err", saveErr)
 	}
 
@@ -515,7 +520,8 @@ func (r *ResumableRunner) RunAgent(configJSON json.RawMessage) (json.RawMessage,
 	if existingStep != nil && existingStep.ShouldRetry() {
 		r.logger.Info("resume.retry_agent", "stepID", stepID, "name", name, "previousStatus", existingStep.Status)
 		existingStep.MarkForRetry()
-		if err := r.saveState(); err != nil {
+		err := r.saveState()
+		if err != nil {
 			r.logger.Error("resume.save_state_failed.agent_retry", "stepID", stepID, "err", err)
 		}
 	}
@@ -524,7 +530,8 @@ func (r *ResumableRunner) RunAgent(configJSON json.RawMessage) (json.RawMessage,
 	if existingStep != nil && existingStep.Status == StepStatusRunning {
 		r.logger.Info("resume.agent_was_running", "stepID", stepID, "name", name)
 		existingStep.MarkForRetry()
-		if err := r.saveState(); err != nil {
+		err := r.saveState()
+		if err != nil {
 			r.logger.Error("resume.save_state_failed.agent_running", "stepID", stepID, "err", err)
 		}
 	}
@@ -574,7 +581,8 @@ func (r *ResumableRunner) MarkInProgressAsAborted() {
 		step.Error = "context cancelled"
 	}
 
-	if err := r.saveState(); err != nil {
+	err := r.saveState()
+	if err != nil {
 		r.logger.Error("resume.save_state_failed.abort_cleanup", "err", err)
 	}
 }
