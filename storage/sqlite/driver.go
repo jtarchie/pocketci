@@ -763,14 +763,16 @@ func paginatedSearch[S any, T any](
 	}
 
 	var totalItems int
-	if err := sqlscan.Get(ctx, db, &totalItems, cntSQL, args...); err != nil {
+	err := sqlscan.Get(ctx, db, &totalItems, cntSQL, args...)
+	if err != nil {
 		return nil, fmt.Errorf("failed to count results: %w", err)
 	}
 
 	selectArgs := append(args, perPage, offset) //nolint:gocritic // intentional new slice
 
 	var rows []S
-	if err := sqlscan.Select(ctx, db, &rows, selSQL, selectArgs...); err != nil {
+	err = sqlscan.Select(ctx, db, &rows, selSQL, selectArgs...)
+	if err != nil {
 		return nil, fmt.Errorf("failed to query results: %w", err)
 	}
 

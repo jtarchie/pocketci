@@ -18,7 +18,8 @@ func (n *Native) CopyToVolume(_ context.Context, volumeName string, reader io.Re
 	volumePath := filepath.Join(n.path, volumeName)
 
 	// Ensure volume directory exists
-	if err := os.MkdirAll(volumePath, os.ModePerm); err != nil {
+	err := os.MkdirAll(volumePath, os.ModePerm)
+	if err != nil {
 		return fmt.Errorf("failed to create volume directory: %w", err)
 	}
 
@@ -42,7 +43,8 @@ func (n *Native) CopyToVolume(_ context.Context, volumeName string, reader io.Re
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
+			err := os.MkdirAll(target, os.FileMode(header.Mode))
+			if err != nil {
 				return fmt.Errorf("failed to create directory: %w", err)
 			}
 		case tar.TypeReg:
@@ -65,11 +67,13 @@ func (n *Native) CopyToVolume(_ context.Context, volumeName string, reader io.Re
 			_ = file.Close()
 		case tar.TypeSymlink:
 			// Ensure parent directory exists
-			if err := os.MkdirAll(filepath.Dir(target), os.ModePerm); err != nil {
+			err := os.MkdirAll(filepath.Dir(target), os.ModePerm)
+			if err != nil {
 				return fmt.Errorf("failed to create parent directory: %w", err)
 			}
 
-			if err := os.Symlink(header.Linkname, target); err != nil {
+			err = os.Symlink(header.Linkname, target)
+			if err != nil {
 				return fmt.Errorf("failed to create symlink: %w", err)
 			}
 		}
@@ -143,7 +147,8 @@ func (n *Native) ReadFilesFromVolume(_ context.Context, volumeName string, fileP
 			return
 		}
 
-		if err := tw.Close(); err != nil {
+		err := tw.Close()
+		if err != nil {
 			pw.CloseWithError(err)
 
 			return

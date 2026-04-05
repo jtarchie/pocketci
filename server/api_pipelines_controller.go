@@ -268,24 +268,28 @@ func (c *APIPipelinesController) validateSecrets(ctx context.Context, name strin
 func (c *APIPipelinesController) persistSecrets(ctx context.Context, pipeline *storage.Pipeline, req PipelineRequest) error {
 	scope := secrets.PipelineScope(pipeline.ID)
 
-	if err := c.secretsMgr.Set(ctx, scope, pipelineDriverSecretKey, req.Driver); err != nil {
+	err := c.secretsMgr.Set(ctx, scope, pipelineDriverSecretKey, req.Driver)
+	if err != nil {
 		return fmt.Errorf("failed to store driver: %w", err)
 	}
 
 	// Store driver config as a single JSON secret
 	if len(req.DriverConfig) > 0 {
-		if err := c.secretsMgr.Set(ctx, scope, "driver_config", string(req.DriverConfig)); err != nil {
+		err := c.secretsMgr.Set(ctx, scope, "driver_config", string(req.DriverConfig))
+		if err != nil {
 			return fmt.Errorf("failed to store driver config: %w", err)
 		}
 	}
 
 	if req.WebhookSecret != nil {
 		if *req.WebhookSecret == "" {
-			if err := c.secretsMgr.Delete(ctx, scope, "webhook_secret"); err != nil && !errors.Is(err, secrets.ErrNotFound) {
+			err := c.secretsMgr.Delete(ctx, scope, "webhook_secret")
+			if err != nil && !errors.Is(err, secrets.ErrNotFound) {
 				return fmt.Errorf("failed to delete webhook secret: %w", err)
 			}
 		} else {
-			if err := c.secretsMgr.Set(ctx, scope, "webhook_secret", *req.WebhookSecret); err != nil {
+			err := c.secretsMgr.Set(ctx, scope, "webhook_secret", *req.WebhookSecret)
+			if err != nil {
 				return fmt.Errorf("failed to store webhook secret: %w", err)
 			}
 		}
@@ -299,7 +303,8 @@ func (c *APIPipelinesController) persistSecrets(ctx context.Context, pipeline *s
 		sort.Strings(sortedKeys)
 
 		for _, key := range sortedKeys {
-			if err := c.secretsMgr.Set(ctx, scope, key, req.Secrets[key]); err != nil {
+			err := c.secretsMgr.Set(ctx, scope, key, req.Secrets[key])
+			if err != nil {
 				return fmt.Errorf("failed to store secret %q: %w", key, err)
 			}
 		}
@@ -326,7 +331,8 @@ func (c *APIPipelinesController) validateUpsertRequest(ctx *echo.Context, name s
 		req.Driver = c.execService.DefaultDriver
 	}
 
-	if err := orchestra.IsDriverAllowed(req.Driver, c.allowedDrivers); err != nil {
+	err := orchestra.IsDriverAllowed(req.Driver, c.allowedDrivers)
+	if err != nil {
 		return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 			"error": fmt.Sprintf("driver not allowed: %v", err),
 		})
@@ -344,7 +350,8 @@ func (c *APIPipelinesController) validateUpsertRequest(ctx *echo.Context, name s
 		})
 	}
 
-	if err := c.validateSecrets(ctx.Request().Context(), name, *req); err != nil {
+	err = c.validateSecrets(ctx.Request().Context(), name, *req)
+	if err != nil {
 		return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 			"error": err.Error(),
 		})
@@ -376,7 +383,8 @@ func (c *APIPipelinesController) upsertPostSave(ctx *echo.Context, pipeline *sto
 	}
 
 	if req.ResumeEnabled != nil {
-		if err := c.store.UpdatePipeline(ctx.Request().Context(), pipeline.ID, storage.PipelineUpdate{ResumeEnabled: req.ResumeEnabled}); err != nil {
+		err := c.store.UpdatePipeline(ctx.Request().Context(), pipeline.ID, storage.PipelineUpdate{ResumeEnabled: req.ResumeEnabled})
+		if err != nil {
 			return respondJSON(ctx, http.StatusInternalServerError, map[string]string{
 				"error": fmt.Sprintf("failed to update resume_enabled: %v", err),
 			})
@@ -393,7 +401,8 @@ func (c *APIPipelinesController) upsertPostSave(ctx *echo.Context, pipeline *sto
 				})
 			}
 
-			if err := auth.ValidateExpression(*req.RBACExpression); err != nil {
+			err := auth.ValidateExpression(*req.RBACExpression)
+			if err != nil {
 				return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 					"error": fmt.Sprintf("invalid RBAC expression: %v", err),
 				})
@@ -402,7 +411,8 @@ func (c *APIPipelinesController) upsertPostSave(ctx *echo.Context, pipeline *sto
 
 		oldExpression := pipeline.RBACExpression
 
-		if err := c.store.UpdatePipeline(ctx.Request().Context(), pipeline.ID, storage.PipelineUpdate{RBACExpression: req.RBACExpression}); err != nil {
+		err := c.store.UpdatePipeline(ctx.Request().Context(), pipeline.ID, storage.PipelineUpdate{RBACExpression: req.RBACExpression})
+		if err != nil {
 			return respondJSON(ctx, http.StatusInternalServerError, map[string]string{
 				"error": fmt.Sprintf("failed to update rbac_expression: %v", err),
 			})
@@ -446,7 +456,8 @@ func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
 	}
 
 	if existing != nil {
-		if err := checkPipelineRBAC(ctx, existing); err != nil {
+		err := checkPipelineRBAC(ctx, existing)
+		if err != nil {
 			return nil //nolint:nilerr // helper already wrote the HTTP response
 		}
 	}

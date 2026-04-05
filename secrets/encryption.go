@@ -31,7 +31,8 @@ type KDFParams struct {
 func DefaultKDFParams() (KDFParams, error) {
 	salt := make([]byte, 16)
 
-	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+	_, err := io.ReadFull(rand.Reader, salt)
+	if err != nil {
 		return KDFParams{}, fmt.Errorf("could not generate KDF salt: %w", err)
 	}
 

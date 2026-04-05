@@ -621,13 +621,15 @@ func (v *VZ) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.C
 
 // CreateVolume creates a shared directory accessible to the guest.
 func (v *VZ) CreateVolume(ctx context.Context, name string, _ int) (orchestra.Volume, error) {
-	if err := v.ensureVM(ctx); err != nil {
+	err := v.ensureVM(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("failed to ensure VM: %w", err)
 	}
 
 	hostPath := filepath.Join(v.volumesDir, name)
 
-	if err := os.MkdirAll(hostPath, 0o755); err != nil {
+	err = os.MkdirAll(hostPath, 0o755)
+	if err != nil {
 		return nil, fmt.Errorf("failed to create volume dir: %w", err)
 	}
 
@@ -684,7 +686,8 @@ func (v *VZ) Close() error {
 		}
 
 		if !gracefullyStopped {
-			if err := v.vm.Stop(); err != nil {
+			err := v.vm.Stop()
+			if err != nil {
 				errs = append(errs, fmt.Errorf("failed to stop VM: %w", err))
 			}
 		}
@@ -692,7 +695,8 @@ func (v *VZ) Close() error {
 
 	// Clean up temp directory
 	if v.tempDir != "" {
-		if err := os.RemoveAll(v.tempDir); err != nil {
+		err := os.RemoveAll(v.tempDir)
+		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to remove temp dir: %w", err))
 		}
 	}

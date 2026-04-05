@@ -231,7 +231,8 @@ func (v *CachingVolume) persistWithHashCheck(
 		return fmt.Errorf("failed to read compressed data: %w", err)
 	}
 
-	if compressErr := <-errChan; compressErr != nil {
+	compressErr := <-errChan
+	if compressErr != nil {
 		return fmt.Errorf("compression failed: %w", compressErr)
 	}
 
@@ -252,7 +253,8 @@ func (v *CachingVolume) persistWithHashCheck(
 		return nil
 	}
 
-	if err := hashStore.PersistWithHash(ctx, v.cacheKey, bytes.NewReader(compressed), newHash); err != nil {
+	err = hashStore.PersistWithHash(ctx, v.cacheKey, bytes.NewReader(compressed), newHash)
+	if err != nil {
 		return fmt.Errorf("failed to persist to cache: %w", err)
 	}
 
@@ -264,11 +266,13 @@ func (v *CachingVolume) persistDirect(
 	pipeReader *io.PipeReader,
 	errChan <-chan error,
 ) error {
-	if err := v.store.Persist(ctx, v.cacheKey, pipeReader); err != nil {
+	err := v.store.Persist(ctx, v.cacheKey, pipeReader)
+	if err != nil {
 		return fmt.Errorf("failed to persist to cache: %w", err)
 	}
 
-	if compressErr := <-errChan; compressErr != nil {
+	compressErr := <-errChan
+	if compressErr != nil {
 		return fmt.Errorf("compression failed: %w", compressErr)
 	}
 
@@ -279,7 +283,8 @@ func (v *CachingVolume) persistDirect(
 // Persists to cache before cleaning up the underlying volume.
 func (v *CachingVolume) Cleanup(ctx context.Context) error {
 	// Persist to cache before cleanup
-	if err := v.PersistToCache(ctx); err != nil {
+	err := v.PersistToCache(ctx)
+	if err != nil {
 		v.logger.Warn("volume.persist.failed",
 			"volume", v.inner.Name(),
 			"error", err,

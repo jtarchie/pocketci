@@ -210,65 +210,78 @@ func (j *JS) setupJSVM(
 
 	_ = jsVM.Set("console", require.Require(jsVM, "console"))
 
-	if err := jsVM.Set("assert", jsapi.NewAssert(jsVM, j.logger)); err != nil {
+	err := jsVM.Set("assert", jsapi.NewAssert(jsVM, j.logger))
+	if err != nil {
 		return fmt.Errorf("could not set assert: %w", err)
 	}
 
 	yamlHelper := jsapi.NewYAML(jsVM, j.logger)
-	if err := jsVM.Set("yaml", yamlHelper); err != nil {
+	err = jsVM.Set("yaml", yamlHelper)
+	if err != nil {
 		return fmt.Errorf("could not set yaml: %w", err)
 	}
 	// Deprecated alias for backwards compatibility
-	if err := jsVM.Set("YAML", yamlHelper); err != nil {
+	err = jsVM.Set("YAML", yamlHelper)
+	if err != nil {
 		return fmt.Errorf("could not set YAML: %w", err)
 	}
 
 	// Register new focused namespaces
 	volumesNS := runtime.Volumes()
-	if err := jsVM.Set("volumes", volumesNS); err != nil {
+	err = jsVM.Set("volumes", volumesNS)
+	if err != nil {
 		return fmt.Errorf("could not set volumes: %w", err)
 	}
 
 	agentNS := runtime.AgentRT()
-	if err := jsVM.Set("agent", agentNS); err != nil {
+	err = jsVM.Set("agent", agentNS)
+	if err != nil {
 		return fmt.Errorf("could not set agent: %w", err)
 	}
 
-	if err := jsVM.Set("runtime", runtime); err != nil {
+	err = jsVM.Set("runtime", runtime)
+	if err != nil {
 		return fmt.Errorf("could not set runtime: %w", err)
 	}
 
 	pipelineNS := runtime.PipelineNS()
-	if err := jsVM.Set("pipeline", pipelineNS); err != nil {
+	err = jsVM.Set("pipeline", pipelineNS)
+	if err != nil {
 		return fmt.Errorf("could not set pipeline: %w", err)
 	}
 
-	if err := j.setupNotifyAndResources(ctx, jsVM, runtime, opts); err != nil {
+	err = j.setupNotifyAndResources(ctx, jsVM, runtime, opts)
+	if err != nil {
 		return err
 	}
 
 	storageWrapper := &storageContextWrapper{driver: storage, ctx: ctx}
-	if err := jsVM.Set("storage", storageWrapper); err != nil {
+	err = jsVM.Set("storage", storageWrapper)
+	if err != nil {
 		return fmt.Errorf("could not set storage: %w", err)
 	}
 
 	fetchRuntime := jsapi.NewFetchRuntime(ctx, jsVM, runtime.promises, runtime.tasks, opts.FetchTimeout, opts.FetchMaxResponseBytes)
 	fetchRuntime.Disabled = opts.DisableFetch
 
-	if err := jsVM.Set("fetch", fetchRuntime.Fetch); err != nil {
+	err = jsVM.Set("fetch", fetchRuntime.Fetch)
+	if err != nil {
 		return fmt.Errorf("could not set fetch: %w", err)
 	}
 
 	httpRuntime := jsapi.NewHTTPRuntime(jsVM, opts.WebhookData, opts.ResponseChan)
-	if err := jsVM.Set("http", httpRuntime); err != nil {
+	err = jsVM.Set("http", httpRuntime)
+	if err != nil {
 		return fmt.Errorf("could not set http: %w", err)
 	}
 
-	if err := j.setupWebhookBindings(ctx, jsVM, storage, opts); err != nil {
+	err = j.setupWebhookBindings(ctx, jsVM, storage, opts)
+	if err != nil {
 		return err
 	}
 
-	if err := j.setupTriggerPipeline(ctx, jsVM, runtime, opts); err != nil {
+	err = j.setupTriggerPipeline(ctx, jsVM, runtime, opts)
+	if err != nil {
 		return err
 	}
 
@@ -286,7 +299,8 @@ func (j *JS) setupNotifyAndResources(ctx context.Context, jsVM *goja.Runtime, rt
 
 	notifyRuntime := jsapi.NewNotifyRuntime(ctx, jsVM, notifier, rt.promises, rt.tasks)
 
-	if err := jsVM.Set("notify", notifyRuntime); err != nil {
+	err := jsVM.Set("notify", notifyRuntime)
+	if err != nil {
 		return fmt.Errorf("could not set notify: %w", err)
 	}
 
@@ -295,7 +309,8 @@ func (j *JS) setupNotifyAndResources(ctx context.Context, jsVM *goja.Runtime, rt
 		resourceRunner.SetSecretsManager(opts.SecretsManager, opts.PipelineID)
 	}
 
-	if err := jsVM.Set("nativeResources", resourceRunner); err != nil {
+	err = jsVM.Set("nativeResources", resourceRunner)
+	if err != nil {
 		return fmt.Errorf("could not set nativeResources: %w", err)
 	}
 
@@ -307,7 +322,7 @@ const defaultDedupTTL = 7 * 24 * time.Hour
 
 // setupWebhookBindings registers webhookTrigger, webhookParams, and webhookDedup on the VM.
 func (j *JS) setupWebhookBindings(ctx context.Context, jsVM *goja.Runtime, store storage.Driver, opts ExecuteOptions) error {
-	if err := jsVM.Set("webhookTrigger", func(expression string) bool {
+	err := jsVM.Set("webhookTrigger", func(expression string) bool {
 		if opts.WebhookData == nil {
 			return true
 		}
@@ -322,11 +337,12 @@ func (j *JS) setupWebhookBindings(ctx context.Context, jsVM *goja.Runtime, store
 		}
 
 		return result
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("could not set webhookTrigger: %w", err)
 	}
 
-	if err := jsVM.Set("webhookParams", func(paramsExprs map[string]string) map[string]string {
+	err = jsVM.Set("webhookParams", func(paramsExprs map[string]string) map[string]string {
 		result := make(map[string]string, len(paramsExprs))
 
 		if opts.WebhookData == nil {
@@ -347,13 +363,15 @@ func (j *JS) setupWebhookBindings(ctx context.Context, jsVM *goja.Runtime, store
 		}
 
 		return result
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("could not set webhookParams: %w", err)
 	}
 
-	if err := jsVM.Set("webhookDedup", func(expression string) bool {
+	err = jsVM.Set("webhookDedup", func(expression string) bool {
 		return j.evaluateWebhookDedup(ctx, store, opts, expression)
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("could not set webhookDedup: %w", err)
 	}
 
@@ -408,9 +426,10 @@ func buildWebhookEnv(wd *jsapi.WebhookData) filter.WebhookEnv {
 func (j *JS) setupTriggerPipeline(ctx context.Context, jsVM *goja.Runtime, rt *Runtime, opts ExecuteOptions) error {
 	if opts.TriggerCallback == nil {
 		// No callback provided -- register a no-op that returns an error.
-		if err := jsVM.Set("triggerPipeline", func(_ goja.FunctionCall) goja.Value {
+		err := jsVM.Set("triggerPipeline", func(_ goja.FunctionCall) goja.Value {
 			panic(jsVM.NewGoError(errors.New("triggerPipeline is not available in this execution context")))
-		}); err != nil {
+		})
+		if err != nil {
 			return fmt.Errorf("could not set triggerPipeline: %w", err)
 		}
 
@@ -428,13 +447,15 @@ func (j *JS) setupTriggerPipeline(ctx context.Context, jsVM *goja.Runtime, rt *R
 			obj := optsArg.ToObject(jsVM)
 
 			if jobsVal := obj.Get("jobs"); jobsVal != nil && !goja.IsUndefined(jobsVal) {
-				if err := jsVM.ExportTo(jobsVal, &jobs); err != nil {
+				err := jsVM.ExportTo(jobsVal, &jobs)
+				if err != nil {
 					panic(jsVM.NewGoError(fmt.Errorf("triggerPipeline: invalid jobs: %w", err)))
 				}
 			}
 
 			if argsVal := obj.Get("args"); argsVal != nil && !goja.IsUndefined(argsVal) {
-				if err := jsVM.ExportTo(argsVal, &args); err != nil {
+				err := jsVM.ExportTo(argsVal, &args)
+				if err != nil {
 					panic(jsVM.NewGoError(fmt.Errorf("triggerPipeline: invalid args: %w", err)))
 				}
 			}
@@ -464,7 +485,8 @@ func (j *JS) setupTriggerPipeline(ctx context.Context, jsVM *goja.Runtime, rt *R
 		return jsVM.ToValue(promise)
 	}
 
-	if err := jsVM.Set("triggerPipeline", triggerFn); err != nil {
+	err := jsVM.Set("triggerPipeline", triggerFn)
+	if err != nil {
 		return fmt.Errorf("could not set triggerPipeline: %w", err)
 	}
 
@@ -500,7 +522,8 @@ func (j *JS) setupPipelineContext(jsVM *goja.Runtime, runtime *Runtime, driver o
 		pipelineContext["driverName"] = driver.Name()
 	}
 
-	if err := jsVM.Set("pipelineContext", pipelineContext); err != nil {
+	err := jsVM.Set("pipelineContext", pipelineContext)
+	if err != nil {
 		return fmt.Errorf("could not set pipelineContext: %w", err)
 	}
 
@@ -551,7 +574,8 @@ func (j *JS) runPipeline(ctx context.Context, jsVM *goja.Runtime, program *goja.
 		}
 	}
 
-	if cleanupErr := r.CleanupVolumes(); cleanupErr != nil {
+	cleanupErr := r.CleanupVolumes()
+	if cleanupErr != nil {
 		j.logger.Error("volume.cleanup.failed", "err", cleanupErr)
 	}
 

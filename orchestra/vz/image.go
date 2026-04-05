@@ -50,7 +50,8 @@ func downloadImage(cacheDir string) (string, error) {
 		return rawPath, nil
 	}
 
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+	err := os.MkdirAll(cacheDir, 0o755)
+	if err != nil {
 		return "", fmt.Errorf("failed to create cache dir: %w", err)
 	}
 
@@ -96,7 +97,8 @@ func downloadImage(cacheDir string) (string, error) {
 	}
 
 	// Convert qcow2 to raw format for Apple Virtualization framework
-	if err := convertToRaw(qcow2Path, rawPath); err != nil {
+	err = convertToRaw(qcow2Path, rawPath)
+	if err != nil {
 		return "", fmt.Errorf("failed to convert image to raw: %w", err)
 	}
 

@@ -140,7 +140,6 @@ func (q *QEMU) ensureVM(ctx context.Context) error {
 
 // bootVM performs the actual VM boot. Called once by ensureVM.
 func (q *QEMU) bootVM(ctx context.Context) error {
-
 	q.logger.Info("qemu.vm.starting", "namespace", q.namespace)
 
 	// Create temp dir for runtime files
@@ -614,13 +613,15 @@ func (q *QEMU) RunContainer(ctx context.Context, task orchestra.Task) (orchestra
 
 // CreateVolume creates a shared directory accessible to the guest.
 func (q *QEMU) CreateVolume(ctx context.Context, name string, _ int) (orchestra.Volume, error) {
-	if err := q.ensureVM(ctx); err != nil {
+	err := q.ensureVM(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("failed to ensure VM: %w", err)
 	}
 
 	hostPath := filepath.Join(q.volumesDir, name)
 
-	if err := os.MkdirAll(hostPath, 0o755); err != nil {
+	err = os.MkdirAll(hostPath, 0o755)
+	if err != nil {
 		return nil, fmt.Errorf("failed to create volume dir: %w", err)
 	}
 
@@ -676,7 +677,8 @@ func (q *QEMU) Close() error {
 
 	// Clean up temp directory
 	if q.tempDir != "" {
-		if err := os.RemoveAll(q.tempDir); err != nil {
+		err := os.RemoveAll(q.tempDir)
+		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to remove temp dir: %w", err))
 		}
 	}

@@ -81,7 +81,8 @@ func (d *CachingDriver) CreateVolume(ctx context.Context, name string, size int)
 	)
 
 	// Eagerly restore from cache
-	if err := cachingVol.RestoreFromCache(ctx); err != nil {
+	err = cachingVol.RestoreFromCache(ctx)
+	if err != nil {
 		d.logger.Warn("volume.restore.failed",
 			"volume", name,
 			"error", err,

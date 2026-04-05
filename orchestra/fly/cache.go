@@ -197,7 +197,8 @@ func (f *Fly) launchHelperMachine(ctx context.Context, vol *Volume) (*fly.Machin
 func (f *Fly) destroyHelperMachine(ctx context.Context, machineID string) {
 	f.logger.Debug("fly.cache.helper.suspend", "machine", machineID)
 
-	if err := f.client.Suspend(ctx, f.appName, machineID, ""); err != nil {
+	err := f.client.Suspend(ctx, f.appName, machineID, "")
+if  err != nil {
 		f.logger.Warn("fly.cache.helper.suspend.failed", "machine", machineID, "err", err)
 		// Fall back to a hard destroy so we don't leak the machine.
 		f.mu.Lock()
@@ -222,7 +223,8 @@ func (f *Fly) destroyHelperMachine(ctx context.Context, machineID string) {
 
 	// Wait for the machine to reach a fully suspended state.
 	machine := &fly.Machine{ID: machineID}
-	if err := f.client.Wait(ctx, f.appName, machine.ID, flaps.WithWaitStates("suspended"), flaps.WithWaitTimeout(30*time.Second)); err != nil {
+	err = f.client.Wait(ctx, f.appName, machine.ID, flaps.WithWaitStates("suspended"), flaps.WithWaitTimeout(30*time.Second))
+	if err != nil {
 		f.logger.Warn("fly.cache.helper.suspend.wait", "machine", machineID, "err", err)
 	}
 
@@ -311,12 +313,14 @@ func uploadTarEntries(sftpClient *sftp.Client, reader io.Reader) error {
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if mkErr := sftpClient.MkdirAll(remotePath); mkErr != nil {
+			mkErr := sftpClient.MkdirAll(remotePath)
+if  mkErr != nil {
 				return fmt.Errorf("failed to create remote directory %q: %w", remotePath, mkErr)
 			}
 
 		case tar.TypeReg:
-			if mkErr := sftpClient.MkdirAll(path.Dir(remotePath)); mkErr != nil {
+			mkErr := sftpClient.MkdirAll(path.Dir(remotePath))
+if  mkErr != nil {
 				return fmt.Errorf("failed to create parent dir for %q: %w", remotePath, mkErr)
 			}
 
@@ -331,7 +335,8 @@ func uploadTarEntries(sftpClient *sftp.Client, reader io.Reader) error {
 				return fmt.Errorf("failed to write remote file %q: %w", remotePath, cpErr)
 			}
 
-			if closeErr := rf.Close(); closeErr != nil {
+			closeErr := rf.Close()
+if  closeErr != nil {
 				return fmt.Errorf("failed to close remote file %q: %w", remotePath, closeErr)
 			}
 		}
