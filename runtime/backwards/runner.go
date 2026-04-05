@@ -178,6 +178,7 @@ type Runner struct {
 	dedupTTL       time.Duration
 	secretsManager secrets.Manager
 	agentBaseURLs  map[string]string
+	dependents     map[string][]*config.Job // reverse index: jobName → jobs that depend on it
 }
 
 // New creates a Runner for the given pipeline config.
@@ -206,6 +207,24 @@ func New(
 	}
 }
 
+// buildDependentsIndex builds a reverse lookup from job name to jobs that depend on it
+// via passed constraints. Called once at the start of Run() to avoid O(N²) scanning.
+func (r *Runner) buildDependentsIndex() {
+	r.dependents = make(map[string][]*config.Job, len(r.config.Jobs))
+
+	for i := range r.config.Jobs {
+		job := &r.config.Jobs[i]
+
+		for _, step := range job.Plan {
+			if step.Get != "" {
+				for _, dep := range step.GetConfig.Passed {
+					r.dependents[dep] = append(r.dependents[dep], job)
+				}
+			}
+		}
+	}
+}
+
 // Run executes all jobs respecting passed constraints and validates pipeline-level assertions.
 func (r *Runner) Run(ctx context.Context) error {
 	jobResults := make(map[string]bool)
@@ -213,6 +232,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 	r.initNotifier()
 	r.prewriteJobStates(ctx)
+	r.buildDependentsIndex()
 
 	var runJob func(job *config.Job) error
 	runJob = func(job *config.Job) error {
@@ -299,28 +319,9 @@ func (r *Runner) isJobPassedSatisfied(ctx context.Context, depJobName string, jo
 }
 
 // findDependentJobs returns jobs that have a passed constraint referencing jobName.
+// Uses the pre-built dependents index for O(1) lookup instead of O(N×S×P) scan.
 func (r *Runner) findDependentJobs(jobName string) []*config.Job {
-	var result []*config.Job
-
-	for i := range r.config.Jobs {
-		job := &r.config.Jobs[i]
-
-		for _, step := range job.Plan {
-			if step.Get != "" {
-				for _, dep := range step.GetConfig.Passed {
-					if dep == jobName {
-						result = append(result, job)
-
-						goto nextJob
-					}
-				}
-			}
-		}
-
-	nextJob:
-	}
-
-	return result
+	return r.dependents[jobName]
 }
 
 // extractJobDependencies returns a deduplicated list of job names referenced
