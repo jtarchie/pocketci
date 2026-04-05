@@ -111,7 +111,7 @@ func newMockCacheStore() *mockCacheStore {
 func (m *mockCacheStore) Restore(_ context.Context, key string) (io.ReadCloser, error) {
 	data, ok := m.data[key]
 	if !ok {
-		return nil, nil
+		return nil, cache.ErrCacheMiss
 	}
 
 	return io.NopCloser(bytes.NewReader(data)), nil
@@ -195,7 +195,7 @@ func TestMockCacheStore(t *testing.T) {
 	store := newMockCacheStore()
 
 	reader, err := store.Restore(ctx, "missing")
-	assert.Expect(err).NotTo(gomega.HaveOccurred())
+	assert.Expect(err).To(gomega.MatchError(cache.ErrCacheMiss))
 	assert.Expect(reader).To(gomega.BeNil())
 
 	err = store.Persist(ctx, "test-key", bytes.NewReader([]byte("test data")))

@@ -73,7 +73,7 @@ func (s *S3Store) Restore(ctx context.Context, key string) (io.ReadCloser, error
 	result, err := s.GetStream(ctx, fullKey)
 	if err != nil {
 		if s3config.IsNotFound(err) {
-			return nil, nil // Cache miss - not an error
+			return nil, cache.ErrCacheMiss
 		}
 
 		return nil, fmt.Errorf("failed to get object from S3: %w", err)
@@ -86,7 +86,7 @@ func (s *S3Store) Restore(ctx context.Context, key string) (io.ReadCloser, error
 			// Object expired, delete it and return cache miss
 			_ = s.Delete(ctx, key)
 
-			return nil, nil
+			return nil, cache.ErrCacheMiss
 		}
 	}
 
@@ -178,7 +178,8 @@ func (s *S3Store) PersistWithHash(ctx context.Context, key string, reader io.Rea
 func (s *S3Store) Delete(ctx context.Context, key string) error {
 	fullKey := s.FullKey(key)
 
-	if err := s.DeleteKey(ctx, fullKey); err != nil {
+	err := s.DeleteKey(ctx, fullKey)
+	if err != nil {
 		return fmt.Errorf("failed to delete object from S3: %w", err)
 	}
 

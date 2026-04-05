@@ -55,7 +55,7 @@ func (s *FilesystemStore) Restore(_ context.Context, key string) (io.ReadCloser,
 	info, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+			return nil, cache.ErrCacheMiss
 		}
 
 		return nil, fmt.Errorf("failed to stat cache file: %w", err)
@@ -64,7 +64,7 @@ func (s *FilesystemStore) Restore(_ context.Context, key string) (io.ReadCloser,
 	if s.ttl > 0 && time.Since(info.ModTime()) > s.ttl {
 		_ = os.Remove(path)
 
-		return nil, nil
+		return nil, cache.ErrCacheMiss
 	}
 
 	file, err := os.Open(path)

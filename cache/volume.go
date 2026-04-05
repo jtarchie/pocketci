@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -103,14 +104,14 @@ func (v *CachingVolume) RestoreFromCache(ctx context.Context) error {
 
 	// Get compressed data from cache store
 	reader, err := v.store.Restore(ctx, v.cacheKey)
-	if err != nil {
-		return fmt.Errorf("failed to restore from cache: %w", err)
-	}
-
-	if reader == nil {
+	if errors.Is(err, ErrCacheMiss) {
 		v.logger.Debug("volume.cache.miss", "volume", v.inner.Name())
 
-		return nil // Cache miss, nothing to restore
+		return nil
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to restore from cache: %w", err)
 	}
 
 	defer func() {

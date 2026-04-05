@@ -2,14 +2,18 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"io"
 	"time"
 )
 
+// ErrCacheMiss is returned by Restore when the requested key does not exist in the cache.
+var ErrCacheMiss = errors.New("cache miss")
+
 // CacheStore defines the interface for cache storage backends (e.g., S3).
 type CacheStore interface {
 	// Restore downloads and returns a reader for the cached content.
-	// Returns nil, nil if the cache key doesn't exist.
+	// Returns ErrCacheMiss if the cache key doesn't exist.
 	Restore(ctx context.Context, key string) (io.ReadCloser, error)
 
 	// Persist uploads content from the reader to the cache.

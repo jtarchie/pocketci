@@ -23,6 +23,10 @@ import (
 	"github.com/jtarchie/pocketci/storage"
 )
 
+// errContainerAborted is returned by pollContainerStatus when the container
+// was aborted due to context cancellation or deadline exceeded.
+var errContainerAborted = errors.New("container aborted")
+
 // AgentFunc is a function that runs an LLM agent. It takes config as raw JSON
 // and returns the result as raw JSON. This is injected by the runtime layer
 // to avoid import cycles between runner and agent packages.
@@ -103,7 +107,7 @@ func (c *PipelineRunner) SetSecretsManager(mgr secrets.Manager, pipelineID strin
 // then falls back to global scope.
 func (c *PipelineRunner) loadSecrets(ctx context.Context, requestedKeys []string) (map[string]string, error) {
 	if c.secretsManager == nil || len(requestedKeys) == 0 {
-		return nil, nil
+		return map[string]string{}, nil
 	}
 
 	result := make(map[string]string, len(requestedKeys))
@@ -492,11 +496,12 @@ func (c *PipelineRunner) waitAndFinalizeRun(
 	}
 
 	containerStatus, err := c.pollContainerStatus(ctx, container, storageKey, taskStartedAt, cancelStream)
+	if errors.Is(err, errContainerAborted) {
+		return &RunResult{Status: RunAbort}, nil
+	}
+
 	if err != nil {
 		return nil, err
-	}
-	if containerStatus == nil {
-		return &RunResult{Status: RunAbort}, nil
 	}
 
 	cancelStream()
@@ -566,7 +571,7 @@ func (c *PipelineRunner) pollContainerStatus(
 					"elapsed":    formatElapsed(time.Since(taskStartedAt)),
 				})
 
-				return nil, nil
+				return nil, errContainerAborted
 			}
 
 			c.setTaskStatus(storageKey, map[string]any{
