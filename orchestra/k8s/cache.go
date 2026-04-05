@@ -229,6 +229,8 @@ func (k *K8s) waitForPodRunning(ctx context.Context, podName string) error {
 			return nil
 		case corev1.PodFailed, corev1.PodSucceeded:
 			return fmt.Errorf("pod finished unexpectedly with phase: %s", pod.Status.Phase)
+		case corev1.PodPending, corev1.PodUnknown:
+			// still waiting — fall through to the poll delay below
 		}
 
 		select {

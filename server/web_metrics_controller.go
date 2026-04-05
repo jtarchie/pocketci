@@ -232,6 +232,8 @@ func computePipelineMetrics(ctx context.Context, store storage.Driver, pipeline 
 			pm.FailedRuns++
 		case storage.RunStatusSkipped:
 			pm.SkippedRuns++
+		case storage.RunStatusQueued, storage.RunStatusRunning:
+			// not yet complete — not counted in summary metrics
 		}
 		if run.StartedAt != nil && run.CompletedAt != nil {
 			durationSum += run.CompletedAt.Sub(*run.StartedAt)

@@ -390,7 +390,8 @@ func (s *ExecutionService) ResumePipeline(ctx context.Context, pipeline *storage
 	actor, _ := RequestActorFromContext(ctx)
 
 	// Reset run status to queued for the resumed execution
-	if err := s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusQueued, ""); err != nil {
+	err := s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusQueued, "")
+	if err != nil {
 		return fmt.Errorf("failed to reset run status: %w", err)
 	}
 
@@ -469,7 +470,8 @@ func (s *ExecutionService) RecoverOrphanedRuns(ctx context.Context) {
 		if resumeEnabled && pipeline.ResumeEnabled {
 			logger.Info("orphan.recovery.resuming")
 			runCopy := run
-			if rErr := s.ResumePipeline(ctx, pipeline, &runCopy); rErr != nil {
+			rErr := s.ResumePipeline(ctx, pipeline, &runCopy)
+			if rErr != nil {
 				logger.Error("orphan.recovery.resume_failed", "error", rErr)
 				_ = s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "Server restarted; resume failed: "+rErr.Error())
 				s.cleanupOrphanedRunResources(ctx, run.ID, pipeline, logger)
@@ -664,7 +666,7 @@ func (s *ExecutionService) finalizeExecRun(ctx, dbCtx context.Context, run *stor
 		logger.Info("pipeline.execute.success")
 	case storage.RunStatusSkipped:
 		logger.Info("pipeline.execute.skipped")
-	default:
+	case storage.RunStatusFailed, storage.RunStatusQueued, storage.RunStatusRunning:
 		logger.Info("pipeline.execute.completed_with_failures")
 	}
 
@@ -770,7 +772,8 @@ func (s *ExecutionService) preseedWorkdir(ctx context.Context, factory func(cont
 
 	s.logger.Info("workdir.preseed.start")
 
-	if cErr := accessor.CopyToVolume(ctx, vol.Name(), workdirTar); cErr != nil {
+	cErr := accessor.CopyToVolume(ctx, vol.Name(), workdirTar)
+	if cErr != nil {
 		_ = vol.Cleanup(ctx)
 		_ = driver.Close()
 		return nil, nil, fmt.Errorf("could not seed workdir volume: %w", cErr)
@@ -800,7 +803,8 @@ func (s *ExecutionService) finalizeSyncRun(ctx context.Context, run *storage.Pip
 		}
 	}
 
-	if err := s.store.UpdateRunStatus(ctx, run.ID, finalStatus, errMsg); err != nil {
+	err := s.store.UpdateRunStatus(ctx, run.ID, finalStatus, errMsg)
+	if err != nil {
 		s.logger.Error("run.update.failed.to_final", "error", err)
 	}
 
