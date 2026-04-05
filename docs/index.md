@@ -5,6 +5,8 @@ pipelines and supports Concourse-style YAML compatibility.
 
 ## Getting Started
 
+New to PocketCI? [Start here](guides/getting-started) — install, start the server, write a pipeline, and run it in about five minutes.
+
 - [Running pipelines](guides/run)
 - [Webhooks](guides/webhooks)
 - [MCP Integration](guides/mcp)
