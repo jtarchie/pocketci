@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -196,10 +197,7 @@ func (c *PipelineRunner) StartSandbox(input SandboxInput) (*SandboxHandle, error
 		return nil, fmt.Errorf("driver %q does not support sandbox mode", c.client.Name())
 	}
 
-	c.mu.Lock()
-	stepID := fmt.Sprintf("%d-%s-sandbox", c.callIndex, input.Name)
-	c.callIndex++
-	c.mu.Unlock()
+	stepID := strconv.FormatInt(c.callIndex.Add(1)-1, 10) + "-" + input.Name + "-sandbox"
 
 	taskID := support.DeterministicTaskID(c.namespace, c.runID, stepID, input.Name)
 

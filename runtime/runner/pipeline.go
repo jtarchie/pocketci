@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -34,8 +36,7 @@ type PipelineRunner struct {
 	volumes          []orchestra.Volume
 	namespace        string
 	runID            string
-	mu               sync.Mutex // Protects callIndex
-	callIndex        int        // Tracks how many times Run() has been called
+	callIndex        atomic.Int64 // Tracks how many times Run() has been called
 	secretsManager   secrets.Manager
 	pipelineID       string
 	secretValues     []string                    // Cached secret values for redaction
@@ -318,10 +319,7 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 		}
 	}
 
-	c.mu.Lock()
-	stepID := fmt.Sprintf("%d-%s", c.callIndex, input.Name)
-	c.callIndex++
-	c.mu.Unlock()
+	stepID := strconv.FormatInt(c.callIndex.Add(1)-1, 10) + "-" + input.Name
 	taskID := support.DeterministicTaskID(c.namespace, c.runID, stepID, input.Name)
 
 	logger := c.logger.With("task.id", taskID, "task.name", input.Name, "task.privileged", input.Privileged)

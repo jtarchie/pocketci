@@ -241,6 +241,10 @@ func mergeJobParams(jobParams, stepEnv map[string]string) map[string]string {
 		return stepEnv
 	}
 
+	if len(stepEnv) == 0 {
+		return jobParams
+	}
+
 	merged := make(map[string]string, len(jobParams)+len(stepEnv))
 	for k, v := range jobParams {
 		merged[k] = v

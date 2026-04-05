@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"sort"
+
 	"github.com/georgysavva/scany/v2/sqlscan"
 	"github.com/jtarchie/lqs"
 	"github.com/jtarchie/pocketci/runtime/support"
@@ -23,6 +25,15 @@ import (
 
 //go:embed schema.sql
 var schemaSQL string
+
+// knownSQLiteColumns lists schema columns promoted out of the JSON payload.
+// Must be kept sorted for binary search in isKnownColumn.
+var knownSQLiteColumns = []string{"elapsed", "error_message", "error_type", "started_at", "status"}
+
+func isKnownColumn(field string) bool {
+	i := sort.SearchStrings(knownSQLiteColumns, field)
+	return i < len(knownSQLiteColumns) && knownSQLiteColumns[i] == field
+}
 
 type Sqlite struct {
 	writer    *sql.DB
@@ -272,15 +283,9 @@ func (s *Sqlite) GetAll(ctx context.Context, prefix string, fields []string) (st
 				id ASC
 		`
 	} else {
-		// Fields that have been promoted to real columns — read directly instead of
-		// computing json_extract(payload, '$.field') on every row.
-		knownColumns := map[string]struct{}{
-			"status": {}, "started_at": {}, "elapsed": {}, "error_message": {}, "error_type": {},
-		}
-
 		jsonSelects := strings.Join(
 			lo.Map(fields, func(field string, _ int) string {
-				if _, ok := knownColumns[field]; ok {
+				if isKnownColumn(field) {
 					return fmt.Sprintf("'%s', %s", field, field)
 				}
 
