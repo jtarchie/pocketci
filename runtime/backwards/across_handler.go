@@ -144,7 +144,7 @@ func executeAcross(
 
 	var (
 		g      *errgroup.Group
-		gCtx   = sc.Ctx
+		gCtx                      = sc.Ctx
 		cancel context.CancelFunc = func() {}
 	)
 

@@ -34,7 +34,7 @@ func buildLinearPipelineConfig(numJobs int) *config.Config {
 					},
 				},
 				{
-					Task: fmt.Sprintf("task-%s", name),
+					Task: "task-" + name,
 					TaskConfig: &config.TaskConfig{
 						Platform: "linux",
 						Run:      &config.TaskConfigRun{Path: "true"},

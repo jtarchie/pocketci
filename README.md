@@ -41,7 +41,8 @@ backward compatibility. See the
 brew install jtarchie/pocketci/pocketci
 ```
 
-Or download a pre-built binary from the [releases page](https://github.com/jtarchie/pocketci/releases).
+Or download a pre-built binary from the
+[releases page](https://github.com/jtarchie/pocketci/releases).
 
 ## Running it
 

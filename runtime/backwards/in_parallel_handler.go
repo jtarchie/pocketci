@@ -49,7 +49,7 @@ func (h *InParallelHandler) Execute(sc *StepContext, step *config.Step, pathPref
 
 	var (
 		g      *errgroup.Group
-		gCtx   = sc.Ctx
+		gCtx                      = sc.Ctx
 		cancel context.CancelFunc = func() {}
 	)
 
