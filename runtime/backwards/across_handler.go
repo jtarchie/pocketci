@@ -11,37 +11,65 @@ import (
 	"golang.org/x/sync/semaphore"
 )
 
-// generateCombinations returns the cartesian product of all AcrossVar values.
-// Each combination is a map from variable name to value.
-func generateCombinations(vars []config.AcrossVar) []map[string]string {
-	if len(vars) == 0 {
-		return []map[string]string{{}}
-	}
+// combination holds a single Cartesian-product result with a shared key slice
+// and a per-combination value slice. Keys is shared across all combinations to
+// avoid repeating the allocation for every entry.
+type combination struct {
+	Keys   []string
+	Values []string
+}
 
-	first := vars[0]
-	rest := generateCombinations(vars[1:])
-	combinations := make([]map[string]string, 0, len(first.Values)*len(rest))
-
-	for _, value := range first.Values {
-		for _, restCombo := range rest {
-			combo := make(map[string]string, len(restCombo)+1)
-			combo[first.Var] = value
-
-			for k, v := range restCombo {
-				combo[k] = v
-			}
-
-			combinations = append(combinations, combo)
+func (c combination) get(key string) string {
+	for i, k := range c.Keys {
+		if k == key {
+			return c.Values[i]
 		}
 	}
 
-	return combinations
+	return ""
+}
+
+// generateCombinations returns the cartesian product of all AcrossVar values.
+// It uses a flat []combination representation instead of []map[string]string
+// to reduce heap allocations: one shared Keys slice + one Values slice per combo
+// instead of one full map per combo.
+func generateCombinations(vars []config.AcrossVar) []combination {
+	if len(vars) == 0 {
+		return []combination{{Keys: []string{}, Values: []string{}}}
+	}
+
+	total := 1
+	for _, v := range vars {
+		total *= len(v.Values)
+	}
+
+	keys := make([]string, len(vars))
+	for i, v := range vars {
+		keys[i] = v.Var
+	}
+
+	combos := make([]combination, total)
+
+	for i := range combos {
+		vals := make([]string, len(vars))
+		idx := i
+
+		for j := len(vars) - 1; j >= 0; j-- {
+			size := len(vars[j].Values)
+			vals[j] = vars[j].Values[idx%size]
+			idx /= size
+		}
+
+		combos[i] = combination{Keys: keys, Values: vals}
+	}
+
+	return combos
 }
 
 // expandAcrossStep clones the step with across variables injected.
 // It removes Across/AcrossFailFast, appends variable values to Task name,
 // and injects variables into TaskConfig.Env.
-func expandAcrossStep(step *config.Step, combination map[string]string, acrossVars []config.AcrossVar) config.Step {
+func expandAcrossStep(step *config.Step, combo combination, acrossVars []config.AcrossVar) config.Step {
 	cloned := *step
 	cloned.Across = nil
 	cloned.AcrossFailFast = false
@@ -49,7 +77,7 @@ func expandAcrossStep(step *config.Step, combination map[string]string, acrossVa
 	if cloned.Task != "" {
 		parts := make([]string, 0, len(acrossVars))
 		for _, av := range acrossVars {
-			parts = append(parts, combination[av.Var])
+			parts = append(parts, combo.get(av.Var))
 		}
 
 		cloned.Task = fmt.Sprintf("%s-%s", step.Task, strings.Join(parts, "-"))
@@ -59,8 +87,8 @@ func expandAcrossStep(step *config.Step, combination map[string]string, acrossVa
 		newConfig := *step.TaskConfig
 		newConfig.Env = cloneEnv(step.TaskConfig.Env)
 
-		for k, v := range combination {
-			newConfig.Env[k] = v
+		for i, k := range combo.Keys {
+			newConfig.Env[k] = combo.Values[i]
 		}
 
 		cloned.TaskConfig = &newConfig
@@ -131,20 +159,20 @@ func executeAcross(
 
 	sem := semaphore.NewWeighted(int64(limit))
 
-	for i, combination := range combinations {
+	for i, combo := range combinations {
 		if err := sem.Acquire(gCtx, 1); err != nil {
 			break // gCtx cancelled (fail-fast triggered by a prior goroutine error)
 		}
 
 		idx := i
-		combo := combination
+		c := combo
 
 		g.Go(func() error {
-			expanded := expandAcrossStep(step, combo, step.Across)
+			expanded := expandAcrossStep(step, c, step.Across)
 
 			varParts := make([]string, 0, len(step.Across))
 			for _, av := range step.Across {
-				varParts = append(varParts, fmt.Sprintf("%s_%s", av.Var, combo[av.Var]))
+				varParts = append(varParts, fmt.Sprintf("%s_%s", av.Var, c.get(av.Var)))
 			}
 
 			varContext := strings.Join(varParts, "_")
