@@ -23,7 +23,7 @@ func (c *APIGatesController) ListByRun(ctx *echo.Context) error {
 
 	gates, err := c.store.GetGatesByRunID(ctx.Request().Context(), runID)
 	if err != nil {
-			jsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
+		jsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to get gates: %v", err),
 		})
 		if jsonErr != nil {

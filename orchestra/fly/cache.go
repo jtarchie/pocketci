@@ -217,7 +217,7 @@ func (f *Fly) destroyHelperMachine(ctx context.Context, machineID string) {
 	f.logger.Debug("fly.cache.helper.suspend", "machine", machineID)
 
 	err := f.client.Suspend(ctx, f.appName, machineID, "")
-if  err != nil {
+	if err != nil {
 		f.logger.Warn("fly.cache.helper.suspend.failed", "machine", machineID, "err", err)
 		// Fall back to a hard destroy so we don't leak the machine.
 		f.mu.Lock()
@@ -334,13 +334,13 @@ func uploadTarEntries(sftpClient *sftp.Client, reader io.Reader) error {
 		switch hdr.Typeflag {
 		case tar.TypeDir:
 			mkErr := sftpClient.MkdirAll(remotePath)
-if  mkErr != nil {
+			if mkErr != nil {
 				return fmt.Errorf("failed to create remote directory %q: %w", remotePath, mkErr)
 			}
 
 		case tar.TypeReg:
 			mkErr := sftpClient.MkdirAll(path.Dir(remotePath))
-if  mkErr != nil {
+			if mkErr != nil {
 				return fmt.Errorf("failed to create parent dir for %q: %w", remotePath, mkErr)
 			}
 
@@ -357,7 +357,7 @@ if  mkErr != nil {
 			}
 
 			closeErr := rf.Close()
-if  closeErr != nil {
+			if closeErr != nil {
 				return fmt.Errorf("failed to close remote file %q: %w", remotePath, closeErr)
 			}
 		}
