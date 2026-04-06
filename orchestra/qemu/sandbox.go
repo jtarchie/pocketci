@@ -68,7 +68,7 @@ func (s *QEMUSandbox) Exec(
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, fmt.Errorf("sandbox exec wait: %w", ctx.Err())
 		case <-ticker.C:
 			result, err := s.qga.ExecStatus(pid)
 			if err != nil {
@@ -110,7 +110,8 @@ func (s *QEMUSandbox) Cleanup(_ context.Context) error {
 // The QEMU VM is booted lazily on first use (ensureVM). The sandbox runs
 // commands directly via QGA without an idle process — the VM runs indefinitely.
 func (q *QEMU) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.Sandbox, error) {
-	if err := q.ensureVM(ctx); err != nil {
+	err := q.ensureVM(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("sandbox: failed to ensure VM: %w", err)
 	}
 

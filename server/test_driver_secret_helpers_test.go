@@ -74,7 +74,8 @@ func newStrictSecretRouter(t *testing.T, client storage.Driver, opts server.Rout
 func persistPipelineDriverSecret(t *testing.T, mgr secrets.Manager, pipelineID string, driver string) {
 	t.Helper()
 
-	if err := mgr.Set(context.Background(), secrets.PipelineScope(pipelineID), "driver", driver); err != nil {
+	err := mgr.Set(context.Background(), secrets.PipelineScope(pipelineID), "driver", driver)
+	if err != nil {
 		t.Fatalf("could not persist pipeline driver secret: %v", err)
 	}
 }

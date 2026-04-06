@@ -46,7 +46,8 @@ func (p *provider) Parse(r *http.Request, body []byte, secret string) (*webhooks
 // Returns an empty string when the body is not valid JSON or no field exists.
 func extractEventType(body []byte) string {
 	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
+	err := json.Unmarshal(body, &payload)
+	if err != nil {
 		return ""
 	}
 

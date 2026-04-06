@@ -78,7 +78,7 @@ func (c *WebShareController) Show(ctx *echo.Context) error {
 	// are injected into terminal HTML — the shared view is always static.
 	c.preloadTerminalHTMLWithOptions(ctx, lookupPath, tree, "/terminal", redact)
 
-	return ctx.Render(http.StatusOK, "tasks.html", map[string]any{
+	shareRenderErr := ctx.Render(http.StatusOK, "tasks.html", map[string]any{
 		"Tree":     tree,
 		"Path":     lookupPath,
 		"RunID":    runID,
@@ -89,6 +89,11 @@ func (c *WebShareController) Show(ctx *echo.Context) error {
 		"Stats":    stats,
 		"ReadOnly": true,
 	})
+	if shareRenderErr != nil {
+		return fmt.Errorf("render share tasks: %w", shareRenderErr)
+	}
+
+	return nil
 }
 
 // RegisterRoutes registers public share routes on the main (unauthenticated) router.

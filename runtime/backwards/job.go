@@ -598,7 +598,8 @@ func (jr *JobRunner) evaluateWebhookDedup(ctx context.Context, jobKey string) bo
 	}
 
 	cutoff := time.Now().UTC().Add(-ttl)
-	if _, pruneErr := jr.storage.PruneWebhookDedup(ctx, cutoff); pruneErr != nil {
+	_, pruneErr := jr.storage.PruneWebhookDedup(ctx, cutoff)
+	if pruneErr != nil {
 		jr.logger.Warn("webhook.dedup.prune.failed", slog.String("error", pruneErr.Error()))
 	}
 
@@ -709,7 +710,7 @@ func (jr *JobRunner) pollGate(ctx context.Context, gateID string, createdAt time
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("wait for gate: %w", ctx.Err())
 		case <-time.After(gatePollInterval):
 		}
 	}

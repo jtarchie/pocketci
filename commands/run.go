@@ -57,8 +57,9 @@ func (c *Run) Run(logger *slog.Logger) error {
 		return fmt.Errorf("could not determine upload size: %w", err)
 	}
 
-	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("could not rewind temp file: %w", err)
+	_, seekStartErr := tmpFile.Seek(0, io.SeekStart)
+	if seekStartErr != nil {
+		return fmt.Errorf("could not rewind temp file: %w", seekStartErr)
 	}
 
 	var opts []client.Option
@@ -80,14 +81,15 @@ func (c *Run) Run(logger *slog.Logger) error {
 
 	resp, err := apiClient.RunPipeline(c.Name, io.TeeReader(tmpFile, bar), contentType, bodySize)
 	if err != nil {
-		return err
+		return fmt.Errorf("run pipeline: %w", err)
 	}
 	defer func() { _ = resp.RawBody().Close() }()
 
 	_ = bar.Finish()
 
-	if err := checkRunResponseStatus(resp.StatusCode(), resp.RawBody(), apiClient.ServerURL()); err != nil {
-		return err
+	checkStatusErr := checkRunResponseStatus(resp.StatusCode(), resp.RawBody(), apiClient.ServerURL())
+	if checkStatusErr != nil {
+		return checkStatusErr
 	}
 
 	logger.Info("pipeline.run.streaming")
@@ -117,15 +119,17 @@ func (c *Run) buildMultipartBody(logger *slog.Logger) (*os.File, string, error) 
 
 	mw := multipart.NewWriter(tmpFile)
 
-	if err := c.writeArgsField(mw); err != nil {
+	writeArgsErr := c.writeArgsField(mw)
+	if writeArgsErr != nil {
 		_ = tmpFile.Close()
 		_ = os.Remove(tmpFile.Name())
 
-		return nil, "", err
+		return nil, "", writeArgsErr
 	}
 
 	if !c.NoWorkdir {
-		if err := c.writeWorkdirField(mw, logger); err != nil {
+		err := c.writeWorkdirField(mw, logger)
+		if err != nil {
 			_ = tmpFile.Close()
 			_ = os.Remove(tmpFile.Name())
 
@@ -133,11 +137,12 @@ func (c *Run) buildMultipartBody(logger *slog.Logger) (*os.File, string, error) 
 		}
 	}
 
-	if err := mw.Close(); err != nil {
+	mwCloseErr := mw.Close()
+	if mwCloseErr != nil {
 		_ = tmpFile.Close()
 		_ = os.Remove(tmpFile.Name())
 
-		return nil, "", fmt.Errorf("could not close multipart writer: %w", err)
+		return nil, "", fmt.Errorf("could not close multipart writer: %w", mwCloseErr)
 	}
 
 	return tmpFile, mw.FormDataContentType(), nil
@@ -154,8 +159,9 @@ func (c *Run) writeArgsField(mw *multipart.Writer) error {
 		return fmt.Errorf("could not create args field: %w", err)
 	}
 
-	if _, err = fw.Write(argsData); err != nil {
-		return fmt.Errorf("could not write args: %w", err)
+	_, writeArgsDataErr := fw.Write(argsData)
+	if writeArgsDataErr != nil {
+		return fmt.Errorf("could not write args: %w", writeArgsDataErr)
 	}
 
 	return nil
@@ -179,12 +185,14 @@ func (c *Run) writeWorkdirField(mw *multipart.Writer, logger *slog.Logger) error
 		return fmt.Errorf("could not create zstd writer: %w", err)
 	}
 
-	if err := tarDirectory(cwd, zw, c.Ignore); err != nil {
-		return fmt.Errorf("could not tar working directory: %w", err)
+	tarErr := tarDirectory(cwd, zw, c.Ignore)
+	if tarErr != nil {
+		return fmt.Errorf("could not tar working directory: %w", tarErr)
 	}
 
-	if err := zw.Close(); err != nil {
-		return fmt.Errorf("could not flush zstd stream: %w", err)
+	zwCloseErr := zw.Close()
+	if zwCloseErr != nil {
+		return fmt.Errorf("could not flush zstd stream: %w", zwCloseErr)
 	}
 
 	return nil
@@ -201,7 +209,8 @@ func streamSSEEvents(body io.Reader, logger *slog.Logger) error {
 		payload := strings.TrimPrefix(line, "data: ")
 
 		var evt sseEvent
-		if err := json.Unmarshal([]byte(payload), &evt); err != nil {
+		err := json.Unmarshal([]byte(payload), &evt)
+		if err != nil {
 			logger.Debug("run.sse.unparseable", "line", payload)
 			continue
 		}
@@ -226,7 +235,8 @@ func streamSSEEvents(body io.Reader, logger *slog.Logger) error {
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
+	err := scanner.Err()
+	if err != nil {
 		return fmt.Errorf("error reading stream: %w", err)
 	}
 
@@ -239,14 +249,25 @@ func tarDirectory(dir string, w io.Writer, ignorePatterns []string) error {
 	tw := tar.NewWriter(w)
 	defer func() { _ = tw.Close() }()
 
-	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(dir, tarWalkFunc(dir, tw, ignorePatterns))
+	if walkErr != nil {
+		return fmt.Errorf("walk directory: %w", walkErr)
+	}
+
+	return nil
+}
+
+// tarWalkFunc returns a filepath.WalkFunc that archives each file/dir into tw,
+// skipping ignored paths and non-regular entries.
+func tarWalkFunc(dir string, tw *tar.Writer, ignorePatterns []string) filepath.WalkFunc {
+	return func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
 		relPath, err := filepath.Rel(dir, path)
 		if err != nil {
-			return err
+			return fmt.Errorf("relative path: %w", err)
 		}
 
 		// Skip the root "." directory entry — extractors handle it implicitly.
@@ -254,14 +275,12 @@ func tarDirectory(dir string, w io.Writer, ignorePatterns []string) error {
 			return nil
 		}
 
-		if len(ignorePatterns) > 0 {
-			if ignorePath(relPath, info.IsDir(), ignorePatterns) {
-				if info.IsDir() {
-					return filepath.SkipDir
-				}
-
-				return nil
+		if len(ignorePatterns) > 0 && ignorePath(relPath, info.IsDir(), ignorePatterns) {
+			if info.IsDir() {
+				return filepath.SkipDir
 			}
+
+			return nil
 		}
 
 		// Only follow regular files and directories; skip symlinks, devices, etc.
@@ -286,24 +305,28 @@ func tarDirectory(dir string, w io.Writer, ignorePatterns []string) error {
 		hdr.PAXRecords = nil // avoid PAX extensions
 		hdr.Format = tar.FormatGNU
 
-		if err := tw.WriteHeader(hdr); err != nil {
-			return fmt.Errorf("could not write tar header for %q: %w", relPath, err)
+		writeHdrErr := tw.WriteHeader(hdr)
+		if writeHdrErr != nil {
+			return fmt.Errorf("could not write tar header for %q: %w", relPath, writeHdrErr)
 		}
 
-		if !info.IsDir() {
-			f, err := os.Open(path)
-			if err != nil {
-				return fmt.Errorf("could not open %q: %w", path, err)
-			}
-			defer func() { _ = f.Close() }()
+		if info.IsDir() {
+			return nil
+		}
 
-			if _, err = io.Copy(tw, f); err != nil {
-				return fmt.Errorf("could not write %q to tar: %w", relPath, err)
-			}
+		f, err := os.Open(path)
+		if err != nil {
+			return fmt.Errorf("could not open %q: %w", path, err)
+		}
+		defer func() { _ = f.Close() }()
+
+		_, copyErr := io.Copy(tw, f)
+		if copyErr != nil {
+			return fmt.Errorf("could not write %q to tar: %w", relPath, copyErr)
 		}
 
 		return nil
-	})
+	}
 }
 
 // ignorePath returns true if relPath should be excluded based on the given glob patterns.

@@ -3,6 +3,7 @@ package cache_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
@@ -120,7 +121,7 @@ func (m *mockCacheStore) Restore(_ context.Context, key string) (io.ReadCloser, 
 func (m *mockCacheStore) Persist(_ context.Context, key string, reader io.Reader) error {
 	data, err := io.ReadAll(reader)
 	if err != nil {
-		return err
+		return fmt.Errorf("read all: %w", err)
 	}
 
 	m.data[key] = data
@@ -155,7 +156,7 @@ func (m *trackingMockCacheStore) Restore(_ context.Context, key string) (io.Read
 	m.restoreCalls++
 	data, ok := m.data[key]
 	if !ok {
-		return nil, nil
+		return nil, cache.ErrCacheMiss
 	}
 
 	return io.NopCloser(bytes.NewReader(data)), nil
@@ -165,7 +166,7 @@ func (m *trackingMockCacheStore) Persist(_ context.Context, key string, reader i
 	m.persistCalls++
 	data, err := io.ReadAll(reader)
 	if err != nil {
-		return err
+		return fmt.Errorf("read all: %w", err)
 	}
 
 	m.data[key] = data
@@ -249,7 +250,7 @@ func (m *hashAwareMockCacheStore) PersistWithHash(_ context.Context, key string,
 	m.persistWithHashCalls++
 	data, err := io.ReadAll(reader)
 	if err != nil {
-		return err
+		return fmt.Errorf("read all: %w", err)
 	}
 
 	m.data[key] = data

@@ -25,7 +25,8 @@ func (h *DoHandler) Execute(sc *StepContext, step *config.Step, pathPrefix strin
 	for i, innerStep := range step.Do {
 		innerPrefix := fmt.Sprintf("%s/do/%s", pathPrefix, zeroPadWithLength(i, len(step.Do)))
 
-		if err := sc.ProcessStep(&innerStep, innerPrefix); err != nil {
+		err := sc.ProcessStep(&innerStep, innerPrefix)
+		if err != nil {
 			stepErr = err
 
 			break

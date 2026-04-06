@@ -100,10 +100,11 @@ func RunAgent(
 	}
 
 	if !result.limitExceeded {
-		if runErr := runValidationFollowUp(
+		runErr := runValidationFollowUp(
 			ctx, runnr, sessResp.Session.ID(), config, expandedSchema,
 			&result.resultBuilder, &result.textBuilder, &result.usage, &auditEvents,
-		); runErr != nil {
+		)
+		if runErr != nil {
 			return nil, fmt.Errorf("agent: follow-up run failed: %w", runErr)
 		}
 	}
@@ -174,7 +175,8 @@ func evaluateValidation(config AgentConfig, expandedSchema *genai.Schema, result
 
 	// Check output schema conformance first (structural validation).
 	if expandedSchema != nil {
-		if err := schema.ValidateJSON(text, expandedSchema); err != nil {
+		err := schema.ValidateJSON(text, expandedSchema)
+		if err != nil {
 			schemaFollowUp := fmt.Sprintf(
 				"Your response is not valid JSON conforming to the required schema. Error: %s. "+
 					"Please output ONLY a valid JSON object matching the schema, with no surrounding text.",

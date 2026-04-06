@@ -59,7 +59,8 @@ export { pipeline };
 func writePipeline(t *testing.T, dir, name, content string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	err := os.WriteFile(path, []byte(content), 0644)
+	if err != nil {
 		t.Fatalf("write pipeline file: %v", err)
 	}
 	return path

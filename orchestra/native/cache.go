@@ -49,7 +49,8 @@ func (n *Native) CopyToVolume(_ context.Context, volumeName string, reader io.Re
 			}
 		case tar.TypeReg:
 			// Ensure parent directory exists
-			if err := os.MkdirAll(filepath.Dir(target), os.ModePerm); err != nil {
+			err := os.MkdirAll(filepath.Dir(target), os.ModePerm)
+			if err != nil {
 				return fmt.Errorf("failed to create parent directory: %w", err)
 			}
 
@@ -58,13 +59,12 @@ func (n *Native) CopyToVolume(_ context.Context, volumeName string, reader io.Re
 				return fmt.Errorf("failed to create file: %w", err)
 			}
 
-			if _, err := io.Copy(file, tr); err != nil {
-				_ = file.Close()
-
-				return fmt.Errorf("failed to write file: %w", err)
-			}
-
+			_, copyErr := io.Copy(file, tr)
 			_ = file.Close()
+
+			if copyErr != nil {
+				return fmt.Errorf("failed to write file: %w", copyErr)
+			}
 		case tar.TypeSymlink:
 			// Ensure parent directory exists
 			err := os.MkdirAll(filepath.Dir(target), os.ModePerm)
@@ -88,7 +88,8 @@ func (n *Native) CopyFromVolume(_ context.Context, volumeName string) (io.ReadCl
 	volumePath := filepath.Join(n.path, volumeName)
 
 	// Check if volume exists
-	if _, err := os.Stat(volumePath); os.IsNotExist(err) {
+	_, statErr := os.Stat(volumePath)
+	if os.IsNotExist(statErr) {
 		return nil, fmt.Errorf("volume directory does not exist: %s", volumePath)
 	}
 
@@ -105,8 +106,9 @@ func (n *Native) CopyFromVolume(_ context.Context, volumeName string) (io.ReadCl
 			return
 		}
 
-		if err := tw.Close(); err != nil {
-			pw.CloseWithError(err)
+		closeErr := tw.Close()
+		if closeErr != nil {
+			pw.CloseWithError(closeErr)
 
 			return
 		}
@@ -122,7 +124,8 @@ func (n *Native) CopyFromVolume(_ context.Context, volumeName string) (io.ReadCl
 func (n *Native) ReadFilesFromVolume(_ context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error) {
 	volumePath := filepath.Join(n.path, volumeName)
 
-	if _, err := os.Stat(volumePath); os.IsNotExist(err) {
+	_, statErr := os.Stat(volumePath)
+	if os.IsNotExist(statErr) {
 		return nil, fmt.Errorf("volume directory does not exist: %s", volumePath)
 	}
 
@@ -178,7 +181,8 @@ func tarFileEntry(tw *tar.Writer, name, target string, info os.FileInfo) error {
 		header.Linkname = linkTarget
 	}
 
-	if err := tw.WriteHeader(header); err != nil {
+	err = tw.WriteHeader(header)
+	if err != nil {
 		return fmt.Errorf("failed to write tar header: %w", err)
 	}
 
@@ -193,7 +197,8 @@ func tarFileEntry(tw *tar.Writer, name, target string, info os.FileInfo) error {
 
 	defer func() { _ = file.Close() }()
 
-	if _, err := io.Copy(tw, file); err != nil {
+	_, err = io.Copy(tw, file)
+	if err != nil {
 		return fmt.Errorf("failed to write file to tar: %w", err)
 	}
 
@@ -215,7 +220,12 @@ func tarPath(tw *tar.Writer, volumePath, fp string) error {
 	}
 
 	if info.IsDir() {
-		return filepath.Walk(target, tarWalkFunc(volumePath, tw))
+		err = filepath.Walk(target, tarWalkFunc(volumePath, tw))
+		if err != nil {
+			return fmt.Errorf("walk: %w", err)
+		}
+
+		return nil
 	}
 
 	return tarFileEntry(tw, fp, target, info)

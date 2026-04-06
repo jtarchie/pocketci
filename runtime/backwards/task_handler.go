@@ -60,7 +60,8 @@ func (h *TaskHandler) executeParallel(sc *StepContext, step *config.Step, pathPr
 	for i := 1; i <= count; i++ {
 		index := i
 
-		if err := sem.Acquire(sc.Ctx, 1); err != nil {
+		err := sem.Acquire(sc.Ctx, 1)
+		if err != nil {
 			break
 		}
 
@@ -76,7 +77,12 @@ func (h *TaskHandler) executeParallel(sc *StepContext, step *config.Step, pathPr
 		})
 	}
 
-	return g.Wait()
+	err := g.Wait()
+	if err != nil {
+		return fmt.Errorf("task steps: %w", err)
+	}
+
+	return nil
 }
 
 func (h *TaskHandler) loadRunTaskConfig(sc *StepContext, step *config.Step, pathPrefix, taskName string, env map[string]string) (*config.TaskConfig, map[string]string, error) {
@@ -197,7 +203,8 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		return fmt.Errorf("storage set result: %w", err)
 	}
 
-	if err := checkTaskAssertions(step, taskName, exitCode, stdout.String(), stderr.String()); err != nil {
+	err = checkTaskAssertions(step, taskName, exitCode, stdout.String(), stderr.String())
+	if err != nil {
 		return err
 	}
 
@@ -441,7 +448,8 @@ func loadRawBytesFromVolume(sc *StepContext, filePath string) (data []byte, retE
 	}
 
 	defer func() {
-		if closeErr := tarReader.Close(); closeErr != nil && retErr == nil {
+		closeErr := tarReader.Close()
+		if closeErr != nil && retErr == nil {
 			retErr = closeErr
 		}
 	}()
@@ -462,8 +470,9 @@ func loadTaskConfigFromVolume(sc *StepContext, filePath string) (*config.TaskCon
 
 	var taskConfig config.TaskConfig
 
-	if err := yaml.UnmarshalWithOptions(content, &taskConfig, yaml.Strict()); err != nil {
-		return nil, fmt.Errorf("parsing task config from %q: %w", filePath, err)
+	unmarshalErr := yaml.UnmarshalWithOptions(content, &taskConfig, yaml.Strict())
+	if unmarshalErr != nil {
+		return nil, fmt.Errorf("parsing task config from %q: %w", filePath, unmarshalErr)
 	}
 
 	return &taskConfig, nil
@@ -637,8 +646,9 @@ func trackLoadURI(sc *StepContext, uri, pathPrefix string) (*config.TaskConfig, 
 
 	var taskConfig config.TaskConfig
 
-	if err := yaml.UnmarshalWithOptions(data, &taskConfig, yaml.Strict()); err != nil {
-		errMsg := fmt.Sprintf("parsing task config from %s: %s", uri, err.Error())
+	unmarshalErr2 := yaml.UnmarshalWithOptions(data, &taskConfig, yaml.Strict())
+	if unmarshalErr2 != nil {
+		errMsg := fmt.Sprintf("parsing task config from %s: %s", uri, unmarshalErr2.Error())
 
 		_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
 			"status":       "failure",
@@ -649,7 +659,7 @@ func trackLoadURI(sc *StepContext, uri, pathPrefix string) (*config.TaskConfig, 
 			"logs":         []any{map[string]string{"type": "stderr", "content": errMsg}},
 		})
 
-		return nil, fmt.Errorf("parsing task config from %q: %w", uri, err)
+		return nil, fmt.Errorf("parsing task config from %q: %w", uri, unmarshalErr2)
 	}
 
 	_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{

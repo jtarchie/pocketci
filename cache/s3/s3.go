@@ -160,13 +160,14 @@ func (s *S3Store) GetHash(ctx context.Context, key string) (string, error) {
 
 // PersistWithHash uploads content to S3 and stores the content hash in a sidecar object.
 func (s *S3Store) PersistWithHash(ctx context.Context, key string, reader io.Reader, hash string) error {
-	if err := s.Persist(ctx, key, reader); err != nil {
+	err := s.Persist(ctx, key, reader)
+	if err != nil {
 		return err
 	}
 
 	hashKey := s.FullKey(key) + ".hash"
 
-	err := s.PutStream(ctx, hashKey, bytes.NewReader([]byte(hash)))
+	err = s.PutStream(ctx, hashKey, bytes.NewReader([]byte(hash)))
 	if err != nil {
 		return fmt.Errorf("failed to store hash in S3: %w", err)
 	}

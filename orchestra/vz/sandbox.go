@@ -70,7 +70,7 @@ func (s *VZSandbox) Exec(
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, fmt.Errorf("sandbox exec wait: %w", ctx.Err())
 		case <-ticker.C:
 			result, err := s.agent.ExecStatus(pid)
 			if err != nil {
@@ -112,7 +112,8 @@ func (s *VZSandbox) Cleanup(_ context.Context) error {
 // The VZ VM is booted lazily on first use (ensureVM). The sandbox runs
 // commands directly via the vsock agent without an idle process.
 func (v *VZ) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.Sandbox, error) {
-	if err := v.ensureVM(ctx); err != nil {
+	err := v.ensureVM(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("sandbox: failed to ensure VM: %w", err)
 	}
 

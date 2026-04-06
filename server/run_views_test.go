@@ -1056,6 +1056,5 @@ func TestRunViews(t *testing.T) {
 			assert.Expect(doc.Find(`#run-status-badge[hx-swap-oob="true"]`).Length()).To(BeNumerically(">", 0))
 			assert.Expect(hasSelectorWithText(doc, "#run-status-badge", "Failed")).To(BeTrue())
 		})
-
 	})
 }

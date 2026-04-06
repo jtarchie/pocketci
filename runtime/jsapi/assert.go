@@ -123,7 +123,8 @@ func (a *Assert) parseEventuallyOptions(args []goja.Value) (timeoutMs, intervalM
 	// Options object form: { timeoutMs, intervalMs, message }
 	if obj.Get("timeoutMs") != nil || obj.Get("intervalMs") != nil || obj.Get("message") != nil {
 		var opts EventuallyContainsStringOptions
-		if err := a.vm.ExportTo(arg, &opts); err == nil {
+		err := a.vm.ExportTo(arg, &opts)
+		if err == nil {
 			return opts.TimeoutMs, opts.IntervalMs, opts.Message
 		}
 

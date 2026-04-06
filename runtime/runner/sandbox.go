@@ -74,7 +74,6 @@ func (h *SandboxHandle) ID() string {
 // Exec runs a single command inside the sandbox.
 // env and workDir apply only to this invocation; they do not persist.
 func (h *SandboxHandle) Exec(ctx context.Context, input ExecInput) (*RunResult, error) {
-
 	if input.Timeout != "" {
 		timeout, err := time.ParseDuration(input.Timeout)
 		if err != nil {
@@ -144,7 +143,12 @@ func (h *SandboxHandle) Exec(ctx context.Context, input ExecInput) (*RunResult, 
 
 // Close shuts down the sandbox container.
 func (h *SandboxHandle) Close() error {
-	return h.sandbox.Cleanup(h.runner.ctx)
+	err := h.sandbox.Cleanup(h.runner.ctx)
+	if err != nil {
+		return fmt.Errorf("cleanup: %w", err)
+	}
+
+	return nil
 }
 
 // resolveSecretEnv resolves "secret:..." references in env to actual values.

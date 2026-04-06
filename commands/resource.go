@@ -63,8 +63,9 @@ func (r *Resource) executeOperation(ctx context.Context, res resources.Resource,
 func (r *Resource) executeCheck(ctx context.Context, res resources.Resource, input []byte) (any, error) {
 	var req resources.CheckRequest
 
-	if err := json.Unmarshal(input, &req); err != nil {
-		return nil, fmt.Errorf("failed to parse check request: %w", err)
+	checkUnmarshalErr := json.Unmarshal(input, &req)
+	if checkUnmarshalErr != nil {
+		return nil, fmt.Errorf("failed to parse check request: %w", checkUnmarshalErr)
 	}
 
 	result, err := res.Check(ctx, req)
@@ -82,8 +83,9 @@ func (r *Resource) executeIn(ctx context.Context, res resources.Resource, input 
 
 	var req resources.InRequest
 
-	if err := json.Unmarshal(input, &req); err != nil {
-		return nil, fmt.Errorf("failed to parse in request: %w", err)
+	inUnmarshalErr := json.Unmarshal(input, &req)
+	if inUnmarshalErr != nil {
+		return nil, fmt.Errorf("failed to parse in request: %w", inUnmarshalErr)
 	}
 
 	result, err := res.In(ctx, r.Path, req)
@@ -101,8 +103,9 @@ func (r *Resource) executeOut(ctx context.Context, res resources.Resource, input
 
 	var req resources.OutRequest
 
-	if err := json.Unmarshal(input, &req); err != nil {
-		return nil, fmt.Errorf("failed to parse out request: %w", err)
+	outUnmarshalErr := json.Unmarshal(input, &req)
+	if outUnmarshalErr != nil {
+		return nil, fmt.Errorf("failed to parse out request: %w", outUnmarshalErr)
 	}
 
 	result, err := res.Out(ctx, r.Path, req)

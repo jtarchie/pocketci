@@ -27,7 +27,12 @@ func createDriver(ctx context.Context, driverName, namespace string, serverCfg o
 			return docker.New(ctx, docker.Config{ServerConfig: cfg, Namespace: namespace}, logger)
 		})
 	case "native":
-		return native.New(ctx, native.Config{Namespace: namespace}, logger)
+		driver, err := native.New(ctx, native.Config{Namespace: namespace}, logger)
+		if err != nil {
+			return nil, fmt.Errorf("create native driver: %w", err)
+		}
+
+		return driver, nil
 	case "fly":
 		return createTypedDriver[fly.ServerConfig](ctx, serverCfg, func(cfg fly.ServerConfig) (orchestra.Driver, error) {
 			return fly.New(ctx, fly.Config{ServerConfig: cfg, Namespace: namespace}, logger)
@@ -112,7 +117,8 @@ func unmarshalDriverConfig(driverName string, raw json.RawMessage) (orchestra.Dr
 // unmarshalTypedConfig unmarshals raw JSON into the concrete config type T.
 func unmarshalTypedConfig[T orchestra.DriverConfig](raw json.RawMessage, name string) (orchestra.DriverConfig, error) {
 	var cfg T
-	if err := json.Unmarshal(raw, &cfg); err != nil {
+	err := json.Unmarshal(raw, &cfg)
+	if err != nil {
 		return nil, fmt.Errorf("invalid %s config: %w", name, err)
 	}
 

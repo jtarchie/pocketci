@@ -23,12 +23,22 @@ func (c *APIGatesController) ListByRun(ctx *echo.Context) error {
 
 	gates, err := c.store.GetGatesByRunID(ctx.Request().Context(), runID)
 	if err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+			jsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to get gates: %v", err),
 		})
+		if jsonErr != nil {
+			return fmt.Errorf("gates error response: %w", jsonErr)
+		}
+
+		return nil
 	}
 
-	return ctx.JSON(http.StatusOK, gates)
+	err = ctx.JSON(http.StatusOK, gates)
+	if err != nil {
+		return fmt.Errorf("gates response: %w", err)
+	}
+
+	return nil
 }
 
 // Approve handles POST /api/gates/:gate_id/approve - Approve a pending gate.
@@ -41,6 +51,33 @@ func (c *APIGatesController) Reject(ctx *echo.Context) error {
 	return c.resolveGate(ctx, storage.GateStatusRejected)
 }
 
+// resolveGateNotFound handles the ErrNotFound case from ResolveGate by
+// determining whether the gate truly doesn't exist or is already resolved.
+func (c *APIGatesController) resolveGateNotFound(ctx *echo.Context, gateID string) error {
+	reqCtx := ctx.Request().Context()
+
+	gate, getErr := c.store.GetGate(reqCtx, gateID)
+	if getErr != nil {
+		jsonErr := ctx.JSON(http.StatusNotFound, map[string]string{
+			"error": "gate not found",
+		})
+		if jsonErr != nil {
+			return fmt.Errorf("gate not found response: %w", jsonErr)
+		}
+
+		return nil
+	}
+
+	jsonErr2 := ctx.JSON(http.StatusConflict, map[string]string{
+		"error": fmt.Sprintf("gate is already %s", gate.Status),
+	})
+	if jsonErr2 != nil {
+		return fmt.Errorf("gate conflict response: %w", jsonErr2)
+	}
+
+	return nil
+}
+
 func (c *APIGatesController) resolveGate(ctx *echo.Context, status storage.GateStatus) error {
 	gateID := ctx.Param("gate_id")
 
@@ -49,29 +86,28 @@ func (c *APIGatesController) resolveGate(ctx *echo.Context, status storage.GateS
 
 	// ResolveGate atomically updates only pending gates (WHERE status = 'pending'),
 	// so no pre-fetch is needed, avoiding a TOCTOU race.
-	if err := c.store.ResolveGate(reqCtx, gateID, status, approvedBy); err != nil {
+	resolveErr := c.store.ResolveGate(reqCtx, gateID, status, approvedBy)
+	if resolveErr != nil {
+		err := resolveErr
 		c.logger.Error("gate.resolve.failed",
 			slog.String("gate_id", gateID),
 			slog.String("status", string(status)),
 			slog.Any("error", err),
 		)
+
 		if errors.Is(err, storage.ErrNotFound) {
 			// Distinguish "gate doesn't exist" from "gate already resolved".
-			gate, getErr := c.store.GetGate(reqCtx, gateID)
-			if getErr != nil {
-				return ctx.JSON(http.StatusNotFound, map[string]string{
-					"error": "gate not found",
-				})
-			}
-
-			return ctx.JSON(http.StatusConflict, map[string]string{
-				"error": fmt.Sprintf("gate is already %s", gate.Status),
-			})
+			return c.resolveGateNotFound(ctx, gateID)
 		}
 
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+		jsonErr3 := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to resolve gate: %v", err),
 		})
+		if jsonErr3 != nil {
+			return fmt.Errorf("gate error response: %w", jsonErr3)
+		}
+
+		return nil
 	}
 
 	c.logger.Info("gate.resolved",
@@ -88,20 +124,35 @@ func (c *APIGatesController) resolveGate(ctx *echo.Context, status storage.GateS
 
 		ctx.Response().Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast":{"message":"Gate %s","type":"success"}}`, action))
 
-		return ctx.NoContent(http.StatusOK)
+		noContentErr := ctx.NoContent(http.StatusOK)
+		if noContentErr != nil {
+			return fmt.Errorf("gate resolve response: %w", noContentErr)
+		}
+
+		return nil
 	}
 
 	// Return the full resolved gate for consistency with ListByRun.
 	gate, err := c.store.GetGate(reqCtx, gateID)
 	if err != nil {
 		// Resolve succeeded but re-fetch failed; return minimal response.
-		return ctx.JSON(http.StatusOK, map[string]string{
+		jsonErr4 := ctx.JSON(http.StatusOK, map[string]string{
 			"gate_id": gateID,
 			"status":  string(status),
 		})
+		if jsonErr4 != nil {
+			return fmt.Errorf("gate minimal response: %w", jsonErr4)
+		}
+
+		return nil
 	}
 
-	return ctx.JSON(http.StatusOK, gate)
+	jsonErr5 := ctx.JSON(http.StatusOK, gate)
+	if jsonErr5 != nil {
+		return fmt.Errorf("gate response: %w", jsonErr5)
+	}
+
+	return nil
 }
 
 // requireGatesFeature is middleware that rejects requests when the gates feature is disabled.

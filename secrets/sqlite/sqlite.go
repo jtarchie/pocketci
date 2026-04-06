@@ -223,5 +223,10 @@ func (s *SQLite) DeleteByScope(ctx context.Context, scope string) error {
 }
 
 func (s *SQLite) Close() error {
-	return s.db.Close()
+	err := s.db.Close()
+	if err != nil {
+		return fmt.Errorf("close db: %w", err)
+	}
+
+	return nil
 }

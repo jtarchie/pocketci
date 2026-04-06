@@ -110,7 +110,12 @@ func (c *WebMetricsController) Index(ctx *echo.Context) error {
 		return err
 	}
 
-	return ctx.Render(http.StatusOK, "metrics.html", data)
+	renderErr := ctx.Render(http.StatusOK, "metrics.html", data)
+	if renderErr != nil {
+		return fmt.Errorf("render metrics: %w", renderErr)
+	}
+
+	return nil
 }
 
 // Content handles GET /metrics/content — HTMX partial for auto-refresh.
@@ -120,7 +125,12 @@ func (c *WebMetricsController) Content(ctx *echo.Context) error {
 		return err
 	}
 
-	return ctx.Render(http.StatusOK, "metrics-content", data)
+	contentRenderErr := ctx.Render(http.StatusOK, "metrics-content", data)
+	if contentRenderErr != nil {
+		return fmt.Errorf("render metrics content: %w", contentRenderErr)
+	}
+
+	return nil
 }
 
 func (c *WebMetricsController) buildData(ctx *echo.Context) (MetricsDashboardData, error) {
@@ -135,7 +145,7 @@ func (c *WebMetricsController) buildData(ctx *echo.Context) (MetricsDashboardDat
 	// Run counts grouped by status
 	stats, err := c.store.GetRunStats(reqCtx)
 	if err != nil {
-		return data, err
+		return data, fmt.Errorf("get run stats: %w", err)
 	}
 	data.Queued = stats[storage.RunStatusQueued]
 	data.Running = stats[storage.RunStatusRunning]
@@ -149,14 +159,14 @@ func (c *WebMetricsController) buildData(ctx *echo.Context) (MetricsDashboardDat
 	// Total number of pipelines
 	result, err := c.store.SearchPipelines(reqCtx, "", 1, 1)
 	if err != nil {
-		return data, err
+		return data, fmt.Errorf("search pipelines: %w", err)
 	}
 	data.TotalPipelines = result.TotalItems
 
 	// Per-pipeline metrics — fetch all pipelines (up to 200 for the dashboard)
 	allPipelines, err := c.store.SearchPipelines(reqCtx, "", 1, 200)
 	if err != nil {
-		return data, err
+		return data, fmt.Errorf("search pipelines: %w", err)
 	}
 	data.PipelineMetrics = make([]PipelineMetrics, 0, len(allPipelines.Items))
 	for _, pipeline := range allPipelines.Items {
@@ -172,14 +182,15 @@ func (c *WebMetricsController) buildData(ctx *echo.Context) (MetricsDashboardDat
 
 	recentFailed, err := c.store.GetRunsByStatus(reqCtx, storage.RunStatusFailed, 10)
 	if err != nil {
-		return data, err
+		return data, fmt.Errorf("get runs by status: %w", err)
 	}
 	data.RecentFailures = make([]FailedRunRow, 0, len(recentFailed))
 	for _, run := range recentFailed {
 		name := nameByID[run.PipelineID]
 		if name == "" {
 			// Pipeline not in first 200 — do a point lookup
-			if p, pErr := c.store.GetPipeline(reqCtx, run.PipelineID); pErr == nil {
+			p, pErr := c.store.GetPipeline(reqCtx, run.PipelineID)
+			if pErr == nil {
 				name = p.Name
 			}
 		}

@@ -169,7 +169,8 @@ func (v *VZ) bootVM(ctx context.Context) error {
 
 	// Create volumes directory inside temp dir
 	v.volumesDir = filepath.Join(tempDir, "volumes")
-	if err := os.MkdirAll(v.volumesDir, 0o755); err != nil {
+	err = os.MkdirAll(v.volumesDir, 0o755)
+	if err != nil {
 		return fmt.Errorf("failed to create volumes dir: %w", err)
 	}
 
@@ -181,19 +182,22 @@ func (v *VZ) bootVM(ctx context.Context) error {
 
 	// Create a writable copy of the base image
 	diskPath := filepath.Join(tempDir, "disk.raw")
-	if err := createDiskCopy(imagePath, diskPath); err != nil {
+	err = createDiskCopy(imagePath, diskPath)
+	if err != nil {
 		return fmt.Errorf("failed to create disk copy: %w", err)
 	}
 
 	// Create cloud-init seed ISO
 	seedPath := filepath.Join(tempDir, "seed.iso")
-	if err := createSeedISO(seedPath, v.namespace); err != nil {
+	err = createSeedISO(seedPath, v.namespace)
+	if err != nil {
 		return fmt.Errorf("failed to create seed ISO: %w", err)
 	}
 
 	// Build the agent binary and place it in the volumes dir so cloud-init can find it
-	if err := v.buildAgent(); err != nil {
-		v.logger.Warn("vz.agent.build.failed", "err", err, "msg", "will fall back to cloud-init agent startup")
+	buildErr := v.buildAgent()
+	if buildErr != nil {
+		v.logger.Warn("vz.agent.build.failed", "err", buildErr, "msg", "will fall back to cloud-init agent startup")
 	}
 
 	// Configure the virtual machine
@@ -220,29 +224,33 @@ func (v *VZ) bootVM(ctx context.Context) error {
 	v.socketDevice = socketDevice
 
 	// Start the VM
-	if err := vm.Start(); err != nil {
+	err = vm.Start()
+	if err != nil {
 		return fmt.Errorf("failed to start VM: %w", err)
 	}
 
 	v.logger.Info("vz.vm.started")
 
 	// Wait for VM to reach running state
-	if err := v.waitForVMState(ctx, vz.VirtualMachineStateRunning, 30*time.Second); err != nil {
+	err = v.waitForVMState(ctx, vz.VirtualMachineStateRunning, 30*time.Second)
+	if err != nil {
 		return fmt.Errorf("VM failed to reach running state: %w", err)
 	}
 
 	v.logger.Info("vz.vm.running")
 
 	// Connect to the agent via vsock
-	if err := v.connectAgent(ctx); err != nil {
+	err = v.connectAgent(ctx)
+	if err != nil {
 		return fmt.Errorf("failed to connect to agent: %w", err)
 	}
 
 	v.logger.Info("vz.agent.connected")
 
 	// Mount virtiofs inside guest
-	if err := v.mountVolumes(); err != nil {
-		v.logger.Warn("vz.volumes.mount.failed", "err", err)
+	mountErr := v.mountVolumes()
+	if mountErr != nil {
+		v.logger.Warn("vz.volumes.mount.failed", "err", mountErr)
 		// Non-fatal — volumes may mount later on demand
 	}
 
@@ -299,7 +307,8 @@ func (v *VZ) buildVMConfig(diskPath, seedPath string) (*vz.VirtualMachineConfigu
 		return nil, nil, fmt.Errorf("failed to create VM configuration: %w", err)
 	}
 
-	if err := configureStorageDevices(config, diskPath, seedPath); err != nil {
+	err = configureStorageDevices(config, diskPath, seedPath)
+	if err != nil {
 		return nil, nil, err
 	}
 
@@ -386,7 +395,7 @@ func (v *VZ) waitForVMState(ctx context.Context, state vz.VirtualMachineState, t
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("wait for vm state: %w", ctx.Err())
 		case <-deadline:
 			return fmt.Errorf("timeout waiting for VM state %d", state)
 		default:
@@ -418,7 +427,7 @@ func (v *VZ) connectAgent(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("wait for guest agent: %w", ctx.Err())
 		case <-deadline:
 			return errors.New("timeout waiting for guest agent")
 		default:
@@ -438,9 +447,10 @@ func (v *VZ) connectAgent(ctx context.Context) error {
 
 		client := NewAgentClient(conn, connectFn)
 
-		if err := client.Ping(); err != nil {
+		pingErr := client.Ping()
+		if pingErr != nil {
 			_ = client.Close()
-			v.logger.Debug("vz.agent.ping.retry", "err", err)
+			v.logger.Debug("vz.agent.ping.retry", "err", pingErr)
 			time.Sleep(3 * time.Second)
 
 			continue
@@ -517,8 +527,9 @@ func (v *VZ) bindMountVolumes(mounts []orchestra.Mount) error {
 	for _, mount := range mounts {
 		hostPath := filepath.Join(v.volumesDir, mount.Name)
 
-		if err := os.MkdirAll(hostPath, 0o755); err != nil {
-			return fmt.Errorf("failed to create volume dir: %w", err)
+		mkdirErr := os.MkdirAll(hostPath, 0o755)
+		if mkdirErr != nil {
+			return fmt.Errorf("failed to create volume dir: %w", mkdirErr)
 		}
 
 		mountCmd := fmt.Sprintf(
@@ -554,7 +565,8 @@ func (v *VZ) bindMountVolumes(mounts []orchestra.Mount) error {
 
 // RunContainer executes a command inside the VZ guest via the vsock agent.
 func (v *VZ) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.Container, error) {
-	if err := v.ensureVM(ctx); err != nil {
+	err := v.ensureVM(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("failed to ensure VM: %w", err)
 	}
 
@@ -570,7 +582,8 @@ func (v *VZ) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.C
 	v.mu.Unlock()
 
 	// Handle mounts: create directories on host and bind-mount inside guest
-	if err := v.bindMountVolumes(task.Mounts); err != nil {
+	err = v.bindMountVolumes(task.Mounts)
+	if err != nil {
 		return nil, err
 	}
 
@@ -727,7 +740,8 @@ func (v *VZ) buildAgent() error {
 	}
 
 	// Make agent executable
-	if err := os.Chmod(agentPath, 0755); err != nil {
+	err = os.Chmod(agentPath, 0755)
+	if err != nil {
 		return fmt.Errorf("failed to chmod agent: %w", err)
 	}
 

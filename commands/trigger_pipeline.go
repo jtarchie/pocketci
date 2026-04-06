@@ -24,7 +24,7 @@ func (c *TriggerPipeline) Run(logger *slog.Logger) error {
 
 	pipeline, err := apiClient.FindPipelineByNameOrID(c.Name)
 	if err != nil {
-		return err
+		return fmt.Errorf("find pipeline: %w", err)
 	}
 
 	logger.Info("pipeline.trigger", "id", pipeline.ID, "name", pipeline.Name)
@@ -36,7 +36,7 @@ func (c *TriggerPipeline) Run(logger *slog.Logger) error {
 
 	result, err := apiClient.TriggerPipeline(pipeline.ID, body)
 	if err != nil {
-		return err
+		return fmt.Errorf("trigger pipeline: %w", err)
 	}
 
 	fmt.Printf("Pipeline '%s' triggered successfully (run: %s)\n", pipeline.Name, result.RunID)

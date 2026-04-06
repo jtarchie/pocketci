@@ -79,7 +79,8 @@ func New(_ context.Context, cfg Config, logger *slog.Logger) (orchestra.Driver, 
 	case "darwin":
 		defaultAccel = "hvf"
 	case "linux":
-		if _, err := os.Stat("/dev/kvm"); err == nil {
+		_, kvmErr := os.Stat("/dev/kvm")
+		if kvmErr == nil {
 			defaultAccel = "kvm"
 		}
 	}
@@ -152,7 +153,8 @@ func (q *QEMU) bootVM(ctx context.Context) error {
 
 	// Create volumes directory inside temp dir
 	q.volumesDir = filepath.Join(tempDir, "volumes")
-	if err := os.MkdirAll(q.volumesDir, 0o755); err != nil {
+	err = os.MkdirAll(q.volumesDir, 0o755)
+	if err != nil {
 		return fmt.Errorf("failed to create volumes dir: %w", err)
 	}
 
@@ -171,13 +173,15 @@ func (q *QEMU) bootVM(ctx context.Context) error {
 
 	// Create overlay (COW) so we never modify the base image
 	overlayPath := filepath.Join(tempDir, "disk.qcow2")
-	if err := createOverlay(baseImage, overlayPath); err != nil {
+	err = createOverlay(baseImage, overlayPath)
+	if err != nil {
 		return fmt.Errorf("failed to create overlay: %w", err)
 	}
 
 	// Create cloud-init seed ISO
 	seedPath := filepath.Join(tempDir, "seed.iso")
-	if err := createSeedISO(seedPath, q.namespace); err != nil {
+	err = createSeedISO(seedPath, q.namespace)
+	if err != nil {
 		return fmt.Errorf("failed to create seed ISO: %w", err)
 	}
 
@@ -202,29 +206,33 @@ func (q *QEMU) bootVM(ctx context.Context) error {
 	cmd.Stderr = os.Stderr
 	q.cmd = cmd
 
-	if err := cmd.Start(); err != nil {
+	err = cmd.Start()
+	if err != nil {
 		return fmt.Errorf("failed to start QEMU: %w", err)
 	}
 
 	q.logger.Info("qemu.vm.started", "pid", cmd.Process.Pid)
 
 	// Connect QMP monitor
-	if err := q.connectQMP(ctx, qmpSock); err != nil {
+	err = q.connectQMP(ctx, qmpSock)
+	if err != nil {
 		return fmt.Errorf("failed to connect QMP: %w", err)
 	}
 
 	q.logger.Info("qemu.qmp.connected")
 
 	// Wait for QGA to become available
-	if err := q.connectQGA(ctx, qgaAddr); err != nil {
+	err = q.connectQGA(ctx, qgaAddr)
+	if err != nil {
 		return fmt.Errorf("failed to connect QGA: %w", err)
 	}
 
 	q.logger.Info("qemu.qga.connected")
 
 	// Mount 9p volumes inside guest
-	if err := q.mountVolumes(); err != nil {
-		q.logger.Warn("qemu.volumes.mount.failed", "err", err)
+	mountErr := q.mountVolumes()
+	if mountErr != nil {
+		q.logger.Warn("qemu.volumes.mount.failed", "err", mountErr)
 		// Non-fatal — volumes may mount later on demand
 	}
 
@@ -256,7 +264,8 @@ func (q *QEMU) buildQEMUArgs(overlayPath, seedPath, qmpSock string, qgaPort int)
 		}
 
 		for _, path := range efiPaths {
-			if _, err := os.Stat(path); err == nil {
+			_, efiStatErr := os.Stat(path)
+			if efiStatErr == nil {
 				args = append(args, "-bios", path)
 
 				break
@@ -308,13 +317,14 @@ func (q *QEMU) connectQMP(ctx context.Context, sockPath string) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("context: %w", ctx.Err())
 		case <-deadline:
 			return fmt.Errorf("timeout waiting for QMP socket at %s", sockPath)
 		default:
 		}
 
-		if _, err := os.Stat(sockPath); err != nil {
+		_, sockStatErr := os.Stat(sockPath)
+		if sockStatErr != nil {
 			time.Sleep(500 * time.Millisecond)
 
 			continue
@@ -327,7 +337,8 @@ func (q *QEMU) connectQMP(ctx context.Context, sockPath string) error {
 			continue
 		}
 
-		if err := mon.Connect(); err != nil {
+		connectErr := mon.Connect()
+		if connectErr != nil {
 			time.Sleep(500 * time.Millisecond)
 
 			continue
@@ -345,7 +356,7 @@ func (q *QEMU) waitForCloudInit(ctx context.Context, addr string, deadline <-cha
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("context: %w", ctx.Err())
 		case <-deadline:
 			return errors.New("timeout waiting for cloud-init to finish")
 		default:
@@ -400,7 +411,7 @@ func (q *QEMU) establishStableQGA(ctx context.Context, addr string, deadline <-c
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, fmt.Errorf("context: %w", ctx.Err())
 		case <-deadline:
 			return nil, errors.New("timeout waiting for stable QGA connection")
 		default:
@@ -455,7 +466,8 @@ func (q *QEMU) connectQGA(ctx context.Context, addr string) error {
 	// Phase 1: Wait for cloud-init to finish by polling boot-finished file.
 	q.logger.Debug("qemu.qga.waiting-for-cloud-init")
 
-	if err := q.waitForCloudInit(ctx, addr, deadline); err != nil {
+	err := q.waitForCloudInit(ctx, addr, deadline)
+	if err != nil {
 		return err
 	}
 
@@ -509,8 +521,9 @@ func (q *QEMU) bindMountVolumes(mounts []orchestra.Mount) error {
 	for _, mount := range mounts {
 		hostPath := filepath.Join(q.volumesDir, mount.Name)
 
-		if err := os.MkdirAll(hostPath, 0o755); err != nil {
-			return fmt.Errorf("failed to create volume dir: %w", err)
+		mkdirErr := os.MkdirAll(hostPath, 0o755)
+		if mkdirErr != nil {
+			return fmt.Errorf("failed to create volume dir: %w", mkdirErr)
 		}
 
 		mountCmd := fmt.Sprintf(
@@ -546,7 +559,8 @@ func (q *QEMU) bindMountVolumes(mounts []orchestra.Mount) error {
 
 // RunContainer executes a command inside the QEMU guest via QGA.
 func (q *QEMU) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.Container, error) {
-	if err := q.ensureVM(ctx); err != nil {
+	err := q.ensureVM(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("failed to ensure VM: %w", err)
 	}
 
@@ -562,7 +576,8 @@ func (q *QEMU) RunContainer(ctx context.Context, task orchestra.Task) (orchestra
 	q.mu.Unlock()
 
 	// Handle mounts: create directories on host and bind-mount inside guest
-	if err := q.bindMountVolumes(task.Mounts); err != nil {
+	err = q.bindMountVolumes(task.Mounts)
+	if err != nil {
 		return nil, err
 	}
 
@@ -699,7 +714,7 @@ func qemuImgCommand(args ...string) *exec.Cmd {
 func findFreePort() (int, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("listen: %w", err)
 	}
 
 	port := listener.Addr().(*net.TCPAddr).Port

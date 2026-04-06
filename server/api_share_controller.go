@@ -34,9 +34,14 @@ func (c *APIShareController) CreateShare(ctx *echo.Context) error {
 		return fmt.Errorf("could not generate share token: %w", err)
 	}
 
-	return ctx.JSON(http.StatusOK, map[string]string{
+	shareJsonErr := ctx.JSON(http.StatusOK, map[string]string{
 		"share_path": "/share/" + token + "/tasks",
 	})
+	if shareJsonErr != nil {
+		return fmt.Errorf("share create response: %w", shareJsonErr)
+	}
+
+	return nil
 }
 
 // RegisterRoutes registers the share API route on the given authenticated group.

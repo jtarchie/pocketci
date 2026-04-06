@@ -47,7 +47,8 @@ func (h *NotifyHandler) Execute(sc *StepContext, step *config.Step, pathPrefix s
 		// survive after the step (and possibly the pipeline) finishes.
 		for _, name := range names {
 			go func(n, msg string) {
-				if err := sc.Notifier.Send(context.Background(), n, msg); err != nil {
+				err := sc.Notifier.Send(context.Background(), n, msg)
+				if err != nil {
 					sc.Logger.Error("notification.async.failed",
 						"name", n,
 						"error", err,
@@ -57,7 +58,8 @@ func (h *NotifyHandler) Execute(sc *StepContext, step *config.Step, pathPrefix s
 		}
 	} else {
 		for _, name := range names {
-			if err := sc.Notifier.Send(sc.Ctx, name, step.Message); err != nil {
+			err := sc.Notifier.Send(sc.Ctx, name, step.Message)
+			if err != nil {
 				sendErr = err
 
 				break

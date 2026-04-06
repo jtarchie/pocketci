@@ -115,10 +115,15 @@ func (s *FlySandbox) Cleanup(ctx context.Context) error {
 		_ = s.driver.client.Wait(ctx, s.driver.appName, machine.ID, flaps.WithWaitStates("stopped"), flaps.WithWaitTimeout(30*time.Second))
 	}
 
-	return s.driver.client.Destroy(ctx, s.driver.appName, fly.RemoveMachineInput{
+	err = s.driver.client.Destroy(ctx, s.driver.appName, fly.RemoveMachineInput{
 		ID:   s.machineID,
 		Kill: true,
 	}, "")
+	if err != nil {
+		return fmt.Errorf("destroy machine: %w", err)
+	}
+
+	return nil
 }
 
 // StartSandbox implements orchestra.SandboxDriver.
@@ -171,7 +176,8 @@ func (f *Fly) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 
 	guest := &fly.MachineGuest{}
 
-	if err := guest.SetSize(f.size); err != nil {
+	sizeErr := guest.SetSize(f.size)
+	if sizeErr != nil {
 		guest.CPUKind = "shared"
 		guest.CPUs = 1
 		guest.MemoryMB = 256
@@ -215,7 +221,8 @@ func (f *Fly) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 	f.mu.Unlock()
 
 	// Wait for the machine to be in the started state.
-	if err := f.client.Wait(ctx, f.appName, machine.ID, flaps.WithWaitStates("started"), flaps.WithWaitTimeout(2*time.Minute)); err != nil {
+	err = f.client.Wait(ctx, f.appName, machine.ID, flaps.WithWaitStates("started"), flaps.WithWaitTimeout(2*time.Minute))
+	if err != nil {
 		return nil, fmt.Errorf("sandbox: machine did not start: %w", err)
 	}
 

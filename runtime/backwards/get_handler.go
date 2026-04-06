@@ -60,7 +60,8 @@ func (h *GetHandler) Execute(sc *StepContext, step *config.Step, pathPrefix stri
 		return fmt.Errorf("get step fetch: %w", err)
 	}
 
-	if saveErr := SaveResourceVersion(sc.Ctx, sc.Storage, scopedName, version, sc.JobName); saveErr != nil {
+	saveErr := SaveResourceVersion(sc.Ctx, sc.Storage, scopedName, version, sc.JobName)
+	if saveErr != nil {
 		return fmt.Errorf("get step save version: %w", saveErr)
 	}
 
@@ -199,7 +200,8 @@ func (h *GetHandler) checkContainer(
 	sc.appendExecutedTask("check-" + resource.Name)
 
 	var versions []map[string]string
-	if err := json.Unmarshal([]byte(stdout), &versions); err != nil {
+	err = json.Unmarshal([]byte(stdout), &versions)
+	if err != nil {
 		return nil, fmt.Errorf("parse check output for %q: %w", resource.Name, err)
 	}
 

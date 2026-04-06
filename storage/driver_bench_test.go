@@ -47,7 +47,8 @@ func BenchmarkStorage_Set(b *testing.B) {
 
 	for b.Loop() {
 		key := fmt.Sprintf("/task/%d", b.N)
-		if err := driver.Set(ctx, key, payload); err != nil {
+		err := driver.Set(ctx, key, payload)
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -61,7 +62,8 @@ func BenchmarkStorage_Get(b *testing.B) {
 	// Pre-populate data
 	for i := range 1000 {
 		key := fmt.Sprintf("/task/%d", i)
-		if err := driver.Set(ctx, key, payload); err != nil {
+		err := driver.Set(ctx, key, payload)
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -71,7 +73,8 @@ func BenchmarkStorage_Get(b *testing.B) {
 
 	for i := range b.N {
 		key := fmt.Sprintf("/task/%d", i%1000)
-		if _, err := driver.Get(ctx, key); err != nil {
+		_, err := driver.Get(ctx, key)
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -85,7 +88,8 @@ func BenchmarkStorage_GetAll(b *testing.B) {
 	// Pre-populate data using the Set method which populates the tasks table
 	for i := range 100 {
 		key := fmt.Sprintf("/bench/tasks/%d", i)
-		if err := driver.Set(ctx, key, payload); err != nil {
+		err := driver.Set(ctx, key, payload)
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -94,7 +98,8 @@ func BenchmarkStorage_GetAll(b *testing.B) {
 	b.ResetTimer()
 
 	for b.Loop() {
-		if _, err := driver.GetAll(ctx, "/bench/tasks/", []string{"status"}); err != nil {
+		_, err := driver.GetAll(ctx, "/bench/tasks/", []string{"status"})
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -110,7 +115,8 @@ func BenchmarkStorage_SavePipeline(b *testing.B) {
 
 	for i := range b.N {
 		name := fmt.Sprintf("pipeline-%d", i)
-		if _, err := driver.SavePipeline(ctx, name, content, "docker", ""); err != nil {
+		_, err := driver.SavePipeline(ctx, name, content, "docker", "")
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -124,7 +130,8 @@ func BenchmarkStorage_ListPipelines(b *testing.B) {
 	// Pre-populate pipelines
 	for i := range 50 {
 		name := fmt.Sprintf("pipeline-%d", i)
-		if _, err := driver.SavePipeline(ctx, name, content, "docker", ""); err != nil {
+		_, err := driver.SavePipeline(ctx, name, content, "docker", "")
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -133,7 +140,8 @@ func BenchmarkStorage_ListPipelines(b *testing.B) {
 	b.ResetTimer()
 
 	for b.Loop() {
-		if _, err := driver.SearchPipelines(ctx, "", 1, 100); err != nil {
+		_, err := driver.SearchPipelines(ctx, "", 1, 100)
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -159,11 +167,13 @@ func BenchmarkStorage_SaveAndGetRun(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		if _, err := driver.GetRun(ctx, run.ID); err != nil {
+		_, err = driver.GetRun(ctx, run.ID)
+		if err != nil {
 			b.Fatal(err)
 		}
 
-		if err := driver.UpdateRunStatus(ctx, run.ID, storage.RunStatusSuccess, ""); err != nil {
+		err = driver.UpdateRunStatus(ctx, run.ID, storage.RunStatusSuccess, "")
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -188,12 +198,14 @@ func BenchmarkStorage_UpdateRunStatus_Allowed(b *testing.B) {
 		}
 
 		// queued -> running (allowed)
-		if err := driver.UpdateRunStatus(ctx, run.ID, storage.RunStatusRunning, ""); err != nil {
+		err = driver.UpdateRunStatus(ctx, run.ID, storage.RunStatusRunning, "")
+		if err != nil {
 			b.Fatal(err)
 		}
 
 		// running -> success (allowed)
-		if err := driver.UpdateRunStatus(ctx, run.ID, storage.RunStatusSuccess, ""); err != nil {
+		err = driver.UpdateRunStatus(ctx, run.ID, storage.RunStatusSuccess, "")
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -214,7 +226,8 @@ func BenchmarkStorage_UpdateRunStatus_Blocked(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	if err := driver.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "stopped"); err != nil {
+	err = driver.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "stopped")
+	if err != nil {
 		b.Fatal(err)
 	}
 
@@ -223,7 +236,8 @@ func BenchmarkStorage_UpdateRunStatus_Blocked(b *testing.B) {
 
 	for b.Loop() {
 		// failed -> success: blocked by state machine (silent no-op)
-		if err := driver.UpdateRunStatus(ctx, run.ID, storage.RunStatusSuccess, ""); err != nil {
+		err := driver.UpdateRunStatus(ctx, run.ID, storage.RunStatusSuccess, "")
+		if err != nil {
 			b.Fatal(err)
 		}
 	}

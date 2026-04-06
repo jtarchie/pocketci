@@ -423,11 +423,13 @@ func (k *K8s) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 		return nil, err
 	}
 
-	if err := k.watchPodUntilRunning(waitCtx, podName, logger); err != nil {
+	err = k.watchPodUntilRunning(waitCtx, podName, logger)
+	if err != nil {
 		return nil, err
 	}
 
-	if err := k.attachStdinToPod(ctx, podName, task, logger); err != nil {
+	err = k.attachStdinToPod(ctx, podName, task, logger)
+	if err != nil {
 		return nil, err
 	}
 
@@ -514,7 +516,7 @@ func buildResourceRequirements(task orchestra.Task) corev1.ResourceRequirements 
 
 func parseUserUID(user string) (*int64, error) {
 	if user == "" {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil pointer signals no UID constraint; not an error
 	}
 
 	var uid int64

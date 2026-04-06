@@ -51,7 +51,8 @@ func (r *ResourceRunner) Check(input ResourceCheckInput) (*ResourceCheckResult, 
 	logger := r.logger.With("type", input.Type, "operation", "resource.check")
 	logger.Debug("resource.check")
 
-	if err := support.ResolveSecretsInMap(r.ctx, r.secretsManager, r.pipelineID, input.Source, nil); err != nil {
+	err := support.ResolveSecretsInMap(r.ctx, r.secretsManager, r.pipelineID, input.Source, nil)
+	if err != nil {
 		return nil, fmt.Errorf("could not resolve secrets in source: %w", err)
 	}
 
@@ -103,11 +104,13 @@ func (r *ResourceRunner) Fetch(input ResourceFetchInput) (*ResourceFetchResult, 
 	logger := r.logger.With("type", input.Type, "operation", "resource.fetch", "destDir", input.DestDir)
 	logger.Debug("resource.fetch")
 
-	if err := support.ResolveSecretsInMap(r.ctx, r.secretsManager, r.pipelineID, input.Source, nil); err != nil {
+	err := support.ResolveSecretsInMap(r.ctx, r.secretsManager, r.pipelineID, input.Source, nil)
+	if err != nil {
 		return nil, fmt.Errorf("could not resolve secrets in source: %w", err)
 	}
 
-	if err := support.ResolveSecretsInMap(r.ctx, r.secretsManager, r.pipelineID, input.Params, nil); err != nil {
+	err = support.ResolveSecretsInMap(r.ctx, r.secretsManager, r.pipelineID, input.Params, nil)
+	if err != nil {
 		return nil, fmt.Errorf("could not resolve secrets in params: %w", err)
 	}
 
@@ -165,11 +168,13 @@ func (r *ResourceRunner) Push(input ResourcePushInput) (*ResourcePushResult, err
 	logger := r.logger.With("type", input.Type, "operation", "resource.push", "srcDir", input.SrcDir)
 	logger.Debug("resource.push")
 
-	if err := support.ResolveSecretsInMap(r.ctx, r.secretsManager, r.pipelineID, input.Source, nil); err != nil {
+	err := support.ResolveSecretsInMap(r.ctx, r.secretsManager, r.pipelineID, input.Source, nil)
+	if err != nil {
 		return nil, fmt.Errorf("could not resolve secrets in source: %w", err)
 	}
 
-	if err := support.ResolveSecretsInMap(r.ctx, r.secretsManager, r.pipelineID, input.Params, nil); err != nil {
+	err = support.ResolveSecretsInMap(r.ctx, r.secretsManager, r.pipelineID, input.Params, nil)
+	if err != nil {
 		return nil, fmt.Errorf("could not resolve secrets in params: %w", err)
 	}
 

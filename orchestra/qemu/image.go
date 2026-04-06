@@ -38,11 +38,13 @@ func downloadImage(cacheDir string) (string, error) {
 	cachePath := filepath.Join(cacheDir, filename)
 
 	// Check if already cached
-	if _, err := os.Stat(cachePath); err == nil {
+	_, statErr := os.Stat(cachePath)
+	if statErr == nil {
 		return cachePath, nil
 	}
 
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+	err := os.MkdirAll(cacheDir, 0o755)
+	if err != nil {
 		return "", fmt.Errorf("failed to create cache dir: %w", err)
 	}
 
@@ -67,19 +69,22 @@ func downloadImage(cacheDir string) (string, error) {
 	}
 	defer out.Close() //nolint:errcheck
 
-	if _, err := io.Copy(out, resp.Body); err != nil {
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
 		_ = os.Remove(tmpPath)
 
 		return "", fmt.Errorf("failed to write image: %w", err)
 	}
 
-	if err := out.Close(); err != nil {
+	err = out.Close()
+	if err != nil {
 		_ = os.Remove(tmpPath)
 
 		return "", fmt.Errorf("failed to close temp file: %w", err)
 	}
 
-	if err := os.Rename(tmpPath, cachePath); err != nil {
+	err = os.Rename(tmpPath, cachePath)
+	if err != nil {
 		_ = os.Remove(tmpPath)
 
 		return "", fmt.Errorf("failed to rename temp file: %w", err)
@@ -135,11 +140,13 @@ runcmd:
 	}
 	defer writer.Cleanup() //nolint:errcheck
 
-	if err := writer.AddFile(stringReader(metaData), "meta-data"); err != nil {
+	err = writer.AddFile(stringReader(metaData), "meta-data")
+	if err != nil {
 		return fmt.Errorf("failed to add meta-data: %w", err)
 	}
 
-	if err := writer.AddFile(stringReader(userData), "user-data"); err != nil {
+	err = writer.AddFile(stringReader(userData), "user-data")
+	if err != nil {
 		return fmt.Errorf("failed to add user-data: %w", err)
 	}
 
@@ -149,7 +156,8 @@ runcmd:
 	}
 	defer f.Close() //nolint:errcheck
 
-	if err := writer.WriteTo(f, "CIDATA"); err != nil {
+	err = writer.WriteTo(f, "CIDATA")
+	if err != nil {
 		return fmt.Errorf("failed to write ISO: %w", err)
 	}
 

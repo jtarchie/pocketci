@@ -293,7 +293,12 @@ func (v *CachingVolume) Cleanup(ctx context.Context) error {
 		// Continue with cleanup even if persist fails
 	}
 
-	return v.inner.Cleanup(ctx)
+	err = v.inner.Cleanup(ctx)
+	if err != nil {
+		return fmt.Errorf("cleanup: %w", err)
+	}
+
+	return nil
 }
 
 // Name implements orchestra.Volume.

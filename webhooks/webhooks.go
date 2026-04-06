@@ -7,6 +7,7 @@ package webhooks
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 )
 
@@ -52,7 +53,12 @@ type Provider interface {
 func Detect(providers []Provider, r *http.Request, body []byte, secret string) (*Event, error) {
 	for _, p := range providers {
 		if p.Match(r) {
-			return p.Parse(r, body, secret)
+			event, err := p.Parse(r, body, secret)
+			if err != nil {
+				return nil, fmt.Errorf("parse: %w", err)
+			}
+
+			return event, nil
 		}
 	}
 

@@ -2,6 +2,7 @@ package runtime_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"testing"
 
@@ -13,9 +14,15 @@ import (
 func runWithWebhook(t *testing.T, src string, data *jsapi.WebhookData) error {
 	t.Helper()
 	js := runtime.NewJS(slog.Default())
-	return js.ExecuteWithOptions(context.Background(), src, nil, nil, runtime.ExecuteOptions{
+
+	err := js.ExecuteWithOptions(context.Background(), src, nil, nil, runtime.ExecuteOptions{
 		WebhookData: data,
 	})
+	if err != nil {
+		return fmt.Errorf("execute: %w", err)
+	}
+
+	return nil
 }
 
 func TestWebhookTriggerGlobal(t *testing.T) {

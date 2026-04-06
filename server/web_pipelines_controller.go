@@ -34,7 +34,8 @@ func buildPipelineRows(ctx context.Context, store storage.Driver, pipelines []st
 			}
 		}
 		row := PipelineRow{Pipeline: p, DriverName: driverName}
-		if res, err := store.SearchRunsByPipeline(ctx, p.ID, "", 1, 1); err == nil && len(res.Items) > 0 {
+		res, searchErr := store.SearchRunsByPipeline(ctx, p.ID, "", 1, 1)
+		if searchErr == nil && len(res.Items) > 0 {
 			row.LatestRun = &res.Items[0]
 		}
 		rows = append(rows, row)
@@ -127,10 +128,33 @@ func (c *WebPipelinesController) Index(ctx *echo.Context) error {
 	if isHtmxRequest(ctx) {
 		ctx.Response().Header().Set("HX-Push-Url", buildPipelinesURL(q, page, perPage))
 
-		return ctx.Render(http.StatusOK, "pipelines-content", data)
+		contentRenderErr := ctx.Render(http.StatusOK, "pipelines-content", data)
+		if contentRenderErr != nil {
+			return fmt.Errorf("render pipelines content: %w", contentRenderErr)
+		}
+
+		return nil
 	}
 
-	return ctx.Render(http.StatusOK, "pipelines.html", data)
+	fullRenderErr := ctx.Render(http.StatusOK, "pipelines.html", data)
+	if fullRenderErr != nil {
+		return fmt.Errorf("render pipelines: %w", fullRenderErr)
+	}
+
+	return nil
+}
+
+// pipelineHasWebhookSecret checks whether the pipeline has a stored webhook
+// secret, returning false when the secrets manager is unconfigured or the
+// secret is absent.
+func (c *WebPipelinesController) pipelineHasWebhookSecret(ctx *echo.Context, pipeline *storage.Pipeline) bool {
+	if c.secretsMgr == nil {
+		return false
+	}
+
+	secret, err := c.secretsMgr.Get(ctx.Request().Context(), secrets.PipelineScope(pipeline.ID), "webhook_secret")
+
+	return err == nil && secret != ""
 }
 
 // Show handles GET /pipelines/:id/ - Pipeline detail page.
@@ -140,13 +164,19 @@ func (c *WebPipelinesController) Show(ctx *echo.Context) error {
 	pipeline, err := c.store.GetPipeline(ctx.Request().Context(), id)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			return ctx.String(http.StatusNotFound, "Pipeline not found")
+			nfStrErr := ctx.String(http.StatusNotFound, "Pipeline not found")
+			if nfStrErr != nil {
+				return fmt.Errorf("pipeline not found response: %w", nfStrErr)
+			}
+
+			return nil
 		}
 		return fmt.Errorf("could not get pipeline: %w", err)
 	}
 
-	if err := checkPipelineRBAC(ctx, pipeline); err != nil {
-		return err
+	showRbacErr := checkPipelineRBAC(ctx, pipeline)
+	if showRbacErr != nil {
+		return showRbacErr
 	}
 
 	page := 1
@@ -161,13 +191,7 @@ func (c *WebPipelinesController) Show(ctx *echo.Context) error {
 
 	q := ctx.QueryParam("q")
 
-	var result *storage.PaginationResult[storage.PipelineRun]
-	var runsErr error
-	if q != "" {
-		result, runsErr = c.store.SearchRunsByPipeline(ctx.Request().Context(), id, q, page, perPage)
-	} else {
-		result, runsErr = c.store.SearchRunsByPipeline(ctx.Request().Context(), id, "", page, perPage)
-	}
+	result, runsErr := c.store.SearchRunsByPipeline(ctx.Request().Context(), id, q, page, perPage)
 	if runsErr != nil {
 		return fmt.Errorf("could not list runs: %w", runsErr)
 	}
@@ -188,22 +212,19 @@ func (c *WebPipelinesController) Show(ctx *echo.Context) error {
 		driverName = c.execService.DefaultDriver
 	}
 
-	hasWebhookSecret := false
-	if c.secretsMgr != nil {
-		secret, err := c.secretsMgr.Get(ctx.Request().Context(), secrets.PipelineScope(pipeline.ID), "webhook_secret")
-		if err == nil && secret != "" {
-			hasWebhookSecret = true
-		}
-	}
-
-	return ctx.Render(http.StatusOK, "pipeline_detail.html", map[string]any{
+	detailRenderErr := ctx.Render(http.StatusOK, "pipeline_detail.html", map[string]any{
 		"Pipeline":         pipeline,
 		"DriverName":       driverName,
 		"Runs":             result.Items,
 		"Pagination":       result,
 		"Query":            q,
-		"HasWebhookSecret": hasWebhookSecret,
+		"HasWebhookSecret": c.pipelineHasWebhookSecret(ctx, pipeline),
 	})
+	if detailRenderErr != nil {
+		return fmt.Errorf("render pipeline detail: %w", detailRenderErr)
+	}
+
+	return nil
 }
 
 // RunsSection handles GET /pipelines/:id/runs-section[/] - HTMX partial: runs section for a pipeline.
@@ -236,12 +257,17 @@ func (c *WebPipelinesController) RunsSection(ctx *echo.Context) error {
 		}
 	}
 
-	return ctx.Render(http.StatusOK, "runs-section", map[string]any{
+	runsSectionRenderErr := ctx.Render(http.StatusOK, "runs-section", map[string]any{
 		"PipelineID": id,
 		"Runs":       result.Items,
 		"Pagination": result,
 		"Query":      "",
 	})
+	if runsSectionRenderErr != nil {
+		return fmt.Errorf("render runs section: %w", runsSectionRenderErr)
+	}
+
+	return nil
 }
 
 // RunsSearch handles GET /pipelines/:id/runs-search[/] - HTMX partial: runs-section filtered by ?q=.
@@ -277,12 +303,17 @@ func (c *WebPipelinesController) RunsSearch(ctx *echo.Context) error {
 
 	ctx.Response().Header().Set("HX-Push-Url", fmt.Sprintf("/pipelines/%s/?q=%s&page=%d&per_page=%d", id, q, page, perPage))
 
-	return ctx.Render(http.StatusOK, "runs-section", map[string]any{
+	runsQRenderErr := ctx.Render(http.StatusOK, "runs-section", map[string]any{
 		"PipelineID": id,
 		"Runs":       result.Items,
 		"Pagination": result,
 		"Query":      q,
 	})
+	if runsQRenderErr != nil {
+		return fmt.Errorf("render runs section: %w", runsQRenderErr)
+	}
+
+	return nil
 }
 
 // Source handles GET /pipelines/:id/source[/] - Pipeline source view.
@@ -291,18 +322,29 @@ func (c *WebPipelinesController) Source(ctx *echo.Context) error {
 	pipeline, err := c.store.GetPipeline(ctx.Request().Context(), id)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			return ctx.String(http.StatusNotFound, "Pipeline not found")
+			srcNFStrErr := ctx.String(http.StatusNotFound, "Pipeline not found")
+			if srcNFStrErr != nil {
+				return fmt.Errorf("source not found response: %w", srcNFStrErr)
+			}
+
+			return nil
 		}
 		return fmt.Errorf("could not get pipeline: %w", err)
 	}
 
-	if err := checkPipelineRBAC(ctx, pipeline); err != nil {
-		return err
+	srcRbacErr := checkPipelineRBAC(ctx, pipeline)
+	if srcRbacErr != nil {
+		return srcRbacErr
 	}
 
-	return ctx.Render(http.StatusOK, "pipeline_source.html", map[string]any{
+	srcRenderErr := ctx.Render(http.StatusOK, "pipeline_source.html", map[string]any{
 		"Pipeline": pipeline,
 	})
+	if srcRenderErr != nil {
+		return fmt.Errorf("render pipeline source: %w", srcRenderErr)
+	}
+
+	return nil
 }
 
 // buildPipelinesURL constructs a URL for the pipelines listing page.

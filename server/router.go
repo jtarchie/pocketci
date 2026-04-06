@@ -91,7 +91,12 @@ func (r *Router) Start(address string) error {
 
 	defer cancel()
 
-	return sc.Start(ctx, r.Echo)
+	startErr := sc.Start(ctx, r.Echo)
+	if startErr != nil {
+		return fmt.Errorf("start server: %w", startErr)
+	}
+
+	return nil
 }
 
 // WaitForExecutions blocks until all in-flight pipeline executions have completed.
@@ -173,8 +178,11 @@ func newSlogMiddleware(logger *slog.Logger) echo.MiddlewareFunc {
 				} else {
 					attrs = append(attrs, slog.Int("status", http.StatusInternalServerError))
 				}
-			} else if resp, rErr := echo.UnwrapResponse(c.Response()); rErr == nil {
-				attrs = append(attrs, slog.Int("status", resp.Status))
+			} else {
+				resp, rErr := echo.UnwrapResponse(c.Response())
+				if rErr == nil {
+					attrs = append(attrs, slog.Int("status", resp.Status))
+				}
 			}
 
 			logger.LogAttrs(req.Context(), level, "request", attrs...)

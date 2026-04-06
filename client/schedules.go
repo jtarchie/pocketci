@@ -15,7 +15,8 @@ func (c *Client) ListSchedules(pipelineID string) ([]storage.Schedule, error) {
 		return nil, fmt.Errorf("could not list schedules: %w", err)
 	}
 
-	if err := c.checkAuthStatus(resp.StatusCode()); err != nil {
+	err = c.checkAuthStatus(resp.StatusCode())
+	if err != nil {
 		return nil, err
 	}
 
@@ -24,7 +25,8 @@ func (c *Client) ListSchedules(pipelineID string) ([]storage.Schedule, error) {
 	}
 
 	var schedules []storage.Schedule
-	if err := json.Unmarshal(resp.Body(), &schedules); err != nil {
+	err = json.Unmarshal(resp.Body(), &schedules)
+	if err != nil {
 		return nil, fmt.Errorf("could not parse response: %w", err)
 	}
 
@@ -41,7 +43,8 @@ func (c *Client) SetScheduleEnabled(scheduleID string, enabled bool) error {
 		return fmt.Errorf("could not update schedule: %w", err)
 	}
 
-	if err := c.checkAuthStatus(resp.StatusCode()); err != nil {
+	err = c.checkAuthStatus(resp.StatusCode())
+	if err != nil {
 		return err
 	}
 

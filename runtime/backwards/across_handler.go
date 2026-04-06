@@ -160,7 +160,8 @@ func executeAcross(
 	sem := semaphore.NewWeighted(int64(limit))
 
 	for i, combo := range combinations {
-		if err := sem.Acquire(gCtx, 1); err != nil {
+		err := sem.Acquire(gCtx, 1)
+		if err != nil {
 			break // gCtx cancelled (fail-fast triggered by a prior goroutine error)
 		}
 
@@ -188,6 +189,9 @@ func executeAcross(
 	}
 
 	runErr := g.Wait()
+	if runErr != nil {
+		runErr = fmt.Errorf("across: %w", runErr)
+	}
 
 	err = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
 		"status": statusFromErr(runErr),

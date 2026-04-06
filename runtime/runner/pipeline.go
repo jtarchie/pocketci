@@ -213,7 +213,7 @@ func (c *PipelineRunner) ReadFilesFromVolume(volumeName string, filePaths ...str
 
 	for {
 		header, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 
@@ -227,7 +227,8 @@ func (c *PipelineRunner) ReadFilesFromVolume(volumeName string, filePaths ...str
 
 		var buf strings.Builder
 
-		if _, err := io.Copy(&buf, tr); err != nil {
+		_, err = io.Copy(&buf, tr)
+		if err != nil {
 			return nil, fmt.Errorf("failed to read file %q from tar: %w", header.Name, err)
 		}
 
@@ -333,7 +334,8 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 		effectiveStorageKey = input.StorageKey
 	}
 
-	if err := c.injectSecrets(ctx, &input, effectiveStorageKey); err != nil {
+	err := c.injectSecrets(ctx, &input, effectiveStorageKey)
+	if err != nil {
 		return nil, err
 	}
 
@@ -430,7 +432,7 @@ func (c *PipelineRunner) createRunContainer(ctx context.Context, taskID string, 
 		stdinReader = strings.NewReader(input.Stdin)
 	}
 
-	return c.client.RunContainer(
+	container, err := c.client.RunContainer(
 		ctx,
 		orchestra.Task{
 			Command: command,
@@ -448,6 +450,11 @@ func (c *PipelineRunner) createRunContainer(ctx context.Context, taskID string, 
 			WorkDir:    input.WorkDir,
 		},
 	)
+	if err != nil {
+		return nil, fmt.Errorf("run container: %w", err)
+	}
+
+	return container, nil
 }
 
 // waitAndFinalizeRun waits for the container to finish, collects logs, redacts

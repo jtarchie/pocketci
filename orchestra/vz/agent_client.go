@@ -57,22 +57,26 @@ func (c *AgentClient) runOnce(req agent.Request) (*agent.Response, error) {
 
 	data = append(data, '\n')
 
-	if err := c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+	err = c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if err != nil {
 		return nil, fmt.Errorf("failed to set write deadline: %w", err)
 	}
 
-	if _, err := c.conn.Write(data); err != nil {
+	_, err = c.conn.Write(data)
+	if err != nil {
 		return nil, fmt.Errorf("failed to write request: %w", err)
 	}
 
-	if err := c.conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+	err = c.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	if err != nil {
 		return nil, fmt.Errorf("failed to set read deadline: %w", err)
 	}
 
 	decoder := json.NewDecoder(c.conn)
 
 	var resp agent.Response
-	if err := decoder.Decode(&resp); err != nil {
+	err = decoder.Decode(&resp)
+	if err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -96,7 +100,8 @@ func (c *AgentClient) run(req agent.Request) (*agent.Response, error) {
 	// Wait briefly before reconnecting
 	time.Sleep(2 * time.Second)
 
-	if reconnErr := c.reconnect(); reconnErr != nil {
+	reconnErr := c.reconnect()
+	if reconnErr != nil {
 		return nil, fmt.Errorf("original error: %w; reconnect failed: %w", err, reconnErr)
 	}
 
@@ -163,7 +168,10 @@ func (c *AgentClient) Close() error {
 	defer c.mu.Unlock()
 
 	if c.conn != nil {
-		return c.conn.Close()
+		err := c.conn.Close()
+		if err != nil {
+			return fmt.Errorf("close: %w", err)
+		}
 	}
 
 	return nil

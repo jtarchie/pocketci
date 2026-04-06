@@ -17,7 +17,7 @@ import (
 func (d *Docker) pullImage(ctx context.Context, imageName string) error {
 	reader, err := d.client.ImagePull(ctx, imageName, image.PullOptions{})
 	if err != nil {
-		return err
+		return fmt.Errorf("image pull: %w", err)
 	}
 	defer func() { _ = reader.Close() }()
 	// Drain the reader to wait for pull completion
@@ -33,9 +33,10 @@ func (d *Docker) CopyToVolume(ctx context.Context, volumeName string, reader io.
 	fullVolumeName := fmt.Sprintf("%s-%s", d.namespace, volumeName)
 
 	// Ensure busybox image is available
-	if err := d.pullImage(ctx, cacheHelperImage); err != nil {
+	pullErr := d.pullImage(ctx, cacheHelperImage)
+	if pullErr != nil {
 		// Try to continue anyway, image might already exist
-		d.logger.Debug("cache.helper.pull.copyto.failed", "error", err)
+		d.logger.Debug("cache.helper.pull.copyto.failed", "error", pullErr)
 	}
 
 	// Create a temporary container with the volume mounted
@@ -78,9 +79,10 @@ func (d *Docker) CopyFromVolume(ctx context.Context, volumeName string) (io.Read
 	fullVolumeName := fmt.Sprintf("%s-%s", d.namespace, volumeName)
 
 	// Ensure busybox image is available
-	if err := d.pullImage(ctx, cacheHelperImage); err != nil {
+	pullErr := d.pullImage(ctx, cacheHelperImage)
+	if pullErr != nil {
 		// Try to continue anyway, image might already exist
-		d.logger.Debug("cache.helper.pull.copyfrom.failed", "error", err)
+		d.logger.Debug("cache.helper.pull.copyfrom.failed", "error", pullErr)
 	}
 
 	// Create a temporary container with the volume mounted
@@ -105,7 +107,8 @@ func (d *Docker) CopyFromVolume(ctx context.Context, volumeName string) (io.Read
 	}
 
 	// Start the container so we can copy from it
-	if err := d.client.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+	err = d.client.ContainerStart(ctx, resp.ID, container.StartOptions{})
+	if err != nil {
 		_ = d.client.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
 
 		return nil, fmt.Errorf("failed to start cache helper container: %w", err)
@@ -138,7 +141,11 @@ func (r *dockerCopyReader) Close() error {
 	// Use Background context so cleanup succeeds even if the original context was cancelled.
 	_ = r.client.ContainerRemove(context.Background(), r.containerID, container.RemoveOptions{Force: true})
 
-	return err
+	if err != nil {
+		return fmt.Errorf("close: %w", err)
+	}
+
+	return nil
 }
 
 // ReadFilesFromVolume implements cache.VolumeDataAccessor.
@@ -146,8 +153,9 @@ func (r *dockerCopyReader) Close() error {
 func (d *Docker) ReadFilesFromVolume(ctx context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error) {
 	fullVolumeName := fmt.Sprintf("%s-%s", d.namespace, volumeName)
 
-	if err := d.pullImage(ctx, cacheHelperImage); err != nil {
-		d.logger.Debug("cache.helper.pull.readfiles.failed", "error", err)
+	pullErr := d.pullImage(ctx, cacheHelperImage)
+	if pullErr != nil {
+		d.logger.Debug("cache.helper.pull.readfiles.failed", "error", pullErr)
 	}
 
 	resp, err := d.client.ContainerCreate(ctx,
@@ -170,7 +178,8 @@ func (d *Docker) ReadFilesFromVolume(ctx context.Context, volumeName string, fil
 		return nil, fmt.Errorf("failed to create cache helper container: %w", err)
 	}
 
-	if err := d.client.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+	err = d.client.ContainerStart(ctx, resp.ID, container.StartOptions{})
+	if err != nil {
 		_ = d.client.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
 
 		return nil, fmt.Errorf("failed to start cache helper container: %w", err)

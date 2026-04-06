@@ -26,12 +26,16 @@ func TestMain(m *testing.M) {
 		binary = "qemu-system-aarch64"
 	}
 
-	if _, err := exec.LookPath(binary); err != nil {
+	var err error
+
+	_, err = exec.LookPath(binary)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "QEMU not available (%s), skipping integration tests\n", binary)
 		os.Exit(0)
 	}
 
-	if _, err := exec.LookPath("qemu-img"); err != nil {
+	_, err = exec.LookPath("qemu-img")
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "qemu-img not available, skipping integration tests\n")
 		os.Exit(0)
 	}
@@ -39,7 +43,6 @@ func TestMain(m *testing.M) {
 	namespace := "test-qemu-" + gonanoid.Must(6)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	var err error
 	testDriver, err = qemu.New(context.Background(), qemu.Config{
 		ServerConfig: qemu.ServerConfig{
 			Memory: "2048",

@@ -212,7 +212,8 @@ func (p *PipelineNamespace) Gate(call goja.FunctionCall) goja.Value {
 
 	var opts gateOptions
 	if len(call.Arguments) >= 2 && !goja.IsUndefined(call.Arguments[1]) && !goja.IsNull(call.Arguments[1]) {
-		if err := r.jsVM.ExportTo(call.Arguments[1], &opts); err != nil {
+		err := r.jsVM.ExportTo(call.Arguments[1], &opts)
+		if err != nil {
 			return r.rejectImmediate(fmt.Errorf("pipeline.gate invalid options: %w", err))
 		}
 	}
@@ -234,7 +235,8 @@ func (p *PipelineNamespace) Gate(call goja.FunctionCall) goja.Value {
 	createdAt := time.Now()
 
 	return r.jsVM.ToValue(asyncTask(r, "pipeline.gate."+gateName, func(ctx context.Context) (struct{}, error) {
-		if err := r.storage.SaveGate(ctx, gate); err != nil {
+		err := r.storage.SaveGate(ctx, gate)
+		if err != nil {
 			return struct{}{}, fmt.Errorf("pipeline.gate %q: failed to save: %w", gateName, err)
 		}
 
@@ -265,7 +267,8 @@ func (p *PipelineNamespace) pollGate(ctx context.Context, gateID, gateName, time
 	for {
 		if !deadline.IsZero() && time.Now().After(deadline) {
 			// Mark gate as timed out
-			if err := r.storage.ResolveGate(ctx, gateID, storage.GateStatusTimedOut, "timeout"); err != nil {
+			err := r.storage.ResolveGate(ctx, gateID, storage.GateStatusTimedOut, "timeout")
+			if err != nil {
 				r.logger.Error("pipeline.gate.resolve.timeout.failed",
 					slog.String("gate_id", gateID),
 					slog.String("gate_name", gateName),
@@ -294,7 +297,7 @@ func (p *PipelineNamespace) pollGate(ctx context.Context, gateID, gateName, time
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("wait for gate: %w", ctx.Err())
 		case <-time.After(gatePollInterval):
 		}
 	}

@@ -221,7 +221,8 @@ func (f *FetchRuntime) parseOpts(
 	}
 
 	if h := optsObj.Get("headers"); h != nil && !goja.IsUndefined(h) {
-		if err := f.jsVM.ExportTo(h, &headers); err != nil {
+		err := f.jsVM.ExportTo(h, &headers)
+		if err != nil {
 			return "", nil, "", 0, fmt.Errorf("invalid headers: %w", err)
 		}
 	}

@@ -538,30 +538,35 @@ func (s *Sqlite) DeletePipeline(ctx context.Context, id string) error {
 	}
 
 	// Remove the orphaned FTS entry (not cascade-deleted automatically).
-	if _, err := s.writer.ExecContext(ctx, `
+	_, err = s.writer.ExecContext(ctx, `
 		DELETE FROM pipelines_fts WHERE rowid IN (
 			SELECT rowid FROM pipelines_fts WHERE id = ?
 		)
-	`, id); err != nil {
+	`, id)
+	if err != nil {
 		return fmt.Errorf("failed to delete pipelines_fts entry: %w", err)
 	}
 
 	// Merge FTS5 index segments to keep search fast.
-	if _, err := s.writer.ExecContext(ctx, `INSERT INTO pipelines_fts(pipelines_fts) VALUES('optimize')`); err != nil {
+	_, err = s.writer.ExecContext(ctx, `INSERT INTO pipelines_fts(pipelines_fts) VALUES('optimize')`)
+	if err != nil {
 		return fmt.Errorf("failed to optimize pipelines_fts: %w", err)
 	}
 
-	if _, err := s.writer.ExecContext(ctx, `INSERT INTO data_fts(data_fts) VALUES('optimize')`); err != nil {
+	_, err = s.writer.ExecContext(ctx, `INSERT INTO data_fts(data_fts) VALUES('optimize')`)
+	if err != nil {
 		return fmt.Errorf("failed to optimize data_fts: %w", err)
 	}
 
 	// Update query-planner statistics.
-	if _, err := s.writer.ExecContext(ctx, `PRAGMA optimize`); err != nil {
+	_, err = s.writer.ExecContext(ctx, `PRAGMA optimize`)
+	if err != nil {
 		return fmt.Errorf("failed to run PRAGMA optimize: %w", err)
 	}
 
 	// Reclaim disk space freed by the deleted rows and their cascades.
-	if _, err := s.writer.ExecContext(ctx, `VACUUM`); err != nil {
+	_, err = s.writer.ExecContext(ctx, `VACUUM`)
+	if err != nil {
 		return fmt.Errorf("failed to vacuum after delete: %w", err)
 	}
 
@@ -978,7 +983,12 @@ func (s *Sqlite) PruneWebhookDedup(ctx context.Context, olderThan time.Time) (in
 		return 0, fmt.Errorf("prune webhook dedup: %w", err)
 	}
 
-	return result.RowsAffected()
+	n, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected: %w", err)
+	}
+
+	return n, nil
 }
 
 // scheduleScan is an intermediate struct for scanning schedule rows.
@@ -1167,7 +1177,8 @@ func (s *Sqlite) ClaimDueSchedules(ctx context.Context, now time.Time) ([]storag
 		schedules = append(schedules, row.toStorage())
 	}
 
-	if err := rows.Err(); err != nil {
+	err = rows.Err()
+	if err != nil {
 		return nil, fmt.Errorf("failed to iterate claimed schedules: %w", err)
 	}
 

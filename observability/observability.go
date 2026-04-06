@@ -2,6 +2,7 @@ package observability
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 )
 
@@ -42,8 +43,9 @@ func (t *TeeHandler) Enabled(ctx context.Context, level slog.Level) bool {
 
 func (t *TeeHandler) Handle(ctx context.Context, r slog.Record) error {
 	if t.primary.Enabled(ctx, r.Level) {
-		if err := t.primary.Handle(ctx, r); err != nil {
-			return err
+		err := t.primary.Handle(ctx, r)
+		if err != nil {
+			return fmt.Errorf("handle: %w", err)
 		}
 	}
 

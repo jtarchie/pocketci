@@ -84,8 +84,9 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (orchestra.Driver
 
 	// Discharge third-party caveats on macaroon tokens. Macaroon tokens have
 	// short-lived discharge tokens that need refreshing via auth.fly.io.
-	if _, err := toks.Update(ctx); err != nil {
-		logger.Warn("fly.tokens.update", "err", err)
+	_, tokErr := toks.Update(ctx)
+	if tokErr != nil {
+		logger.Warn("fly.tokens.update", "err", tokErr)
 	}
 
 	fly.SetBaseURL("https://api.fly.io")

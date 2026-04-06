@@ -44,8 +44,9 @@ func LoadAuthConfig(path string) (*AuthConfig, error) {
 	}
 
 	var cfg AuthConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("could not parse auth config %s: %w", path, err)
+	unmarshalErr := json.Unmarshal(data, &cfg)
+	if unmarshalErr != nil {
+		return nil, fmt.Errorf("could not parse auth config %s: %w", path, unmarshalErr)
 	}
 
 	if cfg.Servers == nil {
@@ -59,8 +60,9 @@ func LoadAuthConfig(path string) (*AuthConfig, error) {
 func SaveAuthConfig(path string, cfg *AuthConfig) error {
 	dir := filepath.Dir(path)
 
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("could not create config directory: %w", err)
+	mkdirErr := os.MkdirAll(dir, 0o700)
+	if mkdirErr != nil {
+		return fmt.Errorf("could not create config directory: %w", mkdirErr)
 	}
 
 	data, err := json.MarshalIndent(cfg, "", "  ")
@@ -68,8 +70,9 @@ func SaveAuthConfig(path string, cfg *AuthConfig) error {
 		return fmt.Errorf("could not marshal auth config: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return fmt.Errorf("could not write auth config: %w", err)
+	writeErr := os.WriteFile(path, data, 0o600)
+	if writeErr != nil {
+		return fmt.Errorf("could not write auth config: %w", writeErr)
 	}
 
 	return nil

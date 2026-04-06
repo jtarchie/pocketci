@@ -14,20 +14,26 @@ import (
 type Duration time.Duration
 
 func (d Duration) MarshalJSON() ([]byte, error) {
-	return json.Marshal(time.Duration(d).String())
+	b, err := json.Marshal(time.Duration(d).String())
+	if err != nil {
+		return nil, fmt.Errorf("marshal duration: %w", err)
+	}
+
+	return b, nil
 }
 
 func (d *Duration) UnmarshalJSON(b []byte) error {
 	var v interface{}
-	if err := json.Unmarshal(b, &v); err != nil {
-		return err
+	err := json.Unmarshal(b, &v)
+	if err != nil {
+		return fmt.Errorf("unmarshal duration: %w", err)
 	}
 
 	switch value := v.(type) {
 	case string:
 		parsed, err := time.ParseDuration(value)
 		if err != nil {
-			return err
+			return fmt.Errorf("parse duration: %w", err)
 		}
 
 		*d = Duration(parsed)

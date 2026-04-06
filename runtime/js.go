@@ -151,7 +151,8 @@ func (j *JS) ExecuteWithOptions(ctx context.Context, source string, driver orche
 	runtime.storage = storage
 	runtime.logger = j.logger
 
-	if err := j.setupJSVM(ctx, jsVM, runtime, driver, storage, opts); err != nil {
+	err = j.setupJSVM(ctx, jsVM, runtime, driver, storage, opts)
+	if err != nil {
 		return err
 	}
 
@@ -402,7 +403,8 @@ func (j *JS) evaluateWebhookDedup(ctx context.Context, store storage.Driver, opt
 	}
 
 	cutoff := time.Now().UTC().Add(-ttl)
-	if _, pruneErr := store.PruneWebhookDedup(ctx, cutoff); pruneErr != nil {
+	_, pruneErr := store.PruneWebhookDedup(ctx, cutoff)
+	if pruneErr != nil {
 		slog.Warn("webhookDedup prune failed", "error", pruneErr)
 	}
 
@@ -608,46 +610,91 @@ type storageContextWrapper struct {
 
 // Set wraps the storage Set method, injecting context automatically.
 func (w *storageContextWrapper) Set(prefix string, payload any) error {
-	return w.driver.Set(w.ctx, prefix, payload)
+	err := w.driver.Set(w.ctx, prefix, payload)
+	if err != nil {
+		return fmt.Errorf("storage set: %w", err)
+	}
+
+	return nil
 }
 
 // Get wraps the storage Get method, injecting context automatically.
 func (w *storageContextWrapper) Get(prefix string) (storage.Payload, error) {
-	return w.driver.Get(w.ctx, prefix)
+	payload, err := w.driver.Get(w.ctx, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("storage get: %w", err)
+	}
+
+	return payload, nil
 }
 
 // GetAll wraps the storage GetAll method, injecting context automatically.
 func (w *storageContextWrapper) GetAll(prefix string, fields []string) (storage.Results, error) {
-	return w.driver.GetAll(w.ctx, prefix, fields)
+	results, err := w.driver.GetAll(w.ctx, prefix, fields)
+	if err != nil {
+		return nil, fmt.Errorf("storage get all: %w", err)
+	}
+
+	return results, nil
 }
 
 // SavePipeline wraps the storage SavePipeline method, injecting context automatically.
 // Pipelines saved from within a running pipeline are always JS/TS content.
 func (w *storageContextWrapper) SavePipeline(name, content, driver, _ string) (*storage.Pipeline, error) {
-	return w.driver.SavePipeline(w.ctx, name, content, driver, "js")
+	pipeline, err := w.driver.SavePipeline(w.ctx, name, content, driver, "js")
+	if err != nil {
+		return nil, fmt.Errorf("storage save pipeline: %w", err)
+	}
+
+	return pipeline, nil
 }
 
 // GetPipeline wraps the storage GetPipeline method, injecting context automatically.
 func (w *storageContextWrapper) GetPipeline(id string) (*storage.Pipeline, error) {
-	return w.driver.GetPipeline(w.ctx, id)
+	pipeline, err := w.driver.GetPipeline(w.ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("storage get pipeline: %w", err)
+	}
+
+	return pipeline, nil
 }
 
 // ListPipelines wraps the storage SearchPipelines method with empty query and default
 // pagination, injecting context automatically.
 func (w *storageContextWrapper) ListPipelines() (*storage.PaginationResult[storage.Pipeline], error) {
-	return w.driver.SearchPipelines(w.ctx, "", 1, 20)
+	result, err := w.driver.SearchPipelines(w.ctx, "", 1, 20)
+	if err != nil {
+		return nil, fmt.Errorf("storage search pipelines: %w", err)
+	}
+
+	return result, nil
 }
 
 // DeletePipeline wraps the storage DeletePipeline method, injecting context automatically.
 func (w *storageContextWrapper) DeletePipeline(id string) error {
-	return w.driver.DeletePipeline(w.ctx, id)
+	err := w.driver.DeletePipeline(w.ctx, id)
+	if err != nil {
+		return fmt.Errorf("storage delete pipeline: %w", err)
+	}
+
+	return nil
 }
 
 func (w *storageContextWrapper) GetMostRecentJobStatus(pipelineID, jobName string) (string, error) {
-	return w.driver.GetMostRecentJobStatus(w.ctx, pipelineID, jobName)
+	status, err := w.driver.GetMostRecentJobStatus(w.ctx, pipelineID, jobName)
+	if err != nil {
+		return "", fmt.Errorf("storage get most recent job status: %w", err)
+	}
+
+	return status, nil
 }
 
 // Close wraps the storage Close method (no context needed).
 func (w *storageContextWrapper) Close() error {
-	return w.driver.Close()
+	err := w.driver.Close()
+	if err != nil {
+		return fmt.Errorf("storage close: %w", err)
+	}
+
+	return nil
 }

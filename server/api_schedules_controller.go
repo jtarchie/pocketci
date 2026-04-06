@@ -23,28 +23,49 @@ func (c *APISchedulesController) UpdateEnabled(ctx *echo.Context) error {
 		Enabled bool `json:"enabled"`
 	}
 
-	if err := json.NewDecoder(ctx.Request().Body).Decode(&body); err != nil {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{
-			"error": fmt.Sprintf("invalid request body: %v", err),
+	decodeErr := json.NewDecoder(ctx.Request().Body).Decode(&body)
+	if decodeErr != nil {
+		badReqJsonErr := ctx.JSON(http.StatusBadRequest, map[string]string{
+			"error": fmt.Sprintf("invalid request body: %v", decodeErr),
 		})
+		if badReqJsonErr != nil {
+			return fmt.Errorf("schedule bad request response: %w", badReqJsonErr)
+		}
+
+		return nil
 	}
 
 	err := c.store.UpdateScheduleEnabled(ctx.Request().Context(), id, body.Enabled)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			return ctx.JSON(http.StatusNotFound, map[string]string{
+			nfJsonErr := ctx.JSON(http.StatusNotFound, map[string]string{
 				"error": "schedule not found",
 			})
+			if nfJsonErr != nil {
+				return fmt.Errorf("schedule not found response: %w", nfJsonErr)
+			}
+
+			return nil
 		}
 
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+		errJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to update schedule: %v", err),
 		})
+		if errJsonErr != nil {
+			return fmt.Errorf("schedule error response: %w", errJsonErr)
+		}
+
+		return nil
 	}
 
-	return ctx.JSON(http.StatusOK, map[string]string{
+	okJsonErr := ctx.JSON(http.StatusOK, map[string]string{
 		"status": "ok",
 	})
+	if okJsonErr != nil {
+		return fmt.Errorf("schedule ok response: %w", okJsonErr)
+	}
+
+	return nil
 }
 
 // RegisterScheduleRoutes registers the schedule API routes.

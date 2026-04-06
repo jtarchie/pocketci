@@ -69,20 +69,31 @@ type authHandler struct {
 }
 
 func (h *authHandler) LoginPage(c *echo.Context) error {
-	return c.Render(http.StatusOK, "login.html", map[string]any{
+	err := c.Render(http.StatusOK, "login.html", map[string]any{
 		"Title":     "Login",
 		"Providers": h.cfg.EnabledProviders(),
 	})
+	if err != nil {
+		return fmt.Errorf("render: %w", err)
+	}
+
+	return nil
 }
 
 func (h *authHandler) Logout(c *echo.Context) error {
-	if err := ClearSession(c.Response(), c.Request(), h.store); err != nil {
+	err := ClearSession(c.Response(), c.Request(), h.store)
+	if err != nil {
 		h.logger.Error("auth.logout.error", "error", err)
 	}
 
 	h.logger.Info("auth.logout")
 
-	return c.Redirect(http.StatusFound, "/auth/login")
+	err = c.Redirect(http.StatusFound, "/auth/login")
+	if err != nil {
+		return fmt.Errorf("redirect: %w", err)
+	}
+
+	return nil
 }
 
 func (h *authHandler) BeginAuth(c *echo.Context) error {
@@ -109,7 +120,12 @@ func (h *authHandler) Callback(c *echo.Context) error {
 	gothUser, err := gothic.CompleteUserAuth(c.Response(), req)
 	if err != nil {
 		h.logger.Error("auth.callback.error", "error", err, "provider", provider)
-		return c.Redirect(http.StatusFound, "/auth/login?error=auth_failed")
+		redirectErr := c.Redirect(http.StatusFound, "/auth/login?error=auth_failed")
+		if redirectErr != nil {
+			return fmt.Errorf("redirect: %w", redirectErr)
+		}
+
+		return nil
 	}
 
 	user := fromGothUser(gothUser)
@@ -124,9 +140,15 @@ func (h *authHandler) Callback(c *echo.Context) error {
 		}
 	}
 
-	if err := SaveUserToSession(c.Response(), c.Request(), h.store, user); err != nil {
+	err = SaveUserToSession(c.Response(), c.Request(), h.store, user)
+	if err != nil {
 		h.logger.Error("auth.session.save.error", "error", err)
-		return c.Redirect(http.StatusFound, "/auth/login?error=session_failed")
+		redirectErr := c.Redirect(http.StatusFound, "/auth/login?error=session_failed")
+		if redirectErr != nil {
+			return fmt.Errorf("redirect: %w", redirectErr)
+		}
+
+		return nil
 	}
 
 	h.logger.Info("auth.login.success",
@@ -138,18 +160,13 @@ func (h *authHandler) Callback(c *echo.Context) error {
 	// Check if this was triggered by a CLI login flow.
 	cliCode := c.QueryParam("cli_code")
 	if cliCode != "" {
-		h.mu.Lock()
-		state, ok := h.cliCodes[cliCode]
-		if ok && time.Now().Before(state.ExpiresAt) {
-			state.User = user
-			state.Approved = true
+		handled, err := h.handleCLICallback(c, cliCode, user)
+		if err != nil {
+			return err
 		}
-		h.mu.Unlock()
 
-		if ok {
-			return c.Render(http.StatusOK, "cli_approve.html", map[string]any{
-				"Approved": true,
-			})
+		if handled {
+			return nil
 		}
 	}
 
@@ -158,27 +175,72 @@ func (h *authHandler) Callback(c *echo.Context) error {
 		return nil
 	}
 
-	return c.Redirect(http.StatusFound, "/")
+	err = c.Redirect(http.StatusFound, "/")
+	if err != nil {
+		return fmt.Errorf("redirect: %w", err)
+	}
+
+	return nil
+}
+
+// handleCLICallback processes a callback that was triggered by a CLI login flow.
+// Returns (true, nil) if the response was handled and no further processing is needed.
+func (h *authHandler) handleCLICallback(c *echo.Context, cliCode string, user *User) (bool, error) {
+	h.mu.Lock()
+	state, ok := h.cliCodes[cliCode]
+	if ok && time.Now().Before(state.ExpiresAt) {
+		state.User = user
+		state.Approved = true
+	}
+	h.mu.Unlock()
+
+	if !ok {
+		return false, nil
+	}
+
+	renderErr := c.Render(http.StatusOK, "cli_approve.html", map[string]any{
+		"Approved": true,
+	})
+	if renderErr != nil {
+		return false, fmt.Errorf("render: %w", renderErr)
+	}
+
+	return true, nil
 }
 
 func (h *authHandler) CurrentUser(c *echo.Context) error {
 	user := GetUserFromSession(c.Request(), h.store)
 	if user == nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{
+		jsonErr := c.JSON(http.StatusUnauthorized, map[string]string{
 			"error": "not authenticated",
 		})
+		if jsonErr != nil {
+			return fmt.Errorf("json: %w", jsonErr)
+		}
+
+		return nil
 	}
 
-	return c.JSON(http.StatusOK, user)
+	err := c.JSON(http.StatusOK, user)
+	if err != nil {
+		return fmt.Errorf("json: %w", err)
+	}
+
+	return nil
 }
 
 // CLIBegin starts a CLI device flow login. Returns a one-time code and URL.
 func (h *authHandler) CLIBegin(c *echo.Context) error {
 	code, err := generateRandomCode()
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{
+		jsonErr := c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "could not generate login code",
 		})
+		if jsonErr != nil {
+			return fmt.Errorf("json: %w", jsonErr)
+		}
+
+		return nil
 	}
 
 	h.mu.Lock()
@@ -189,14 +251,19 @@ func (h *authHandler) CLIBegin(c *echo.Context) error {
 	h.mu.Unlock()
 
 	// Clean up expired codes in background, coalescing concurrent calls.
-	go h.cleanupGroup.Do("cleanup", func() (any, error) { h.cleanupExpiredCodes(); return nil, nil }) //nolint:errcheck
+	go h.cleanupGroup.Do("cleanup", func() (any, error) { h.cleanupExpiredCodes(); return nil, nil }) //nolint:errcheck,nilnil // cleanup closure has no meaningful return value
 
 	loginURL := fmt.Sprintf("%s/auth/cli/approve?code=%s", h.cfg.CallbackURL, code)
 
-	return c.JSON(http.StatusOK, map[string]string{
+	err = c.JSON(http.StatusOK, map[string]string{
 		"code":      code,
 		"login_url": loginURL,
 	})
+	if err != nil {
+		return fmt.Errorf("json: %w", err)
+	}
+
+	return nil
 }
 
 // CLIApprove renders a page where the user selects their OAuth provider to approve the CLI login.
@@ -208,7 +275,12 @@ func (h *authHandler) CLIApprove(c *echo.Context) error {
 	h.mu.RUnlock()
 
 	if !ok || time.Now().After(state.ExpiresAt) {
-		return c.String(http.StatusBadRequest, "Invalid or expired login code")
+		strErr := c.String(http.StatusBadRequest, "Invalid or expired login code")
+		if strErr != nil {
+			return fmt.Errorf("string: %w", strErr)
+		}
+
+		return nil
 	}
 
 	// If user already has a valid session, approve directly.
@@ -219,17 +291,27 @@ func (h *authHandler) CLIApprove(c *echo.Context) error {
 		state.Approved = true
 		h.mu.Unlock()
 
-		return c.Render(http.StatusOK, "cli_approve.html", map[string]any{
+		renderErr2 := c.Render(http.StatusOK, "cli_approve.html", map[string]any{
 			"Approved": true,
 		})
+		if renderErr2 != nil {
+			return fmt.Errorf("render: %w", renderErr2)
+		}
+
+		return nil
 	}
 
 	// Show login page with the code passed through.
-	return c.Render(http.StatusOK, "cli_approve.html", map[string]any{
+	renderErr3 := c.Render(http.StatusOK, "cli_approve.html", map[string]any{
 		"Approved":  false,
 		"Code":      code,
 		"Providers": h.cfg.EnabledProviders(),
 	})
+	if renderErr3 != nil {
+		return fmt.Errorf("render: %w", renderErr3)
+	}
+
+	return nil
 }
 
 // CLIPoll checks if the CLI login has been approved. Returns token if approved.
@@ -241,9 +323,14 @@ func (h *authHandler) CLIPoll(c *echo.Context) error {
 	h.mu.RUnlock()
 
 	if !ok {
-		return c.JSON(http.StatusNotFound, map[string]string{
+		jsonErr2 := c.JSON(http.StatusNotFound, map[string]string{
 			"error": "unknown code",
 		})
+		if jsonErr2 != nil {
+			return fmt.Errorf("device poll not found response: %w", jsonErr2)
+		}
+
+		return nil
 	}
 
 	if time.Now().After(state.ExpiresAt) {
@@ -251,23 +338,38 @@ func (h *authHandler) CLIPoll(c *echo.Context) error {
 		delete(h.cliCodes, code)
 		h.mu.Unlock()
 
-		return c.JSON(http.StatusGone, map[string]string{
+		jsonErr3 := c.JSON(http.StatusGone, map[string]string{
 			"error": "code expired",
 		})
+		if jsonErr3 != nil {
+			return fmt.Errorf("device poll gone response: %w", jsonErr3)
+		}
+
+		return nil
 	}
 
 	if !state.Approved || state.User == nil {
-		return c.JSON(http.StatusAccepted, map[string]string{
+		jsonErr4 := c.JSON(http.StatusAccepted, map[string]string{
 			"status": "pending",
 		})
+		if jsonErr4 != nil {
+			return fmt.Errorf("device poll pending response: %w", jsonErr4)
+		}
+
+		return nil
 	}
 
 	// Generate API token for the CLI (no scope restriction).
 	token, err := GenerateToken(state.User, h.cfg.SessionSecret, 30*24*time.Hour, nil)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{
+		jsonErr5 := c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "could not generate token",
 		})
+		if jsonErr5 != nil {
+			return fmt.Errorf("device poll generate token error response: %w", jsonErr5)
+		}
+
+		return nil
 	}
 
 	// Remove the code — it's been consumed.
@@ -280,10 +382,15 @@ func (h *authHandler) CLIPoll(c *echo.Context) error {
 		"provider", state.User.Provider,
 	)
 
-	return c.JSON(http.StatusOK, map[string]string{
+	jsonErr6 := c.JSON(http.StatusOK, map[string]string{
 		"status": "approved",
 		"token":  token,
 	})
+	if jsonErr6 != nil {
+		return fmt.Errorf("device poll approved response: %w", jsonErr6)
+	}
+
+	return nil
 }
 
 func (h *authHandler) cleanupExpiredCodes() {
@@ -334,8 +441,9 @@ func fetchGitHubOrgs(ctx context.Context, accessToken string) ([]string, error) 
 		Login string `json:"login"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&orgs); err != nil {
-		return nil, fmt.Errorf("could not decode orgs: %w", err)
+	decodeErr := json.NewDecoder(resp.Body).Decode(&orgs)
+	if decodeErr != nil {
+		return nil, fmt.Errorf("could not decode orgs: %w", decodeErr)
 	}
 
 	result := make([]string, 0, len(orgs))

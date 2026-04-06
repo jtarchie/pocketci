@@ -70,7 +70,7 @@ func (s *FilesystemStore) Restore(_ context.Context, key string) (io.ReadCloser,
 	file, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+			return nil, cache.ErrCacheMiss
 		}
 
 		return nil, fmt.Errorf("failed to open cache file: %w", err)
@@ -83,7 +83,8 @@ func (s *FilesystemStore) Restore(_ context.Context, key string) (io.ReadCloser,
 func (s *FilesystemStore) Persist(_ context.Context, key string, reader io.Reader) error {
 	path := s.fullPath(key)
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	err := os.MkdirAll(filepath.Dir(path), 0o750)
+	if err != nil {
 		return fmt.Errorf("failed to create cache subdirectory: %w", err)
 	}
 
@@ -96,7 +97,8 @@ func (s *FilesystemStore) Persist(_ context.Context, key string, reader io.Reade
 		_ = file.Close()
 	}()
 
-	if _, err := io.Copy(file, reader); err != nil {
+	_, err = io.Copy(file, reader)
+	if err != nil {
 		return fmt.Errorf("failed to write cache file: %w", err)
 	}
 

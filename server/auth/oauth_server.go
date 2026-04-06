@@ -140,8 +140,9 @@ func (s *OAuthServer) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
 	session.Values["oauth_code_challenge"] = codeChallenge
 	session.Values["oauth_client_id"] = clientID
 
-	if err := session.Save(r, w); err != nil {
-		s.logger.Error("oauth.authorize.session.save.error", "error", err)
+	saveErr := session.Save(r, w)
+	if saveErr != nil {
+		s.logger.Error("oauth.authorize.session.save.error", "error", saveErr)
 		jsonError(w, "server_error", "session error", http.StatusInternalServerError)
 
 		return
@@ -192,7 +193,8 @@ func (s *OAuthServer) HandleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseForm(); err != nil {
+	parseErr := r.ParseForm()
+	if parseErr != nil {
 		jsonError(w, "invalid_request", "could not parse form", http.StatusBadRequest)
 
 		return
@@ -301,7 +303,7 @@ func (s *OAuthServer) issueCodeAndRedirect(w http.ResponseWriter, user *User, re
 	s.mu.Unlock()
 
 	// Clean up expired codes in background, coalescing concurrent calls.
-	go s.cleanupGroup.Do("cleanup", func() (any, error) { s.cleanupExpiredCodes(); return nil, nil }) //nolint:errcheck
+	go s.cleanupGroup.Do("cleanup", func() (any, error) { s.cleanupExpiredCodes(); return nil, nil }) //nolint:errcheck,nilnil // cleanup closure has no meaningful return value
 
 	dest := redirectURI + "?code=" + code
 	if state != "" {
@@ -345,7 +347,8 @@ func (s *OAuthServer) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	decodeErr := json.NewDecoder(r.Body).Decode(&req)
+	if decodeErr != nil {
 		jsonError(w, "invalid_request", "could not parse request body", http.StatusBadRequest)
 
 		return

@@ -20,7 +20,6 @@ func TestK8s(t *testing.T) {
 	}
 
 	t.Run("with a user", func(t *testing.T) {
-
 		assert := NewGomegaWithT(t)
 
 		client, err := k8s.New(context.Background(), k8s.Config{Namespace: "test-" + gonanoid.Must()}, slog.Default())
@@ -65,7 +64,6 @@ func TestK8s(t *testing.T) {
 	})
 
 	t.Run("with privileged", func(t *testing.T) {
-
 		assert := NewGomegaWithT(t)
 
 		client, err := k8s.New(context.Background(), k8s.Config{Namespace: "test-" + gonanoid.Must()}, slog.Default())
@@ -98,7 +96,6 @@ func TestK8s(t *testing.T) {
 	})
 
 	t.Run("with container limits", func(t *testing.T) {
-
 		assert := NewGomegaWithT(t)
 
 		client, err := k8s.New(context.Background(), k8s.Config{Namespace: "test-" + gonanoid.Must()}, slog.Default())

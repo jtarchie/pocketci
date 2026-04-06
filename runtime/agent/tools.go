@@ -41,7 +41,7 @@ func execScript(
 
 	result, err := sandbox.Exec(ctx, execInput)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("exec: %w", err)
 	}
 
 	if result.Status == pipelinerunner.RunAbort {
@@ -70,7 +70,7 @@ func execScriptWithEnv(
 
 	result, err := sandbox.Exec(ctx, execInput)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("exec: %w", err)
 	}
 
 	if result.Status == pipelinerunner.RunAbort {

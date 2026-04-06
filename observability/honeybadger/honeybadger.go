@@ -2,6 +2,7 @@ package honeybadger
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 
 	hb "github.com/honeybadger-io/honeybadger-go"
@@ -43,7 +44,12 @@ func (p *provider) Name() string {
 }
 
 func (p *provider) Event(eventType string, data map[string]any) error {
-	return p.client.Event(eventType, data)
+	err := p.client.Event(eventType, data)
+	if err != nil {
+		return fmt.Errorf("event: %w", err)
+	}
+
+	return nil
 }
 
 func (p *provider) SlogHandler(next slog.Handler) slog.Handler {

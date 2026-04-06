@@ -51,7 +51,8 @@ func (m *Mock) Check(_ context.Context, req resources.CheckRequest) (resources.C
 		// Parse the previous version and increment it
 		var prevVersion int64
 
-		if _, err := fmt.Sscanf(req.Version["version"], "%d", &prevVersion); err == nil {
+		_, scanErr := fmt.Sscanf(req.Version["version"], "%d", &prevVersion)
+		if scanErr == nil {
 			newVersion = prevVersion + 1
 		} else {
 			// If previous version isn't a number, use counter

@@ -37,7 +37,7 @@ func (c *Login) beginDeviceFlow(apiClient *client.Client, logger *slog.Logger) (
 
 	result, err := apiClient.BeginDeviceFlow()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("begin device flow: %w", err)
 	}
 
 	approveURL := apiClient.ServerURL() + "/auth/cli/approve?code=" + url.QueryEscape(result.Code)
@@ -68,7 +68,7 @@ func (c *Login) pollForToken(apiClient *client.Client, logger *slog.Logger, serv
 
 			token, done, err := apiClient.PollDeviceFlow(code)
 			if err != nil {
-				return err
+				return fmt.Errorf("poll device flow: %w", err)
 			}
 
 			if !done {
@@ -107,7 +107,8 @@ func (c *Login) saveToken(logger *slog.Logger, serverURL, token string) {
 
 	cfg.Servers[normalizeServerURL(serverURL)] = AuthEntry{Token: token}
 
-	if saveErr := SaveAuthConfig(cfgPath, cfg); saveErr != nil {
+	saveErr := SaveAuthConfig(cfgPath, cfg)
+	if saveErr != nil {
 		logger.Warn("login.save_token.failed", "error", saveErr)
 		fmt.Printf("\nCould not save token to config file: %v\n", saveErr)
 		fmt.Println("You can set it manually:")

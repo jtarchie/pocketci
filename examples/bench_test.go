@@ -25,7 +25,8 @@ func BenchmarkPipeline_HelloWorld(b *testing.B) {
 			Driver:            "docker",
 			StorageSQLitePath: ":memory:",
 		}
-		if err := runner.Run(nil); err != nil {
+		err := runner.Run(nil)
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -47,7 +48,8 @@ func BenchmarkPipeline_Promises(b *testing.B) {
 			Driver:            "docker",
 			StorageSQLitePath: ":memory:",
 		}
-		if err := runner.Run(nil); err != nil {
+		err := runner.Run(nil)
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -69,7 +71,8 @@ func BenchmarkPipeline_Minimal(b *testing.B) {
 			Driver:            "docker",
 			StorageSQLitePath: ":memory:",
 		}
-		if err := runner.Run(nil); err != nil {
+		err := runner.Run(nil)
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -91,7 +94,8 @@ func BenchmarkPipeline_Volumes(b *testing.B) {
 			Driver:            "docker",
 			StorageSQLitePath: ":memory:",
 		}
-		if err := runner.Run(nil); err != nil {
+		err := runner.Run(nil)
+		if err != nil {
 			b.Fatal(err)
 		}
 	}
