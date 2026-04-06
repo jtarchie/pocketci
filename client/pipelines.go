@@ -212,6 +212,36 @@ func (c *Client) SeedJobPassed(pipelineID, jobName string) (SeedPassedResult, er
 	return result, nil
 }
 
+// GetPipeline returns a single pipeline by ID.
+func (c *Client) GetPipeline(id string) (PipelineResponse, error) {
+	var result PipelineResponse
+
+	resp, err := c.http.R().Get(c.serverURL + "/api/pipelines/" + url.PathEscape(id))
+	if err != nil {
+		return result, fmt.Errorf("could not get pipeline: %w", err)
+	}
+
+	err = c.checkAuthStatus(resp.StatusCode())
+	if err != nil {
+		return result, err
+	}
+
+	if resp.StatusCode() == http.StatusNotFound {
+		return result, &NotFoundError{Resource: "pipeline", ID: id}
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return result, &APIError{StatusCode: resp.StatusCode(), Body: resp.String()}
+	}
+
+	err = json.Unmarshal(resp.Body(), &result)
+	if err != nil {
+		return result, fmt.Errorf("could not parse response: %w", err)
+	}
+
+	return result, nil
+}
+
 // RunPipeline sends a multipart request to run a pipeline and returns the raw
 // response for SSE streaming. The caller must close resp.RawBody().
 func (c *Client) RunPipeline(name string, body io.Reader, contentType string, bodySize int64) (*resty.Response, error) {

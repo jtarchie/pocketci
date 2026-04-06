@@ -315,6 +315,176 @@ func TestIntegrationSeedJobPassed(t *testing.T) {
 	assert.Expect(result.RunID).NotTo(BeEmpty())
 }
 
+func TestIntegrationGetPipeline(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns pipeline by ID", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		store, ts := newTestServer(t, server.RouterOptions{})
+
+		saved, err := store.SavePipeline(context.Background(), "my-pipeline", "content", "docker", "")
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		c := client.New(ts.URL)
+		result, err := c.GetPipeline(saved.ID)
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(result.ID).To(Equal(saved.ID))
+		assert.Expect(result.Name).To(Equal("my-pipeline"))
+	})
+
+	t.Run("returns not found error", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		_, ts := newTestServer(t, server.RouterOptions{})
+
+		c := client.New(ts.URL)
+		_, err := c.GetPipeline("non-existent")
+		assert.Expect(err).To(HaveOccurred())
+
+		var notFoundErr *client.NotFoundError
+		assert.Expect(errors.As(err, &notFoundErr)).To(BeTrue())
+	})
+}
+
+func TestIntegrationGetRunStatus(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns run status", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		store, ts := newTestServer(t, server.RouterOptions{})
+
+		saved, err := store.SavePipeline(context.Background(), "my-pipeline", "content", "docker", "")
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		run, err := store.SaveRun(context.Background(), saved.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		c := client.New(ts.URL)
+		result, err := c.GetRunStatus(run.ID)
+		assert.Expect(err).NotTo(HaveOccurred())
+		assert.Expect(result.ID).To(Equal(run.ID))
+	})
+
+	t.Run("returns not found error", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		_, ts := newTestServer(t, server.RouterOptions{})
+
+		c := client.New(ts.URL)
+		_, err := c.GetRunStatus("non-existent")
+		assert.Expect(err).To(HaveOccurred())
+
+		var notFoundErr *client.NotFoundError
+		assert.Expect(errors.As(err, &notFoundErr)).To(BeTrue())
+	})
+}
+
+func TestIntegrationGetRunTasks(t *testing.T) {
+	t.Parallel()
+	assert := NewGomegaWithT(t)
+
+	store, ts := newTestServer(t, server.RouterOptions{})
+
+	saved, err := store.SavePipeline(context.Background(), "my-pipeline", "content", "docker", "")
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	run, err := store.SaveRun(context.Background(), saved.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	c := client.New(ts.URL)
+	result, err := c.GetRunTasks(run.ID)
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result).NotTo(BeNil())
+}
+
+func TestIntegrationStopRun(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns not found error for unknown run", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		_, ts := newTestServer(t, server.RouterOptions{})
+
+		c := client.New(ts.URL)
+		_, err := c.StopRun("non-existent")
+		assert.Expect(err).To(HaveOccurred())
+
+		var notFoundErr *client.NotFoundError
+		assert.Expect(errors.As(err, &notFoundErr)).To(BeTrue())
+	})
+
+	t.Run("returns error when run is already completed", func(t *testing.T) {
+		t.Parallel()
+		assert := NewGomegaWithT(t)
+
+		store, ts := newTestServer(t, server.RouterOptions{})
+
+		saved, err := store.SavePipeline(context.Background(), "my-pipeline", "content", "docker", "")
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		run, err := store.SaveRun(context.Background(), saved.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		err = store.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusSuccess, "")
+		assert.Expect(err).NotTo(HaveOccurred())
+
+		c := client.New(ts.URL)
+		_, err = c.StopRun(run.ID)
+		assert.Expect(err).To(HaveOccurred())
+	})
+}
+
+func TestIntegrationListGates(t *testing.T) {
+	t.Parallel()
+	assert := NewGomegaWithT(t)
+
+	store, ts := newTestServer(t, server.RouterOptions{
+		AllowedFeatures: "gates",
+	})
+
+	saved, err := store.SavePipeline(context.Background(), "my-pipeline", "content", "docker", "")
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	run, err := store.SaveRun(context.Background(), saved.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	c := client.New(ts.URL)
+	result, err := c.ListGates(run.ID)
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result).NotTo(BeNil())
+}
+
+func TestIntegrationListDrivers(t *testing.T) {
+	t.Parallel()
+	assert := NewGomegaWithT(t)
+
+	_, ts := newTestServer(t, server.RouterOptions{})
+
+	c := client.New(ts.URL)
+	result, err := c.ListDrivers()
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result).NotTo(BeNil())
+}
+
+func TestIntegrationListFeatures(t *testing.T) {
+	t.Parallel()
+	assert := NewGomegaWithT(t)
+
+	_, ts := newTestServer(t, server.RouterOptions{})
+
+	c := client.New(ts.URL)
+	result, err := c.ListFeatures()
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result).NotTo(BeNil())
+}
+
 func TestIntegrationBasicAuth(t *testing.T) {
 	t.Parallel()
 

@@ -406,6 +406,325 @@ func TestBasicAuthFromURL(t *testing.T) {
 	assert.Expect(err).NotTo(HaveOccurred())
 }
 
+func TestGetPipeline(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Expect(r.URL.Path).To(Equal("/api/pipelines/p1"))
+		assert.Expect(r.Method).To(Equal(http.MethodGet))
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(client.PipelineResponse{
+			ID:   "p1",
+			Name: "my-pipeline",
+		})
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	result, err := c.GetPipeline("p1")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result.ID).To(Equal("p1"))
+	assert.Expect(result.Name).To(Equal("my-pipeline"))
+}
+
+func TestGetPipelineNotFound(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	_, err := c.GetPipeline("p1")
+	assert.Expect(err).To(HaveOccurred())
+
+	var notFoundErr *client.NotFoundError
+	assert.Expect(errors.As(err, &notFoundErr)).To(BeTrue())
+	assert.Expect(notFoundErr.Resource).To(Equal("pipeline"))
+	assert.Expect(notFoundErr.ID).To(Equal("p1"))
+}
+
+func TestGetRunStatus(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Expect(r.URL.Path).To(Equal("/api/runs/r1/status"))
+		assert.Expect(r.Method).To(Equal(http.MethodGet))
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(storage.PipelineRun{
+			ID:     "r1",
+			Status: "queued",
+		})
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	result, err := c.GetRunStatus("r1")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result.ID).To(Equal("r1"))
+	assert.Expect(result.Status).To(Equal(storage.RunStatus("queued")))
+}
+
+func TestGetRunStatusNotFound(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	_, err := c.GetRunStatus("r1")
+	assert.Expect(err).To(HaveOccurred())
+
+	var notFoundErr *client.NotFoundError
+	assert.Expect(errors.As(err, &notFoundErr)).To(BeTrue())
+	assert.Expect(notFoundErr.Resource).To(Equal("run"))
+}
+
+func TestGetRunTasks(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Expect(r.URL.Path).To(Equal("/api/runs/r1/tasks"))
+		assert.Expect(r.Method).To(Equal(http.MethodGet))
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]client.RunTask{
+			{Path: "build/task", Payload: storage.Payload{"key": "val"}},
+		})
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	result, err := c.GetRunTasks("r1")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result).To(HaveLen(1))
+	assert.Expect(result[0].Path).To(Equal("build/task"))
+}
+
+func TestStopRun(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Expect(r.URL.Path).To(Equal("/api/runs/r1/stop"))
+		assert.Expect(r.Method).To(Equal(http.MethodPost))
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(client.RunActionResult{RunID: "r1", Status: "stopping"})
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	result, err := c.StopRun("r1")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result.RunID).To(Equal("r1"))
+	assert.Expect(result.Status).To(Equal("stopping"))
+}
+
+func TestStopRunNotFound(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	_, err := c.StopRun("r1")
+	assert.Expect(err).To(HaveOccurred())
+
+	var notFoundErr *client.NotFoundError
+	assert.Expect(errors.As(err, &notFoundErr)).To(BeTrue())
+	assert.Expect(notFoundErr.Resource).To(Equal("run"))
+}
+
+func TestResumeRun(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Expect(r.URL.Path).To(Equal("/api/runs/r1/resume"))
+		assert.Expect(r.Method).To(Equal(http.MethodPost))
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(client.RunActionResult{RunID: "r1", Status: "resuming"})
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	result, err := c.ResumeRun("r1")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result.RunID).To(Equal("r1"))
+}
+
+func TestResumeRunRateLimit(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	_, err := c.ResumeRun("r1")
+	assert.Expect(err).To(HaveOccurred())
+
+	var rateLimitErr *client.RateLimitError
+	assert.Expect(errors.As(err, &rateLimitErr)).To(BeTrue())
+}
+
+func TestResumeRunNotFound(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	_, err := c.ResumeRun("r1")
+	assert.Expect(err).To(HaveOccurred())
+
+	var notFoundErr *client.NotFoundError
+	assert.Expect(errors.As(err, &notFoundErr)).To(BeTrue())
+	assert.Expect(notFoundErr.Resource).To(Equal("run"))
+}
+
+func TestShareRun(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Expect(r.URL.Path).To(Equal("/api/runs/r1/share"))
+		assert.Expect(r.Method).To(Equal(http.MethodPost))
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(client.ShareResult{SharePath: "/share/tok123/tasks"})
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	result, err := c.ShareRun("r1")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result.SharePath).To(Equal("/share/tok123/tasks"))
+}
+
+func TestListGates(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	gates := []storage.Gate{
+		{ID: "g1", RunID: "r1", Name: "approval", Status: "pending"},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Expect(r.URL.Path).To(Equal("/api/runs/r1/gates"))
+		assert.Expect(r.Method).To(Equal(http.MethodGet))
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(gates)
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	result, err := c.ListGates("r1")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result).To(HaveLen(1))
+	assert.Expect(result[0].ID).To(Equal("g1"))
+}
+
+func TestApproveGate(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Expect(r.URL.Path).To(Equal("/api/gates/g1/approve"))
+		assert.Expect(r.Method).To(Equal(http.MethodPost))
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(storage.Gate{ID: "g1", Status: "approved"})
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	result, err := c.ApproveGate("g1")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result.ID).To(Equal("g1"))
+	assert.Expect(result.Status).To(Equal(storage.GateStatus("approved")))
+}
+
+func TestApproveGateAlreadyResolved(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	_, err := c.ApproveGate("g1")
+	assert.Expect(err).To(HaveOccurred())
+
+	var resolvedErr *client.GateAlreadyResolvedError
+	assert.Expect(errors.As(err, &resolvedErr)).To(BeTrue())
+	assert.Expect(resolvedErr.GateID).To(Equal("g1"))
+}
+
+func TestRejectGate(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Expect(r.URL.Path).To(Equal("/api/gates/g1/reject"))
+		assert.Expect(r.Method).To(Equal(http.MethodPost))
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(storage.Gate{ID: "g1", Status: "rejected"})
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	result, err := c.RejectGate("g1")
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result.ID).To(Equal("g1"))
+	assert.Expect(result.Status).To(Equal(storage.GateStatus("rejected")))
+}
+
+func TestListDrivers(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Expect(r.URL.Path).To(Equal("/api/drivers"))
+		assert.Expect(r.Method).To(Equal(http.MethodGet))
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"drivers": []string{"docker", "native"}})
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	result, err := c.ListDrivers()
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result).To(ConsistOf("docker", "native"))
+}
+
+func TestListFeatures(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Expect(r.URL.Path).To(Equal("/api/features"))
+		assert.Expect(r.Method).To(Equal(http.MethodGet))
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"features": []string{"gates", "resume"}})
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL)
+	result, err := c.ListFeatures()
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(result).To(ConsistOf("gates", "resume"))
+}
+
 func TestTimeout(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
