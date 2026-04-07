@@ -402,7 +402,7 @@ func (f *Fly) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 func (f *Fly) recoverExistingMachine(ctx context.Context, machineName, sharedVolumeID string, logger *slog.Logger) (*Container, error) {
 	list, listErr := f.client.List(ctx, f.appName, "")
 	if listErr != nil {
-		return nil, listErr
+		return nil, fmt.Errorf("list machines: %w", listErr)
 	}
 
 	for _, m := range list {
@@ -487,7 +487,8 @@ func (f *Fly) cleanupStrandedVolume(ctx context.Context, sharedVolumeID string, 
 		return
 	}
 
-	if cleanupErr := vol.Cleanup(ctx); cleanupErr != nil {
+	cleanupErr := vol.Cleanup(ctx)
+	if cleanupErr != nil {
 		logger.Warn("fly.machine.launch.volume.cleanup.error", "volume", sharedVolumeID, "err", cleanupErr)
 	}
 }

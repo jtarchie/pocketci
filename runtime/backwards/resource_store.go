@@ -137,7 +137,8 @@ func updateExistingDedupEntry(ctx context.Context, store storage.Driver, dedupEn
 		existing["job_name"] = jobName
 		existing["fetched_at"] = now
 
-		if err := store.Set(ctx, vk, existing); err != nil {
+		err := store.Set(ctx, vk, existing)
+		if err != nil {
 			return false, fmt.Errorf("update existing version: %w", err)
 		}
 	}
@@ -184,24 +185,27 @@ func SaveResourceVersion(
 		return err
 	}
 
-	if err := store.Set(ctx, rvVersionKey(name, count), storage.Payload{
+	err = store.Set(ctx, rvVersionKey(name, count), storage.Payload{
 		"version":    versionToAnyMap(version),
 		"job_name":   jobName,
 		"fetched_at": now,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("save version: %w", err)
 	}
 
-	if err := store.Set(ctx, dk, storage.Payload{
+	err = store.Set(ctx, dk, storage.Payload{
 		"index":        count,
 		"version_json": string(versionJSON),
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("save dedup entry: %w", err)
 	}
 
-	if err := store.Set(ctx, rvMetaKey(name), storage.Payload{
+	err = store.Set(ctx, rvMetaKey(name), storage.Payload{
 		"count": count + 1,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("save meta: %w", err)
 	}
 

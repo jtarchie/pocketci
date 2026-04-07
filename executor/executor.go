@@ -175,7 +175,8 @@ func (c *Execute) runJSPipeline(ctx context.Context, pipelinePath, runtimeID str
 		opts.RunID = runtimeID
 	}
 
-	if err := js.ExecuteWithOptions(ctx, pipeline, driver, store, opts); err != nil {
+	err = js.ExecuteWithOptions(ctx, pipeline, driver, store, opts)
+	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return fmt.Errorf("execution cancelled: %w", err)
 		}
@@ -199,7 +200,8 @@ func (c *Execute) runYAMLPipeline(
 		return fmt.Errorf("could not load YAML pipeline: %w", err)
 	}
 
-	if err := runtimebackwards.ValidateConfig(cfg); err != nil {
+	err = runtimebackwards.ValidateConfig(cfg)
+	if err != nil {
 		return fmt.Errorf("invalid pipeline: %w", err)
 	}
 
@@ -214,7 +216,8 @@ func (c *Execute) runYAMLPipeline(
 		},
 	)
 
-	if err := runner.Run(ctx); err != nil {
+	err = runner.Run(ctx)
+	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return fmt.Errorf("execution cancelled: %w", err)
 		}
@@ -297,7 +300,8 @@ func initSecretsManager(ctx context.Context, c *Execute, runtimeID string, logge
 			return nil, fmt.Errorf("invalid --secret flag %q: expected KEY=VALUE format", s)
 		}
 
-		if err := secretsManager.Set(ctx, secrets.PipelineScope(runtimeID), key, value); err != nil {
+		err := secretsManager.Set(ctx, secrets.PipelineScope(runtimeID), key, value)
+		if err != nil {
 			return nil, fmt.Errorf("could not set secret %q: %w", key, err)
 		}
 	}
@@ -308,7 +312,8 @@ func initSecretsManager(ctx context.Context, c *Execute, runtimeID string, logge
 			return nil, fmt.Errorf("invalid --global-secret flag %q: expected KEY=VALUE format", s)
 		}
 
-		if err := secretsManager.Set(ctx, secrets.GlobalScope, key, value); err != nil {
+		err := secretsManager.Set(ctx, secrets.GlobalScope, key, value)
+		if err != nil {
 			return nil, fmt.Errorf("could not set global secret %q: %w", key, err)
 		}
 	}

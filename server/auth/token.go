@@ -98,8 +98,9 @@ func TokenValidator(secret string) func(string) (*User, error) {
 // generateRandomCode creates a cryptographically random hex string for CLI device flow.
 func generateRandomCode() (string, error) {
 	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
+	_, randErr := rand.Read(b)
+	if randErr != nil {
+		return "", fmt.Errorf("rand read: %w", randErr)
 	}
 
 	return hex.EncodeToString(b), nil

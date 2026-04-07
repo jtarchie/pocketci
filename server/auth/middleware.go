@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/gob"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -49,24 +50,34 @@ func GetUserFromSession(r *http.Request, store *sessions.CookieStore) *User {
 func SaveUserToSession(w http.ResponseWriter, r *http.Request, store *sessions.CookieStore, user *User) error {
 	session, err := store.Get(r, sessionName)
 	if err != nil {
-		return err
+		return fmt.Errorf("session get: %w", err)
 	}
 
 	session.Values["user"] = user
 
-	return session.Save(r, w)
+	err = session.Save(r, w)
+	if err != nil {
+		return fmt.Errorf("session save: %w", err)
+	}
+
+	return nil
 }
 
 // ClearSession removes the user from the session cookie.
 func ClearSession(w http.ResponseWriter, r *http.Request, store *sessions.CookieStore) error {
 	session, err := store.Get(r, sessionName)
 	if err != nil {
-		return err
+		return fmt.Errorf("session get: %w", err)
 	}
 
 	session.Options.MaxAge = -1
 
-	return session.Save(r, w)
+	err = session.Save(r, w)
+	if err != nil {
+		return fmt.Errorf("session save: %w", err)
+	}
+
+	return nil
 }
 
 // RequireAuth creates an Echo middleware that enforces authentication.
@@ -123,7 +134,6 @@ func RequireAuth(cfg *Config, store *sessions.CookieStore, tokenValidator func(s
 			}
 
 			return c.Redirect(http.StatusFound, "/auth/login")
-
 		}
 	}
 }

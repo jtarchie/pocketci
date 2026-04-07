@@ -73,7 +73,8 @@ func (c *Container) pollStatus() error {
 
 // Status returns the current status of the guest process.
 func (c *Container) Status(_ context.Context) (orchestra.ContainerStatus, error) {
-	if err := c.pollStatus(); err != nil {
+	err := c.pollStatus()
+	if err != nil {
 		return nil, err
 	}
 
@@ -98,7 +99,8 @@ func (c *Container) Logs(ctx context.Context, stdout, stderr io.Writer, follow b
 			case <-ctx.Done():
 				return c.writeLogs(stdout, stderr)
 			case <-ticker.C:
-				if err := c.pollStatus(); err != nil {
+				err := c.pollStatus()
+				if err != nil {
 					return err
 				}
 
@@ -113,7 +115,8 @@ func (c *Container) Logs(ctx context.Context, stdout, stderr io.Writer, follow b
 		}
 	}
 
-	if err := c.pollStatus(); err != nil {
+	err := c.pollStatus()
+	if err != nil {
 		return err
 	}
 
@@ -125,13 +128,15 @@ func (c *Container) writeLogs(stdout, stderr io.Writer) error {
 	defer c.mu.Unlock()
 
 	if len(c.stdout) > 0 {
-		if _, err := io.Copy(stdout, strings.NewReader(string(c.stdout))); err != nil {
+		_, err := io.Copy(stdout, strings.NewReader(string(c.stdout)))
+		if err != nil {
 			return fmt.Errorf("failed to write stdout: %w", err)
 		}
 	}
 
 	if len(c.stderr) > 0 {
-		if _, err := io.Copy(stderr, strings.NewReader(string(c.stderr))); err != nil {
+		_, err := io.Copy(stderr, strings.NewReader(string(c.stderr)))
+		if err != nil {
 			return fmt.Errorf("failed to write stderr: %w", err)
 		}
 	}

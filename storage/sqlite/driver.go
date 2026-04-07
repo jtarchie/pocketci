@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"sort"
+
 	"github.com/georgysavva/scany/v2/sqlscan"
 	"github.com/jtarchie/lqs"
 	"github.com/jtarchie/pocketci/runtime/support"
@@ -23,6 +25,15 @@ import (
 
 //go:embed schema.sql
 var schemaSQL string
+
+// knownSQLiteColumns lists schema columns promoted out of the JSON payload.
+// Must be kept sorted for binary search in isKnownColumn.
+var knownSQLiteColumns = []string{"elapsed", "error_message", "error_type", "started_at", "status"}
+
+func isKnownColumn(field string) bool {
+	i := sort.SearchStrings(knownSQLiteColumns, field)
+	return i < len(knownSQLiteColumns) && knownSQLiteColumns[i] == field
+}
 
 type Sqlite struct {
 	writer    *sql.DB
@@ -272,15 +283,9 @@ func (s *Sqlite) GetAll(ctx context.Context, prefix string, fields []string) (st
 				id ASC
 		`
 	} else {
-		// Fields that have been promoted to real columns — read directly instead of
-		// computing json_extract(payload, '$.field') on every row.
-		knownColumns := map[string]struct{}{
-			"status": {}, "started_at": {}, "elapsed": {}, "error_message": {}, "error_type": {},
-		}
-
 		jsonSelects := strings.Join(
 			lo.Map(fields, func(field string, _ int) string {
-				if _, ok := knownColumns[field]; ok {
+				if isKnownColumn(field) {
 					return fmt.Sprintf("'%s', %s", field, field)
 				}
 
@@ -533,30 +538,35 @@ func (s *Sqlite) DeletePipeline(ctx context.Context, id string) error {
 	}
 
 	// Remove the orphaned FTS entry (not cascade-deleted automatically).
-	if _, err := s.writer.ExecContext(ctx, `
+	_, err = s.writer.ExecContext(ctx, `
 		DELETE FROM pipelines_fts WHERE rowid IN (
 			SELECT rowid FROM pipelines_fts WHERE id = ?
 		)
-	`, id); err != nil {
+	`, id)
+	if err != nil {
 		return fmt.Errorf("failed to delete pipelines_fts entry: %w", err)
 	}
 
 	// Merge FTS5 index segments to keep search fast.
-	if _, err := s.writer.ExecContext(ctx, `INSERT INTO pipelines_fts(pipelines_fts) VALUES('optimize')`); err != nil {
+	_, err = s.writer.ExecContext(ctx, `INSERT INTO pipelines_fts(pipelines_fts) VALUES('optimize')`)
+	if err != nil {
 		return fmt.Errorf("failed to optimize pipelines_fts: %w", err)
 	}
 
-	if _, err := s.writer.ExecContext(ctx, `INSERT INTO data_fts(data_fts) VALUES('optimize')`); err != nil {
+	_, err = s.writer.ExecContext(ctx, `INSERT INTO data_fts(data_fts) VALUES('optimize')`)
+	if err != nil {
 		return fmt.Errorf("failed to optimize data_fts: %w", err)
 	}
 
 	// Update query-planner statistics.
-	if _, err := s.writer.ExecContext(ctx, `PRAGMA optimize`); err != nil {
+	_, err = s.writer.ExecContext(ctx, `PRAGMA optimize`)
+	if err != nil {
 		return fmt.Errorf("failed to run PRAGMA optimize: %w", err)
 	}
 
 	// Reclaim disk space freed by the deleted rows and their cascades.
-	if _, err := s.writer.ExecContext(ctx, `VACUUM`); err != nil {
+	_, err = s.writer.ExecContext(ctx, `VACUUM`)
+	if err != nil {
 		return fmt.Errorf("failed to vacuum after delete: %w", err)
 	}
 
@@ -758,14 +768,16 @@ func paginatedSearch[S any, T any](
 	}
 
 	var totalItems int
-	if err := sqlscan.Get(ctx, db, &totalItems, cntSQL, args...); err != nil {
+	err := sqlscan.Get(ctx, db, &totalItems, cntSQL, args...)
+	if err != nil {
 		return nil, fmt.Errorf("failed to count results: %w", err)
 	}
 
 	selectArgs := append(args, perPage, offset) //nolint:gocritic // intentional new slice
 
 	var rows []S
-	if err := sqlscan.Select(ctx, db, &rows, selSQL, selectArgs...); err != nil {
+	err = sqlscan.Select(ctx, db, &rows, selSQL, selectArgs...)
+	if err != nil {
 		return nil, fmt.Errorf("failed to query results: %w", err)
 	}
 
@@ -971,7 +983,12 @@ func (s *Sqlite) PruneWebhookDedup(ctx context.Context, olderThan time.Time) (in
 		return 0, fmt.Errorf("prune webhook dedup: %w", err)
 	}
 
-	return result.RowsAffected()
+	n, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected: %w", err)
+	}
+
+	return n, nil
 }
 
 // scheduleScan is an intermediate struct for scanning schedule rows.
@@ -1160,7 +1177,8 @@ func (s *Sqlite) ClaimDueSchedules(ctx context.Context, now time.Time) ([]storag
 		schedules = append(schedules, row.toStorage())
 	}
 
-	if err := rows.Err(); err != nil {
+	err = rows.Err()
+	if err != nil {
 		return nil, fmt.Errorf("failed to iterate claimed schedules: %w", err)
 	}
 

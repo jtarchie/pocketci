@@ -21,7 +21,8 @@ func (c *Client) ListPipelines() (storage.PaginationResult[storage.Pipeline], er
 		return result, fmt.Errorf("could not list pipelines: %w", err)
 	}
 
-	if err := c.checkAuthStatus(resp.StatusCode()); err != nil {
+	err = c.checkAuthStatus(resp.StatusCode())
+	if err != nil {
 		return result, err
 	}
 
@@ -29,7 +30,8 @@ func (c *Client) ListPipelines() (storage.PaginationResult[storage.Pipeline], er
 		return result, &APIError{StatusCode: resp.StatusCode(), Body: resp.String()}
 	}
 
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+	err = json.Unmarshal(resp.Body(), &result)
+	if err != nil {
 		return result, fmt.Errorf("could not parse pipeline list: %w", err)
 	}
 
@@ -69,7 +71,8 @@ func (c *Client) SetPipeline(name string, body SetPipelineRequest) (storage.Pipe
 
 	respBody := resp.Body()
 
-	if err := c.checkAuthStatus(resp.StatusCode()); err != nil {
+	err = c.checkAuthStatus(resp.StatusCode())
+	if err != nil {
 		return pipeline, err
 	}
 
@@ -84,7 +87,8 @@ func (c *Client) SetPipeline(name string, body SetPipelineRequest) (storage.Pipe
 		return pipeline, &APIError{StatusCode: resp.StatusCode(), Body: string(respBody)}
 	}
 
-	if err := json.Unmarshal(respBody, &pipeline); err != nil {
+	err = json.Unmarshal(respBody, &pipeline)
+	if err != nil {
 		return pipeline, fmt.Errorf("could not parse response: %w", err)
 	}
 
@@ -98,7 +102,8 @@ func (c *Client) DeletePipeline(id string) error {
 		return fmt.Errorf("could not delete pipeline: %w", err)
 	}
 
-	if err := c.checkAuthStatus(resp.StatusCode()); err != nil {
+	err = c.checkAuthStatus(resp.StatusCode())
+	if err != nil {
 		return err
 	}
 
@@ -121,7 +126,8 @@ func (c *Client) TriggerPipeline(id string, body TriggerRequest) (TriggerResult,
 		return result, fmt.Errorf("could not trigger pipeline: %w", err)
 	}
 
-	if err := c.checkAuthStatus(resp.StatusCode()); err != nil {
+	err = c.checkAuthStatus(resp.StatusCode())
+	if err != nil {
 		return result, err
 	}
 
@@ -138,7 +144,8 @@ func (c *Client) TriggerPipeline(id string, body TriggerRequest) (TriggerResult,
 		return result, &APIError{StatusCode: resp.StatusCode(), Body: resp.String()}
 	}
 
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+	err = json.Unmarshal(resp.Body(), &result)
+	if err != nil {
 		return result, fmt.Errorf("could not parse response: %w", err)
 	}
 
@@ -161,7 +168,8 @@ func (c *Client) setPipelineState(id, action string) error {
 		return fmt.Errorf("could not %s pipeline: %w", action, err)
 	}
 
-	if err := c.checkAuthStatus(resp.StatusCode()); err != nil {
+	err = c.checkAuthStatus(resp.StatusCode())
+	if err != nil {
 		return err
 	}
 
@@ -183,7 +191,8 @@ func (c *Client) SeedJobPassed(pipelineID, jobName string) (SeedPassedResult, er
 		return result, fmt.Errorf("could not seed job passed status: %w", err)
 	}
 
-	if err := c.checkAuthStatus(resp.StatusCode()); err != nil {
+	err = c.checkAuthStatus(resp.StatusCode())
+	if err != nil {
 		return result, err
 	}
 
@@ -195,7 +204,38 @@ func (c *Client) SeedJobPassed(pipelineID, jobName string) (SeedPassedResult, er
 		return result, &APIError{StatusCode: resp.StatusCode(), Body: resp.String()}
 	}
 
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+	err = json.Unmarshal(resp.Body(), &result)
+	if err != nil {
+		return result, fmt.Errorf("could not parse response: %w", err)
+	}
+
+	return result, nil
+}
+
+// GetPipeline returns a single pipeline by ID.
+func (c *Client) GetPipeline(id string) (PipelineResponse, error) {
+	var result PipelineResponse
+
+	resp, err := c.http.R().Get(c.serverURL + "/api/pipelines/" + url.PathEscape(id))
+	if err != nil {
+		return result, fmt.Errorf("could not get pipeline: %w", err)
+	}
+
+	err = c.checkAuthStatus(resp.StatusCode())
+	if err != nil {
+		return result, err
+	}
+
+	if resp.StatusCode() == http.StatusNotFound {
+		return result, &NotFoundError{Resource: "pipeline", ID: id}
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return result, &APIError{StatusCode: resp.StatusCode(), Body: resp.String()}
+	}
+
+	err = json.Unmarshal(resp.Body(), &result)
+	if err != nil {
 		return result, fmt.Errorf("could not parse response: %w", err)
 	}
 

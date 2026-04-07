@@ -2,6 +2,7 @@ package runtime_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"testing"
 
@@ -23,10 +24,15 @@ func runWithWebhookAndStore(t *testing.T, src string, data *jsapi.WebhookData, p
 
 	js := runtime.NewJS(slog.Default())
 
-	return js.ExecuteWithOptions(context.Background(), src, nil, store, runtime.ExecuteOptions{
+	err = js.ExecuteWithOptions(context.Background(), src, nil, store, runtime.ExecuteOptions{
 		WebhookData: data,
 		PipelineID:  pipelineID,
 	})
+	if err != nil {
+		return fmt.Errorf("execute: %w", err)
+	}
+
+	return nil
 }
 
 func TestWebhookDedupGlobal(t *testing.T) {

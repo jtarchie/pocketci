@@ -48,7 +48,8 @@ func New(serverURL string, opts ...Option) *Client {
 		serverURL: serverURL,
 	}
 
-	if parsed, err := url.Parse(serverURL); err == nil && parsed.User != nil {
+	parsed, parseErr := url.Parse(serverURL)
+	if parseErr == nil && parsed.User != nil {
 		password, _ := parsed.User.Password()
 		c.http.SetBasicAuth(parsed.User.Username(), password)
 		parsed.User = nil

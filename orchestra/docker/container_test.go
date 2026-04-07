@@ -16,7 +16,6 @@ import (
 
 func TestDocker(t *testing.T) {
 	t.Run("with a user", func(t *testing.T) {
-
 		assert := NewGomegaWithT(t)
 
 		client, err := docker.New(context.Background(), docker.Config{Namespace: "test-" + gonanoid.Must()}, slog.Default())
@@ -59,7 +58,6 @@ func TestDocker(t *testing.T) {
 	})
 
 	t.Run("with privileged", func(t *testing.T) {
-
 		assert := NewGomegaWithT(t)
 
 		client, err := docker.New(context.Background(), docker.Config{Namespace: "test-" + gonanoid.Must()}, slog.Default())
@@ -92,7 +90,6 @@ func TestDocker(t *testing.T) {
 	})
 
 	t.Run("with container limits", func(t *testing.T) {
-
 		assert := NewGomegaWithT(t)
 
 		client, err := docker.New(context.Background(), docker.Config{Namespace: "test-" + gonanoid.Must()}, slog.Default())

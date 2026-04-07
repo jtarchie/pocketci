@@ -1,6 +1,11 @@
 package client
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+
+	"github.com/jtarchie/pocketci/storage"
+)
 
 // SetPipelineRequest is the JSON body for PUT /api/pipelines/:name.
 type SetPipelineRequest struct {
@@ -46,4 +51,35 @@ type SeedPassedResult struct {
 type DeviceFlowResult struct {
 	Code     string `json:"code"`
 	LoginURL string `json:"login_url"`
+}
+
+// PipelineResponse is the response from GET /api/pipelines/:id.
+// It is a sanitized view of the pipeline (no driver secrets).
+type PipelineResponse struct {
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Content        string    `json:"content"`
+	ContentType    string    `json:"content_type"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	ResumeEnabled  bool      `json:"resume_enabled"`
+	Paused         bool      `json:"paused"`
+	RBACExpression string    `json:"rbac_expression,omitempty"`
+}
+
+// RunTask is a single task entry from GET /api/runs/:run_id/tasks.
+type RunTask struct {
+	Path    string          `json:"path"`
+	Payload storage.Payload `json:"payload"`
+}
+
+// RunActionResult is the response from POST /api/runs/:run_id/stop and /resume.
+type RunActionResult struct {
+	RunID  string `json:"run_id"`
+	Status string `json:"status"`
+}
+
+// ShareResult is the response from POST /api/runs/:run_id/share.
+type ShareResult struct {
+	SharePath string `json:"share_path"`
 }

@@ -21,7 +21,8 @@ func (c *Client) BeginDeviceFlow() (DeviceFlowResult, error) {
 		return result, &APIError{StatusCode: resp.StatusCode(), Body: resp.String()}
 	}
 
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+	err = json.Unmarshal(resp.Body(), &result)
+	if err != nil {
 		return result, fmt.Errorf("could not parse response: %w", err)
 	}
 
@@ -53,7 +54,8 @@ func (c *Client) PollDeviceFlow(code string) (string, bool, error) {
 		Token string `json:"token"`
 	}
 
-	if err := json.Unmarshal(resp.Body(), &tokenResult); err != nil {
+	err = json.Unmarshal(resp.Body(), &tokenResult)
+	if err != nil {
 		return "", false, fmt.Errorf("could not parse token response: %w", err)
 	}
 

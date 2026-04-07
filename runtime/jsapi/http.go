@@ -69,7 +69,8 @@ func (h *HTTPRuntime) Respond(call goja.FunctionCall) goja.Value {
 
 	var resp HTTPResponse
 
-	if err := h.jsVM.ExportTo(arg, &resp); err != nil {
+	err := h.jsVM.ExportTo(arg, &resp)
+	if err != nil {
 		panic(h.jsVM.NewGoError(err))
 	}
 

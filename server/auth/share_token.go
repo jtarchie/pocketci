@@ -23,8 +23,9 @@ func GenerateShareToken(runID, secret string) (string, error) {
 	}
 
 	mac := hmac.New(sha256.New, []byte(secret))
-	if _, err := mac.Write([]byte("share:" + runID)); err != nil {
-		return "", fmt.Errorf("could not compute HMAC: %w", err)
+	_, macErr := mac.Write([]byte("share:" + runID))
+	if macErr != nil {
+		return "", fmt.Errorf("could not compute HMAC: %w", macErr)
 	}
 
 	sig := hex.EncodeToString(mac.Sum(nil))
@@ -49,8 +50,9 @@ func ValidateShareToken(token, secret string) (*ShareClaims, error) {
 	}
 
 	mac := hmac.New(sha256.New, []byte(secret))
-	if _, err := mac.Write([]byte("share:" + runID)); err != nil {
-		return nil, fmt.Errorf("could not compute HMAC: %w", err)
+	_, macErr2 := mac.Write([]byte("share:" + runID))
+	if macErr2 != nil {
+		return nil, fmt.Errorf("could not compute HMAC: %w", macErr2)
 	}
 
 	expected, err := hex.DecodeString(sigHex)

@@ -162,7 +162,8 @@ func TestNotifyHTTPIntegration(t *testing.T) {
 		}
 
 		var payload map[string]string
-		if err := json.Unmarshal(body, &payload); err != nil {
+		err = json.Unmarshal(body, &payload)
+		if err != nil {
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
 		}

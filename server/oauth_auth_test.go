@@ -478,7 +478,8 @@ func createPipelineWithRBAC(t *testing.T, router *server.Router, token, name, rb
 	}
 
 	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+	err := json.Unmarshal(rec.Body.Bytes(), &resp)
+	if err != nil {
 		t.Fatalf("bad response JSON: %v", err)
 	}
 

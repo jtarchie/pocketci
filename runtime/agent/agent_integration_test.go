@@ -155,7 +155,8 @@ func readResultArtifact(t *testing.T, runner *pipelinerunner.PipelineRunner, out
 	}
 
 	var artifact map[string]string
-	if err := json.Unmarshal([]byte(result.Stdout), &artifact); err != nil {
+	err := json.Unmarshal([]byte(result.Stdout), &artifact)
+	if err != nil {
 		t.Fatalf("unmarshal result artifact: %v", err)
 	}
 

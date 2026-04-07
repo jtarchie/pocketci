@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -20,6 +22,10 @@ import (
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
 )
+
+// errContainerAborted is returned by pollContainerStatus when the container
+// was aborted due to context cancellation or deadline exceeded.
+var errContainerAborted = errors.New("container aborted")
 
 // AgentFunc is a function that runs an LLM agent. It takes config as raw JSON
 // and returns the result as raw JSON. This is injected by the runtime layer
@@ -34,8 +40,7 @@ type PipelineRunner struct {
 	volumes          []orchestra.Volume
 	namespace        string
 	runID            string
-	mu               sync.Mutex // Protects callIndex
-	callIndex        int        // Tracks how many times Run() has been called
+	callIndex        atomic.Int64 // Tracks how many times Run() has been called
 	secretsManager   secrets.Manager
 	pipelineID       string
 	secretValues     []string                    // Cached secret values for redaction
@@ -102,7 +107,7 @@ func (c *PipelineRunner) SetSecretsManager(mgr secrets.Manager, pipelineID strin
 // then falls back to global scope.
 func (c *PipelineRunner) loadSecrets(ctx context.Context, requestedKeys []string) (map[string]string, error) {
 	if c.secretsManager == nil || len(requestedKeys) == 0 {
-		return nil, nil
+		return map[string]string{}, nil
 	}
 
 	result := make(map[string]string, len(requestedKeys))
@@ -208,7 +213,7 @@ func (c *PipelineRunner) ReadFilesFromVolume(volumeName string, filePaths ...str
 
 	for {
 		header, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 
@@ -222,7 +227,8 @@ func (c *PipelineRunner) ReadFilesFromVolume(volumeName string, filePaths ...str
 
 		var buf strings.Builder
 
-		if _, err := io.Copy(&buf, tr); err != nil {
+		_, err = io.Copy(&buf, tr)
+		if err != nil {
 			return nil, fmt.Errorf("failed to read file %q from tar: %w", header.Name, err)
 		}
 
@@ -318,10 +324,7 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 		}
 	}
 
-	c.mu.Lock()
-	stepID := fmt.Sprintf("%d-%s", c.callIndex, input.Name)
-	c.callIndex++
-	c.mu.Unlock()
+	stepID := strconv.FormatInt(c.callIndex.Add(1)-1, 10) + "-" + input.Name
 	taskID := support.DeterministicTaskID(c.namespace, c.runID, stepID, input.Name)
 
 	logger := c.logger.With("task.id", taskID, "task.name", input.Name, "task.privileged", input.Privileged)
@@ -331,7 +334,8 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 		effectiveStorageKey = input.StorageKey
 	}
 
-	if err := c.injectSecrets(ctx, &input, effectiveStorageKey); err != nil {
+	err := c.injectSecrets(ctx, &input, effectiveStorageKey)
+	if err != nil {
 		return nil, err
 	}
 
@@ -428,7 +432,7 @@ func (c *PipelineRunner) createRunContainer(ctx context.Context, taskID string, 
 		stdinReader = strings.NewReader(input.Stdin)
 	}
 
-	return c.client.RunContainer(
+	container, err := c.client.RunContainer(
 		ctx,
 		orchestra.Task{
 			Command: command,
@@ -446,6 +450,11 @@ func (c *PipelineRunner) createRunContainer(ctx context.Context, taskID string, 
 			WorkDir:    input.WorkDir,
 		},
 	)
+	if err != nil {
+		return nil, fmt.Errorf("run container: %w", err)
+	}
+
+	return container, nil
 }
 
 // waitAndFinalizeRun waits for the container to finish, collects logs, redacts
@@ -494,11 +503,12 @@ func (c *PipelineRunner) waitAndFinalizeRun(
 	}
 
 	containerStatus, err := c.pollContainerStatus(ctx, container, storageKey, taskStartedAt, cancelStream)
+	if errors.Is(err, errContainerAborted) {
+		return &RunResult{Status: RunAbort}, nil
+	}
+
 	if err != nil {
 		return nil, err
-	}
-	if containerStatus == nil {
-		return &RunResult{Status: RunAbort}, nil
 	}
 
 	cancelStream()
@@ -568,7 +578,7 @@ func (c *PipelineRunner) pollContainerStatus(
 					"elapsed":    formatElapsed(time.Since(taskStartedAt)),
 				})
 
-				return nil, nil
+				return nil, errContainerAborted
 			}
 
 			c.setTaskStatus(storageKey, map[string]any{

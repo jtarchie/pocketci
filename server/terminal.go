@@ -18,7 +18,8 @@ func ParseTerminalLogs(raw any) []TerminalLogEntry {
 	if !ok {
 		if rawJSON, ok := raw.(string); ok {
 			var fromJSON []TerminalLogEntry
-			if err := json.Unmarshal([]byte(rawJSON), &fromJSON); err == nil {
+			err := json.Unmarshal([]byte(rawJSON), &fromJSON)
+			if err == nil {
 				return fromJSON
 			}
 		}

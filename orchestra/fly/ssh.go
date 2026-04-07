@@ -40,8 +40,9 @@ func (f *Fly) createTunnel(ctx context.Context) (*flyTunnel, error) {
 
 	// Generate WireGuard Curve25519 keypair
 	var privKey [32]byte
-	if _, err := rand.Read(privKey[:]); err != nil {
-		return nil, fmt.Errorf("failed to generate WireGuard key: %w", err)
+	_, randErr := rand.Read(privKey[:])
+	if randErr != nil {
+		return nil, fmt.Errorf("failed to generate WireGuard key: %w", randErr)
 	}
 
 	// Clamp private key per Curve25519 requirements
@@ -141,16 +142,18 @@ persistent_keepalive_interval=15`,
 
 	dev := device.NewDevice(tunDev, conn.NewDefaultBind(), device.NewLogger(device.LogLevelSilent, ""))
 
-	if err := dev.IpcSet(ipcConfig); err != nil {
+	ipcErr := dev.IpcSet(ipcConfig)
+	if ipcErr != nil {
 		dev.Close()
 		_ = f.apiClient.RemoveWireGuardPeer(ctx, org.ID, peerName)
-		return nil, fmt.Errorf("failed to configure WireGuard device: %w", err)
+		return nil, fmt.Errorf("failed to configure WireGuard device: %w", ipcErr)
 	}
 
-	if err := dev.Up(); err != nil {
+	upErr := dev.Up()
+	if upErr != nil {
 		dev.Close()
 		_ = f.apiClient.RemoveWireGuardPeer(ctx, org.ID, peerName)
-		return nil, fmt.Errorf("failed to bring up WireGuard device: %w", err)
+		return nil, fmt.Errorf("failed to bring up WireGuard device: %w", upErr)
 	}
 
 	return &flyTunnel{

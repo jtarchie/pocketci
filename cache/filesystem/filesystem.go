@@ -30,7 +30,8 @@ func New(cfg Config) (*FilesystemStore, error) {
 		return nil, errors.New("cache directory must be specified")
 	}
 
-	if err := os.MkdirAll(cfg.Directory, 0o750); err != nil {
+	err := os.MkdirAll(cfg.Directory, 0o750)
+	if err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
@@ -54,7 +55,7 @@ func (s *FilesystemStore) Restore(_ context.Context, key string) (io.ReadCloser,
 	info, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+			return nil, cache.ErrCacheMiss
 		}
 
 		return nil, fmt.Errorf("failed to stat cache file: %w", err)
@@ -63,13 +64,13 @@ func (s *FilesystemStore) Restore(_ context.Context, key string) (io.ReadCloser,
 	if s.ttl > 0 && time.Since(info.ModTime()) > s.ttl {
 		_ = os.Remove(path)
 
-		return nil, nil
+		return nil, cache.ErrCacheMiss
 	}
 
 	file, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+			return nil, cache.ErrCacheMiss
 		}
 
 		return nil, fmt.Errorf("failed to open cache file: %w", err)
@@ -82,7 +83,8 @@ func (s *FilesystemStore) Restore(_ context.Context, key string) (io.ReadCloser,
 func (s *FilesystemStore) Persist(_ context.Context, key string, reader io.Reader) error {
 	path := s.fullPath(key)
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	err := os.MkdirAll(filepath.Dir(path), 0o750)
+	if err != nil {
 		return fmt.Errorf("failed to create cache subdirectory: %w", err)
 	}
 
@@ -95,7 +97,8 @@ func (s *FilesystemStore) Persist(_ context.Context, key string, reader io.Reade
 		_ = file.Close()
 	}()
 
-	if _, err := io.Copy(file, reader); err != nil {
+	_, err = io.Copy(file, reader)
+	if err != nil {
 		return fmt.Errorf("failed to write cache file: %w", err)
 	}
 
@@ -126,7 +129,8 @@ func (s *FilesystemStore) Exists(_ context.Context, key string) (bool, error) {
 func (s *FilesystemStore) Delete(_ context.Context, key string) error {
 	path := s.fullPath(key)
 
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+	err := os.Remove(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("failed to delete cache file: %w", err)
 	}
 
@@ -152,13 +156,15 @@ func (s *FilesystemStore) GetHash(_ context.Context, key string) (string, error)
 
 // PersistWithHash writes content to the filesystem and stores the content hash in a sidecar file.
 func (s *FilesystemStore) PersistWithHash(ctx context.Context, key string, reader io.Reader, hash string) error {
-	if err := s.Persist(ctx, key, reader); err != nil {
+	err := s.Persist(ctx, key, reader)
+	if err != nil {
 		return err
 	}
 
 	hashPath := s.fullPath(key) + ".hash"
 
-	if err := os.WriteFile(hashPath, []byte(hash), 0o640); err != nil {
+	err = os.WriteFile(hashPath, []byte(hash), 0o640)
+	if err != nil {
 		return fmt.Errorf("failed to write hash file: %w", err)
 	}
 

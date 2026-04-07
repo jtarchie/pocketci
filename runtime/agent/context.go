@@ -69,7 +69,8 @@ func injectSyntheticToolCall(
 		},
 	}
 
-	if err := svc.AppendEvent(ctx, sess, callEvent); err != nil {
+	err := svc.AppendEvent(ctx, sess, callEvent)
+	if err != nil {
 		return fmt.Errorf("append synthetic call event: %w", err)
 	}
 
@@ -92,7 +93,8 @@ func injectSyntheticToolCall(
 	}
 	respEvent.Actions.SkipSummarization = true
 
-	if err := svc.AppendEvent(ctx, sess, respEvent); err != nil {
+	err = svc.AppendEvent(ctx, sess, respEvent)
+	if err != nil {
 		return fmt.Errorf("append synthetic response event: %w", err)
 	}
 

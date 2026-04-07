@@ -3,6 +3,7 @@ package orchestra_test
 import (
 	"archive/tar"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -662,7 +663,7 @@ func extractTarFiles(t *testing.T, rc io.ReadCloser) map[string]string {
 
 	for {
 		header, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 
@@ -676,7 +677,8 @@ func extractTarFiles(t *testing.T, rc io.ReadCloser) map[string]string {
 
 		var buf strings.Builder
 
-		if _, err := io.Copy(&buf, tr); err != nil {
+		_, err = io.Copy(&buf, tr)
+		if err != nil {
 			t.Fatalf("failed to read file %q from tar: %v", header.Name, err)
 		}
 

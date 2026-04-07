@@ -14,7 +14,8 @@ func StartPprof(addr string, logger *slog.Logger) {
 	logger.Info("pprof.starting", "addr", addr)
 
 	go func() {
-		if err := http.ListenAndServe(addr, nil); err != nil { //nolint:gosec // addr is operator-supplied
+		err := http.ListenAndServe(addr, nil)
+		if err != nil { //nolint:gosec // addr is operator-supplied
 			logger.Error("pprof.server.error", "err", err)
 		}
 	}()

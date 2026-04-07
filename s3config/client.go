@@ -189,7 +189,8 @@ func (c *Client) PutBytes(ctx context.Context, key string, data []byte, contentT
 	}
 	c.cfg.ApplySSEToUpload(input)
 
-	if _, err := uploader.UploadObject(ctx, input); err != nil {
+	_, err := uploader.UploadObject(ctx, input)
+	if err != nil {
 		return fmt.Errorf("failed to put object %q: %w", key, err)
 	}
 
@@ -209,7 +210,8 @@ func (c *Client) PutStream(ctx context.Context, key string, reader io.Reader, op
 	}
 	c.cfg.ApplySSEToUpload(input)
 
-	if _, err := uploader.UploadObject(ctx, input); err != nil {
+	_, err := uploader.UploadObject(ctx, input)
+	if err != nil {
 		return fmt.Errorf("failed to put stream to %q: %w", key, err)
 	}
 

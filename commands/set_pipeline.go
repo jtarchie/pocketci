@@ -106,7 +106,7 @@ func (c *SetPipeline) Run(logger *slog.Logger) error {
 
 	pipeline, err := apiClient.SetPipeline(name, reqBody)
 	if err != nil {
-		return err
+		return fmt.Errorf("set pipeline: %w", err)
 	}
 
 	logger.Info("pipeline.upload.success", "id", pipeline.ID, "name", pipeline.Name)
@@ -123,7 +123,8 @@ func (c *SetPipeline) validatePipelineContent(logger *slog.Logger, content []byt
 	case ".yml", ".yaml":
 		logger.Info("pipeline.validate")
 
-		if err := backwards.ValidatePipeline(content); err != nil {
+		err := backwards.ValidatePipeline(content)
+		if err != nil {
 			return "", fmt.Errorf("pipeline validation failed: %w", err)
 		}
 
@@ -132,8 +133,9 @@ func (c *SetPipeline) validatePipelineContent(logger *slog.Logger, content []byt
 	case ".ts":
 		logger.Info("pipeline.validate")
 
-		if _, err := runtime.TranspileAndValidate(string(content)); err != nil {
-			return "", fmt.Errorf("pipeline validation failed: %w", err)
+		_, tsTranspileErr := runtime.TranspileAndValidate(string(content))
+		if tsTranspileErr != nil {
+			return "", fmt.Errorf("pipeline validation failed: %w", tsTranspileErr)
 		}
 
 		return "ts", nil
@@ -141,8 +143,9 @@ func (c *SetPipeline) validatePipelineContent(logger *slog.Logger, content []byt
 	case ".js":
 		logger.Info("pipeline.validate")
 
-		if _, err := runtime.TranspileAndValidate(string(content)); err != nil {
-			return "", fmt.Errorf("pipeline validation failed: %w", err)
+		_, jsTranspileErr := runtime.TranspileAndValidate(string(content))
+		if jsTranspileErr != nil {
+			return "", fmt.Errorf("pipeline validation failed: %w", jsTranspileErr)
 		}
 
 		return "js", nil
@@ -185,9 +188,10 @@ func (c *SetPipeline) printSuccess(pipeline storage.Pipeline, secretsMap map[str
 	_, _ = fmt.Fprintf(w, "  ID: %s\n", pipeline.ID)
 
 	displayURL := c.ServerURL
-	if parsed, err := url.Parse(c.ServerURL); err == nil && parsed.User != nil {
-		parsed.User = nil
-		displayURL = parsed.String()
+	parsedURL, parseURLErr := url.Parse(c.ServerURL)
+	if parseURLErr == nil && parsedURL.User != nil {
+		parsedURL.User = nil
+		displayURL = parsedURL.String()
 	}
 
 	_, _ = fmt.Fprintf(w, "  URL: %s/pipelines/%s/\n", displayURL, pipeline.ID)
@@ -243,8 +247,9 @@ func (c *SetPipeline) parseSecrets() (map[string]string, error) {
 			result[key] = value
 		}
 
-		if err := scanner.Err(); err != nil {
-			return nil, fmt.Errorf("could not read secret file: %w", err)
+		scannerErr := scanner.Err()
+		if scannerErr != nil {
+			return nil, fmt.Errorf("could not read secret file: %w", scannerErr)
 		}
 	}
 

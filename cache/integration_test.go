@@ -45,7 +45,8 @@ func getAvailableDrivers() []driverEntry {
 	})
 
 	// docker requires docker command and supports caching
-	if _, err := exec.LookPath("docker"); err == nil {
+	_, dockerErr := exec.LookPath("docker")
+	if dockerErr == nil {
 		entries = append(entries, driverEntry{
 			name: "docker",
 			factory: func(ns string, logger *slog.Logger) (orchestra.Driver, error) {
@@ -88,7 +89,8 @@ func getAvailableDrivers() []driverEntry {
 }
 
 func TestCacheIntegration(t *testing.T) {
-	if _, err := exec.LookPath("minio"); err != nil {
+	_, minioErr := exec.LookPath("minio")
+	if minioErr != nil {
 		t.Skip("minio not installed, skipping integration test")
 	}
 

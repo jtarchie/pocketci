@@ -81,7 +81,8 @@ func (h *PutHandler) Execute(sc *StepContext, step *config.Step, pathPrefix stri
 
 	scopedName := getScopedResourceName(sc.PipelineID, resourceName)
 
-	if saveErr := SaveResourceVersion(sc.Ctx, sc.Storage, scopedName, version, sc.JobName); saveErr != nil {
+	saveErr := SaveResourceVersion(sc.Ctx, sc.Storage, scopedName, version, sc.JobName)
+	if saveErr != nil {
 		return fmt.Errorf("put step save version: %w", saveErr)
 	}
 
@@ -170,8 +171,9 @@ func (h *PutHandler) pushContainer(
 		Version map[string]string `json:"version"`
 	}
 
-	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
-		return nil, fmt.Errorf("parse push output for %q: %w", resourceName, err)
+	unmarshalErr := json.Unmarshal([]byte(stdout), &result)
+	if unmarshalErr != nil {
+		return nil, fmt.Errorf("parse push output for %q: %w", resourceName, unmarshalErr)
 	}
 
 	return result.Version, nil

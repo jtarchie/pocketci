@@ -27,8 +27,9 @@ func resolveShareSigningSecret(ctx context.Context, mgr secrets.Manager, logger 
 	if mgr == nil {
 		fallbackShareSecretOnce.Do(func() {
 			b := make([]byte, 32)
-			if _, err := rand.Read(b); err != nil {
-				panic(fmt.Sprintf("could not generate share signing secret: %v", err))
+			_, randErr := rand.Read(b)
+			if randErr != nil {
+				panic(fmt.Sprintf("could not generate share signing secret: %v", randErr))
 			}
 
 			fallbackShareSecret = hex.EncodeToString(b)
@@ -52,14 +53,16 @@ func resolveShareSigningSecret(ctx context.Context, mgr secrets.Manager, logger 
 
 	// Generate and persist a new key.
 	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("could not generate share signing key: %w", err)
+	_, randErr := rand.Read(b)
+	if randErr != nil {
+		return "", fmt.Errorf("could not generate share signing key: %w", randErr)
 	}
 
 	key := hex.EncodeToString(b)
 
-	if err := mgr.Set(ctx, secrets.GlobalScope, shareSigningKeyName, key); err != nil {
-		return "", fmt.Errorf("could not persist share signing key: %w", err)
+	setErr := mgr.Set(ctx, secrets.GlobalScope, shareSigningKeyName, key)
+	if setErr != nil {
+		return "", fmt.Errorf("could not persist share signing key: %w", setErr)
 	}
 
 	return key, nil

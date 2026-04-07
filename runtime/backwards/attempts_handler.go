@@ -14,7 +14,8 @@ func (jr *JobRunner) runAttemptFailureHook(sc *StepContext, step *config.Step, p
 		sc.LastFailureKind = FailureKindAborted
 
 		abortPrefix := pathPrefix + "/on_abort"
-		if err := jr.processStep(sc, step.OnAbort, abortPrefix); err != nil {
+		err := jr.processStep(sc, step.OnAbort, abortPrefix)
+		if err != nil {
 			sc.Logger.Warn("step.on_abort.failed", "prefix", pathPrefix, "error", err)
 		}
 
@@ -25,7 +26,8 @@ func (jr *JobRunner) runAttemptFailureHook(sc *StepContext, step *config.Step, p
 		sc.LastFailureKind = FailureKindErrored
 
 		errorPrefix := pathPrefix + "/on_error"
-		if err := jr.processStep(sc, step.OnError, errorPrefix); err != nil {
+		err := jr.processStep(sc, step.OnError, errorPrefix)
+		if err != nil {
 			sc.Logger.Warn("step.on_error.failed", "prefix", pathPrefix, "error", err)
 		}
 
@@ -35,7 +37,8 @@ func (jr *JobRunner) runAttemptFailureHook(sc *StepContext, step *config.Step, p
 		sc.LastFailureKind = FailureKindFailed
 
 		failurePrefix := pathPrefix + "/on_failure"
-		if err := jr.processStep(sc, step.OnFailure, failurePrefix); err != nil {
+		err := jr.processStep(sc, step.OnFailure, failurePrefix)
+		if err != nil {
 			sc.Logger.Warn("step.on_failure.failed", "prefix", pathPrefix, "error", err)
 		}
 
@@ -65,7 +68,8 @@ func (jr *JobRunner) executeWithAttempts(sc *StepContext, step *config.Step, pat
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		attemptPrefix := fmt.Sprintf("%s/attempt/%d", pathPrefix, attempt)
-		if err := jr.processStep(sc, &stripped, attemptPrefix); err != nil {
+		err := jr.processStep(sc, &stripped, attemptPrefix)
+		if err != nil {
 			lastErr = err
 			sc.Logger.Debug("attempt.failed", "attempt", attempt, "max", maxAttempts, "err", err)
 
@@ -81,7 +85,8 @@ func (jr *JobRunner) executeWithAttempts(sc *StepContext, step *config.Step, pat
 	if succeeded {
 		if step.OnSuccess != nil {
 			successPrefix := pathPrefix + "/on_success"
-			if err := jr.processStep(sc, step.OnSuccess, successPrefix); err != nil {
+			err := jr.processStep(sc, step.OnSuccess, successPrefix)
+			if err != nil {
 				lastErr = err
 			}
 		}
@@ -92,7 +97,8 @@ func (jr *JobRunner) executeWithAttempts(sc *StepContext, step *config.Step, pat
 	// Ensure always runs after attempts and hooks.
 	if step.Ensure != nil {
 		ensurePrefix := pathPrefix + "/ensure"
-		if err := jr.processStep(sc, step.Ensure, ensurePrefix); err != nil {
+		err := jr.processStep(sc, step.Ensure, ensurePrefix)
+		if err != nil {
 			sc.Logger.Warn("step.ensure.failed", "prefix", pathPrefix, "error", err)
 		}
 	}

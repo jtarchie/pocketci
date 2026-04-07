@@ -20,14 +20,14 @@ func (c *SeedPassed) Run(logger *slog.Logger) error {
 
 	pipeline, err := apiClient.FindPipelineByNameOrID(c.Pipeline)
 	if err != nil {
-		return err
+		return fmt.Errorf("find pipeline: %w", err)
 	}
 
 	logger.Info("pipeline.seed-passed", "id", pipeline.ID, "job", c.Job)
 
 	result, err := apiClient.SeedJobPassed(pipeline.ID, c.Job)
 	if err != nil {
-		return err
+		return fmt.Errorf("seed job passed: %w", err)
 	}
 
 	fmt.Printf("Seeded passed status for job '%s' in pipeline '%s' (run: %s)\n", c.Job, pipeline.Name, result.RunID)

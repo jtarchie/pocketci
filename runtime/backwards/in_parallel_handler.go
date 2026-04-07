@@ -49,7 +49,7 @@ func (h *InParallelHandler) Execute(sc *StepContext, step *config.Step, pathPref
 
 	var (
 		g      *errgroup.Group
-		gCtx   = sc.Ctx
+		gCtx                      = sc.Ctx
 		cancel context.CancelFunc = func() {}
 	)
 
@@ -65,7 +65,8 @@ func (h *InParallelHandler) Execute(sc *StepContext, step *config.Step, pathPref
 	sem := semaphore.NewWeighted(int64(limit))
 
 	for i, innerStep := range steps {
-		if err := sem.Acquire(gCtx, 1); err != nil {
+		err := sem.Acquire(gCtx, 1)
+		if err != nil {
 			break // gCtx cancelled (fail-fast triggered by a prior goroutine error)
 		}
 
@@ -84,6 +85,9 @@ func (h *InParallelHandler) Execute(sc *StepContext, step *config.Step, pathPref
 	}
 
 	runErr := g.Wait()
+	if runErr != nil {
+		runErr = fmt.Errorf("in parallel: %w", runErr)
+	}
 
 	err = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
 		"status": statusFromErr(runErr),

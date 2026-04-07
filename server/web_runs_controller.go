@@ -112,12 +112,22 @@ func (c *WebRunsController) preloadTerminalHTMLWithOptions(ctx *echo.Context, lo
 func (c *WebRunsController) Terminal(ctx *echo.Context) error {
 	lookupPath := "/" + strings.TrimPrefix(ctx.Param("*"), "/")
 	if lookupPath == "/" {
-		return ctx.HTML(http.StatusNotFound, `<div class="term-container"></div>`)
+		rootHTMLErr := ctx.HTML(http.StatusNotFound, `<div class="term-container"></div>`)
+		if rootHTMLErr != nil {
+			return fmt.Errorf("terminal not found response: %w", rootHTMLErr)
+		}
+
+		return nil
 	}
 
 	payload, err := c.store.Get(ctx.Request().Context(), lookupPath)
 	if err != nil {
-		return ctx.HTML(http.StatusNotFound, `<div class="term-container"></div>`)
+		notFoundHTMLErr := ctx.HTML(http.StatusNotFound, `<div class="term-container"></div>`)
+		if notFoundHTMLErr != nil {
+			return fmt.Errorf("terminal not found response: %w", notFoundHTMLErr)
+		}
+
+		return nil
 	}
 
 	logs := ParseTerminalLogs(payload["logs"])
@@ -140,14 +150,24 @@ func (c *WebRunsController) Terminal(ctx *echo.Context) error {
 
 	status, _ := payload["status"].(string)
 	if status == "running" || status == "" {
-		return ctx.HTML(http.StatusOK, fmt.Sprintf(
+		runningHTMLErr := ctx.HTML(http.StatusOK, fmt.Sprintf(
 			`<div class="term-container" hx-get="/terminal%s" hx-trigger="load delay:2s" hx-swap="outerHTML">%s</div>`,
 			lookupPath,
 			html,
 		))
+		if runningHTMLErr != nil {
+			return fmt.Errorf("terminal running response: %w", runningHTMLErr)
+		}
+
+		return nil
 	}
 
-	return ctx.HTML(http.StatusOK, fmt.Sprintf(`<div class="term-container">%s</div>`, html))
+	doneHTMLErr := ctx.HTML(http.StatusOK, fmt.Sprintf(`<div class="term-container">%s</div>`, html))
+	if doneHTMLErr != nil {
+		return fmt.Errorf("terminal response: %w", doneHTMLErr)
+	}
+
+	return nil
 }
 
 func injectTerminalHTML(node *storage.Tree[storage.Payload], htmlByPath map[string]template.HTML) {
@@ -192,7 +212,7 @@ func (c *WebRunsController) Show(ctx *echo.Context) error {
 	stats := countTaskStats(tree)
 	c.preloadTerminalHTML(ctx, lookupPath, tree)
 
-	return ctx.Render(http.StatusOK, "tasks.html", map[string]any{
+	tasksRenderErr := ctx.Render(http.StatusOK, "tasks.html", map[string]any{
 		"Tree":     tree,
 		"Path":     lookupPath,
 		"RunID":    runID,
@@ -202,6 +222,11 @@ func (c *WebRunsController) Show(ctx *echo.Context) error {
 		"Title":    title,
 		"Stats":    stats,
 	})
+	if tasksRenderErr != nil {
+		return fmt.Errorf("render tasks: %w", tasksRenderErr)
+	}
+
+	return nil
 }
 
 // Graph handles GET /runs/:id/graph - Task graph view for a run.
@@ -232,7 +257,7 @@ func (c *WebRunsController) Graph(ctx *echo.Context) error {
 		return fmt.Errorf("could not marshal tree: %w", err)
 	}
 
-	return ctx.Render(http.StatusOK, "graph.html", map[string]any{
+	graphRenderErr := ctx.Render(http.StatusOK, "graph.html", map[string]any{
 		"Tree":     tree,
 		"TreeJSON": string(treeJSON),
 		"Path":     lookupPath,
@@ -242,6 +267,11 @@ func (c *WebRunsController) Graph(ctx *echo.Context) error {
 		"Pipeline": pipeline,
 		"Title":    title,
 	})
+	if graphRenderErr != nil {
+		return fmt.Errorf("render graph: %w", graphRenderErr)
+	}
+
+	return nil
 }
 
 // TasksPartial handles GET /runs/:id/tasks-partial[/] - HTMX partial: tasks container for polling.
@@ -270,7 +300,7 @@ func (c *WebRunsController) TasksPartial(ctx *echo.Context) error {
 
 		ctx.Response().Header().Set("HX-Push-Url", fmt.Sprintf("/runs/%s/tasks?q=%s", runID, q))
 
-		return ctx.Render(http.StatusOK, "tasks-partial", map[string]any{
+		partialRenderErr := ctx.Render(http.StatusOK, "tasks-partial", map[string]any{
 			"Tree":     tree,
 			"Path":     lookupPath,
 			"RunID":    runID,
@@ -279,6 +309,11 @@ func (c *WebRunsController) TasksPartial(ctx *echo.Context) error {
 			"Stats":    stats,
 			"OOB":      true,
 		})
+		if partialRenderErr != nil {
+			return fmt.Errorf("render tasks partial: %w", partialRenderErr)
+		}
+
+		return nil
 	}
 
 	results, err = c.store.GetAll(ctx.Request().Context(), lookupPath, []string{"status", "elapsed", "started_at", "usage", "error_message", "error_type"})
@@ -299,7 +334,7 @@ func (c *WebRunsController) TasksPartial(ctx *echo.Context) error {
 		statusCode = 286
 	}
 
-	return ctx.Render(statusCode, "tasks-partial", map[string]any{
+	tasksPartialRenderErr := ctx.Render(statusCode, "tasks-partial", map[string]any{
 		"Tree":     tree,
 		"Path":     lookupPath,
 		"RunID":    runID,
@@ -308,6 +343,11 @@ func (c *WebRunsController) TasksPartial(ctx *echo.Context) error {
 		"Stats":    stats,
 		"OOB":      true,
 	})
+	if tasksPartialRenderErr != nil {
+		return fmt.Errorf("render tasks partial: %w", tasksPartialRenderErr)
+	}
+
+	return nil
 }
 
 // GraphData handles GET /runs/:id/graph-data[/] - HTMX partial: graph data JSON for polling.
@@ -335,7 +375,7 @@ func (c *WebRunsController) GraphData(ctx *echo.Context) error {
 		statusCode = 286
 	}
 
-	return ctx.Render(statusCode, "graph-partial", map[string]any{
+	graphPartialRenderErr := ctx.Render(statusCode, "graph-partial", map[string]any{
 		"Tree":     tree,
 		"TreeJSON": string(treeJSON),
 		"Path":     lookupPath,
@@ -344,6 +384,11 @@ func (c *WebRunsController) GraphData(ctx *echo.Context) error {
 		"Run":      run,
 		"OOB":      true,
 	})
+	if graphPartialRenderErr != nil {
+		return fmt.Errorf("render graph partial: %w", graphPartialRenderErr)
+	}
+
+	return nil
 }
 
 // RegisterRoutes registers all run web view routes on the given group.

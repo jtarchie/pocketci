@@ -35,7 +35,8 @@ func preprocessYAML(content []byte) ([]byte, error) {
 	}
 
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, nil); err != nil {
+	err = tmpl.Execute(&buf, nil)
+	if err != nil {
 		return nil, fmt.Errorf("pipeline template render failed: %w", err)
 	}
 
@@ -45,7 +46,8 @@ func preprocessYAML(content []byte) ([]byte, error) {
 // ParseConfig unmarshals a Concourse YAML pipeline content into a Config.
 func ParseConfig(content string) (*Config, error) {
 	var cfg Config
-	if err := yaml.Unmarshal([]byte(content), &cfg); err != nil {
+	err := yaml.Unmarshal([]byte(content), &cfg)
+	if err != nil {
 		return nil, fmt.Errorf("failed to parse pipeline config: %w", err)
 	}
 
@@ -66,7 +68,8 @@ func LoadConfig(filename string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(processed, &cfg); err != nil {
+	err = yaml.Unmarshal(processed, &cfg)
+	if err != nil {
 		return nil, fmt.Errorf("could not unmarshal pipeline: %w", err)
 	}
 
@@ -92,31 +95,38 @@ func ValidatePipeline(content []byte) error {
 
 	validate := validator.New(validator.WithRequiredStructEnabled())
 
-	if err := validate.Struct(config); err != nil {
+	err = validate.Struct(config)
+	if err != nil {
 		return fmt.Errorf("could not validate pipeline: %w", err)
 	}
 
-	if err := validateResourceTypes(&config); err != nil {
+	err = validateResourceTypes(&config)
+	if err != nil {
 		return err
 	}
 
-	if err := validateSteps(config.Jobs); err != nil {
+	err = validateSteps(config.Jobs)
+	if err != nil {
 		return err
 	}
 
-	if err := validateConcurrency(&config); err != nil {
+	err = validateConcurrency(&config)
+	if err != nil {
 		return err
 	}
 
-	if err := validateInputOutputWiring(config.Jobs); err != nil {
+	err = validateInputOutputWiring(config.Jobs)
+	if err != nil {
 		return err
 	}
 
-	if err := validateDependsOn(config.Jobs); err != nil {
+	err = validateDependsOn(config.Jobs)
+	if err != nil {
 		return err
 	}
 
-	if err := validateGateConfigs(config.Jobs); err != nil {
+	err = validateGateConfigs(config.Jobs)
+	if err != nil {
 		return err
 	}
 
@@ -162,7 +172,8 @@ func validateConcurrency(config *Config) error {
 		}
 
 		for i, step := range job.Plan {
-			if err := validateStepConcurrency(job.Name, i, step); err != nil {
+			err := validateStepConcurrency(job.Name, i, step)
+			if err != nil {
 				return err
 			}
 		}
@@ -191,19 +202,22 @@ func validateStepConcurrency(jobName string, stepIndex int, step Step) error {
 	}
 
 	for nestedIndex, nested := range step.Do {
-		if err := validateStepConcurrency(jobName, nestedIndex, nested); err != nil {
+		err := validateStepConcurrency(jobName, nestedIndex, nested)
+		if err != nil {
 			return err
 		}
 	}
 
 	for nestedIndex, nested := range step.Try {
-		if err := validateStepConcurrency(jobName, nestedIndex, nested); err != nil {
+		err := validateStepConcurrency(jobName, nestedIndex, nested)
+		if err != nil {
 			return err
 		}
 	}
 
 	for nestedIndex, nested := range step.InParallel.Steps {
-		if err := validateStepConcurrency(jobName, nestedIndex, nested); err != nil {
+		err := validateStepConcurrency(jobName, nestedIndex, nested)
+		if err != nil {
 			return err
 		}
 	}
@@ -368,7 +382,8 @@ func validateDependsOn(jobs Jobs) error {
 			case gray:
 				return fmt.Errorf("circular dependency detected: %s -> %s", name, dep)
 			case white:
-				if err := visit(dep); err != nil {
+				err := visit(dep)
+				if err != nil {
 					return err
 				}
 			}
@@ -381,7 +396,8 @@ func validateDependsOn(jobs Jobs) error {
 
 	for _, job := range jobs {
 		if color[job.Name] == white {
-			if err := visit(job.Name); err != nil {
+			err := visit(job.Name)
+			if err != nil {
 				return err
 			}
 		}
@@ -398,8 +414,9 @@ func validateGateConfigs(jobs Jobs) error {
 		}
 
 		if job.Gate.Timeout != "" {
-			if _, err := time.ParseDuration(job.Gate.Timeout); err != nil {
-				return fmt.Errorf("job %q gate timeout %q is not a valid duration: %w", job.Name, job.Gate.Timeout, err)
+			_, durErr := time.ParseDuration(job.Gate.Timeout)
+			if durErr != nil {
+				return fmt.Errorf("job %q gate timeout %q is not a valid duration: %w", job.Name, job.Gate.Timeout, durErr)
 			}
 		}
 	}

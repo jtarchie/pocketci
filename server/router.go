@@ -7,6 +7,9 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/jtarchie/pocketci/cache"
@@ -68,6 +71,32 @@ type Router struct {
 	webGroup        *echo.Group
 	allowedDrivers  []string
 	allowedFeatures []Feature
+}
+
+const banner = `
+ ____             _        _  ____ ___
+|  _ \ ___   ___| | _____| |/ ___|_ _|
+| |_) / _ \ / __| |/ / _ \ | |    | |
+|  __/ (_) | (__|   <  __/ | |___ | |
+|_|   \___/ \___|_|\_\___|_|\____|___|
+`
+
+// Start starts the HTTP server on the given address, printing the PocketCI
+// banner and suppressing Echo's default banner.
+func (r *Router) Start(address string) error {
+	fmt.Print(banner)
+
+	sc := echo.StartConfig{Address: address, HideBanner: true}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+
+	defer cancel()
+
+	startErr := sc.Start(ctx, r.Echo)
+	if startErr != nil {
+		return fmt.Errorf("start server: %w", startErr)
+	}
+
+	return nil
 }
 
 // WaitForExecutions blocks until all in-flight pipeline executions have completed.
@@ -149,8 +178,11 @@ func newSlogMiddleware(logger *slog.Logger) echo.MiddlewareFunc {
 				} else {
 					attrs = append(attrs, slog.Int("status", http.StatusInternalServerError))
 				}
-			} else if resp, rErr := echo.UnwrapResponse(c.Response()); rErr == nil {
-				attrs = append(attrs, slog.Int("status", resp.Status))
+			} else {
+				resp, rErr := echo.UnwrapResponse(c.Response())
+				if rErr == nil {
+					attrs = append(attrs, slog.Int("status", resp.Status))
+				}
 			}
 
 			logger.LogAttrs(req.Context(), level, "request", attrs...)

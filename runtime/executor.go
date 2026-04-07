@@ -159,7 +159,8 @@ func ExecutePipeline(
 			},
 		)
 
-		if err := runner.Run(ctx); err != nil {
+		err = runner.Run(ctx)
+		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return fmt.Errorf("execution cancelled: %w", err)
 			}
@@ -201,7 +202,8 @@ func ExecutePipeline(
 		executeOpts.OutputCallback = opts.OutputCallback
 	}
 
-	if execErr := js.ExecuteWithOptions(ctx, content, driver, store, executeOpts); execErr != nil {
+	execErr := js.ExecuteWithOptions(ctx, content, driver, store, executeOpts)
+	if execErr != nil {
 		return fmt.Errorf("could not execute pipeline: %w", execErr)
 	}
 

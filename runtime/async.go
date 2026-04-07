@@ -50,7 +50,8 @@ func asyncTask[T any](
 			defer r.promises.Done()
 
 			if err != nil {
-				if rErr := reject(r.jsVM.NewGoError(err)); rErr != nil {
+				rErr := reject(r.jsVM.NewGoError(err))
+				if rErr != nil {
 					return fmt.Errorf("could not reject %s: %w", label, rErr)
 				}
 
@@ -59,14 +60,16 @@ func asyncTask[T any](
 
 			jsVal, tErr := transform(result)
 			if tErr != nil {
-				if rErr := reject(r.jsVM.NewGoError(tErr)); rErr != nil {
+				rErr := reject(r.jsVM.NewGoError(tErr))
+				if rErr != nil {
 					return fmt.Errorf("could not reject %s: %w", label, rErr)
 				}
 
 				return nil
 			}
 
-			if rErr := resolve(jsVal); rErr != nil {
+			rErr := resolve(jsVal)
+			if rErr != nil {
 				return fmt.Errorf("could not resolve %s: %w", label, rErr)
 			}
 

@@ -30,7 +30,8 @@ func (ar *AgentRuntime) Run(call goja.FunctionCall) goja.Value {
 	inputObj := call.Arguments[0].ToObject(r.jsVM)
 
 	var config agent.AgentConfig
-	if err := r.jsVM.ExportTo(inputObj, &config); err != nil {
+	err := r.jsVM.ExportTo(inputObj, &config)
+	if err != nil {
 		return r.rejectImmediate(fmt.Errorf("invalid agent input: %w", err))
 	}
 
@@ -48,7 +49,8 @@ func (ar *AgentRuntime) Run(call goja.FunctionCall) goja.Value {
 		return r.runner.RunAgent(configJSON)
 	}, func(resultJSON json.RawMessage) (any, error) {
 		var result agent.AgentResult
-		if err := json.Unmarshal(resultJSON, &result); err != nil {
+		err := json.Unmarshal(resultJSON, &result)
+		if err != nil {
 			return nil, fmt.Errorf("could not unmarshal agent result: %w", err)
 		}
 
@@ -104,7 +106,8 @@ func (ar *AgentRuntime) installAgentFunc(ctx context.Context, config *agent.Agen
 	r := ar.rt
 	r.runner.SetAgentFunc(func(configJSON json.RawMessage) (json.RawMessage, error) {
 		var serializableConfig agent.AgentConfig
-		if err := json.Unmarshal(configJSON, &serializableConfig); err != nil {
+		err := json.Unmarshal(configJSON, &serializableConfig)
+		if err != nil {
 			return nil, fmt.Errorf("could not unmarshal agent config: %w", err)
 		}
 
@@ -119,7 +122,7 @@ func (ar *AgentRuntime) installAgentFunc(ctx context.Context, config *agent.Agen
 
 		result, err := agent.RunAgent(ctx, r.runner, r.secretsManager, r.pipelineID, serializableConfig)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("run agent: %w", err)
 		}
 
 		resultJSON, err := json.Marshal(result)

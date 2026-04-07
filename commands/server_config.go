@@ -21,7 +21,8 @@ func (cfg ServerConfig) NewClient(opts ...client.Option) *client.Client {
 
 	var allOpts []client.Option
 
-	if parsed, err := url.Parse(serverURL); err == nil && parsed.User != nil {
+	parsed, parseErr := url.Parse(serverURL)
+	if parseErr == nil && parsed.User != nil {
 		password, _ := parsed.User.Password()
 		allOpts = append(allOpts, client.WithBasicAuth(parsed.User.Username(), password))
 		parsed.User = nil

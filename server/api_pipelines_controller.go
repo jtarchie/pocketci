@@ -142,9 +142,14 @@ func (c *APIPipelinesController) Index(ctx *echo.Context) error {
 
 	result, err := c.store.SearchPipelines(ctx.Request().Context(), "", page, perPage)
 	if err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+		jsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to list pipelines: %v", err),
 		})
+		if jsonErr != nil {
+			return fmt.Errorf("list pipelines error response: %w", jsonErr)
+		}
+
+		return nil
 	}
 
 	if result == nil {
@@ -179,7 +184,7 @@ func (c *APIPipelinesController) Index(ctx *echo.Context) error {
 		items = append(items, toPipelineAPIResponse(&item))
 	}
 
-	return ctx.JSON(http.StatusOK, storage.PaginationResult[PipelineAPIResponse]{
+	err = ctx.JSON(http.StatusOK, storage.PaginationResult[PipelineAPIResponse]{
 		Items:      items,
 		Page:       result.Page,
 		PerPage:    result.PerPage,
@@ -187,6 +192,11 @@ func (c *APIPipelinesController) Index(ctx *echo.Context) error {
 		TotalPages: result.TotalPages,
 		HasNext:    result.HasNext,
 	})
+	if err != nil {
+		return fmt.Errorf("list pipelines response: %w", err)
+	}
+
+	return nil
 }
 
 // Show handles GET /api/pipelines/:id - Get a specific pipeline.
@@ -196,21 +206,37 @@ func (c *APIPipelinesController) Show(ctx *echo.Context) error {
 	pipeline, err := c.store.GetPipeline(ctx.Request().Context(), id)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			return ctx.JSON(http.StatusNotFound, map[string]string{
+			jsonErr2 := ctx.JSON(http.StatusNotFound, map[string]string{
 				"error": "pipeline not found",
 			})
+			if jsonErr2 != nil {
+				return fmt.Errorf("show pipeline not found response: %w", jsonErr2)
+			}
+
+			return nil
 		}
 
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+		jsonErr3 := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to get pipeline: %v", err),
 		})
+		if jsonErr3 != nil {
+			return fmt.Errorf("show pipeline error response: %w", jsonErr3)
+		}
+
+		return nil
 	}
 
-	if err := checkPipelineRBAC(ctx, pipeline); err != nil {
+	rbacErr := checkPipelineRBAC(ctx, pipeline)
+	if rbacErr != nil {
 		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
-	return ctx.JSON(http.StatusOK, toPipelineAPIResponse(pipeline))
+	err = ctx.JSON(http.StatusOK, toPipelineAPIResponse(pipeline))
+	if err != nil {
+		return fmt.Errorf("show pipeline response: %w", err)
+	}
+
+	return nil
 }
 
 // validateSecrets checks feature gates, rejects system-managed keys in user
@@ -268,24 +294,28 @@ func (c *APIPipelinesController) validateSecrets(ctx context.Context, name strin
 func (c *APIPipelinesController) persistSecrets(ctx context.Context, pipeline *storage.Pipeline, req PipelineRequest) error {
 	scope := secrets.PipelineScope(pipeline.ID)
 
-	if err := c.secretsMgr.Set(ctx, scope, pipelineDriverSecretKey, req.Driver); err != nil {
+	err := c.secretsMgr.Set(ctx, scope, pipelineDriverSecretKey, req.Driver)
+	if err != nil {
 		return fmt.Errorf("failed to store driver: %w", err)
 	}
 
 	// Store driver config as a single JSON secret
 	if len(req.DriverConfig) > 0 {
-		if err := c.secretsMgr.Set(ctx, scope, "driver_config", string(req.DriverConfig)); err != nil {
+		err := c.secretsMgr.Set(ctx, scope, "driver_config", string(req.DriverConfig))
+		if err != nil {
 			return fmt.Errorf("failed to store driver config: %w", err)
 		}
 	}
 
 	if req.WebhookSecret != nil {
 		if *req.WebhookSecret == "" {
-			if err := c.secretsMgr.Delete(ctx, scope, "webhook_secret"); err != nil && !errors.Is(err, secrets.ErrNotFound) {
+			err := c.secretsMgr.Delete(ctx, scope, "webhook_secret")
+			if err != nil && !errors.Is(err, secrets.ErrNotFound) {
 				return fmt.Errorf("failed to delete webhook secret: %w", err)
 			}
 		} else {
-			if err := c.secretsMgr.Set(ctx, scope, "webhook_secret", *req.WebhookSecret); err != nil {
+			err := c.secretsMgr.Set(ctx, scope, "webhook_secret", *req.WebhookSecret)
+			if err != nil {
 				return fmt.Errorf("failed to store webhook secret: %w", err)
 			}
 		}
@@ -299,7 +329,8 @@ func (c *APIPipelinesController) persistSecrets(ctx context.Context, pipeline *s
 		sort.Strings(sortedKeys)
 
 		for _, key := range sortedKeys {
-			if err := c.secretsMgr.Set(ctx, scope, key, req.Secrets[key]); err != nil {
+			err := c.secretsMgr.Set(ctx, scope, key, req.Secrets[key])
+			if err != nil {
 				return fmt.Errorf("failed to store secret %q: %w", key, err)
 			}
 		}
@@ -326,7 +357,8 @@ func (c *APIPipelinesController) validateUpsertRequest(ctx *echo.Context, name s
 		req.Driver = c.execService.DefaultDriver
 	}
 
-	if err := orchestra.IsDriverAllowed(req.Driver, c.allowedDrivers); err != nil {
+	err := orchestra.IsDriverAllowed(req.Driver, c.allowedDrivers)
+	if err != nil {
 		return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 			"error": fmt.Sprintf("driver not allowed: %v", err),
 		})
@@ -344,7 +376,8 @@ func (c *APIPipelinesController) validateUpsertRequest(ctx *echo.Context, name s
 		})
 	}
 
-	if err := c.validateSecrets(ctx.Request().Context(), name, *req); err != nil {
+	err = c.validateSecrets(ctx.Request().Context(), name, *req)
+	if err != nil {
 		return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 			"error": err.Error(),
 		})
@@ -376,7 +409,8 @@ func (c *APIPipelinesController) upsertPostSave(ctx *echo.Context, pipeline *sto
 	}
 
 	if req.ResumeEnabled != nil {
-		if err := c.store.UpdatePipeline(ctx.Request().Context(), pipeline.ID, storage.PipelineUpdate{ResumeEnabled: req.ResumeEnabled}); err != nil {
+		err := c.store.UpdatePipeline(ctx.Request().Context(), pipeline.ID, storage.PipelineUpdate{ResumeEnabled: req.ResumeEnabled})
+		if err != nil {
 			return respondJSON(ctx, http.StatusInternalServerError, map[string]string{
 				"error": fmt.Sprintf("failed to update resume_enabled: %v", err),
 			})
@@ -393,7 +427,8 @@ func (c *APIPipelinesController) upsertPostSave(ctx *echo.Context, pipeline *sto
 				})
 			}
 
-			if err := auth.ValidateExpression(*req.RBACExpression); err != nil {
+			err := auth.ValidateExpression(*req.RBACExpression)
+			if err != nil {
 				return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 					"error": fmt.Sprintf("invalid RBAC expression: %v", err),
 				})
@@ -402,7 +437,8 @@ func (c *APIPipelinesController) upsertPostSave(ctx *echo.Context, pipeline *sto
 
 		oldExpression := pipeline.RBACExpression
 
-		if err := c.store.UpdatePipeline(ctx.Request().Context(), pipeline.ID, storage.PipelineUpdate{RBACExpression: req.RBACExpression}); err != nil {
+		err := c.store.UpdatePipeline(ctx.Request().Context(), pipeline.ID, storage.PipelineUpdate{RBACExpression: req.RBACExpression})
+		if err != nil {
 			return respondJSON(ctx, http.StatusInternalServerError, map[string]string{
 				"error": fmt.Sprintf("failed to update rbac_expression: %v", err),
 			})
@@ -422,56 +458,97 @@ func (c *APIPipelinesController) upsertPostSave(ctx *echo.Context, pipeline *sto
 	return nil
 }
 
+// upsertCheckExistingRBAC fetches the pipeline by name and enforces RBAC if it
+// already exists. Returns (nil, nil) when the pipeline does not exist yet (new
+// pipeline). When a non-nil error is returned the HTTP response has already
+// been written.
+func (c *APIPipelinesController) upsertCheckExistingRBAC(ctx *echo.Context, name string) (*storage.Pipeline, error) {
+	existing, err := c.store.GetPipelineByName(ctx.Request().Context(), name)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return nil, nil //nolint:nilnil // nil pipeline + nil error = new pipeline, not an error condition
+		}
+
+		jsonErr4 := ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": fmt.Sprintf("failed to check existing pipeline: %v", err),
+		})
+		if jsonErr4 != nil {
+			return nil, fmt.Errorf("upsert check existing error response: %w", jsonErr4)
+		}
+
+		return nil, errHandled
+	}
+
+	rbacErr2 := checkPipelineRBAC(ctx, existing)
+	if rbacErr2 != nil {
+		return nil, rbacErr2
+	}
+
+	return existing, nil
+}
+
 // Upsert handles PUT /api/pipelines/:name - Create or update a pipeline by name.
 func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
 	name := ctx.Param("name")
 
 	var req PipelineRequest
-	if err := ctx.Bind(&req); err != nil {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{
+	bindErr := ctx.Bind(&req)
+	if bindErr != nil {
+		jsonErr5 := ctx.JSON(http.StatusBadRequest, map[string]string{
 			"error": "invalid request body",
 		})
+		if jsonErr5 != nil {
+			return fmt.Errorf("upsert bad request response: %w", jsonErr5)
+		}
+
+		return nil
 	}
 
-	if err := c.validateUpsertRequest(ctx, name, &req); err != nil {
+	validateErr := c.validateUpsertRequest(ctx, name, &req)
+	if validateErr != nil {
 		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
 	// For updates, check RBAC on the existing pipeline before allowing the save.
-	existing, err := c.store.GetPipelineByName(ctx.Request().Context(), name)
-	if err != nil && !errors.Is(err, storage.ErrNotFound) {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to check existing pipeline: %v", err),
-		})
-	}
-
-	if existing != nil {
-		if err := checkPipelineRBAC(ctx, existing); err != nil {
-			return nil //nolint:nilerr // helper already wrote the HTTP response
-		}
+	existing, err := c.upsertCheckExistingRBAC(ctx, name)
+	if err != nil {
+		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
 	pipeline, err := c.store.SavePipeline(ctx.Request().Context(), name, req.Content, req.Driver, req.ContentType)
 	if err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+		jsonErr6 := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to save pipeline: %v", err),
 		})
+		if jsonErr6 != nil {
+			return fmt.Errorf("upsert save error response: %w", jsonErr6)
+		}
+
+		return nil
 	}
 
-	if err := c.persistSecrets(ctx.Request().Context(), pipeline, req); err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": err.Error(),
+	persistErr := c.persistSecrets(ctx.Request().Context(), pipeline, req)
+	if persistErr != nil {
+		jsonErr7 := ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": persistErr.Error(),
 		})
+		if jsonErr7 != nil {
+			return fmt.Errorf("upsert persist secrets error response: %w", jsonErr7)
+		}
+
+		return nil
 	}
 
-	if err := c.upsertPostSave(ctx, pipeline, req); err != nil {
+	postSaveErr := c.upsertPostSave(ctx, pipeline, req)
+	if postSaveErr != nil {
 		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
-	if err := syncSchedules(ctx.Request().Context(), c.store, pipeline); err != nil {
+	syncErr := syncSchedules(ctx.Request().Context(), c.store, pipeline)
+	if syncErr != nil {
 		c.logger.Error("pipeline.sync_schedules.failed",
 			slog.String("pipeline_id", pipeline.ID),
-			slog.String("error", err.Error()),
+			slog.String("error", syncErr.Error()),
 		)
 	}
 
@@ -482,7 +559,12 @@ func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
 		slog.Bool("created", existing == nil),
 	)
 
-	return ctx.JSON(http.StatusOK, toPipelineAPIResponse(pipeline))
+	err = ctx.JSON(http.StatusOK, toPipelineAPIResponse(pipeline))
+	if err != nil {
+		return fmt.Errorf("upsert response: %w", err)
+	}
+
+	return nil
 }
 
 // Destroy handles DELETE /api/pipelines/:id - Delete a pipeline.
@@ -492,25 +574,41 @@ func (c *APIPipelinesController) Destroy(ctx *echo.Context) error {
 	pipeline, err := c.store.GetPipeline(ctx.Request().Context(), id)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			return ctx.JSON(http.StatusNotFound, map[string]string{
+			jsonErr := ctx.JSON(http.StatusNotFound, map[string]string{
 				"error": "pipeline not found",
 			})
+			if jsonErr != nil {
+				return fmt.Errorf("destroy not found response: %w", jsonErr)
+			}
+
+			return nil
 		}
 
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+		jsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to get pipeline: %v", err),
 		})
+		if jsonErr != nil {
+			return fmt.Errorf("destroy get error response: %w", jsonErr)
+		}
+
+		return nil
 	}
 
-	if err := checkPipelineRBAC(ctx, pipeline); err != nil {
+	rbacErr := checkPipelineRBAC(ctx, pipeline)
+	if rbacErr != nil {
 		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
 	err = c.store.DeletePipeline(ctx.Request().Context(), id)
 	if err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+		delJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to delete pipeline: %v", err),
 		})
+		if delJsonErr != nil {
+			return fmt.Errorf("destroy delete error response: %w", delJsonErr)
+		}
+
+		return nil
 	}
 
 	// Cascade delete pipeline-scoped secrets
@@ -524,7 +622,12 @@ func (c *APIPipelinesController) Destroy(ctx *echo.Context) error {
 		slog.String("actor", formatActor(ctx)),
 	)
 
-	return ctx.NoContent(http.StatusNoContent)
+	noContentErr := ctx.NoContent(http.StatusNoContent)
+	if noContentErr != nil {
+		return fmt.Errorf("delete pipeline response: %w", noContentErr)
+	}
+
+	return nil
 }
 
 // triggerRequest is the optional JSON body for POST /api/pipelines/:id/trigger.
@@ -578,6 +681,72 @@ func (c *APIPipelinesController) triggerByMode(ctx *echo.Context, pipeline *stor
 	}
 }
 
+// triggerNotFound writes an appropriate 404 response for HTMX or JSON clients.
+func (c *APIPipelinesController) triggerNotFound(ctx *echo.Context) error {
+	if isHtmxRequest(ctx) {
+		strErr := ctx.String(http.StatusNotFound, "Pipeline not found")
+		if strErr != nil {
+			return fmt.Errorf("trigger pipeline not found response: %w", strErr)
+		}
+
+		return nil
+	}
+
+	jsonErr := ctx.JSON(http.StatusNotFound, map[string]string{
+		"error": "pipeline not found",
+	})
+	if jsonErr != nil {
+		return fmt.Errorf("trigger not found response: %w", jsonErr)
+	}
+
+	return nil
+}
+
+// triggerPipelinePaused writes an appropriate 409 response for HTMX or JSON clients.
+func (c *APIPipelinesController) triggerPipelinePaused(ctx *echo.Context) error {
+	if isHtmxRequest(ctx) {
+		strErr := ctx.String(http.StatusConflict, "Pipeline is paused")
+		if strErr != nil {
+			return fmt.Errorf("trigger paused response: %w", strErr)
+		}
+
+		return nil
+	}
+
+	jsonErr := ctx.JSON(http.StatusConflict, map[string]string{
+		"error": "pipeline is paused",
+	})
+	if jsonErr != nil {
+		return fmt.Errorf("trigger paused json response: %w", jsonErr)
+	}
+
+	return nil
+}
+
+// triggerQueueFull writes an appropriate 429 response for HTMX or JSON clients.
+func (c *APIPipelinesController) triggerQueueFull(ctx *echo.Context) error {
+	if isHtmxRequest(ctx) {
+		strErr := ctx.String(http.StatusTooManyRequests, "Execution queue is full")
+		if strErr != nil {
+			return fmt.Errorf("trigger queue full response: %w", strErr)
+		}
+
+		return nil
+	}
+
+	jsonErr := ctx.JSON(http.StatusTooManyRequests, map[string]any{
+		"error":          "execution queue is full",
+		"in_flight":      c.execService.CurrentInFlight(),
+		"max_in_flight":  c.execService.MaxInFlight(),
+		"max_queue_size": c.execService.MaxQueueSize(),
+	})
+	if jsonErr != nil {
+		return fmt.Errorf("trigger queue full json response: %w", jsonErr)
+	}
+
+	return nil
+}
+
 // Trigger handles POST /api/pipelines/:id/trigger - Trigger pipeline execution.
 // Accepts an optional JSON body to trigger with args or a simulated webhook payload.
 func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
@@ -586,31 +755,26 @@ func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
 	pipeline, err := c.store.GetPipeline(ctx.Request().Context(), id)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			if isHtmxRequest(ctx) {
-				return ctx.String(http.StatusNotFound, "Pipeline not found")
-			}
-			return ctx.JSON(http.StatusNotFound, map[string]string{
-				"error": "pipeline not found",
-			})
+			return c.triggerNotFound(ctx)
 		}
 
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+		getJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to get pipeline: %v", err),
 		})
+		if getJsonErr != nil {
+			return fmt.Errorf("trigger get error response: %w", getJsonErr)
+		}
+
+		return nil
 	}
 
-	if err := checkPipelineRBAC(ctx, pipeline); err != nil {
+	rbacErr := checkPipelineRBAC(ctx, pipeline)
+	if rbacErr != nil {
 		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
 	if pipeline.Paused {
-		if isHtmxRequest(ctx) {
-			return ctx.String(http.StatusConflict, "Pipeline is paused")
-		}
-
-		return ctx.JSON(http.StatusConflict, map[string]string{
-			"error": "pipeline is paused",
-		})
+		return c.triggerPipelinePaused(ctx)
 	}
 
 	// Parse optional JSON body for trigger mode.
@@ -626,30 +790,31 @@ func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
 		}
 
 		if errors.Is(err, ErrQueueFull) {
-			if isHtmxRequest(ctx) {
-				return ctx.String(http.StatusTooManyRequests, "Execution queue is full")
-			}
-
-			return ctx.JSON(http.StatusTooManyRequests, map[string]any{
-				"error":          "execution queue is full",
-				"in_flight":      c.execService.CurrentInFlight(),
-				"max_in_flight":  c.execService.MaxInFlight(),
-				"max_queue_size": c.execService.MaxQueueSize(),
-			})
+			return c.triggerQueueFull(ctx)
 		}
 
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+		trigJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to trigger pipeline: %v", err),
 		})
+		if trigJsonErr != nil {
+			return fmt.Errorf("trigger error response: %w", trigJsonErr)
+		}
+
+		return nil
 	}
 
 	if isHtmxRequest(ctx) {
 		ctx.Response().Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast":{"message":"%s triggered successfully","type":"success"}}`, pipeline.Name))
 
-		return ctx.NoContent(http.StatusOK)
+		noContentErr := ctx.NoContent(http.StatusOK)
+		if noContentErr != nil {
+			return fmt.Errorf("trigger ok response: %w", noContentErr)
+		}
+
+		return nil
 	}
 
-	return ctx.JSON(http.StatusAccepted, map[string]any{
+	acceptedErr := ctx.JSON(http.StatusAccepted, map[string]any{
 		"run_id":        run.ID,
 		"pipeline_id":   pipeline.ID,
 		"status":        run.Status,
@@ -658,6 +823,11 @@ func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
 		"trigger_input": run.TriggerInput,
 		"message":       "pipeline execution started",
 	})
+	if acceptedErr != nil {
+		return fmt.Errorf("trigger accepted response: %w", acceptedErr)
+	}
+
+	return nil
 }
 
 // Run handles POST /api/pipelines/:name/run - Run a stored pipeline by name (synchronous SSE stream).
@@ -672,45 +842,81 @@ func (c *APIPipelinesController) Run(ctx *echo.Context) error {
 	pipeline, err := c.store.GetPipelineByName(ctx.Request().Context(), name)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			return ctx.JSON(http.StatusNotFound, map[string]string{
+			nfJsonErr := ctx.JSON(http.StatusNotFound, map[string]string{
 				"error": "pipeline not found",
 			})
+			if nfJsonErr != nil {
+				return fmt.Errorf("run not found response: %w", nfJsonErr)
+			}
+
+			return nil
 		}
 
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+		geJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to get pipeline: %v", err),
 		})
+		if geJsonErr != nil {
+			return fmt.Errorf("run get error response: %w", geJsonErr)
+		}
+
+		return nil
 	}
 
-	if err := checkPipelineRBAC(ctx, pipeline); err != nil {
+	runRbacErr := checkPipelineRBAC(ctx, pipeline)
+	if runRbacErr != nil {
 		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
 	if pipeline.Paused {
-		return ctx.JSON(http.StatusConflict, map[string]string{
+		pausedJsonErr := ctx.JSON(http.StatusConflict, map[string]string{
 			"error": "pipeline is paused",
 		})
+		if pausedJsonErr != nil {
+			return fmt.Errorf("run paused response: %w", pausedJsonErr)
+		}
+
+		return nil
 	}
 
 	err = c.execService.RunByNameSync(ctx.Request().Context(), name, args, workdirTar, w)
 	if err != nil {
-		echoResp, _ := echo.UnwrapResponse(ctx.Response())
-		if echoResp == nil || !echoResp.Committed {
-			if errors.Is(err, storage.ErrNotFound) {
-				return ctx.JSON(http.StatusNotFound, map[string]string{
-					"error": "pipeline not found",
-				})
-			}
-			return ctx.JSON(http.StatusInternalServerError, map[string]string{
-				"error": err.Error(),
-			})
-		}
+		return c.runHandleSyncError(ctx, w, err)
+	}
 
-		errData, _ := json.Marshal(map[string]string{"event": "error", "message": err.Error()})
+	return nil
+}
+
+// runHandleSyncError handles an error from RunByNameSync. If the response has
+// not yet been committed it writes an appropriate HTTP error; otherwise it
+// appends an SSE error event to the already-started stream.
+func (c *APIPipelinesController) runHandleSyncError(ctx *echo.Context, w http.ResponseWriter, runErr error) error {
+	echoResp, _ := echo.UnwrapResponse(ctx.Response())
+	if echoResp != nil && echoResp.Committed {
+		errData, _ := json.Marshal(map[string]string{"event": "error", "message": runErr.Error()})
 		fmt.Fprintf(w, "data: %s\n\n", errData) //nolint:errcheck
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
 		}
+
+		return nil
+	}
+
+	if errors.Is(runErr, storage.ErrNotFound) {
+		syncNFJsonErr := ctx.JSON(http.StatusNotFound, map[string]string{
+			"error": "pipeline not found",
+		})
+		if syncNFJsonErr != nil {
+			return fmt.Errorf("run sync not found response: %w", syncNFJsonErr)
+		}
+
+		return nil
+	}
+
+	syncErrJson := ctx.JSON(http.StatusInternalServerError, map[string]string{
+		"error": runErr.Error(),
+	})
+	if syncErrJson != nil {
+		return fmt.Errorf("run sync error response: %w", syncErrJson)
 	}
 
 	return nil
@@ -722,7 +928,8 @@ func parseRunInput(ctx *echo.Context) ([]string, io.Reader) {
 	var args []string
 	var workdirTar io.Reader
 
-	if mr, err := ctx.Request().MultipartReader(); err == nil {
+	mr, mrErr := ctx.Request().MultipartReader()
+	if mrErr == nil {
 		for {
 			part, partErr := mr.NextPart()
 			if partErr == io.EOF {
@@ -771,34 +978,61 @@ func (c *APIPipelinesController) Unpause(ctx *echo.Context) error {
 	return c.setPaused(ctx, false)
 }
 
+// setPausedNotFound writes an appropriate 404 response for HTMX or JSON clients.
+func (c *APIPipelinesController) setPausedNotFound(ctx *echo.Context) error {
+	if isHtmxRequest(ctx) {
+		strErr := ctx.String(http.StatusNotFound, "Pipeline not found")
+		if strErr != nil {
+			return fmt.Errorf("set paused not found response: %w", strErr)
+		}
+
+		return nil
+	}
+
+	jsonErr := ctx.JSON(http.StatusNotFound, map[string]string{
+		"error": "pipeline not found",
+	})
+	if jsonErr != nil {
+		return fmt.Errorf("set paused not found json response: %w", jsonErr)
+	}
+
+	return nil
+}
+
 func (c *APIPipelinesController) setPaused(ctx *echo.Context, paused bool) error {
 	id := ctx.Param("id")
 
 	pipeline, err := c.store.GetPipeline(ctx.Request().Context(), id)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			if isHtmxRequest(ctx) {
-				return ctx.String(http.StatusNotFound, "Pipeline not found")
-			}
-
-			return ctx.JSON(http.StatusNotFound, map[string]string{
-				"error": "pipeline not found",
-			})
+			return c.setPausedNotFound(ctx)
 		}
 
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+		spJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to get pipeline: %v", err),
 		})
+		if spJsonErr != nil {
+			return fmt.Errorf("set paused error response: %w", spJsonErr)
+		}
+
+		return nil
 	}
 
-	if err := checkPipelineRBAC(ctx, pipeline); err != nil {
+	spRbacErr := checkPipelineRBAC(ctx, pipeline)
+	if spRbacErr != nil {
 		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
-	if err := c.store.UpdatePipeline(ctx.Request().Context(), id, storage.PipelineUpdate{Paused: &paused}); err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to update pipeline: %v", err),
+	updateErr := c.store.UpdatePipeline(ctx.Request().Context(), id, storage.PipelineUpdate{Paused: &paused})
+	if updateErr != nil {
+		upJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": fmt.Sprintf("failed to update pipeline: %v", updateErr),
 		})
+		if upJsonErr != nil {
+			return fmt.Errorf("set paused update error response: %w", upJsonErr)
+		}
+
+		return nil
 	}
 
 	action := "paused"
@@ -816,14 +1050,24 @@ func (c *APIPipelinesController) setPaused(ctx *echo.Context, paused bool) error
 		ctx.Response().Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast":{"message":"%s %s successfully","type":"success"}}`, pipeline.Name, action))
 		ctx.Response().Header().Set("HX-Refresh", "true")
 
-		return ctx.NoContent(http.StatusOK)
+		htmxNoContentErr := ctx.NoContent(http.StatusOK)
+		if htmxNoContentErr != nil {
+			return fmt.Errorf("set paused ok response: %w", htmxNoContentErr)
+		}
+
+		return nil
 	}
 
-	return ctx.JSON(http.StatusOK, map[string]any{
+	spOkJsonErr := ctx.JSON(http.StatusOK, map[string]any{
 		"id":      pipeline.ID,
 		"paused":  paused,
 		"message": "pipeline " + action,
 	})
+	if spOkJsonErr != nil {
+		return fmt.Errorf("set paused response: %w", spOkJsonErr)
+	}
+
+	return nil
 }
 
 // SeedJobPassed handles POST /api/pipelines/:id/jobs/:name/seed-passed.
@@ -836,17 +1080,28 @@ func (c *APIPipelinesController) SeedJobPassed(ctx *echo.Context) error {
 	pipeline, err := c.store.GetPipeline(ctx.Request().Context(), pipelineID)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			return ctx.JSON(http.StatusNotFound, map[string]string{
+			seedNFJsonErr := ctx.JSON(http.StatusNotFound, map[string]string{
 				"error": "pipeline not found",
 			})
+			if seedNFJsonErr != nil {
+				return fmt.Errorf("seed job not found response: %w", seedNFJsonErr)
+			}
+
+			return nil
 		}
 
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+		seedGetJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to get pipeline: %v", err),
 		})
+		if seedGetJsonErr != nil {
+			return fmt.Errorf("seed job get error response: %w", seedGetJsonErr)
+		}
+
+		return nil
 	}
 
-	if err := checkPipelineRBAC(ctx, pipeline); err != nil {
+	seedRbacErr := checkPipelineRBAC(ctx, pipeline)
+	if seedRbacErr != nil {
 		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
@@ -859,33 +1114,50 @@ func (c *APIPipelinesController) SeedJobPassed(ctx *echo.Context) error {
 		storage.TriggerInput{},
 	)
 	if err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+		saveRunJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to create seed run: %v", err),
 		})
+		if saveRunJsonErr != nil {
+			return fmt.Errorf("seed job save run error response: %w", saveRunJsonErr)
+		}
+
+		return nil
 	}
 
 	// Write the success task record at the standard path
 	taskPath := "/pipeline/" + run.ID + "/jobs/" + jobName
-	if err := c.store.Set(ctx.Request().Context(), taskPath, map[string]any{
+	setErr := c.store.Set(ctx.Request().Context(), taskPath, map[string]any{
 		"status": "success",
 		"seeded": true,
-	}); err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to seed job status: %v", err),
+	})
+	if setErr != nil {
+		setJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": fmt.Sprintf("failed to seed job status: %v", setErr),
 		})
+		if setJsonErr != nil {
+			return fmt.Errorf("seed job set error response: %w", setJsonErr)
+		}
+
+		return nil
 	}
 
 	// Immediately mark the run as completed
-	if err := c.store.UpdateRunStatus(ctx.Request().Context(), run.ID, storage.RunStatusSuccess, ""); err != nil {
-		c.logger.Error("seed.run.update.failed", "error", err)
+	updateRunErr := c.store.UpdateRunStatus(ctx.Request().Context(), run.ID, storage.RunStatusSuccess, "")
+	if updateRunErr != nil {
+		c.logger.Error("seed.run.update.failed", "error", updateRunErr)
 	}
 
-	return ctx.JSON(http.StatusOK, map[string]any{
+	seedOkJsonErr := ctx.JSON(http.StatusOK, map[string]any{
 		"pipeline_id": pipeline.ID,
 		"job":         jobName,
 		"run_id":      run.ID,
 		"message":     "job passed status seeded successfully",
 	})
+	if seedOkJsonErr != nil {
+		return fmt.Errorf("seed job response: %w", seedOkJsonErr)
+	}
+
+	return nil
 }
 
 // RegisterRoutes registers all pipeline API routes on the given group.
@@ -938,16 +1210,18 @@ func syncSchedules(ctx context.Context, store storage.Driver, pipeline *storage.
 			NextRunAt:    &nextRunAt,
 		}
 
-		if err := store.SaveSchedule(ctx, schedule); err != nil {
-			return fmt.Errorf("save schedule for job %q: %w", s.JobName, err)
+		saveSchedErr := store.SaveSchedule(ctx, schedule)
+		if saveSchedErr != nil {
+			return fmt.Errorf("save schedule for job %q: %w", s.JobName, saveSchedErr)
 		}
 
 		keepNames = append(keepNames, s.JobName)
 	}
 
 	// Remove schedules no longer declared in the YAML.
-	if err := store.PruneSchedulesByPipeline(ctx, pipeline.ID, keepNames); err != nil {
-		return fmt.Errorf("prune stale schedules: %w", err)
+	pruneErr := store.PruneSchedulesByPipeline(ctx, pipeline.ID, keepNames)
+	if pruneErr != nil {
+		return fmt.Errorf("prune stale schedules: %w", pruneErr)
 	}
 
 	return nil
@@ -960,22 +1234,42 @@ func (c *APIPipelinesController) ListSchedules(ctx *echo.Context) error {
 	_, err := c.store.GetPipeline(ctx.Request().Context(), id)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			return ctx.JSON(http.StatusNotFound, map[string]string{
+			lsNFJsonErr := ctx.JSON(http.StatusNotFound, map[string]string{
 				"error": "pipeline not found",
 			})
+			if lsNFJsonErr != nil {
+				return fmt.Errorf("list schedules not found response: %w", lsNFJsonErr)
+			}
+
+			return nil
 		}
 
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+		lsGetJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to get pipeline: %v", err),
 		})
+		if lsGetJsonErr != nil {
+			return fmt.Errorf("list schedules get error response: %w", lsGetJsonErr)
+		}
+
+		return nil
 	}
 
 	schedules, err := c.store.GetSchedulesByPipeline(ctx.Request().Context(), id)
 	if err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{
+		lsErrJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": fmt.Sprintf("failed to list schedules: %v", err),
 		})
+		if lsErrJsonErr != nil {
+			return fmt.Errorf("list schedules error response: %w", lsErrJsonErr)
+		}
+
+		return nil
 	}
 
-	return ctx.JSON(http.StatusOK, schedules)
+	lsOkJsonErr := ctx.JSON(http.StatusOK, schedules)
+	if lsOkJsonErr != nil {
+		return fmt.Errorf("list schedules response: %w", lsOkJsonErr)
+	}
+
+	return nil
 }

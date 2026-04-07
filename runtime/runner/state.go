@@ -63,9 +63,11 @@ func (s *StepState) IsTerminal() bool {
 	switch s.Status {
 	case StepStatusCompleted, StepStatusFailed, StepStatusAborted:
 		return true
-	default:
+	case StepStatusPending, StepStatusRunning:
 		return false
 	}
+
+	return false
 }
 
 // IsResumable returns true if the step can be resumed (running state with a container ID).

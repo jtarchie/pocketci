@@ -46,11 +46,13 @@ func downloadImage(cacheDir string) (string, error) {
 	rawPath := filepath.Join(cacheDir, rawImageFilename())
 
 	// Check if already cached in raw format
-	if _, err := os.Stat(rawPath); err == nil {
+	_, statErr := os.Stat(rawPath)
+	if statErr == nil {
 		return rawPath, nil
 	}
 
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+	err := os.MkdirAll(cacheDir, 0o755)
+	if err != nil {
 		return "", fmt.Errorf("failed to create cache dir: %w", err)
 	}
 
@@ -58,7 +60,8 @@ func downloadImage(cacheDir string) (string, error) {
 	qcow2Path := filepath.Join(cacheDir, filename)
 
 	// Download the qcow2 image if not cached
-	if _, err := os.Stat(qcow2Path); err != nil {
+	_, qcow2StatErr := os.Stat(qcow2Path)
+	if qcow2StatErr != nil {
 		imageURL := fmt.Sprintf("%s/%s", ubuntuBaseURL, filename)
 
 		tmpPath := qcow2Path + ".tmp"
@@ -79,24 +82,28 @@ func downloadImage(cacheDir string) (string, error) {
 		}
 		defer out.Close() //nolint:errcheck
 
-		if _, err := io.Copy(out, resp.Body); err != nil {
+		_, copyErr := io.Copy(out, resp.Body)
+		if copyErr != nil {
 			_ = os.Remove(tmpPath)
-			return "", fmt.Errorf("failed to write image: %w", err)
+			return "", fmt.Errorf("failed to write image: %w", copyErr)
 		}
 
-		if err := out.Close(); err != nil {
+		closeErr := out.Close()
+		if closeErr != nil {
 			_ = os.Remove(tmpPath)
-			return "", fmt.Errorf("failed to close temp file: %w", err)
+			return "", fmt.Errorf("failed to close temp file: %w", closeErr)
 		}
 
-		if err := os.Rename(tmpPath, qcow2Path); err != nil {
+		renameErr := os.Rename(tmpPath, qcow2Path)
+		if renameErr != nil {
 			_ = os.Remove(tmpPath)
-			return "", fmt.Errorf("failed to rename temp file: %w", err)
+			return "", fmt.Errorf("failed to rename temp file: %w", renameErr)
 		}
 	}
 
 	// Convert qcow2 to raw format for Apple Virtualization framework
-	if err := convertToRaw(qcow2Path, rawPath); err != nil {
+	err = convertToRaw(qcow2Path, rawPath)
+	if err != nil {
 		return "", fmt.Errorf("failed to convert image to raw: %w", err)
 	}
 
@@ -115,7 +122,8 @@ func convertToRaw(qcow2Path, rawPath string) error {
 		return fmt.Errorf("qemu-img convert failed: %w: %s", err, string(output))
 	}
 
-	if err := os.Rename(tmpPath, rawPath); err != nil {
+	err = os.Rename(tmpPath, rawPath)
+	if err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to rename raw image: %w", err)
 	}
@@ -138,9 +146,10 @@ func createDiskCopy(baseImage, diskPath string) error {
 	}
 	defer dst.Close() //nolint:errcheck
 
-	if _, err := io.Copy(dst, src); err != nil {
+	_, copyErr := io.Copy(dst, src)
+	if copyErr != nil {
 		_ = os.Remove(diskPath)
-		return fmt.Errorf("failed to copy image: %w", err)
+		return fmt.Errorf("failed to copy image: %w", copyErr)
 	}
 
 	return nil
@@ -293,11 +302,13 @@ runcmd:
 	}
 	defer writer.Cleanup() //nolint:errcheck
 
-	if err := writer.AddFile(stringReader(metaData), "meta-data"); err != nil {
+	err = writer.AddFile(stringReader(metaData), "meta-data")
+	if err != nil {
 		return fmt.Errorf("failed to add meta-data: %w", err)
 	}
 
-	if err := writer.AddFile(stringReader(userData), "user-data"); err != nil {
+	err = writer.AddFile(stringReader(userData), "user-data")
+	if err != nil {
 		return fmt.Errorf("failed to add user-data: %w", err)
 	}
 
@@ -307,7 +318,8 @@ runcmd:
 	}
 	defer f.Close() //nolint:errcheck
 
-	if err := writer.WriteTo(f, "CIDATA"); err != nil {
+	err = writer.WriteTo(f, "CIDATA")
+	if err != nil {
 		return fmt.Errorf("failed to write ISO: %w", err)
 	}
 
@@ -346,5 +358,11 @@ type qemuImgCmd struct {
 
 func (c *qemuImgCmd) CombinedOutput() ([]byte, error) {
 	cmd := execCommand("qemu-img", c.args...)
-	return cmd.CombinedOutput()
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("combined output: %w", err)
+	}
+
+	return out, nil
 }

@@ -26,7 +26,8 @@ func mustJSONMap(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 
 	var payload map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+	err := json.Unmarshal(rec.Body.Bytes(), &payload)
+	if err != nil {
 		t.Fatalf("decode json response: %v", err)
 	}
 
@@ -50,7 +51,8 @@ func mustSSEJSONEvents(t *testing.T, rec *httptest.ResponseRecorder) []map[strin
 		}
 
 		var event map[string]any
-		if err := json.Unmarshal([]byte(jsonPayload), &event); err != nil {
+		err := json.Unmarshal([]byte(jsonPayload), &event)
+		if err != nil {
 			t.Fatalf("decode sse data payload: %v", err)
 		}
 		events = append(events, event)

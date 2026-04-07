@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/cache/filesystem"
 	"github.com/onsi/gomega"
 )
@@ -52,7 +53,7 @@ func TestFilesystemStore(t *testing.T) {
 		assert.Expect(err).NotTo(gomega.HaveOccurred())
 
 		reader, err := store.Restore(ctx, "missing-key")
-		assert.Expect(err).NotTo(gomega.HaveOccurred())
+		assert.Expect(err).To(gomega.MatchError(cache.ErrCacheMiss))
 		assert.Expect(reader).To(gomega.BeNil())
 	})
 
@@ -149,9 +150,9 @@ func TestFilesystemStore(t *testing.T) {
 		assert.Expect(err).NotTo(gomega.HaveOccurred())
 		assert.Expect(exists).To(gomega.BeFalse())
 
-		// Restore should return nil
+		// Restore should return ErrCacheMiss on expired entry
 		reader, err := store.Restore(ctx, "expiring-key")
-		assert.Expect(err).NotTo(gomega.HaveOccurred())
+		assert.Expect(err).To(gomega.MatchError(cache.ErrCacheMiss))
 		assert.Expect(reader).To(gomega.BeNil())
 	})
 

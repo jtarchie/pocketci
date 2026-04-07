@@ -289,7 +289,8 @@ func loadAgentConfig(sc *StepContext, step *config.Step, pathPrefix string) ([]b
 // Prompts are concatenated so loaded and inline prompts are both included.
 func mergeAgentFromContents(contents []byte, inlineStep *config.Step) *config.Step {
 	var fileFields map[string]interface{}
-	if err := yaml.Unmarshal(contents, &fileFields); err != nil {
+	err := yaml.Unmarshal(contents, &fileFields)
+	if err != nil {
 		return inlineStep
 	}
 
@@ -318,7 +319,8 @@ func mergeAgentFromContents(contents []byte, inlineStep *config.Step) *config.St
 				Config *config.TaskConfig `yaml:"config,omitempty"`
 			}
 
-			if err := yaml.Unmarshal(contents, &full); err == nil && full.Config != nil {
+			err := yaml.Unmarshal(contents, &full)
+			if err == nil && full.Config != nil {
 				merged.TaskConfig = full.Config
 			}
 		}
@@ -330,7 +332,8 @@ func mergeAgentFromContents(contents []byte, inlineStep *config.Step) *config.St
 				Context *agent.AgentContext `yaml:"context,omitempty"`
 			}
 
-			if err := yaml.Unmarshal(contents, &full); err == nil && full.Context != nil {
+			err := yaml.Unmarshal(contents, &full)
+			if err == nil && full.Context != nil {
 				merged.AgentContext = full.Context
 			}
 		}
@@ -421,7 +424,8 @@ func mergeTaskConfigFromFile(sc *StepContext, tool *config.Step, pathPrefix stri
 	}
 
 	var fileCfg config.TaskConfig
-	if err := yaml.Unmarshal(contents, &fileCfg); err != nil {
+	unmarshalErr := yaml.Unmarshal(contents, &fileCfg)
+	if unmarshalErr != nil {
 		return taskConfig
 	}
 

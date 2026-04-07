@@ -59,32 +59,9 @@ func (f *Fly) launchHelperMachine(ctx context.Context, vol *Volume) (*fly.Machin
 	existingID := f.helperMachines[vol.id]
 	f.mu.Unlock()
 
-	// If we have a persistent helper for this volume, resume it from suspend.
+	// If we have a persistent helper for this volume, try to resume it.
 	if existingID != "" {
-		f.logger.Debug("fly.cache.helper.resume", "volume", vol.name, "machine", existingID)
-
-		cleanupHelper := func() {
-			_ = f.client.Destroy(ctx, f.appName, fly.RemoveMachineInput{ID: existingID, Kill: true}, "")
-
-			f.mu.Lock()
-			delete(f.helperMachines, vol.id)
-			delete(f.volumeAttachments, vol.id)
-			f.mu.Unlock()
-		}
-
-		_, startErr := f.client.Start(ctx, f.appName, existingID, "")
-		if startErr != nil {
-			// Resume failed – fall through to destroy and re-create below.
-			f.logger.Warn("fly.cache.helper.resume.failed", "machine", existingID, "err", startErr)
-			cleanupHelper()
-		} else if waitErr := f.client.Wait(ctx, f.appName, existingID, flaps.WithWaitStates("started"), flaps.WithWaitTimeout(2*time.Minute)); waitErr != nil {
-			f.logger.Warn("fly.cache.helper.resume.timeout", "machine", existingID, "err", waitErr)
-			cleanupHelper()
-		} else if machine, getErr := f.client.Get(ctx, f.appName, existingID); getErr != nil || machine.PrivateIP == "" {
-			// No IP – destroy and fall through
-			cleanupHelper()
-		} else {
-			f.logger.Debug("fly.cache.helper.resumed", "machine", machine.ID, "ip", machine.PrivateIP)
+		if machine := f.tryResumeHelperMachine(ctx, existingID, vol); machine != nil {
 			return machine, nil
 		}
 	}
@@ -191,13 +168,56 @@ func (f *Fly) launchHelperMachine(ctx context.Context, vol *Volume) (*fly.Machin
 	return machine, nil
 }
 
+// tryResumeHelperMachine attempts to resume an existing suspended helper machine.
+// Returns the machine on success, or nil if resume failed (cleanup is performed automatically).
+func (f *Fly) tryResumeHelperMachine(ctx context.Context, existingID string, vol *Volume) *fly.Machine {
+	f.logger.Debug("fly.cache.helper.resume", "volume", vol.name, "machine", existingID)
+
+	cleanupHelper := func() {
+		_ = f.client.Destroy(ctx, f.appName, fly.RemoveMachineInput{ID: existingID, Kill: true}, "")
+
+		f.mu.Lock()
+		delete(f.helperMachines, vol.id)
+		delete(f.volumeAttachments, vol.id)
+		f.mu.Unlock()
+	}
+
+	_, startErr := f.client.Start(ctx, f.appName, existingID, "")
+	if startErr != nil {
+		f.logger.Warn("fly.cache.helper.resume.failed", "machine", existingID, "err", startErr)
+		cleanupHelper()
+
+		return nil
+	}
+
+	waitErr := f.client.Wait(ctx, f.appName, existingID, flaps.WithWaitStates("started"), flaps.WithWaitTimeout(2*time.Minute))
+	if waitErr != nil {
+		f.logger.Warn("fly.cache.helper.resume.timeout", "machine", existingID, "err", waitErr)
+		cleanupHelper()
+
+		return nil
+	}
+
+	machine, getErr := f.client.Get(ctx, f.appName, existingID)
+	if getErr != nil || machine.PrivateIP == "" {
+		cleanupHelper()
+
+		return nil
+	}
+
+	f.logger.Debug("fly.cache.helper.resumed", "machine", machine.ID, "ip", machine.PrivateIP)
+
+	return machine
+}
+
 // destroyHelperMachine suspends the helper machine so it can be quickly resumed
 // on the next use. The volume stays attached and the machine's memory is
 // snapshotted. On Close() the driver will truly destroy it.
 func (f *Fly) destroyHelperMachine(ctx context.Context, machineID string) {
 	f.logger.Debug("fly.cache.helper.suspend", "machine", machineID)
 
-	if err := f.client.Suspend(ctx, f.appName, machineID, ""); err != nil {
+	err := f.client.Suspend(ctx, f.appName, machineID, "")
+	if err != nil {
 		f.logger.Warn("fly.cache.helper.suspend.failed", "machine", machineID, "err", err)
 		// Fall back to a hard destroy so we don't leak the machine.
 		f.mu.Lock()
@@ -222,7 +242,8 @@ func (f *Fly) destroyHelperMachine(ctx context.Context, machineID string) {
 
 	// Wait for the machine to reach a fully suspended state.
 	machine := &fly.Machine{ID: machineID}
-	if err := f.client.Wait(ctx, f.appName, machine.ID, flaps.WithWaitStates("suspended"), flaps.WithWaitTimeout(30*time.Second)); err != nil {
+	err = f.client.Wait(ctx, f.appName, machine.ID, flaps.WithWaitStates("suspended"), flaps.WithWaitTimeout(30*time.Second))
+	if err != nil {
 		f.logger.Warn("fly.cache.helper.suspend.wait", "machine", machineID, "err", err)
 	}
 
@@ -273,7 +294,8 @@ func (f *Fly) CopyToVolume(ctx context.Context, volumeName string, reader io.Rea
 
 	f.logger.Debug("fly.cache.copytov.start", "volume", volumeName)
 
-	if err := uploadTarEntries(sftpClient, reader); err != nil {
+	err = uploadTarEntries(sftpClient, reader)
+	if err != nil {
 		return err
 	}
 
@@ -311,12 +333,14 @@ func uploadTarEntries(sftpClient *sftp.Client, reader io.Reader) error {
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if mkErr := sftpClient.MkdirAll(remotePath); mkErr != nil {
+			mkErr := sftpClient.MkdirAll(remotePath)
+			if mkErr != nil {
 				return fmt.Errorf("failed to create remote directory %q: %w", remotePath, mkErr)
 			}
 
 		case tar.TypeReg:
-			if mkErr := sftpClient.MkdirAll(path.Dir(remotePath)); mkErr != nil {
+			mkErr := sftpClient.MkdirAll(path.Dir(remotePath))
+			if mkErr != nil {
 				return fmt.Errorf("failed to create parent dir for %q: %w", remotePath, mkErr)
 			}
 
@@ -325,13 +349,15 @@ func uploadTarEntries(sftpClient *sftp.Client, reader io.Reader) error {
 				return fmt.Errorf("failed to open remote file %q: %w", remotePath, err)
 			}
 
-			if _, cpErr := io.Copy(rf, tr); cpErr != nil {
+			_, cpErr := io.Copy(rf, tr)
+			if cpErr != nil {
 				_ = rf.Close()
 
 				return fmt.Errorf("failed to write remote file %q: %w", remotePath, cpErr)
 			}
 
-			if closeErr := rf.Close(); closeErr != nil {
+			closeErr := rf.Close()
+			if closeErr != nil {
 				return fmt.Errorf("failed to close remote file %q: %w", remotePath, closeErr)
 			}
 		}
@@ -388,7 +414,8 @@ func (f *Fly) CopyFromVolume(ctx context.Context, volumeName string) (io.ReadClo
 
 	f.logger.Debug("fly.cache.copyfromv.start", "volume", volumeName)
 
-	if err := session.Start("tar cf - -C /volume ."); err != nil {
+	err = session.Start("tar cf - -C /volume .")
+	if err != nil {
 		_ = session.Close()
 		_ = sshClient.Close()
 		tunnel.close(ctx, f.apiClient)
@@ -490,7 +517,8 @@ func (f *Fly) ReadFilesFromVolume(ctx context.Context, volumeName string, filePa
 
 	f.logger.Debug("fly.cache.readfiles.start", "volume", volumeName, "paths", filePaths)
 
-	if err := session.Start(cmd); err != nil {
+	err = session.Start(cmd)
+	if err != nil {
 		_ = session.Close()
 		_ = sshClient.Close()
 		tunnel.close(ctx, f.apiClient)

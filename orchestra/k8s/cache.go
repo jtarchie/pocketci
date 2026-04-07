@@ -11,7 +11,7 @@ import (
 
 	"github.com/jtarchie/pocketci/cache"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
@@ -73,7 +73,8 @@ func (k *K8s) CopyToVolume(ctx context.Context, volumeName string, reader io.Rea
 	}()
 
 	// Wait for pod to be running
-	if err := k.waitForPodRunning(ctx, createdPod.Name); err != nil {
+	err = k.waitForPodRunning(ctx, createdPod.Name)
+	if err != nil {
 		return fmt.Errorf("failed to wait for cache helper pod: %w", err)
 	}
 
@@ -159,7 +160,8 @@ func (k *K8s) CopyFromVolume(ctx context.Context, volumeName string) (io.ReadClo
 	}
 
 	// Wait for pod to be running
-	if err := k.waitForPodRunning(ctx, createdPod.Name); err != nil {
+	err = k.waitForPodRunning(ctx, createdPod.Name)
+	if err != nil {
 		_ = k.clientset.CoreV1().Pods(k.k8sNamespace).Delete(ctx, createdPod.Name, metav1.DeleteOptions{})
 
 		return nil, fmt.Errorf("failed to wait for cache helper pod: %w", err)
@@ -229,11 +231,13 @@ func (k *K8s) waitForPodRunning(ctx context.Context, podName string) error {
 			return nil
 		case corev1.PodFailed, corev1.PodSucceeded:
 			return fmt.Errorf("pod finished unexpectedly with phase: %s", pod.Status.Phase)
+		case corev1.PodPending, corev1.PodUnknown:
+			// still waiting — fall through to the poll delay below
 		}
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("wait for pod ready: %w", ctx.Err())
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
@@ -274,7 +278,7 @@ func (t *tarPathStripper) run() {
 
 	for {
 		header, err := t.reader.Next()
-		if err == io.EOF {
+		if err == io.EOF { //nolint:errorlint // tar.Reader.Next() never wraps io.EOF
 			break
 		}
 
@@ -295,15 +299,17 @@ func (t *tarPathStripper) run() {
 			continue
 		}
 
-		if err := t.writer.WriteHeader(header); err != nil {
+		err = t.writer.WriteHeader(header)
+		if err != nil {
 			t.pw.CloseWithError(err)
 
 			return
 		}
 
 		if header.Size > 0 {
-			if _, err := io.CopyN(t.writer, t.reader, header.Size); err != nil {
-				t.pw.CloseWithError(err)
+			_, copyErr := io.CopyN(t.writer, t.reader, header.Size)
+			if copyErr != nil {
+				t.pw.CloseWithError(copyErr)
 
 				return
 			}
@@ -358,7 +364,8 @@ func (k *K8s) ReadFilesFromVolume(ctx context.Context, volumeName string, filePa
 		return nil, fmt.Errorf("failed to create cache helper pod: %w", err)
 	}
 
-	if err := k.waitForPodRunning(ctx, createdPod.Name); err != nil {
+	err = k.waitForPodRunning(ctx, createdPod.Name)
+	if err != nil {
 		_ = k.clientset.CoreV1().Pods(k.k8sNamespace).Delete(ctx, createdPod.Name, metav1.DeleteOptions{})
 
 		return nil, fmt.Errorf("failed to wait for cache helper pod: %w", err)

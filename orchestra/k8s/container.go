@@ -204,7 +204,8 @@ func (c *Container) Logs(ctx context.Context, stdout, stderr io.Writer, follow b
 			return fmt.Errorf("failed to get pod logs for stream %v: %w", streamName, err)
 		}
 		defer func() {
-			if closeErr := podLogs.Close(); closeErr != nil {
+			closeErr := podLogs.Close()
+			if closeErr != nil {
 				c.logger.Warn("failed to close pod logs stream", "stream", streamName, "err", closeErr)
 			}
 		}()
@@ -219,7 +220,8 @@ func (c *Container) Logs(ctx context.Context, stdout, stderr io.Writer, follow b
 
 	// Fetch stdout stream
 	streamStdout := "Stdout"
-	if err := fetchStream(&streamStdout, stdout); err != nil {
+	err := fetchStream(&streamStdout, stdout)
+	if err != nil {
 		// If split streams are not supported, fall back to getting all logs
 		c.logger.Debug("split streams not supported, falling back to combined logs", "err", err)
 
@@ -232,7 +234,8 @@ func (c *Container) Logs(ctx context.Context, stdout, stderr io.Writer, follow b
 			return fmt.Errorf("failed to get pod logs: %w", err)
 		}
 		defer func() {
-			if closeErr := podLogs.Close(); closeErr != nil {
+			closeErr := podLogs.Close()
+			if closeErr != nil {
 				c.logger.Warn("failed to close pod logs stream", "err", closeErr)
 			}
 		}()
@@ -247,7 +250,8 @@ func (c *Container) Logs(ctx context.Context, stdout, stderr io.Writer, follow b
 
 	// Fetch stderr stream
 	streamStderr := "Stderr"
-	if err := fetchStream(&streamStderr, stderr); err != nil {
+	err = fetchStream(&streamStderr, stderr)
+	if err != nil {
 		return err
 	}
 
@@ -266,7 +270,8 @@ func (c *Container) streamLogs(ctx context.Context, stdout io.Writer) error {
 		return fmt.Errorf("failed to get pod logs stream: %w", err)
 	}
 	defer func() {
-		if closeErr := podLogs.Close(); closeErr != nil && ctx.Err() == nil {
+		closeErr := podLogs.Close()
+		if closeErr != nil && ctx.Err() == nil {
 			c.logger.Warn("failed to close pod logs stream", "err", closeErr)
 		}
 	}()
@@ -418,11 +423,13 @@ func (k *K8s) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 		return nil, err
 	}
 
-	if err := k.watchPodUntilRunning(waitCtx, podName, logger); err != nil {
+	err = k.watchPodUntilRunning(waitCtx, podName, logger)
+	if err != nil {
 		return nil, err
 	}
 
-	if err := k.attachStdinToPod(ctx, podName, task, logger); err != nil {
+	err = k.attachStdinToPod(ctx, podName, task, logger)
+	if err != nil {
 		return nil, err
 	}
 
@@ -509,7 +516,7 @@ func buildResourceRequirements(task orchestra.Task) corev1.ResourceRequirements 
 
 func parseUserUID(user string) (*int64, error) {
 	if user == "" {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil pointer signals no UID constraint; not an error
 	}
 
 	var uid int64

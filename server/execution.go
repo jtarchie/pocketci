@@ -303,7 +303,7 @@ func (s *ExecutionService) TriggerPipeline(ctx context.Context, pipeline *storag
 	// Create run record with queued status
 	run, err := s.store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, formatTriggeredBy(actor), storage.TriggerInput{Args: args})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("save run: %w", err)
 	}
 
 	opts := execOptions{args: args, requestID: requestID, authProvider: actor.Provider, user: actor.User}
@@ -345,7 +345,7 @@ func (s *ExecutionService) TriggerWebhookPipeline(
 
 	run, err := s.store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeWebhook, triggeredBy, triggerInput)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("save run: %w", err)
 	}
 
 	opts := execOptions{
@@ -390,7 +390,8 @@ func (s *ExecutionService) ResumePipeline(ctx context.Context, pipeline *storage
 	actor, _ := RequestActorFromContext(ctx)
 
 	// Reset run status to queued for the resumed execution
-	if err := s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusQueued, ""); err != nil {
+	err := s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusQueued, "")
+	if err != nil {
 		return fmt.Errorf("failed to reset run status: %w", err)
 	}
 
@@ -427,7 +428,7 @@ func (s *ExecutionService) TriggerScheduledPipeline(ctx context.Context, pipelin
 
 	run, err := s.store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeSchedule, triggeredBy, triggerInput)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("save run: %w", err)
 	}
 
 	opts := execOptions{jobs: triggerInput.Jobs}
@@ -469,7 +470,8 @@ func (s *ExecutionService) RecoverOrphanedRuns(ctx context.Context) {
 		if resumeEnabled && pipeline.ResumeEnabled {
 			logger.Info("orphan.recovery.resuming")
 			runCopy := run
-			if rErr := s.ResumePipeline(ctx, pipeline, &runCopy); rErr != nil {
+			rErr := s.ResumePipeline(ctx, pipeline, &runCopy)
+			if rErr != nil {
 				logger.Error("orphan.recovery.resume_failed", "error", rErr)
 				_ = s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "Server restarted; resume failed: "+rErr.Error())
 				s.cleanupOrphanedRunResources(ctx, run.ID, pipeline, logger)
@@ -499,8 +501,9 @@ func (s *ExecutionService) cleanupOrphanedRunResources(ctx context.Context, runI
 		return
 	}
 
-	if err := driver.Close(); err != nil {
-		logger.Warn("orphan.recovery.cleanup_failed", "namespace", namespace, "error", err)
+	driverCloseErr := driver.Close()
+	if driverCloseErr != nil {
+		logger.Warn("orphan.recovery.cleanup_failed", "namespace", namespace, "error", driverCloseErr)
 		return
 	}
 
@@ -605,7 +608,7 @@ func (s *ExecutionService) buildExecutorOptions(pipeline *storage.Pipeline, opts
 
 		run, triggerErr := s.store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "triggerPipeline", triggerInput)
 		if triggerErr != nil {
-			return "", triggerErr
+			return "", fmt.Errorf("save run: %w", triggerErr)
 		}
 
 		triggerOpts := execOptions{args: args, jobs: jobs}
@@ -664,7 +667,7 @@ func (s *ExecutionService) finalizeExecRun(ctx, dbCtx context.Context, run *stor
 		logger.Info("pipeline.execute.success")
 	case storage.RunStatusSkipped:
 		logger.Info("pipeline.execute.skipped")
-	default:
+	case storage.RunStatusFailed, storage.RunStatusQueued, storage.RunStatusRunning:
 		logger.Info("pipeline.execute.completed_with_failures")
 	}
 
@@ -770,7 +773,8 @@ func (s *ExecutionService) preseedWorkdir(ctx context.Context, factory func(cont
 
 	s.logger.Info("workdir.preseed.start")
 
-	if cErr := accessor.CopyToVolume(ctx, vol.Name(), workdirTar); cErr != nil {
+	cErr := accessor.CopyToVolume(ctx, vol.Name(), workdirTar)
+	if cErr != nil {
 		_ = vol.Cleanup(ctx)
 		_ = driver.Close()
 		return nil, nil, fmt.Errorf("could not seed workdir volume: %w", cErr)
@@ -800,7 +804,8 @@ func (s *ExecutionService) finalizeSyncRun(ctx context.Context, run *storage.Pip
 		}
 	}
 
-	if err := s.store.UpdateRunStatus(ctx, run.ID, finalStatus, errMsg); err != nil {
+	err := s.store.UpdateRunStatus(ctx, run.ID, finalStatus, errMsg)
+	if err != nil {
 		s.logger.Error("run.update.failed.to_final", "error", err)
 	}
 
@@ -827,7 +832,7 @@ func (s *ExecutionService) RunByNameSync(
 ) error {
 	pipeline, err := s.store.GetPipelineByName(ctx, name)
 	if err != nil {
-		return err
+		return fmt.Errorf("get pipeline by name: %w", err)
 	}
 
 	if pipeline.Paused {
@@ -841,8 +846,9 @@ func (s *ExecutionService) RunByNameSync(
 		return fmt.Errorf("failed to save run: %w", err)
 	}
 
-	if err = s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusRunning, ""); err != nil {
-		s.logger.Error("run.update.failed.to_running", "error", err)
+	updateRunningErr := s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusRunning, "")
+	if updateRunningErr != nil {
+		s.logger.Error("run.update.failed.to_running", "error", updateRunningErr)
 	}
 
 	var preseededVolumes map[string]orchestra.Volume
@@ -982,8 +988,9 @@ func (s *ExecutionService) pruneOldRuns(ctx context.Context, pipeline *storage.P
 		cutoff = &t
 	}
 
-	if err := s.store.PruneRunsByPipeline(ctx, pipeline.ID, keepBuilds, cutoff); err != nil {
-		logger.Warn("pipeline.retention.prune_failed", "error", err)
+	pruneRunsErr := s.store.PruneRunsByPipeline(ctx, pipeline.ID, keepBuilds, cutoff)
+	if pruneRunsErr != nil {
+		logger.Warn("pipeline.retention.prune_failed", "error", pruneRunsErr)
 	}
 }
 

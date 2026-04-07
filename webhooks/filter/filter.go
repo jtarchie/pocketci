@@ -77,7 +77,8 @@ func BuildWebhookEnv(wd *jsapi.WebhookData) WebhookEnv {
 	}
 
 	var payload map[string]any
-	if jsonErr := json.Unmarshal([]byte(wd.Body), &payload); jsonErr == nil {
+	jsonErr := json.Unmarshal([]byte(wd.Body), &payload)
+	if jsonErr == nil {
 		env.Payload = payload
 	}
 

@@ -353,5 +353,4 @@ jobs:
 		assert.Expect(step.Tools[1].TaskConfig).NotTo(BeNil())
 		assert.Expect(step.Tools[1].TaskConfig.Image).To(Equal("python:3.12"))
 	})
-
 }

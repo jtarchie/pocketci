@@ -194,7 +194,7 @@ func (h *Hetzner) waitForWorkerSlot(ctx context.Context) (bool, error) {
 
 		select {
 		case <-ctx.Done():
-			return false, ctx.Err()
+			return false, fmt.Errorf("wait for worker: %w", ctx.Err())
 		case <-time.After(h.pollInterval):
 		}
 	}
@@ -246,11 +246,13 @@ func (h *Hetzner) claimIdleServer(ctx context.Context) (bool, error) {
 
 		publicIP := freshServer.PublicNet.IPv4.IP.String()
 
-		if err := h.waitForSSH(ctx, publicIP); err != nil {
+		err = h.waitForSSH(ctx, publicIP)
+		if err != nil {
 			return false, fmt.Errorf("failed to connect SSH to claimed server: %w", err)
 		}
 
-		if err := h.waitForDocker(ctx); err != nil {
+		err = h.waitForDocker(ctx)
+		if err != nil {
 			return false, fmt.Errorf("failed to connect Docker to claimed server: %w", err)
 		}
 
@@ -270,13 +272,15 @@ func (h *Hetzner) claimIdleServer(ctx context.Context) (bool, error) {
 // parkServer parks the machine by transitioning it busy→idle without deleting it.
 func (h *Hetzner) parkServer(ctx context.Context) error {
 	if h.dockerDriver != nil {
-		if err := h.dockerDriver.Close(); err != nil {
+		err := h.dockerDriver.Close()
+		if err != nil {
 			h.logger.Warn("hetzner.docker.close_error", "err", err)
 		}
 	}
 
 	if h.sshClient != nil {
-		if err := h.sshClient.Close(); err != nil {
+		err := h.sshClient.Close()
+		if err != nil {
 			h.logger.Warn("hetzner.ssh.close_error", "err", err)
 		}
 	}
@@ -388,12 +392,14 @@ func (h *Hetzner) ensureServer(ctx context.Context, containerLimits orchestra.Co
 	h.logger.Info("hetzner.server.ready", "ip", publicIP)
 
 	// Wait for SSH to be available (also stores h.sshClient)
-	if err := h.waitForSSH(ctx, publicIP); err != nil {
+	err = h.waitForSSH(ctx, publicIP)
+	if err != nil {
 		return fmt.Errorf("failed to wait for SSH: %w", err)
 	}
 
 	// Wait for Docker to be ready (uses the SSH client established in waitForSSH)
-	if err := h.waitForDocker(ctx); err != nil {
+	err = h.waitForDocker(ctx)
+	if err != nil {
 		return fmt.Errorf("failed to wait for Docker: %w", err)
 	}
 
@@ -534,7 +540,8 @@ func (h *Hetzner) ensureSSHKey(ctx context.Context) (*hcloud.SSHKey, string, err
 
 		// Try to find the local key file
 		sshKeyPath := filepath.Join(os.TempDir(), "pocketci-hetzner-"+h.namespace)
-		if _, err := os.Stat(sshKeyPath); err == nil {
+		_, statErr := os.Stat(sshKeyPath)
+		if statErr == nil {
 			return existingKey, sshKeyPath, nil
 		}
 
@@ -558,8 +565,9 @@ func (h *Hetzner) ensureSSHKey(ctx context.Context) (*hcloud.SSHKey, string, err
 		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
 	})
 
-	if err := os.WriteFile(sshKeyPath, privateKeyPEM, 0o600); err != nil {
-		return nil, "", fmt.Errorf("failed to write SSH private key: %w", err)
+	writeErr := os.WriteFile(sshKeyPath, privateKeyPEM, 0o600)
+	if writeErr != nil {
+		return nil, "", fmt.Errorf("failed to write SSH private key: %w", writeErr)
 	}
 
 	// Generate public key
@@ -599,7 +607,7 @@ func (h *Hetzner) waitForServer(ctx context.Context, serverID int64) (*hcloud.Se
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, fmt.Errorf("wait for server active: %w", ctx.Err())
 		case <-timeout:
 			return nil, errors.New("timeout waiting for server to become running")
 		case <-ticker.C:
@@ -658,7 +666,7 @@ func (h *Hetzner) waitForSSH(ctx context.Context, ip string) error {
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("wait for ssh: %w", ctx.Err())
 		default:
 		}
 
@@ -702,7 +710,7 @@ func (h *Hetzner) waitForDocker(ctx context.Context) error {
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("wait for docker: %w", ctx.Err())
 		default:
 		}
 
@@ -732,11 +740,17 @@ func (h *Hetzner) waitForDocker(ctx context.Context) error {
 
 // RunContainer creates the server if needed and delegates to the docker driver.
 func (h *Hetzner) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.Container, error) {
-	if err := h.ensureServer(ctx, task.ContainerLimits); err != nil {
+	err := h.ensureServer(ctx, task.ContainerLimits)
+	if err != nil {
 		return nil, fmt.Errorf("failed to ensure server: %w", err)
 	}
 
-	return h.dockerDriver.RunContainer(ctx, task)
+	container, err := h.dockerDriver.RunContainer(ctx, task)
+	if err != nil {
+		return nil, fmt.Errorf("run container: %w", err)
+	}
+
+	return container, nil
 }
 
 // GetContainer attempts to find and return an existing container by its ID.
@@ -745,12 +759,19 @@ func (h *Hetzner) GetContainer(ctx context.Context, containerID string) (orchest
 	if h.dockerDriver == nil {
 		return nil, orchestra.ErrContainerNotFound
 	}
-	return h.dockerDriver.GetContainer(ctx, containerID)
+
+	container, err := h.dockerDriver.GetContainer(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("get container: %w", err)
+	}
+
+	return container, nil
 }
 
 // CreateVolume creates a volume on the server's docker instance.
 func (h *Hetzner) CreateVolume(ctx context.Context, name string, size int) (orchestra.Volume, error) {
-	if err := h.ensureServer(ctx, orchestra.ContainerLimits{}); err != nil {
+	err := h.ensureServer(ctx, orchestra.ContainerLimits{})
+	if err != nil {
 		return nil, fmt.Errorf("failed to ensure server: %w", err)
 	}
 
@@ -764,7 +785,12 @@ func (h *Hetzner) CreateVolume(ctx context.Context, name string, size int) (orch
 
 	// For now, delegate to docker driver's volume creation
 	// In the future, we could create Hetzner block storage volumes for larger needs
-	return h.dockerDriver.CreateVolume(ctx, name, size)
+	volume, err := h.dockerDriver.CreateVolume(ctx, name, size)
+	if err != nil {
+		return nil, fmt.Errorf("create volume: %w", err)
+	}
+
+	return volume, nil
 }
 
 // Close either parks the machine (if reuse_worker=true) or deletes it and cleans up resources.
@@ -778,14 +804,16 @@ func (h *Hetzner) Close() error {
 
 	// Close docker driver first
 	if h.dockerDriver != nil {
-		if err := h.dockerDriver.Close(); err != nil {
+		err := h.dockerDriver.Close()
+		if err != nil {
 			h.logger.Warn("hetzner.docker.close_error", "err", err)
 		}
 	}
 
 	// Close SSH client
 	if h.sshClient != nil {
-		if err := h.sshClient.Close(); err != nil {
+		err := h.sshClient.Close()
+		if err != nil {
 			h.logger.Warn("hetzner.ssh.close_error", "err", err)
 		}
 	}
@@ -814,7 +842,8 @@ func (h *Hetzner) Close() error {
 
 	// Delete local SSH key file
 	if h.sshKeyPath != "" {
-		if err := os.Remove(h.sshKeyPath); err != nil && !os.IsNotExist(err) {
+		err := os.Remove(h.sshKeyPath)
+		if err != nil && !os.IsNotExist(err) {
 			h.logger.Warn("hetzner.ssh_key.local.delete.error", "err", err)
 		}
 	}

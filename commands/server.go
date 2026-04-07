@@ -166,8 +166,9 @@ func (c *Server) Run(logger *slog.Logger) error {
 
 	defer func() { _ = secretsManager.Close() }()
 
-	if err := c.storeGlobalSecrets(secretsManager); err != nil {
-		return err
+	storeSecretsErr := c.storeGlobalSecrets(secretsManager)
+	if storeSecretsErr != nil {
+		return storeSecretsErr
 	}
 
 	authConfig, basicAuthUsername, basicAuthPassword, err := c.buildAuthConfig()
@@ -314,7 +315,8 @@ func (c *Server) storeGlobalSecrets(mgr secrets.Manager) error {
 			return fmt.Errorf("invalid --secret flag %q: expected KEY=VALUE format", s)
 		}
 
-		if err := mgr.Set(context.Background(), secrets.GlobalScope, key, value); err != nil {
+		err := mgr.Set(context.Background(), secrets.GlobalScope, key, value)
+		if err != nil {
 			return fmt.Errorf("could not set global secret %q: %w", key, err)
 		}
 	}
@@ -365,7 +367,8 @@ func (c *Server) buildAuthConfig() (*auth.Config, string, string, error) {
 	}
 
 	if c.ServerRBAC != "" {
-		if err := auth.ValidateExpression(c.ServerRBAC); err != nil {
+		err := auth.ValidateExpression(c.ServerRBAC)
+		if err != nil {
 			return nil, "", "", fmt.Errorf("invalid server RBAC expression: %w", err)
 		}
 	}
@@ -470,7 +473,7 @@ func (c *Server) initCacheStore() (cache.CacheStore, error) {
 	}
 
 	if !hasS3 {
-		return nil, nil
+		return nil, nil //nolint:nilnil // no cache configured is a valid non-error state
 	}
 
 	store, err := cacheplugins3.New(context.Background(), cacheplugins3.Config{

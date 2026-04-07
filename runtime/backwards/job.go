@@ -135,7 +135,8 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	defer jr.cleanupCacheVolumes(sc)
 
 	if jr.job.Gate != nil {
-		if err := jr.runGate(ctx); err != nil {
+		err := jr.runGate(ctx)
+		if err != nil {
 			_ = jr.storage.Set(ctx, jobKey, storage.Payload{"status": "failure"})
 
 			return fmt.Errorf("gate: %w", err)
@@ -147,7 +148,8 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	for i, step := range jr.job.Plan {
 		padded := zeroPadWithLength(i, len(jr.job.Plan))
 
-		if err := jr.processStep(sc, &step, padded); err != nil { //nolint:contextcheck // context is in sc.Ctx
+		err := jr.processStep(sc, &step, padded) //nolint:contextcheck // context is in sc.Ctx
+		if err != nil {
 			planErr = err
 			jr.markRemainingStepsSkipped(ctx, sc, i+1)
 
@@ -158,7 +160,8 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	planErr = jr.runJobHooks(sc, planErr) //nolint:contextcheck // context is in sc.Ctx
 
 	// Always validate job-level assertions, even after plan errors.
-	if assertErr := jr.validateAssertions(sc); assertErr != nil {
+	assertErr := jr.validateAssertions(sc)
+	if assertErr != nil {
 		_ = jr.storage.Set(ctx, jobKey, storage.Payload{
 			"status":       "failure",
 			"errorMessage": assertErr.Error(),
@@ -201,7 +204,8 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 
 func (jr *JobRunner) cleanupCacheVolumes(sc *StepContext) {
 	for path, vol := range sc.CacheVolumeObjects {
-		if err := vol.Cleanup(sc.Ctx); err != nil {
+		err := vol.Cleanup(sc.Ctx)
+		if err != nil {
 			jr.logger.Warn("cache.volume.cleanup.failed", "path", path, "err", err)
 		}
 	}
@@ -232,7 +236,8 @@ func (jr *JobRunner) dispatchJobFailureHook(sc *StepContext, effectiveKind Failu
 			sc.Logger.Debug(planErr.Error())
 		}
 
-		if abortErr := jr.processStep(sc, jr.job.OnAbort, "job/on_abort"); abortErr != nil {
+		abortErr := jr.processStep(sc, jr.job.OnAbort, "job/on_abort")
+		if abortErr != nil {
 			sc.Logger.Warn("job.on_abort.failed", "job", jr.job.Name, "error", abortErr)
 		}
 
@@ -242,13 +247,15 @@ func (jr *JobRunner) dispatchJobFailureHook(sc *StepContext, effectiveKind Failu
 			sc.Logger.Debug(planErr.Error())
 		}
 
-		if errorErr := jr.processStep(sc, jr.job.OnError, "job/on_error"); errorErr != nil {
+		errorErr := jr.processStep(sc, jr.job.OnError, "job/on_error")
+		if errorErr != nil {
 			sc.Logger.Warn("job.on_error.failed", "job", jr.job.Name, "error", errorErr)
 		}
 
 		return nil
 	case (effectiveKind == FailureKindFailed || effectiveKind == FailureKindNone) && jr.job.OnFailure != nil:
-		if failureErr := jr.processStep(sc, jr.job.OnFailure, "job/on_failure"); failureErr != nil {
+		failureErr := jr.processStep(sc, jr.job.OnFailure, "job/on_failure")
+		if failureErr != nil {
 			sc.Logger.Warn("job.on_failure.failed", "job", jr.job.Name, "error", failureErr)
 		}
 
@@ -265,7 +272,8 @@ func (jr *JobRunner) runJobHooks(sc *StepContext, planErr error) error {
 	// They must propagate without being consumed by job-level hooks.
 	if errors.Is(planErr, ErrAssertionFailed) {
 		if jr.job.Ensure != nil {
-			if ensureErr := jr.processStep(sc, jr.job.Ensure, "job/ensure"); ensureErr != nil {
+			ensureErr := jr.processStep(sc, jr.job.Ensure, "job/ensure")
+			if ensureErr != nil {
 				jr.logger.Warn("job.ensure.failed", "job", jr.job.Name, "error", ensureErr)
 			}
 		}
@@ -294,14 +302,16 @@ func (jr *JobRunner) runJobHooks(sc *StepContext, planErr error) error {
 	if jobFailed {
 		planErr = jr.dispatchJobFailureHook(sc, effectiveKind, planErr)
 	} else if jr.job.OnSuccess != nil {
-		if successErr := jr.processStep(sc, jr.job.OnSuccess, "job/on_success"); successErr != nil {
+		successErr := jr.processStep(sc, jr.job.OnSuccess, "job/on_success")
+		if successErr != nil {
 			sc.Logger.Warn("job.on_success.failed", "job", jr.job.Name, "error", successErr)
 		}
 	}
 
 	// Ensure always runs regardless of job success or failure.
 	if jr.job.Ensure != nil {
-		if ensureErr := jr.processStep(sc, jr.job.Ensure, "job/ensure"); ensureErr != nil {
+		ensureErr := jr.processStep(sc, jr.job.Ensure, "job/ensure")
+		if ensureErr != nil {
 			sc.Logger.Warn("job.ensure.failed", "job", jr.job.Name, "error", ensureErr)
 		}
 	}
@@ -315,19 +325,22 @@ func (jr *JobRunner) dispatchInnerFailureHook(sc *StepContext, step *config.Step
 		sc.Logger.Debug("try.abort.outer")
 
 		abortPrefix := pathPrefix + "/on_abort"
-		if err := jr.processStep(sc, step.OnAbort, abortPrefix); err != nil {
+		err := jr.processStep(sc, step.OnAbort, abortPrefix)
+		if err != nil {
 			sc.Logger.Warn("step.on_abort.failed", "prefix", pathPrefix, "error", err)
 		}
 	case sc.LastFailureKind == FailureKindErrored && step.OnError != nil:
 		sc.Logger.Debug("try.error.outer")
 
 		errorPrefix := pathPrefix + "/on_error"
-		if err := jr.processStep(sc, step.OnError, errorPrefix); err != nil {
+		err := jr.processStep(sc, step.OnError, errorPrefix)
+		if err != nil {
 			sc.Logger.Warn("step.on_error.failed", "prefix", pathPrefix, "error", err)
 		}
 	case step.OnFailure != nil:
 		failurePrefix := pathPrefix + "/on_failure"
-		if err := jr.processStep(sc, step.OnFailure, failurePrefix); err != nil {
+		err := jr.processStep(sc, step.OnFailure, failurePrefix)
+		if err != nil {
 			sc.Logger.Warn("step.on_failure.failed", "prefix", pathPrefix, "error", err)
 		}
 	}
@@ -343,7 +356,8 @@ func (jr *JobRunner) dispatchOuterErrorHook(sc *StepContext, step *config.Step, 
 		sc.LastFailureKind = FailureKindAborted
 
 		abortPrefix := pathPrefix + "/on_abort"
-		if err := jr.processStep(sc, step.OnAbort, abortPrefix); err != nil {
+		err := jr.processStep(sc, step.OnAbort, abortPrefix)
+		if err != nil {
 			sc.Logger.Warn("step.on_abort.failed", "prefix", pathPrefix, "error", err)
 		}
 
@@ -354,7 +368,8 @@ func (jr *JobRunner) dispatchOuterErrorHook(sc *StepContext, step *config.Step, 
 		sc.LastFailureKind = FailureKindErrored
 
 		errorPrefix := pathPrefix + "/on_error"
-		if err := jr.processStep(sc, step.OnError, errorPrefix); err != nil {
+		err := jr.processStep(sc, step.OnError, errorPrefix)
+		if err != nil {
 			sc.Logger.Warn("step.on_error.failed", "prefix", pathPrefix, "error", err)
 		}
 
@@ -364,7 +379,8 @@ func (jr *JobRunner) dispatchOuterErrorHook(sc *StepContext, step *config.Step, 
 		sc.LastFailureKind = FailureKindFailed
 
 		failurePrefix := pathPrefix + "/on_failure"
-		if err := jr.processStep(sc, step.OnFailure, failurePrefix); err != nil {
+		err := jr.processStep(sc, step.OnFailure, failurePrefix)
+		if err != nil {
 			sc.Logger.Warn("step.on_failure.failed", "prefix", pathPrefix, "error", err)
 		}
 
@@ -379,7 +395,8 @@ func (jr *JobRunner) dispatchStepHook(sc *StepContext, step *config.Step, pathPr
 
 	if stepErr == nil && !failureInside && step.OnSuccess != nil {
 		successPrefix := pathPrefix + "/on_success"
-		if successErr := jr.processStep(sc, step.OnSuccess, successPrefix); successErr != nil {
+		successErr := jr.processStep(sc, step.OnSuccess, successPrefix)
+		if successErr != nil {
 			return successErr
 		}
 
@@ -434,7 +451,8 @@ func (jr *JobRunner) processStep(sc *StepContext, step *config.Step, pathPrefix 
 	// Ensure hook always runs regardless of step success/failure.
 	if step.Ensure != nil {
 		ensurePrefix := pathPrefix + "/ensure"
-		if ensureErr := jr.processStep(sc, step.Ensure, ensurePrefix); ensureErr != nil {
+		ensureErr := jr.processStep(sc, step.Ensure, ensurePrefix)
+		if ensureErr != nil {
 			sc.Logger.Warn("step.ensure.failed", "prefix", pathPrefix, "error", ensureErr)
 		}
 	}
@@ -580,7 +598,8 @@ func (jr *JobRunner) evaluateWebhookDedup(ctx context.Context, jobKey string) bo
 	}
 
 	cutoff := time.Now().UTC().Add(-ttl)
-	if _, pruneErr := jr.storage.PruneWebhookDedup(ctx, cutoff); pruneErr != nil {
+	_, pruneErr := jr.storage.PruneWebhookDedup(ctx, cutoff)
+	if pruneErr != nil {
 		jr.logger.Warn("webhook.dedup.prune.failed", slog.String("error", pruneErr.Error()))
 	}
 
@@ -639,7 +658,8 @@ func (jr *JobRunner) runGate(ctx context.Context) error {
 
 	createdAt := time.Now()
 
-	if err := jr.storage.SaveGate(ctx, gate); err != nil {
+	err := jr.storage.SaveGate(ctx, gate)
+	if err != nil {
 		return fmt.Errorf("save gate: %w", err)
 	}
 
@@ -660,7 +680,8 @@ func (jr *JobRunner) pollGate(ctx context.Context, gateID string, createdAt time
 
 	for {
 		if !deadline.IsZero() && time.Now().After(deadline) {
-			if err := jr.storage.ResolveGate(ctx, gateID, storage.GateStatusTimedOut, "timeout"); err != nil {
+			err := jr.storage.ResolveGate(ctx, gateID, storage.GateStatusTimedOut, "timeout")
+			if err != nil {
 				jr.logger.Error("gate.resolve.timeout.failed",
 					slog.String("gate_id", gateID),
 					slog.String("job", jr.job.Name),
@@ -689,7 +710,7 @@ func (jr *JobRunner) pollGate(ctx context.Context, gateID string, createdAt time
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("wait for gate: %w", ctx.Err())
 		case <-time.After(gatePollInterval):
 		}
 	}

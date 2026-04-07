@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -73,7 +74,6 @@ func (h *SandboxHandle) ID() string {
 // Exec runs a single command inside the sandbox.
 // env and workDir apply only to this invocation; they do not persist.
 func (h *SandboxHandle) Exec(ctx context.Context, input ExecInput) (*RunResult, error) {
-
 	if input.Timeout != "" {
 		timeout, err := time.ParseDuration(input.Timeout)
 		if err != nil {
@@ -143,7 +143,12 @@ func (h *SandboxHandle) Exec(ctx context.Context, input ExecInput) (*RunResult, 
 
 // Close shuts down the sandbox container.
 func (h *SandboxHandle) Close() error {
-	return h.sandbox.Cleanup(h.runner.ctx)
+	err := h.sandbox.Cleanup(h.runner.ctx)
+	if err != nil {
+		return fmt.Errorf("cleanup: %w", err)
+	}
+
+	return nil
 }
 
 // resolveSecretEnv resolves "secret:..." references in env to actual values.
@@ -196,10 +201,7 @@ func (c *PipelineRunner) StartSandbox(input SandboxInput) (*SandboxHandle, error
 		return nil, fmt.Errorf("driver %q does not support sandbox mode", c.client.Name())
 	}
 
-	c.mu.Lock()
-	stepID := fmt.Sprintf("%d-%s-sandbox", c.callIndex, input.Name)
-	c.callIndex++
-	c.mu.Unlock()
+	stepID := strconv.FormatInt(c.callIndex.Add(1)-1, 10) + "-" + input.Name + "-sandbox"
 
 	taskID := support.DeterministicTaskID(c.namespace, c.runID, stepID, input.Name)
 

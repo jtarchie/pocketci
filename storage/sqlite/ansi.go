@@ -42,7 +42,8 @@ func StripANSI(s string) string {
 // flat text representation of any payload for FTS indexing.
 func extractTextFromJSON(data []byte) string {
 	var v any
-	if err := json.Unmarshal(data, &v); err != nil {
+	err := json.Unmarshal(data, &v)
+	if err != nil {
 		return ""
 	}
 

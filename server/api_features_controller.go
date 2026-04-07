@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/labstack/echo/v5"
@@ -18,9 +19,14 @@ func (c *APIFeaturesController) Index(ctx *echo.Context) error {
 		features[i] = string(f)
 	}
 
-	return ctx.JSON(http.StatusOK, map[string]any{
+	err := ctx.JSON(http.StatusOK, map[string]any{
 		"features": features,
 	})
+	if err != nil {
+		return fmt.Errorf("features response: %w", err)
+	}
+
+	return nil
 }
 
 // RegisterRoutes registers all feature API routes on the given group.

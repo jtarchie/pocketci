@@ -66,7 +66,8 @@ type guestSyncArgs struct {
 func NewQGAClient(network, address string) (*QGAClient, error) {
 	client := &QGAClient{network: network, address: address}
 
-	if err := client.connect(); err != nil {
+	err := client.connect()
+	if err != nil {
 		return nil, err
 	}
 
@@ -87,10 +88,11 @@ func (c *QGAClient) connect() error {
 
 	c.conn = conn
 
-	if err := c.sync(); err != nil {
+	syncErr := c.sync()
+	if syncErr != nil {
 		_ = c.conn.Close()
 		c.conn = nil
-		return fmt.Errorf("QGA sync handshake failed: %w", err)
+		return fmt.Errorf("QGA sync handshake failed: %w", syncErr)
 	}
 
 	return nil
@@ -120,16 +122,19 @@ func (c *QGAClient) sync() error {
 	msg := append([]byte{0xFF}, data...)
 	msg = append(msg, '\n')
 
-	if err := c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+	err = c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if err != nil {
 		return fmt.Errorf("failed to set write deadline: %w", err)
 	}
 
-	if _, err := c.conn.Write(msg); err != nil {
+	_, err = c.conn.Write(msg)
+	if err != nil {
 		return fmt.Errorf("failed to write sync request: %w", err)
 	}
 
 	// Read response: skip bytes until we find 0xFF, then read JSON
-	if err := c.conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+	err = c.conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	if err != nil {
 		return fmt.Errorf("failed to set read deadline: %w", err)
 	}
 
@@ -164,7 +169,8 @@ func (c *QGAClient) sync() error {
 	}
 
 	var resp qgaResponse
-	if err := json.Unmarshal(respBuf, &resp); err != nil {
+	err = json.Unmarshal(respBuf, &resp)
+	if err != nil {
 		return fmt.Errorf("failed to unmarshal sync response: %w", err)
 	}
 
@@ -173,7 +179,8 @@ func (c *QGAClient) sync() error {
 	}
 
 	var returnedID int64
-	if err := json.Unmarshal(resp.Return, &returnedID); err != nil {
+	err = json.Unmarshal(resp.Return, &returnedID)
+	if err != nil {
 		return fmt.Errorf("failed to unmarshal sync ID: %w", err)
 	}
 
@@ -193,15 +200,18 @@ func (c *QGAClient) runOnce(req qgaRequest) (json.RawMessage, error) {
 
 	data = append(data, '\n')
 
-	if err := c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+	err = c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if err != nil {
 		return nil, fmt.Errorf("failed to set write deadline: %w", err)
 	}
 
-	if _, err := c.conn.Write(data); err != nil {
+	_, err = c.conn.Write(data)
+	if err != nil {
 		return nil, fmt.Errorf("failed to write request: %w", err)
 	}
 
-	if err := c.conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+	err = c.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	if err != nil {
 		return nil, fmt.Errorf("failed to set read deadline: %w", err)
 	}
 
@@ -233,7 +243,8 @@ func (c *QGAClient) runOnce(req qgaRequest) (json.RawMessage, error) {
 	}
 
 	var resp qgaResponse
-	if err := json.Unmarshal(respBuf, &resp); err != nil {
+	err = json.Unmarshal(respBuf, &resp)
+	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
@@ -258,7 +269,8 @@ func (c *QGAClient) run(req qgaRequest) (json.RawMessage, error) {
 	time.Sleep(2 * time.Second)
 
 	// Try reconnecting once and retry
-	if reconnErr := c.reconnect(); reconnErr != nil {
+	reconnErr := c.reconnect()
+	if reconnErr != nil {
 		return nil, fmt.Errorf("original error: %w; reconnect to %s/%s failed: %w", err, c.network, c.address, reconnErr)
 	}
 
@@ -294,8 +306,9 @@ func (c *QGAClient) Exec(path string, args, env []string, stdinData []byte) (int
 	}
 
 	var result guestExecResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return 0, fmt.Errorf("failed to unmarshal exec result: %w", err)
+	unmarshalErr := json.Unmarshal(raw, &result)
+	if unmarshalErr != nil {
+		return 0, fmt.Errorf("failed to unmarshal exec result: %w", unmarshalErr)
 	}
 
 	return result.PID, nil
@@ -312,8 +325,9 @@ func (c *QGAClient) ExecStatus(pid int) (*GuestExecStatusResult, error) {
 	}
 
 	var result GuestExecStatusResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal exec status: %w", err)
+	unmarshalErr2 := json.Unmarshal(raw, &result)
+	if unmarshalErr2 != nil {
+		return nil, fmt.Errorf("failed to unmarshal exec status: %w", unmarshalErr2)
 	}
 
 	return &result, nil
@@ -322,7 +336,10 @@ func (c *QGAClient) ExecStatus(pid int) (*GuestExecStatusResult, error) {
 // Close closes the QGA connection.
 func (c *QGAClient) Close() error {
 	if c.conn != nil {
-		return c.conn.Close()
+		err := c.conn.Close()
+		if err != nil {
+			return fmt.Errorf("close: %w", err)
+		}
 	}
 
 	return nil

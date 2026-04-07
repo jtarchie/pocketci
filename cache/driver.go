@@ -53,7 +53,7 @@ func (d *CachingDriver) CreateVolume(ctx context.Context, name string, size int)
 	// Create the underlying volume
 	vol, err := d.inner.CreateVolume(ctx, name, size)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create volume: %w", err)
 	}
 
 	// Check if driver supports volume data access
@@ -81,7 +81,8 @@ func (d *CachingDriver) CreateVolume(ctx context.Context, name string, size int)
 	)
 
 	// Eagerly restore from cache
-	if err := cachingVol.RestoreFromCache(ctx); err != nil {
+	err = cachingVol.RestoreFromCache(ctx)
+	if err != nil {
 		d.logger.Warn("volume.restore.failed",
 			"volume", name,
 			"error", err,
@@ -94,7 +95,12 @@ func (d *CachingDriver) CreateVolume(ctx context.Context, name string, size int)
 
 // Close implements orchestra.Driver.
 func (d *CachingDriver) Close() error {
-	return d.inner.Close()
+	err := d.inner.Close()
+	if err != nil {
+		return fmt.Errorf("close: %w", err)
+	}
+
+	return nil
 }
 
 // Name implements orchestra.Driver.
@@ -104,12 +110,22 @@ func (d *CachingDriver) Name() string {
 
 // RunContainer implements orchestra.Driver.
 func (d *CachingDriver) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.Container, error) {
-	return d.inner.RunContainer(ctx, task)
+	container, err := d.inner.RunContainer(ctx, task)
+	if err != nil {
+		return nil, fmt.Errorf("run container: %w", err)
+	}
+
+	return container, nil
 }
 
 // GetContainer implements orchestra.Driver.
 func (d *CachingDriver) GetContainer(ctx context.Context, containerID string) (orchestra.Container, error) {
-	return d.inner.GetContainer(ctx, containerID)
+	container, err := d.inner.GetContainer(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("get container: %w", err)
+	}
+
+	return container, nil
 }
 
 // CopyToVolume implements VolumeDataAccessor by delegating to the inner driver.
@@ -120,7 +136,12 @@ func (d *CachingDriver) CopyToVolume(ctx context.Context, volumeName string, rea
 		return fmt.Errorf("inner driver %q does not support volume data access", d.inner.Name())
 	}
 
-	return accessor.CopyToVolume(ctx, volumeName, reader)
+	err := accessor.CopyToVolume(ctx, volumeName, reader)
+	if err != nil {
+		return fmt.Errorf("copy to volume: %w", err)
+	}
+
+	return nil
 }
 
 // CopyFromVolume implements VolumeDataAccessor by delegating to the inner driver.
@@ -130,7 +151,12 @@ func (d *CachingDriver) CopyFromVolume(ctx context.Context, volumeName string) (
 		return nil, fmt.Errorf("inner driver %q does not support volume data access", d.inner.Name())
 	}
 
-	return accessor.CopyFromVolume(ctx, volumeName)
+	rc, err := accessor.CopyFromVolume(ctx, volumeName)
+	if err != nil {
+		return nil, fmt.Errorf("copy from volume: %w", err)
+	}
+
+	return rc, nil
 }
 
 // ReadFilesFromVolume implements VolumeDataAccessor by delegating to the inner driver.
@@ -140,7 +166,12 @@ func (d *CachingDriver) ReadFilesFromVolume(ctx context.Context, volumeName stri
 		return nil, fmt.Errorf("inner driver %q does not support volume data access", d.inner.Name())
 	}
 
-	return accessor.ReadFilesFromVolume(ctx, volumeName, filePaths...)
+	rc, err := accessor.ReadFilesFromVolume(ctx, volumeName, filePaths...)
+	if err != nil {
+		return nil, fmt.Errorf("read files from volume: %w", err)
+	}
+
+	return rc, nil
 }
 
 var _ orchestra.Driver = (*CachingDriver)(nil)

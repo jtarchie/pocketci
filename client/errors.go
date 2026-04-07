@@ -58,6 +58,25 @@ func (e *RateLimitError) Error() string {
 	return "max concurrent executions reached"
 }
 
+// NotFoundError is returned when the server responds with 404 Not Found.
+type NotFoundError struct {
+	Resource string
+	ID       string
+}
+
+func (e *NotFoundError) Error() string {
+	return fmt.Sprintf("%s %q not found", e.Resource, e.ID)
+}
+
+// GateAlreadyResolvedError is returned when a gate has already been approved or rejected.
+type GateAlreadyResolvedError struct {
+	GateID string
+}
+
+func (e *GateAlreadyResolvedError) Error() string {
+	return fmt.Sprintf("gate %q is already resolved", e.GateID)
+}
+
 // checkAuthStatus returns a typed error for 401/403 status codes, nil otherwise.
 func (c *Client) checkAuthStatus(statusCode int) error {
 	switch statusCode {

@@ -37,7 +37,7 @@ func setPipelinePaused(logger *slog.Logger, name string, cfg ServerConfig, pause
 
 	matched, err := apiClient.FindPipelineByNameOrID(name)
 	if err != nil {
-		return err
+		return fmt.Errorf("find pipeline: %w", err)
 	}
 
 	logger.Info("pipeline."+action, "id", matched.ID, "name", matched.Name)

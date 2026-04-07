@@ -50,11 +50,16 @@ func (p *provider) Event(eventType string, data map[string]any) error {
 		props.Set(k, v)
 	}
 
-	return p.client.Enqueue(ph.Capture{
+	err := p.client.Enqueue(ph.Capture{
 		DistinctId: "pocketci-server",
 		Event:      eventType,
 		Properties: props,
 	})
+	if err != nil {
+		return fmt.Errorf("enqueue: %w", err)
+	}
+
+	return nil
 }
 
 func (p *provider) SlogHandler(next slog.Handler) slog.Handler {
@@ -67,5 +72,10 @@ func (p *provider) SlogHandler(next slog.Handler) slog.Handler {
 }
 
 func (p *provider) Close() error {
-	return p.client.Close()
+	err := p.client.Close()
+	if err != nil {
+		return fmt.Errorf("close: %w", err)
+	}
+
+	return nil
 }

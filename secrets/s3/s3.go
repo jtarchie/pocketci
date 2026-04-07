@@ -77,7 +77,7 @@ func New(cfg Config, logger *slog.Logger) (secrets.Manager, error) {
 
 	client, err := s3config.NewClient(ctx, &cfg.Config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create s3 client: %w", err)
 	}
 
 	// Build a temporary S3 shell (no encryptor yet) to load/init KDF params.
@@ -107,7 +107,8 @@ func New(cfg Config, logger *slog.Logger) (secrets.Manager, error) {
 	// Probe SSE: when encrypt= is configured, upload a tiny sentinel object and
 	// verify that the S3 provider accepts the encryption headers.
 	if cfg.EncryptMode != "" {
-		if err := mgr.probeSSE(ctx); err != nil {
+		err := mgr.probeSSE(ctx)
+		if err != nil {
 			return nil, fmt.Errorf("s3 secrets SSE probe failed — provider does not support encrypt=%q: %w", cfg.EncryptMode, err)
 		}
 	}
@@ -144,7 +145,8 @@ func loadOrInitKDFParamsS3(ctx context.Context, s *S3) (secrets.KDFParams, error
 	if err == nil {
 		var rec kdfParamsRecord
 
-		if jsonErr := json.Unmarshal(data, &rec); jsonErr != nil {
+		jsonErr := json.Unmarshal(data, &rec)
+		if jsonErr != nil {
 			return secrets.KDFParams{}, fmt.Errorf("could not unmarshal KDF params: %w", jsonErr)
 		}
 
@@ -178,7 +180,8 @@ func loadOrInitKDFParamsS3(ctx context.Context, s *S3) (secrets.KDFParams, error
 		return secrets.KDFParams{}, fmt.Errorf("could not marshal KDF params: %w", marshalErr)
 	}
 
-	if putErr := s.PutBytes(ctx, objKey, payload, "application/json"); putErr != nil {
+	putErr := s.PutBytes(ctx, objKey, payload, "application/json")
+	if putErr != nil {
 		return secrets.KDFParams{}, fmt.Errorf("could not upload KDF params: %w", putErr)
 	}
 
@@ -243,7 +246,12 @@ func (s *S3) upload(ctx context.Context, key string, rec secretRecord) error {
 		return fmt.Errorf("could not marshal secret record: %w", err)
 	}
 
-	return s.PutBytes(ctx, key, data, "application/json")
+	err = s.PutBytes(ctx, key, data, "application/json")
+	if err != nil {
+		return fmt.Errorf("upload secret: %w", err)
+	}
+
+	return nil
 }
 
 // download retrieves and deserialises a secretRecord from S3.
@@ -259,7 +267,8 @@ func (s *S3) download(ctx context.Context, key string) (*secretRecord, error) {
 
 	var rec secretRecord
 
-	if err := json.Unmarshal(data, &rec); err != nil {
+	err = json.Unmarshal(data, &rec)
+	if err != nil {
 		return nil, fmt.Errorf("could not unmarshal secret record: %w", err)
 	}
 
@@ -313,7 +322,8 @@ func (s *S3) Set(ctx context.Context, scope string, key string, value string) er
 		UpdatedAt:      time.Now().UTC().Format(time.RFC3339),
 	}
 
-	if err := s.upload(ctx, objKey, rec); err != nil {
+	err = s.upload(ctx, objKey, rec)
+	if err != nil {
 		return fmt.Errorf("could not store secret: %w", err)
 	}
 
@@ -327,11 +337,13 @@ func (s *S3) Delete(ctx context.Context, scope string, key string) error {
 	objKey := s.objectKey(scope, key)
 
 	// Verify it exists before attempting deletion to return ErrNotFound correctly.
-	if _, err := s.download(ctx, objKey); err != nil {
-		return err
+	_, checkErr := s.download(ctx, objKey)
+	if checkErr != nil {
+		return checkErr
 	}
 
-	if err := s.DeleteKey(ctx, objKey); err != nil {
+	err := s.DeleteKey(ctx, objKey)
+	if err != nil {
 		return fmt.Errorf("could not delete secret: %w", err)
 	}
 
@@ -377,7 +389,8 @@ func (s *S3) DeleteByScope(ctx context.Context, scope string) error {
 	}
 
 	for _, k := range keys {
-		if err := s.DeleteKey(ctx, k); err != nil {
+		err := s.DeleteKey(ctx, k)
+		if err != nil {
 			return fmt.Errorf("could not delete secret %q: %w", k, err)
 		}
 	}

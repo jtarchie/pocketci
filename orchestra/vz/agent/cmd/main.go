@@ -84,8 +84,9 @@ func handleConnection(conn net.Conn) {
 
 	for {
 		var req request
-		if err := decoder.Decode(&req); err != nil {
-			if err == io.EOF {
+		err := decoder.Decode(&req)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
 				return
 			}
 
@@ -107,7 +108,8 @@ func handleConnection(conn net.Conn) {
 			resp = response{OK: false, Error: "unknown request type: " + req.Type}
 		}
 
-		if err := encoder.Encode(resp); err != nil {
+		err = encoder.Encode(resp)
+		if err != nil {
 			log.Printf("encode error: %v", err)
 
 			return
@@ -136,7 +138,8 @@ func handleExec(req request) response {
 	proc := &processResult{}
 	processes.Store(pid, proc)
 
-	if err := cmd.Start(); err != nil {
+	err := cmd.Start()
+	if err != nil {
 		proc.mu.Lock()
 		proc.exited = true
 		proc.exitCode = 1
@@ -149,7 +152,8 @@ func handleExec(req request) response {
 	go func() {
 		exitCode := 0
 
-		if err := cmd.Wait(); err != nil {
+		err := cmd.Wait()
+		if err != nil {
 			var exitErr *exec.ExitError
 			if errors.As(err, &exitErr) {
 				exitCode = exitErr.ExitCode()

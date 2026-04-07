@@ -313,7 +313,8 @@ func buildAgentResult(
 
 	outputMountPath := ResolveOutputMountPath(config)
 	if outputMountPath != "" {
-		if err := writeResultJSON(ctx, sandbox, outputMountPath, status, finalText); err != nil {
+		err := writeResultJSON(ctx, sandbox, outputMountPath, status, finalText)
+		if err != nil {
 			return nil, err
 		}
 	}

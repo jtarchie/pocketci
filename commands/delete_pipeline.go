@@ -21,7 +21,7 @@ func (c *DeletePipeline) Run(logger *slog.Logger) error {
 
 	result, err := apiClient.ListPipelines()
 	if err != nil {
-		return err
+		return fmt.Errorf("list pipelines: %w", err)
 	}
 
 	matched := c.filterMatches(result.Items)
@@ -32,7 +32,8 @@ func (c *DeletePipeline) Run(logger *slog.Logger) error {
 	for _, p := range matched {
 		logger.Info("pipeline.delete", "id", p.ID, "name", p.Name)
 
-		if err := apiClient.DeletePipeline(p.ID); err != nil {
+		err := apiClient.DeletePipeline(p.ID)
+		if err != nil {
 			return fmt.Errorf("could not delete pipeline %q (%s): %w", p.Name, p.ID, err)
 		}
 

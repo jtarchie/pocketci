@@ -2,6 +2,7 @@ package hetzner_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -245,7 +246,7 @@ func testHetznerMaxWorkers(t *testing.T, token, testLabel string) {
 	run := func(label string) error {
 		client, err := hetzner.New(context.Background(), cfg, slog.Default())
 		if err != nil {
-			return err
+			return fmt.Errorf("new client: %w", err)
 		}
 		defer func() { _ = client.Close() }()
 
@@ -258,7 +259,7 @@ func testHetznerMaxWorkers(t *testing.T, token, testLabel string) {
 			},
 		)
 		if err != nil {
-			return err
+			return fmt.Errorf("run container: %w", err)
 		}
 
 		mu.Lock()

@@ -76,7 +76,8 @@ func ResolveSecretsInMap(ctx context.Context, mgr secrets.Manager, pipelineID st
 				}
 			}
 		case map[string]any:
-			if err := ResolveSecretsInMap(ctx, mgr, pipelineID, val, resolved); err != nil {
+			err := ResolveSecretsInMap(ctx, mgr, pipelineID, val, resolved)
+			if err != nil {
 				return fmt.Errorf("key %q: %w", k, err)
 			}
 		}

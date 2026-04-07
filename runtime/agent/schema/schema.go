@@ -114,7 +114,8 @@ func expandTypeString(s string) *genai.Schema {
 // Returns nil if valid, or an error describing the first validation failure.
 func ValidateJSON(jsonStr string, s *genai.Schema) error {
 	var parsed interface{}
-	if err := json.Unmarshal([]byte(jsonStr), &parsed); err != nil {
+	err := json.Unmarshal([]byte(jsonStr), &parsed)
+	if err != nil {
 		return fmt.Errorf("invalid JSON: %w", err)
 	}
 
@@ -139,9 +140,11 @@ func validateValue(value interface{}, s *genai.Schema, path string) error {
 		return validateNumber(value, path)
 	case genai.TypeBoolean:
 		return validateBoolean(value, path)
-	default:
+	case genai.TypeUnspecified, genai.TypeNULL:
 		return nil
 	}
+
+	return nil
 }
 
 func fieldPath(parent, key string) string {
@@ -170,7 +173,8 @@ func validateObject(value interface{}, s *genai.Schema, path string) error {
 			continue
 		}
 
-		if err := validateValue(val, propSchema, fieldPath(path, key)); err != nil {
+		err := validateValue(val, propSchema, fieldPath(path, key))
+		if err != nil {
 			return err
 		}
 	}
@@ -190,7 +194,8 @@ func validateArray(value interface{}, s *genai.Schema, path string) error {
 
 	for i, elem := range arr {
 		elemPath := fmt.Sprintf("%s[%d]", path, i)
-		if err := validateValue(elem, s.Items, elemPath); err != nil {
+		err := validateValue(elem, s.Items, elemPath)
+		if err != nil {
 			return err
 		}
 	}

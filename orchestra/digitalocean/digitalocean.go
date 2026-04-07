@@ -198,7 +198,7 @@ func (d *DigitalOcean) waitForWorkerSlot(ctx context.Context) (bool, error) {
 
 		select {
 		case <-ctx.Done():
-			return false, ctx.Err()
+			return false, fmt.Errorf("wait for worker: %w", ctx.Err())
 		case <-time.After(d.pollInterval):
 		}
 	}
@@ -266,11 +266,13 @@ func (d *DigitalOcean) claimIdleDroplet(ctx context.Context) (bool, error) {
 			return false, fmt.Errorf("failed to get claimed droplet IP: %w", err)
 		}
 
-		if err := d.waitForSSH(ctx, publicIP); err != nil {
+		err = d.waitForSSH(ctx, publicIP)
+		if err != nil {
 			return false, fmt.Errorf("failed to connect SSH to claimed droplet: %w", err)
 		}
 
-		if err := d.waitForDocker(ctx); err != nil {
+		err = d.waitForDocker(ctx)
+		if err != nil {
 			return false, fmt.Errorf("failed to connect Docker to claimed droplet: %w", err)
 		}
 
@@ -290,13 +292,15 @@ func (d *DigitalOcean) claimIdleDroplet(ctx context.Context) (bool, error) {
 // parkDroplet parks the machine by transitioning it busy→idle without deleting it.
 func (d *DigitalOcean) parkDroplet(ctx context.Context) error {
 	if d.dockerDriver != nil {
-		if err := d.dockerDriver.Close(); err != nil {
+		err := d.dockerDriver.Close()
+		if err != nil {
 			d.logger.Warn("digitalocean.docker.close.error", "err", err)
 		}
 	}
 
 	if d.sshClient != nil {
-		if err := d.sshClient.Close(); err != nil {
+		err := d.sshClient.Close()
+		if err != nil {
 			d.logger.Warn("digitalocean.ssh.close.error", "err", err)
 		}
 	}
@@ -380,12 +384,14 @@ func (d *DigitalOcean) ensureDroplet(ctx context.Context, containerLimits orches
 	d.logger.Info("digitalocean.droplet.ready", "ip", publicIP)
 
 	// Wait for SSH to be available (also stores d.sshClient)
-	if err := d.waitForSSH(ctx, publicIP); err != nil {
+	err = d.waitForSSH(ctx, publicIP)
+	if err != nil {
 		return fmt.Errorf("failed to wait for SSH: %w", err)
 	}
 
 	// Wait for Docker to be ready (uses the SSH client established in waitForSSH)
-	if err := d.waitForDocker(ctx); err != nil {
+	err = d.waitForDocker(ctx)
+	if err != nil {
 		return fmt.Errorf("failed to wait for Docker: %w", err)
 	}
 
@@ -520,7 +526,8 @@ func (d *DigitalOcean) ensureSSHKey(ctx context.Context) (int, string, error) {
 
 			// Try to find the local key file
 			sshKeyPath := filepath.Join(os.TempDir(), "pocketci-do-"+d.namespace)
-			if _, err := os.Stat(sshKeyPath); err == nil {
+			_, statErr := os.Stat(sshKeyPath)
+			if statErr == nil {
 				return key.ID, sshKeyPath, nil
 			}
 
@@ -547,7 +554,8 @@ func (d *DigitalOcean) ensureSSHKey(ctx context.Context) (int, string, error) {
 		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
 	})
 
-	if err := os.WriteFile(sshKeyPath, privateKeyPEM, 0o600); err != nil {
+	err = os.WriteFile(sshKeyPath, privateKeyPEM, 0o600)
+	if err != nil {
 		return 0, "", fmt.Errorf("failed to write SSH private key: %w", err)
 	}
 
@@ -585,7 +593,7 @@ func (d *DigitalOcean) waitForDroplet(ctx context.Context, dropletID int) (*godo
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, fmt.Errorf("wait for droplet active: %w", ctx.Err())
 		case <-timeout:
 			return nil, errors.New("timeout waiting for droplet to become active")
 		case <-ticker.C:
@@ -644,7 +652,7 @@ func (d *DigitalOcean) waitForSSH(ctx context.Context, ip string) error {
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("wait for ssh: %w", ctx.Err())
 		default:
 		}
 
@@ -688,7 +696,7 @@ func (d *DigitalOcean) waitForDocker(ctx context.Context) error {
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("wait for docker: %w", ctx.Err())
 		default:
 		}
 
@@ -718,11 +726,17 @@ func (d *DigitalOcean) waitForDocker(ctx context.Context) error {
 
 // RunContainer creates the droplet if needed and delegates to the docker driver.
 func (d *DigitalOcean) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.Container, error) {
-	if err := d.ensureDroplet(ctx, task.ContainerLimits); err != nil {
+	err := d.ensureDroplet(ctx, task.ContainerLimits)
+	if err != nil {
 		return nil, fmt.Errorf("failed to ensure droplet: %w", err)
 	}
 
-	return d.dockerDriver.RunContainer(ctx, task)
+	container, err := d.dockerDriver.RunContainer(ctx, task)
+	if err != nil {
+		return nil, fmt.Errorf("run container: %w", err)
+	}
+
+	return container, nil
 }
 
 // GetContainer attempts to find and return an existing container by its ID.
@@ -731,13 +745,20 @@ func (d *DigitalOcean) GetContainer(ctx context.Context, containerID string) (or
 	if d.dockerDriver == nil {
 		return nil, orchestra.ErrContainerNotFound
 	}
-	return d.dockerDriver.GetContainer(ctx, containerID)
+
+	container, err := d.dockerDriver.GetContainer(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("get container: %w", err)
+	}
+
+	return container, nil
 }
 
 // CreateVolume creates a volume on the droplet's docker instance.
 // The size parameter is used when creating Digital Ocean block storage volumes.
 func (d *DigitalOcean) CreateVolume(ctx context.Context, name string, size int) (orchestra.Volume, error) {
-	if err := d.ensureDroplet(ctx, orchestra.ContainerLimits{}); err != nil {
+	err := d.ensureDroplet(ctx, orchestra.ContainerLimits{})
+	if err != nil {
 		return nil, fmt.Errorf("failed to ensure droplet: %w", err)
 	}
 
@@ -751,7 +772,12 @@ func (d *DigitalOcean) CreateVolume(ctx context.Context, name string, size int) 
 
 	// For now, delegate to docker driver's volume creation
 	// In the future, we could create DO block storage volumes for larger needs
-	return d.dockerDriver.CreateVolume(ctx, name, size)
+	volume, err := d.dockerDriver.CreateVolume(ctx, name, size)
+	if err != nil {
+		return nil, fmt.Errorf("create volume: %w", err)
+	}
+
+	return volume, nil
 }
 
 // Close either parks the machine (if reuse_worker=true) or deletes it and cleans up resources.
@@ -765,14 +791,16 @@ func (d *DigitalOcean) Close() error {
 
 	// Close docker driver first
 	if d.dockerDriver != nil {
-		if err := d.dockerDriver.Close(); err != nil {
+		err := d.dockerDriver.Close()
+		if err != nil {
 			d.logger.Warn("digitalocean.docker.close.error", "err", err)
 		}
 	}
 
 	// Close SSH client
 	if d.sshClient != nil {
-		if err := d.sshClient.Close(); err != nil {
+		err := d.sshClient.Close()
+		if err != nil {
 			d.logger.Warn("digitalocean.ssh.close.error", "err", err)
 		}
 	}
@@ -801,7 +829,8 @@ func (d *DigitalOcean) Close() error {
 
 	// Delete local SSH key file
 	if d.sshKeyPath != "" {
-		if err := os.Remove(d.sshKeyPath); err != nil && !os.IsNotExist(err) {
+		err := os.Remove(d.sshKeyPath)
+		if err != nil && !os.IsNotExist(err) {
 			d.logger.Warn("digitalocean.ssh_key.delete.local_failed", "err", err)
 		}
 	}

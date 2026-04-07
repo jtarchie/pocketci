@@ -74,7 +74,8 @@ func (r *Runtime) Run(call goja.FunctionCall) goja.Value {
 	inputObj := call.Arguments[0].ToObject(r.jsVM)
 
 	var input runner.RunInput
-	if err := r.jsVM.ExportTo(inputObj, &input); err != nil {
+	err := r.jsVM.ExportTo(inputObj, &input)
+	if err != nil {
 		return r.rejectImmediate(fmt.Errorf("invalid input: %w", err))
 	}
 
@@ -102,7 +103,8 @@ func (r *Runtime) StartSandbox(call goja.FunctionCall) goja.Value {
 	inputObj := call.Arguments[0].ToObject(r.jsVM)
 
 	var input runner.SandboxInput
-	if err := r.jsVM.ExportTo(inputObj, &input); err != nil {
+	err := r.jsVM.ExportTo(inputObj, &input)
+	if err != nil {
 		return r.rejectImmediate(fmt.Errorf("invalid startSandbox input: %w", err))
 	}
 
@@ -134,7 +136,8 @@ func (r *Runtime) sandboxExecFunc(handle *runner.SandboxHandle) func(goja.Functi
 		execInputObj := call.Arguments[0].ToObject(r.jsVM)
 
 		var execInput runner.ExecInput
-		if err := r.jsVM.ExportTo(execInputObj, &execInput); err != nil {
+		err := r.jsVM.ExportTo(execInputObj, &execInput)
+		if err != nil {
 			return r.rejectImmediate(fmt.Errorf("invalid exec input: %w", err))
 		}
 

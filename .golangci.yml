@@ -10,6 +10,15 @@ linters:
     - unused
     # custom
     - tagalign
+    - wrapcheck
+    - sqlclosecheck
+    - exhaustive
+    - whitespace
+    - noinlineerr
+    - importas
+    # nil
+    - nilnil
+    - nilnesserr
     # Correctness
     - errorlint # %v vs %w, errors.Is/As instead of == / type assertions
     - musttag # JSON tags required on marshaled structs (Goja VM requirement)

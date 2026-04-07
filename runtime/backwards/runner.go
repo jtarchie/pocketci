@@ -108,7 +108,8 @@ func validateNoCycles(cfg *config.Config) error {
 			case gray:
 				return fmt.Errorf("circular passed constraint: %s -> %s", name, dep)
 			case white:
-				if err := visit(dep); err != nil {
+				err := visit(dep)
+				if err != nil {
 					return err
 				}
 			}
@@ -121,7 +122,8 @@ func validateNoCycles(cfg *config.Config) error {
 
 	for _, job := range cfg.Jobs {
 		if color[job.Name] == white {
-			if err := visit(job.Name); err != nil {
+			err := visit(job.Name)
+			if err != nil {
 				return err
 			}
 		}
@@ -134,7 +136,8 @@ func validateNoCycles(cfg *config.Config) error {
 // It checks resource types, job name uniqueness, resource references,
 // passed constraint validity, and circular dependency detection.
 func ValidateConfig(cfg *config.Config) error {
-	if err := validateResourceTypes(cfg); err != nil {
+	err := validateResourceTypes(cfg)
+	if err != nil {
 		return err
 	}
 
@@ -143,11 +146,13 @@ func ValidateConfig(cfg *config.Config) error {
 		return err
 	}
 
-	if err := validateResourceRefs(cfg); err != nil {
+	err = validateResourceRefs(cfg)
+	if err != nil {
 		return err
 	}
 
-	if err := validatePassedConstraints(cfg, jobNames); err != nil {
+	err = validatePassedConstraints(cfg, jobNames)
+	if err != nil {
 		return err
 	}
 
@@ -178,6 +183,7 @@ type Runner struct {
 	dedupTTL       time.Duration
 	secretsManager secrets.Manager
 	agentBaseURLs  map[string]string
+	dependents     map[string][]*config.Job // reverse index: jobName → jobs that depend on it
 }
 
 // New creates a Runner for the given pipeline config.
@@ -206,6 +212,24 @@ func New(
 	}
 }
 
+// buildDependentsIndex builds a reverse lookup from job name to jobs that depend on it
+// via passed constraints. Called once at the start of Run() to avoid O(N²) scanning.
+func (r *Runner) buildDependentsIndex() {
+	r.dependents = make(map[string][]*config.Job, len(r.config.Jobs))
+
+	for i := range r.config.Jobs {
+		job := &r.config.Jobs[i]
+
+		for _, step := range job.Plan {
+			if step.Get != "" {
+				for _, dep := range step.GetConfig.Passed {
+					r.dependents[dep] = append(r.dependents[dep], job)
+				}
+			}
+		}
+	}
+}
+
 // Run executes all jobs respecting passed constraints and validates pipeline-level assertions.
 func (r *Runner) Run(ctx context.Context) error {
 	jobResults := make(map[string]bool)
@@ -213,6 +237,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 	r.initNotifier()
 	r.prewriteJobStates(ctx)
+	r.buildDependentsIndex()
 
 	var runJob func(job *config.Job) error
 	runJob = func(job *config.Job) error {
@@ -234,7 +259,8 @@ func (r *Runner) Run(ctx context.Context) error {
 
 		for _, depJob := range r.findDependentJobs(job.Name) {
 			if r.canJobRun(ctx, depJob, jobResults) {
-				if err := runJob(depJob); err != nil {
+				err := runJob(depJob)
+				if err != nil {
 					return err
 				}
 			}
@@ -244,7 +270,8 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 
 	if len(r.targetJobs) > 0 {
-		if err := r.runTargetedJobs(ctx, runJob, jobResults); err != nil {
+		err := r.runTargetedJobs(ctx, runJob, jobResults)
+		if err != nil {
 			return err
 		}
 	} else {
@@ -252,14 +279,16 @@ func (r *Runner) Run(ctx context.Context) error {
 			job := &r.config.Jobs[i]
 
 			if r.canJobRun(ctx, job, jobResults) {
-				if err := runJob(job); err != nil {
+				err := runJob(job)
+				if err != nil {
 					return err
 				}
 			}
 		}
 	}
 
-	if err := r.validateAssertions(executedJobs); err != nil {
+	err := r.validateAssertions(executedJobs)
+	if err != nil {
 		return err
 	}
 
@@ -299,28 +328,9 @@ func (r *Runner) isJobPassedSatisfied(ctx context.Context, depJobName string, jo
 }
 
 // findDependentJobs returns jobs that have a passed constraint referencing jobName.
+// Uses the pre-built dependents index for O(1) lookup instead of O(N×S×P) scan.
 func (r *Runner) findDependentJobs(jobName string) []*config.Job {
-	var result []*config.Job
-
-	for i := range r.config.Jobs {
-		job := &r.config.Jobs[i]
-
-		for _, step := range job.Plan {
-			if step.Get != "" {
-				for _, dep := range step.GetConfig.Passed {
-					if dep == jobName {
-						result = append(result, job)
-
-						goto nextJob
-					}
-				}
-			}
-		}
-
-	nextJob:
-	}
-
-	return result
+	return r.dependents[jobName]
 }
 
 // extractJobDependencies returns a deduplicated list of job names referenced
@@ -405,7 +415,8 @@ func (r *Runner) prewriteJobStates(ctx context.Context) {
 
 		jobKey := fmt.Sprintf("/pipeline/%s/jobs/%s", r.runID, job.Name)
 
-		if err := r.storage.Set(ctx, jobKey, payload); err != nil {
+		err := r.storage.Set(ctx, jobKey, payload)
+		if err != nil {
 			r.logger.Warn("prewrite.job.failed",
 				slog.String("job", job.Name),
 				slog.Any("error", err),
@@ -435,10 +446,11 @@ func (r *Runner) runTargetedJobs(
 		if !r.canJobRun(ctx, job, jobResults) {
 			jobKey := fmt.Sprintf("/pipeline/%s/jobs/%s", r.runID, job.Name)
 
-			if err := r.storage.Set(ctx, jobKey, storage.Payload{
+			err := r.storage.Set(ctx, jobKey, storage.Payload{
 				"status": "skipped",
 				"reason": "passed constraints not satisfied",
-			}); err != nil {
+			})
+			if err != nil {
 				r.logger.Warn("targeted.skip.failed",
 					slog.String("job", job.Name),
 					slog.Any("error", err),
@@ -448,7 +460,8 @@ func (r *Runner) runTargetedJobs(
 			continue
 		}
 
-		if err := runJob(job); err != nil {
+		err := runJob(job)
+		if err != nil {
 			return err
 		}
 	}
@@ -460,9 +473,10 @@ func (r *Runner) runTargetedJobs(
 		if _, executed := jobResults[job.Name]; !executed {
 			jobKey := fmt.Sprintf("/pipeline/%s/jobs/%s", r.runID, job.Name)
 
-			if err := r.storage.Set(ctx, jobKey, storage.Payload{
+			err := r.storage.Set(ctx, jobKey, storage.Payload{
 				"status": "skipped",
-			}); err != nil {
+			})
+			if err != nil {
 				r.logger.Warn("targeted.mark-skipped.failed",
 					slog.String("job", job.Name),
 					slog.Any("error", err),

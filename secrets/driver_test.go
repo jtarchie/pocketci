@@ -45,7 +45,8 @@ func buildDriverFactories(t *testing.T) []driverFactory {
 		},
 	}
 
-	if _, err := exec.LookPath("minio"); err == nil {
+	_, minioErr := exec.LookPath("minio")
+	if minioErr == nil {
 		server := testhelpers.StartMinIO(t)
 		t.Cleanup(server.Stop)
 
@@ -84,7 +85,8 @@ func buildDriverFactories(t *testing.T) []driverFactory {
 }
 
 func TestS3KDFPersistence(t *testing.T) {
-	if _, err := exec.LookPath("minio"); err != nil {
+	_, minioErr2 := exec.LookPath("minio")
+	if minioErr2 != nil {
 		t.Skip("minio not found in PATH")
 	}
 

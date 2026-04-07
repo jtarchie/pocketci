@@ -24,12 +24,12 @@ func (c *ListSchedules) Run(_ *slog.Logger) error {
 
 	pipeline, err := apiClient.FindPipelineByNameOrID(c.Name)
 	if err != nil {
-		return err
+		return fmt.Errorf("find pipeline: %w", err)
 	}
 
 	schedules, err := apiClient.ListSchedules(pipeline.ID)
 	if err != nil {
-		return err
+		return fmt.Errorf("list schedules: %w", err)
 	}
 
 	if len(schedules) == 0 {
@@ -83,12 +83,12 @@ func setScheduleEnabled(cfg ServerConfig, pipelineName, scheduleName string, ena
 
 	pipeline, err := apiClient.FindPipelineByNameOrID(pipelineName)
 	if err != nil {
-		return err
+		return fmt.Errorf("find pipeline: %w", err)
 	}
 
 	schedules, err := apiClient.ListSchedules(pipeline.ID)
 	if err != nil {
-		return err
+		return fmt.Errorf("list schedules: %w", err)
 	}
 
 	var scheduleID string
@@ -105,8 +105,9 @@ func setScheduleEnabled(cfg ServerConfig, pipelineName, scheduleName string, ena
 		return fmt.Errorf("schedule %q not found for pipeline %q", scheduleName, pipeline.Name)
 	}
 
-	if err := apiClient.SetScheduleEnabled(scheduleID, enabled); err != nil {
-		return err
+	setEnabledErr := apiClient.SetScheduleEnabled(scheduleID, enabled)
+	if setEnabledErr != nil {
+		return fmt.Errorf("set schedule enabled: %w", setEnabledErr)
 	}
 
 	action := "paused"
