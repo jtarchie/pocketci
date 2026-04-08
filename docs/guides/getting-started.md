@@ -39,9 +39,9 @@ Leave this terminal running. The server stores pipeline definitions in
 
 ## 2. Write your first pipeline
 
-Create a file called `hello.ts`:
+::: code-group
 
-```typescript
+```typescript [TypeScript (hello.ts)]
 const pipeline = async () => {
   const result = await runtime.run({
     name: "hello",
@@ -54,23 +54,55 @@ const pipeline = async () => {
 export { pipeline };
 ```
 
-A pipeline is an async TypeScript function exported as `pipeline`. Each
+```yaml [YAML (hello.yml)]
+jobs:
+  - name: hello
+    plan:
+      - task: hello
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: echo
+            args: ["Hello from PocketCI!"]
+```
+
+:::
+
+The TypeScript pipeline is an async function exported as `pipeline`. Each
 `runtime.run()` call launches a container:
 
 - `name` — a label shown in logs and the UI
 - `image` — the Docker image to use
 - `command` — the executable and its arguments
 
+The YAML format follows [Concourse CI](https://concourse-ci.org) syntax. See
+[YAML Pipelines](./yaml-pipelines.md) for the full reference.
+
 ## 3. Register the pipeline
 
 In a second terminal, register the pipeline with the server:
 
-```bash
+::: code-group
+
+```bash [TypeScript]
 pocketci pipeline set hello.ts \
   --server-url http://localhost:8080 \
   --name hello \
   --driver docker
 ```
+
+```bash [YAML]
+pocketci pipeline set hello.yml \
+  --server-url http://localhost:8080 \
+  --name hello \
+  --driver docker
+```
+
+:::
 
 The `--driver docker` flag tells the server to execute this pipeline using the
 local Docker daemon. You can verify it was stored by visiting the web UI or
