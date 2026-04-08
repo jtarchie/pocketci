@@ -202,5 +202,6 @@ backwards/deno.lock
 !.env.example
 
 .claude/settings.*
+site/.DS_Store
 docs/.vitepress/cache/
 .scratch/

@@ -1,8 +1,8 @@
 # Getting Started
 
 PocketCI is a local-first CI/CD runtime. You write pipelines in TypeScript, and
-PocketCI runs them inside containers. No cloud account required — everything runs
-on your machine.
+PocketCI runs them inside containers. No cloud account required — everything
+runs on your machine.
 
 This guide walks you from zero to a running pipeline in about five minutes.
 
@@ -67,7 +67,7 @@ In a second terminal, register the pipeline with the server:
 
 ```bash
 pocketci pipeline set hello.ts \
-  --server http://localhost:8080 \
+  --server-url http://localhost:8080 \
   --name hello \
   --driver docker
 ```
@@ -77,8 +77,12 @@ local Docker daemon. You can verify it was stored by visiting the web UI or
 running:
 
 ```bash
-pocketci pipeline ls --server http://localhost:8080
+pocketci pipeline ls --server-url http://localhost:8080
 ```
+
+<a href="/screenshots/getting-started/02-pipeline-registered.png" target="_blank">
+  <img src="/screenshots/getting-started/02-pipeline-registered.png" alt="Pipelines list showing the registered hello pipeline" />
+</a>
 
 ## 4. Run the pipeline
 
@@ -97,16 +101,24 @@ Hello from PocketCI!
 `pipeline run` waits for the pipeline to complete and exits with the same code
 as the pipeline. This makes it easy to integrate with scripts and other tools.
 
+<a href="/screenshots/getting-started/03-run-success.png" target="_blank">
+  <img src="/screenshots/getting-started/03-run-success.png" alt="Pipeline detail page showing a successful run" />
+</a>
+
 ## 5. Trigger the pipeline (async)
 
 For fire-and-forget execution, use `trigger` instead:
 
 ```bash
-pocketci pipeline trigger hello --server http://localhost:8080
+pocketci pipeline trigger hello --server-url http://localhost:8080
 ```
 
 This returns immediately with a run ID. Open the web UI to watch the run
 progress at `http://localhost:8080/pipelines/hello`.
+
+<a href="/screenshots/getting-started/04-triggered-run-completed.png" target="_blank">
+  <img src="/screenshots/getting-started/04-triggered-run-completed.png" alt="Triggered run showing completed tasks" />
+</a>
 
 ## Running without Docker
 
@@ -115,7 +127,7 @@ the host:
 
 ```bash
 pocketci pipeline set hello.ts \
-  --server http://localhost:8080 \
+  --server-url http://localhost:8080 \
   --name hello \
   --driver native
 ```
@@ -125,8 +137,12 @@ environment.
 
 ## What's next
 
-- [Webhooks](./webhooks.md) — trigger pipelines from GitHub, GitLab, or any HTTP source
+- [Webhooks](./webhooks.md) — trigger pipelines from GitHub, GitLab, or any HTTP
+  source
 - [Scheduling](./scheduling.md) — run pipelines on a cron or interval schedule
-- [YAML Pipelines](./yaml-pipelines.md) — use Concourse-compatible YAML instead of TypeScript
-- [Secrets Management](../operations/secrets.md) — store and inject credentials securely
-- [Runtime API](../runtime/) — full reference for `runtime.run()`, volumes, and more
+- [YAML Pipelines](./yaml-pipelines.md) — use Concourse-compatible YAML instead
+  of TypeScript
+- [Secrets Management](../operations/secrets.md) — store and inject credentials
+  securely
+- [Runtime API](../runtime/) — full reference for `runtime.run()`, volumes, and
+  more
