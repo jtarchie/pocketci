@@ -12,7 +12,8 @@ This guide walks you from zero to a running pipeline in about five minutes.
 - **pocketci** installed:
 
 ```bash
-brew install jtarchie/pocketci/pocketci
+brew tap jtarchie/pocketci https://github.com/jtarchie/pocketci
+brew install pocketci
 ```
 
 Or download a pre-built binary from the

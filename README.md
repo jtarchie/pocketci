@@ -38,7 +38,8 @@ backward compatibility. See the
 ## Installation
 
 ```bash
-brew install jtarchie/pocketci/pocketci
+brew tap jtarchie/pocketci https://github.com/jtarchie/pocketci
+brew install pocketci
 ```
 
 Or download a pre-built binary from the

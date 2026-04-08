@@ -178,7 +178,8 @@ more."*
 
 ```bash
 # 1. Install
-brew install jtarchie/pocketci/pocketci
+brew tap jtarchie/pocketci https://github.com/jtarchie/pocketci
+brew install pocketci
 
 # 2. Start the server
 pocketci server --port 8080 --storage-sqlite-path pocketci.db
