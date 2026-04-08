@@ -26,6 +26,7 @@ import (
 	"github.com/jtarchie/pocketci/orchestra/qemu"
 	"github.com/jtarchie/pocketci/s3config"
 	"github.com/jtarchie/pocketci/secrets"
+	secretsnoop "github.com/jtarchie/pocketci/secrets/noop"
 	secretss3 "github.com/jtarchie/pocketci/secrets/s3"
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/server"
@@ -54,7 +55,7 @@ type Server struct {
 	FetchTimeout       time.Duration `default:"30s"       env:"CI_FETCH_TIMEOUT"                                                 help:"Default timeout for fetch() calls in pipelines"`
 	FetchMaxResponseMB int           `default:"10"        env:"CI_FETCH_MAX_RESPONSE_MB"                                         help:"Maximum response body size in MB for fetch() calls"                                                     name:"fetch-max-response-mb"`
 	// SQLite secrets backend
-	SecretsSQLitePath       string `default:"test.db"                  env:"CI_SECRETS_SQLITE_PATH"                                       help:"SQLite secrets database file path (use ':memory:' for in-memory)" name:"secrets-sqlite-path"`
+	SecretsSQLitePath       string `env:"CI_SECRETS_SQLITE_PATH" help:"SQLite secrets database file path (use ':memory:' for in-memory)" name:"secrets-sqlite-path"`
 	SecretsSQLitePassphrase string `env:"CI_SECRETS_SQLITE_PASSPHRASE" help:"Encryption passphrase for SQLite secrets backend (required)" name:"secrets-sqlite-passphrase"`
 	// S3 secrets backend (takes precedence over SQLite when Bucket is set)
 	SecretsS3Bucket          string   `env:"CI_SECRETS_S3_BUCKET"                                help:"S3 bucket name for secrets backend"                                           name:"secrets-s3-bucket"`
@@ -295,7 +296,7 @@ func (c *Server) initSecrets(logger *slog.Logger) (secrets.Manager, error) {
 		}
 
 		return mgr, nil
-	default:
+	case c.SecretsSQLitePath != "":
 		mgr, err := secretssqlite.New(secretssqlite.Config{
 			Path:       c.SecretsSQLitePath,
 			Passphrase: c.SecretsSQLitePassphrase,
@@ -305,6 +306,8 @@ func (c *Server) initSecrets(logger *slog.Logger) (secrets.Manager, error) {
 		}
 
 		return mgr, nil
+	default:
+		return secretsnoop.New(), nil
 	}
 }
 
