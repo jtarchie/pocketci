@@ -187,6 +187,16 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		sc.Logger.Error("task.logs.error", "task", taskName, "err", err)
 	}
 
+	if sc.OutputCallback != nil {
+		if stdout.Len() > 0 {
+			sc.OutputCallback("stdout", stdout.String())
+		}
+
+		if stderr.Len() > 0 {
+			sc.OutputCallback("stderr", stderr.String())
+		}
+	}
+
 	resultStatus := "success"
 	if exitCode != 0 {
 		resultStatus = "failure"

@@ -156,6 +156,7 @@ func ExecutePipeline(
 				WebhookData:    opts.WebhookData,
 				TargetJobs:     opts.TargetJobs,
 				DedupTTL:       opts.DedupTTL,
+				OutputCallback: opts.OutputCallback,
 			},
 		)
 

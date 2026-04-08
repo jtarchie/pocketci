@@ -75,6 +75,9 @@ type StepContext struct {
 	PipelineRunner pipelinerunner.Runner // for agent sandbox/volume creation
 	SecretsManager secrets.Manager       // for agent API key resolution
 	AgentBaseURLs  map[string]string     // overrides agent provider base URLs; used in tests to avoid global state
+
+	// OutputCallback, if set, is called for each line of task stdout/stderr.
+	OutputCallback func(stream, data string)
 }
 
 // appendExecutedTask appends a task name to ExecutedTasks under the mutex.

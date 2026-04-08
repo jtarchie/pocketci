@@ -879,6 +879,7 @@ func (s *ExecutionService) RunByNameSync(
 	opts := runtime.ExecutorOptions{
 		RunID:                 run.ID,
 		PipelineID:            pipeline.ID,
+		ContentType:           pipeline.ContentType,
 		Args:                  args,
 		PreseededVolumes:      preseededVolumes,
 		Driver:                driver,

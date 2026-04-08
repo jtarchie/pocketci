@@ -166,7 +166,8 @@ type RunnerOptions struct {
 	WebhookData    *jsapi.WebhookData
 	DedupTTL       time.Duration
 	SecretsManager secrets.Manager
-	AgentBaseURLs  map[string]string // overrides agent provider base URLs; used in tests to avoid global state
+	AgentBaseURLs  map[string]string         // overrides agent provider base URLs; used in tests to avoid global state
+	OutputCallback func(stream, data string) // called for each chunk of task stdout/stderr
 }
 
 // Runner executes a parsed pipeline Config using Go-native execution.
@@ -183,6 +184,7 @@ type Runner struct {
 	dedupTTL       time.Duration
 	secretsManager secrets.Manager
 	agentBaseURLs  map[string]string
+	outputCallback func(stream, data string)
 	dependents     map[string][]*config.Job // reverse index: jobName → jobs that depend on it
 }
 
@@ -209,6 +211,7 @@ func New(
 		dedupTTL:       opts.DedupTTL,
 		secretsManager: opts.SecretsManager,
 		agentBaseURLs:  opts.AgentBaseURLs,
+		outputCallback: opts.OutputCallback,
 	}
 }
 
@@ -245,7 +248,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			return nil
 		}
 
-		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.pipelineID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight, r.notifier, r.webhookData, r.dedupTTL, r.secretsManager, r.agentBaseURLs)
+		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.pipelineID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight, r.notifier, r.webhookData, r.dedupTTL, r.secretsManager, r.agentBaseURLs, r.outputCallback)
 
 		err := jr.Run(ctx)
 		if err != nil {

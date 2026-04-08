@@ -5,6 +5,7 @@ Follow each scene in order. `<!-- PAUSE -->` marks are natural cut/transition
 points — stop typing, let the output settle, and give viewers time to read.
 
 **Recording setup:**
+
 - Terminal: 140 columns × 40 rows, large font (18pt+)
 - Shell prompt: short (e.g. `$`)
 - Browser: open to a blank tab before starting
@@ -19,6 +20,7 @@ pocketci --version
 ```
 
 **Expected output:**
+
 ```
 pocketci version v0.1.3 (abc1234)
 ```
@@ -34,6 +36,7 @@ pocketci server --port 8080 --storage-sqlite-path pocketci.db
 ```
 
 **Expected output (within a second or two):**
+
 ```
 {"time":"...","level":"INFO","msg":"server.start","addr":":8080"}
 ```
@@ -50,8 +53,8 @@ Switch to the browser. Navigate to:
 http://localhost:8080/pipelines/
 ```
 
-The pipeline list is empty. Narrate: *"This is the PocketCI dashboard. Right now
-there are no pipelines — let's register one."*
+The pipeline list is empty. Narrate: _"This is the PocketCI dashboard. Right now
+there are no pipelines — let's register one."_
 
 <!-- PAUSE — switch back to terminal, open a second tab -->
 
@@ -66,6 +69,7 @@ cat hello.ts
 ```
 
 **Expected output:**
+
 ```typescript
 const pipeline = async () => {
   const result = await runtime.run({
@@ -79,8 +83,8 @@ const pipeline = async () => {
 export { pipeline };
 ```
 
-Narrate: *"A PocketCI pipeline is just a TypeScript async function. This one
-runs a single container — the `busybox` image — and calls `echo`."*
+Narrate: _"A PocketCI pipeline is just a TypeScript async function. This one
+runs a single container — the `busybox` image — and calls `echo`."_
 
 <!-- PAUSE -->
 
@@ -96,6 +100,7 @@ pocketci pipeline set hello.ts \
 ```
 
 **Expected output:**
+
 ```
 pipeline "hello" set
 ```
@@ -108,8 +113,8 @@ pipeline "hello" set
 
 Reload `http://localhost:8080/pipelines/` in the browser.
 
-The `hello` pipeline now appears in the list. Narrate: *"The pipeline is stored
-on the server. Now let's run it."*
+The `hello` pipeline now appears in the list. Narrate: _"The pipeline is stored
+on the server. Now let's run it."_
 
 <!-- PAUSE — switch back to terminal -->
 
@@ -122,12 +127,13 @@ pocketci pipeline run hello --server-url http://localhost:8080
 ```
 
 **Expected output:**
+
 ```
 Hello from PocketCI!
 ```
 
-Narrate: *"`pipeline run` streams output directly to your terminal and waits
-for the pipeline to finish — exit code and all."*
+Narrate: _"`pipeline run` streams output directly to your terminal and waits for
+the pipeline to finish — exit code and all."_
 
 <!-- PAUSE -->
 
@@ -140,6 +146,7 @@ pocketci pipeline trigger hello --server http://localhost:8080
 ```
 
 **Expected output:**
+
 ```
 {"runID":"..."}
 ```
@@ -150,9 +157,9 @@ Switch to the browser and navigate to:
 http://localhost:8080/pipelines/hello
 ```
 
-Show the completed run in the run history. Narrate: *"`pipeline trigger` is
+Show the completed run in the run history. Narrate: _"`pipeline trigger` is
 fire-and-forget — you get a run ID back immediately, and you can track progress
-in the UI."*
+in the UI."_
 
 <!-- PAUSE -->
 
@@ -168,9 +175,9 @@ pocketci pipeline ls --server http://localhost:8080
 
 Show the pipeline listed. End on the browser with the run history visible.
 
-Narrate: *"That's it — a TypeScript pipeline, running in Docker, managed by
+Narrate: _"That's it — a TypeScript pipeline, running in Docker, managed by
 PocketCI. Check the docs to learn about webhooks, scheduling, secrets, and
-more."*
+more."_
 
 ---
 

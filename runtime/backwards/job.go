@@ -37,6 +37,7 @@ type JobRunner struct {
 	dedupTTL            time.Duration
 	secretsManager      secrets.Manager
 	agentBaseURLs       map[string]string
+	outputCallback      func(stream, data string)
 }
 
 func newJobRunner(
@@ -54,6 +55,7 @@ func newJobRunner(
 	dedupTTL time.Duration,
 	secretsManager secrets.Manager,
 	agentBaseURLs map[string]string,
+	outputCallback func(stream, data string),
 ) *JobRunner {
 	return &JobRunner{
 		job:                 job,
@@ -70,6 +72,7 @@ func newJobRunner(
 		dedupTTL:            dedupTTL,
 		secretsManager:      secretsManager,
 		agentBaseURLs:       agentBaseURLs,
+		outputCallback:      outputCallback,
 		handlers: map[string]StepHandler{
 			"task":        &TaskHandler{},
 			"get":         &GetHandler{},
@@ -124,6 +127,7 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		SecretsManager:     jr.secretsManager,
 		PipelineID:         jr.pipelineID,
 		AgentBaseURLs:      jr.agentBaseURLs,
+		OutputCallback:     jr.outputCallback,
 	}
 	sc.ProcessStep = func(step *config.Step, pathPrefix string) error { //nolint:contextcheck // context flows via sc.Ctx; StepHandler interface cannot accept a context parameter
 		return jr.processStep(sc, step, pathPrefix)
