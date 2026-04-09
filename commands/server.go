@@ -34,10 +34,16 @@ import (
 	"github.com/jtarchie/pocketci/storage"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/jtarchie/pocketci/webhooks"
+	webhookbitbucket "github.com/jtarchie/pocketci/webhooks/bitbucket"
 	webhookgeneric "github.com/jtarchie/pocketci/webhooks/generic"
 	webhookgithub "github.com/jtarchie/pocketci/webhooks/github"
+	webhookgitlab "github.com/jtarchie/pocketci/webhooks/gitlab"
 	webhookhoneybadger "github.com/jtarchie/pocketci/webhooks/honeybadger"
+	webhooklinear "github.com/jtarchie/pocketci/webhooks/linear"
+	webhookpagerduty "github.com/jtarchie/pocketci/webhooks/pagerduty"
+	webhooksentry "github.com/jtarchie/pocketci/webhooks/sentry"
 	webhookslack "github.com/jtarchie/pocketci/webhooks/slack"
+	webhookstripe "github.com/jtarchie/pocketci/webhooks/stripe"
 	"github.com/labstack/echo/v5"
 )
 
@@ -206,8 +212,14 @@ func (c *Server) Run(logger *slog.Logger) error {
 		CacheKeyPrefix:        c.CacheKeyPrefix,
 		WebhookProviders: []webhooks.Provider{
 			webhookgithub.New(),
+			webhookgitlab.New(),
+			webhookbitbucket.New(),
 			webhookhoneybadger.New(),
 			webhookslack.New(),
+			webhookstripe.New(),
+			webhookpagerduty.New(),
+			webhooklinear.New(),
+			webhooksentry.New(),
 			webhookgeneric.New(),
 		},
 	})
