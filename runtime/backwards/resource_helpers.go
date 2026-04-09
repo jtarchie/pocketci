@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"time"
 
 	config "github.com/jtarchie/pocketci/backwards"
@@ -152,7 +155,7 @@ func fetchNativeResource(sc *StepContext, resource *config.Resource, version map
 		return fmt.Errorf("get native resource %q: %w", resource.Type, err)
 	}
 
-	_, err = res.In(sc.Ctx, vol.Path(), resources.InRequest{
+	_, err = res.In(sc.Ctx, &nativeVolumeContext{vol: vol, driver: sc.Driver}, resources.InRequest{
 		Source:  resource.Source,
 		Version: version,
 		Params:  paramsToAnyMap(params),
@@ -204,4 +207,71 @@ func resourceStdinJSON(fields map[string]any) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// nativeVolumeContext implements resources.VolumeContext for the native driver.
+// File I/O goes directly to the host filesystem; sandboxes are started via SandboxDriver.
+type nativeVolumeContext struct {
+	vol    orchestra.Volume
+	driver orchestra.Driver
+}
+
+func (v *nativeVolumeContext) WriteFile(_ context.Context, path string, data []byte) error {
+	err := os.WriteFile(filepath.Join(v.vol.Path(), path), data, 0o600)
+	if err != nil {
+		return fmt.Errorf("write file %q: %w", path, err)
+	}
+
+	return nil
+}
+
+func (v *nativeVolumeContext) ReadFile(_ context.Context, path string) ([]byte, error) {
+	data, err := os.ReadFile(filepath.Join(v.vol.Path(), path))
+	if err != nil {
+		return nil, fmt.Errorf("read file %q: %w", path, err)
+	}
+
+	return data, nil
+}
+
+func (v *nativeVolumeContext) OpenSandbox(ctx context.Context, image, mountPath string) (resources.Sandbox, error) {
+	sd, ok := v.driver.(orchestra.SandboxDriver)
+	if !ok {
+		return nil, fmt.Errorf("driver %q does not support sandboxes", v.driver.Name())
+	}
+
+	sandbox, err := sd.StartSandbox(ctx, orchestra.Task{
+		Image:  image,
+		Mounts: orchestra.Mounts{{Name: v.vol.Name(), Path: mountPath}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("open sandbox: %w", err)
+	}
+
+	return &sandboxAdapter{inner: sandbox}, nil
+}
+
+// sandboxAdapter wraps orchestra.Sandbox, converting ContainerStatus returns to errors.
+type sandboxAdapter struct{ inner orchestra.Sandbox }
+
+func (s *sandboxAdapter) Exec(ctx context.Context, cmd []string, env map[string]string, workDir string, stdin io.Reader, stdout, stderr io.Writer) error {
+	status, err := s.inner.Exec(ctx, cmd, env, workDir, stdin, stdout, stderr)
+	if err != nil {
+		return fmt.Errorf("sandbox exec: %w", err)
+	}
+
+	if status.ExitCode() != 0 {
+		return fmt.Errorf("command exited with code %d", status.ExitCode())
+	}
+
+	return nil
+}
+
+func (s *sandboxAdapter) Close(ctx context.Context) error {
+	err := s.inner.Cleanup(ctx)
+	if err != nil {
+		return fmt.Errorf("sandbox cleanup: %w", err)
+	}
+
+	return nil
 }

@@ -125,7 +125,7 @@ func (r *ResourceRunner) Fetch(input ResourceFetchInput) (*ResourceFetchResult, 
 		Params:  input.Params,
 	}
 
-	resp, err := res.In(r.ctx, input.DestDir, req)
+	resp, err := res.In(r.ctx, &resources.DirVolumeContext{Dir: input.DestDir}, req)
 	if err != nil {
 		logger.Error("resource.fetch.failed", "err", err)
 
@@ -188,7 +188,7 @@ func (r *ResourceRunner) Push(input ResourcePushInput) (*ResourcePushResult, err
 		Params: input.Params,
 	}
 
-	resp, err := res.Out(r.ctx, input.SrcDir, req)
+	resp, err := res.Out(r.ctx, &resources.DirVolumeContext{Dir: input.SrcDir}, req)
 	if err != nil {
 		logger.Error("resource.push.failed", "err", err)
 

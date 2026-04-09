@@ -1,6 +1,26 @@
 package resources
 
-import "context"
+import (
+	"context"
+	"io"
+)
+
+// Sandbox is a persistent container environment for sequential command execution.
+// It allows resources to run multiple commands in the same container context.
+type Sandbox interface {
+	Exec(ctx context.Context, cmd []string, env map[string]string, workDir string, stdin io.Reader, stdout, stderr io.Writer) error
+	Close(ctx context.Context) error
+}
+
+// VolumeContext provides a resource with driver-agnostic access to a volume.
+// Implementations exist for each driver (native: direct FS, docker: via container, etc.)
+type VolumeContext interface {
+	WriteFile(ctx context.Context, path string, data []byte) error
+	ReadFile(ctx context.Context, path string) ([]byte, error)
+	// OpenSandbox starts a container with this volume mounted at mountPath.
+	// On the native driver, image is ignored and commands run as OS processes.
+	OpenSandbox(ctx context.Context, image, mountPath string) (Sandbox, error)
+}
 
 // Version represents a resource version as arbitrary key-value pairs.
 // For git, this would be {"ref": "abc123"}, for time {"time": "2024-01-01T00:00:00Z"}.
@@ -64,11 +84,12 @@ type Resource interface {
 	// Otherwise, return all versions newer than the given version (including it if still valid).
 	Check(ctx context.Context, req CheckRequest) (CheckResponse, error)
 
-	// In fetches a specific version of the resource to the destination directory.
-	// destDir is an absolute path to an empty directory where the resource should be placed.
-	In(ctx context.Context, destDir string, req InRequest) (InResponse, error)
+	// In fetches a specific version of the resource into the provided volume.
+	// vol provides driver-agnostic file I/O and sandbox execution against the volume.
+	In(ctx context.Context, vol VolumeContext, req InRequest) (InResponse, error)
 
 	// Out pushes a new version of the resource.
-	// srcDir is an absolute path to the directory containing the pipeline's sources.
-	Out(ctx context.Context, srcDir string, req OutRequest) (OutResponse, error)
+	// vol provides access to a prior volume for this resource, and may be nil
+	// when no prior volume exists.
+	Out(ctx context.Context, vol VolumeContext, req OutRequest) (OutResponse, error)
 }

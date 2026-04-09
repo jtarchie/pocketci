@@ -88,7 +88,7 @@ func (r *Resource) executeIn(ctx context.Context, res resources.Resource, input 
 		return nil, fmt.Errorf("failed to parse in request: %w", inUnmarshalErr)
 	}
 
-	result, err := res.In(ctx, r.Path, req)
+	result, err := res.In(ctx, &resources.DirVolumeContext{Dir: r.Path}, req)
 	if err != nil {
 		return nil, fmt.Errorf("in failed: %w", err)
 	}
@@ -108,7 +108,7 @@ func (r *Resource) executeOut(ctx context.Context, res resources.Resource, input
 		return nil, fmt.Errorf("failed to parse out request: %w", outUnmarshalErr)
 	}
 
-	result, err := res.Out(ctx, r.Path, req)
+	result, err := res.Out(ctx, &resources.DirVolumeContext{Dir: r.Path}, req)
 	if err != nil {
 		return nil, fmt.Errorf("out failed: %w", err)
 	}

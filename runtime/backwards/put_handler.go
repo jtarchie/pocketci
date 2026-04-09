@@ -108,16 +108,16 @@ func (h *PutHandler) pushNative(
 		return nil, fmt.Errorf("get native resource %q: %w", resource.Type, err)
 	}
 
-	// Use an existing known volume as srcDir if available, otherwise use empty string.
-	srcDir := ""
+	// Use an existing known volume as the context if available, otherwise nil.
+	var volCtx resources.VolumeContext
 	if volName, ok := sc.KnownVolumes[resource.Name]; ok {
 		vol, volErr := sc.Driver.CreateVolume(sc.Ctx, volName, 0)
 		if volErr == nil {
-			srcDir = vol.Path()
+			volCtx = &nativeVolumeContext{vol: vol, driver: sc.Driver}
 		}
 	}
 
-	resp, err := res.Out(sc.Ctx, srcDir, resources.OutRequest{
+	resp, err := res.Out(sc.Ctx, volCtx, resources.OutRequest{
 		Source: resource.Source,
 		Params: paramsToAnyMap(params),
 	})

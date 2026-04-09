@@ -46,15 +46,10 @@ func TestMockResource(t *testing.T) {
 		res, err := resources.Get("mock")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		destDir, err := os.MkdirTemp("", "mock-in-test-*")
-		assert.Expect(err).NotTo(HaveOccurred())
-
-		defer func() {
-			_ = os.RemoveAll(destDir)
-		}()
+		vol := &resources.DirVolumeContext{Dir: t.TempDir()}
 
 		ctx := context.Background()
-		inResp, err := res.In(ctx, destDir, resources.InRequest{
+		inResp, err := res.In(ctx, vol, resources.InRequest{
 			Source: map[string]any{},
 			Version: resources.Version{
 				"version": "1.0.0",
@@ -64,8 +59,7 @@ func TestMockResource(t *testing.T) {
 		assert.Expect(inResp.Version["version"]).To(Equal("1.0.0"))
 
 		// Verify version file was created
-		versionFile := filepath.Join(destDir, "version")
-		content, err := os.ReadFile(versionFile)
+		content, err := os.ReadFile(filepath.Join(vol.Dir, "version"))
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(string(content)).To(Equal("1.0.0"))
 	})
@@ -77,7 +71,7 @@ func TestMockResource(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		ctx := context.Background()
-		outResp, err := res.Out(ctx, "/tmp", resources.OutRequest{
+		outResp, err := res.Out(ctx, nil, resources.OutRequest{
 			Source: map[string]any{},
 			Params: map[string]any{
 				"version": "2.0.0",

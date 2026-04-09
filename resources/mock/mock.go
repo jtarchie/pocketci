@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
 	"sync/atomic"
 
@@ -75,26 +73,21 @@ func (m *Mock) Check(_ context.Context, req resources.CheckRequest) (resources.C
 	return resources.CheckResponse{version}, nil
 }
 
-// In creates a version file in the destination directory.
-func (m *Mock) In(_ context.Context, destDir string, req resources.InRequest) (resources.InResponse, error) {
+// In creates a version file in the volume.
+func (m *Mock) In(ctx context.Context, vol resources.VolumeContext, req resources.InRequest) (resources.InResponse, error) {
 	version := req.Version["version"]
 	if version == "" {
 		return resources.InResponse{}, errors.New("version is required")
 	}
 
-	// Create version file
-	versionFile := filepath.Join(destDir, "version")
-
-	err := os.WriteFile(versionFile, []byte(version), 0o600)
+	err := vol.WriteFile(ctx, "version", []byte(version))
 	if err != nil {
 		return resources.InResponse{}, fmt.Errorf("failed to write version file: %w", err)
 	}
 
 	// Create privileged file if requested
 	if _, ok := req.Params["privileged"]; ok {
-		privilegedFile := filepath.Join(destDir, "privileged")
-
-		err = os.WriteFile(privilegedFile, []byte("true"), 0o600)
+		err := vol.WriteFile(ctx, "privileged", []byte("true"))
 		if err != nil {
 			return resources.InResponse{}, fmt.Errorf("failed to write privileged file: %w", err)
 		}
@@ -111,7 +104,7 @@ func (m *Mock) In(_ context.Context, destDir string, req resources.InRequest) (r
 }
 
 // Out increments the version and returns it.
-func (m *Mock) Out(_ context.Context, _ string, req resources.OutRequest) (resources.OutResponse, error) {
+func (m *Mock) Out(_ context.Context, _ resources.VolumeContext, req resources.OutRequest) (resources.OutResponse, error) {
 	version := ""
 	if v, ok := req.Params["version"].(string); ok {
 		version = v
