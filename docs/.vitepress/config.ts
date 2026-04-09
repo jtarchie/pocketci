@@ -23,6 +23,7 @@ export default defineConfig({
       "/guides/": [
         { text: "Overview", link: "/guides/" },
         { text: "Getting Started", link: "/guides/getting-started" },
+        { text: "Production Setup", link: "/guides/production" },
         { text: "Run Pipelines", link: "/guides/run" },
         { text: "Webhooks", link: "/guides/webhooks" },
         { text: "Scheduling", link: "/guides/scheduling" },

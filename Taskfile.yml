@@ -55,6 +55,14 @@ tasks:
     cmds:
       - rm -f e2e-test.db e2e-secrets.db
       - npx playwright test getting-started
+
+  docs:screenshots:production:
+    desc: Regenerate production guide screenshots (macOS only, not CI)
+    dir: e2e
+    cmds:
+      - rm -f e2e-test.db e2e-secrets.db
+      - npx playwright test production
+
   test:vz:
     desc: Run VZ driver tests with codesigning
     cmds:

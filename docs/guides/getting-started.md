@@ -169,6 +169,14 @@ environment.
 
 ## What's next
 
+Ready to take it to production? The next guide walks through deploying PocketCI
+to Fly.io, building a real multi-stage pipeline, and wiring up a GitHub webhook:
+
+- [Production Setup](./production.md) — Fly.io deployment, multi-stage
+  pipelines, and GitHub webhook integration
+
+Or explore individual features:
+
 - [Webhooks](./webhooks.md) — trigger pipelines from GitHub, GitLab, or any HTTP
   source
 - [Scheduling](./scheduling.md) — run pipelines on a cron or interval schedule
