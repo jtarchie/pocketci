@@ -78,7 +78,8 @@ func extractEventType(body []byte) string {
 		Type  string `json:"type"`
 	}
 
-	if err := json.Unmarshal(body, &payload); err != nil {
+	err := json.Unmarshal(body, &payload)
+	if err != nil {
 		return ""
 	}
 

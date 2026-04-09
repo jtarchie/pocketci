@@ -19,7 +19,7 @@ func sign(body []byte, secret string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
 
-	return fmt.Sprintf("v1=%s", hex.EncodeToString(mac.Sum(nil)))
+	return "v1=" + hex.EncodeToString(mac.Sum(nil))
 }
 
 func TestPagerDuty_Match(t *testing.T) {
