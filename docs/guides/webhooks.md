@@ -14,8 +14,8 @@ pocketci pipeline set my-pipeline.ts \
   --webhook-secret "my-secret-key"
 ```
 
-The webhook secret is optional for GitHub, Slack, and Generic webhooks. If
-omitted, those webhook requests are accepted without signature validation.
+The webhook secret is optional for most providers. If omitted, requests are
+accepted without signature validation.
 
 Honeybadger webhooks always require `--webhook-secret` and a matching
 `Honeybadger-Token` header.
@@ -109,6 +109,27 @@ curl -X POST http://localhost:8080/api/webhooks/<pipeline-id> \
   -d '{"ref":"refs/heads/main"}'
 ```
 
+### GitLab
+
+Detected when the request includes an `X-Gitlab-Event` header.
+
+- **`provider`**: `"gitlab"`
+- **`eventType`**: value of `X-Gitlab-Event` (e.g. `"Push Hook"`, `"Merge Request Hook"`)
+- **Signature header**: `X-Gitlab-Token: sha256=<hex>` (HMAC-SHA256) or a plain
+  token value for GitLab's older token-based auth
+- If a webhook secret is configured and the header is missing or invalid, the
+  request is rejected with `401 Unauthorized`.
+
+### Bitbucket
+
+Detected when the request includes an `X-Event-Key` header.
+
+- **`provider`**: `"bitbucket"`
+- **`eventType`**: value of `X-Event-Key` (e.g. `"repo:push"`, `"pullrequest:created"`)
+- **Signature header**: `X-Hub-Signature: sha256=<hex>` (HMAC-SHA256)
+- If a webhook secret is configured and the header is missing or invalid, the
+  request is rejected with `401 Unauthorized`.
+
 ### Slack
 
 Detected when the request includes an `X-Slack-Signature` header.
@@ -133,6 +154,53 @@ Detected when the request includes a `Honeybadger-Token` header.
   `401 Unauthorized` when the secret is missing or when the token does not
   match.
 
+### Stripe
+
+Detected when the request includes a `Stripe-Signature` header.
+
+- **`provider`**: `"stripe"`
+- **`eventType`**: top-level `type` field from the JSON body (e.g. `"charge.succeeded"`, `"payment_intent.created"`)
+- **Signature header**: `Stripe-Signature: t=<timestamp>,v1=<hex>` — Stripe signs
+  `<timestamp>.<body>` with HMAC-SHA256. Multiple `v1=` values are supported for
+  key rotation.
+- If a webhook secret is configured and the signature is missing or invalid, the
+  request is rejected with `401 Unauthorized`.
+
+### PagerDuty
+
+Detected when the request includes an `X-PagerDuty-Signature` header.
+
+- **`provider`**: `"pagerduty"`
+- **`eventType`**: `event` field from the first entry in the `messages` array,
+  falling back to top-level `event` or `type`
+- **Signature header**: `X-PagerDuty-Signature: v1=<hex>[,v1=<hex>]` —
+  comma-separated HMAC-SHA256 signatures; any matching signature is accepted
+  (supports key rotation)
+- If a webhook secret is configured and no signature matches, the request is
+  rejected with `401 Unauthorized`.
+
+### Linear
+
+Detected when the request includes a `Linear-Signature` header.
+
+- **`provider`**: `"linear"`
+- **`eventType`**: top-level `type` field, falling back to `action` (e.g.
+  `"Issue"`, `"create"`)
+- **Signature header**: `Linear-Signature: <hex>` (plain hex HMAC-SHA256 of the body)
+- If a webhook secret is configured and the signature is missing or invalid, the
+  request is rejected with `401 Unauthorized`.
+
+### Sentry
+
+Detected when the request includes a `Sentry-Hook-Signature` header.
+
+- **`provider`**: `"sentry"`
+- **`eventType`**: value of `Sentry-Hook-Resource` header (e.g. `"issue"`,
+  `"error"`), falling back to `action` or `type` from the JSON body
+- **Signature header**: `Sentry-Hook-Signature: <hex>` (plain hex HMAC-SHA256 of the body)
+- If a webhook secret is configured and the signature is missing or invalid, the
+  request is rejected with `401 Unauthorized`.
+
 ### Generic (fallback)
 
 Used for all other requests that don't match a specific provider.
@@ -156,7 +224,7 @@ triggered via webhook.
 
 ```typescript
 interface HttpRequest {
-  provider: string; // Detected provider: "github", "slack", "honeybadger", or "generic"
+  provider: string; // Detected provider: "github", "gitlab", "bitbucket", "slack", "honeybadger", "stripe", "pagerduty", "linear", "sentry", or "generic"
   eventType: string; // Provider-specific event type (e.g. "push", "event_callback")
   method: string; // "GET", "POST", etc.
   url: string; // Request URL path with query string
@@ -312,7 +380,7 @@ webhook matches specific criteria, using the
 
 | Variable    | Type                     | Description                                                            |
 | ----------- | ------------------------ | ---------------------------------------------------------------------- |
-| `provider`  | `string`                 | Detected provider: `"github"`, `"slack"`, `"honeybadger"`, `"generic"` |
+| `provider`  | `string`                 | Detected provider: `"github"`, `"gitlab"`, `"bitbucket"`, `"slack"`, `"honeybadger"`, `"stripe"`, `"pagerduty"`, `"linear"`, `"sentry"`, `"generic"` |
 | `eventType` | `string`                 | Provider-specific event type (e.g. `"push"`)                           |
 | `method`    | `string`                 | HTTP method (`"GET"`, `"POST"`, …)                                     |
 | `headers`   | `map[string]string`      | Request headers (keys are lowercase)                                   |

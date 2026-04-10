@@ -13,11 +13,18 @@ execution in the background.
 The server automatically detects the webhook provider from the request headers
 and applies provider-specific signature verification.
 
-| Provider  | Detection header    | Signature header                                            |
-| --------- | ------------------- | ----------------------------------------------------------- |
-| `github`  | `X-GitHub-Event`    | `X-Hub-Signature-256: sha256=<hex>`                         |
-| `slack`   | `X-Slack-Signature` | `X-Slack-Signature: v0=<hex>` + `X-Slack-Request-Timestamp` |
-| `generic` | _(fallback)_        | `X-Webhook-Signature: <hex>` or `?signature=<hex>`          |
+| Provider      | Detection header            | Signature header                                                    |
+| ------------- | --------------------------- | ------------------------------------------------------------------- |
+| `github`      | `X-GitHub-Event`            | `X-Hub-Signature-256: sha256=<hex>`                                 |
+| `gitlab`      | `X-Gitlab-Event`            | `X-Gitlab-Token: sha256=<hex>` or plain token                       |
+| `bitbucket`   | `X-Event-Key`               | `X-Hub-Signature: sha256=<hex>`                                     |
+| `slack`       | `X-Slack-Signature`         | `X-Slack-Signature: v0=<hex>` + `X-Slack-Request-Timestamp`         |
+| `honeybadger` | `Honeybadger-Token`         | `Honeybadger-Token: <token>` (required)                             |
+| `stripe`      | `Stripe-Signature`          | `Stripe-Signature: t=<ts>,v1=<hex>`                                 |
+| `pagerduty`   | `X-PagerDuty-Signature`     | `X-PagerDuty-Signature: v1=<hex>[,v1=<hex>]`                        |
+| `linear`      | `Linear-Signature`          | `Linear-Signature: <hex>`                                           |
+| `sentry`      | `Sentry-Hook-Signature`     | `Sentry-Hook-Signature: <hex>`                                      |
+| `generic`     | _(fallback)_                | `X-Webhook-Signature: <hex>` or `?signature=<hex>`                  |
 
 If the pipeline has a `webhook_secret` configured, requests must pass the
 provider's signature check. Requests that fail validation receive
@@ -40,7 +47,7 @@ Inside the pipeline, access the incoming request and respond:
 const pipeline = async () => {
   const req = http.request();
   if (req) {
-    // req.provider    — "github" | "slack" | "generic"
+    // req.provider    — "github" | "gitlab" | "bitbucket" | "slack" | "honeybadger" | "stripe" | "pagerduty" | "linear" | "sentry" | "generic"
     // req.eventType   — e.g. "push", "pull_request", "event_callback"
     http.respond({
       status: 200,
