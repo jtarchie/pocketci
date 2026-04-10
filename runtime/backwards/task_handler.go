@@ -130,7 +130,7 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		return fmt.Errorf("storage set pending: %w", err)
 	}
 
-	mounts := resolveMounts(sc, taskConfig)
+	mounts := resolveMounts(sc, taskConfig, taskName)
 
 	task := orchestra.Task{
 		ID:         fmt.Sprintf("%s-%s", sc.JobName, taskName),
@@ -312,8 +312,8 @@ func buildCommand(cfg *config.TaskConfig) []string {
 }
 
 // resolveMounts combines cache mounts and input/output mounts for a task.
-func resolveMounts(sc *StepContext, cfg *config.TaskConfig) orchestra.Mounts {
-	cacheMounts := resolveCaches(sc, cfg)
+func resolveMounts(sc *StepContext, cfg *config.TaskConfig, taskName string) orchestra.Mounts {
+	cacheMounts := resolveCaches(sc, cfg, taskName)
 	ioMounts := resolveInputsOutputs(sc, cfg)
 
 	if len(cacheMounts) == 0 {
@@ -381,34 +381,57 @@ func resolveInputsOutputs(sc *StepContext, cfg *config.TaskConfig) orchestra.Mou
 // created via Driver.CreateVolume so the cache layer (if configured) can
 // restore from S3 before the container runs. Cleanup of cache volumes is
 // deferred to job end via sc.CacheVolumeObjects, not per-task.
-func resolveCaches(sc *StepContext, cfg *config.TaskConfig) orchestra.Mounts {
+//
+// When a cache entry has Scope=="task", the volume gets a per-task key prefix
+// so different tasks never share cached data even for the same path.
+func resolveCaches(sc *StepContext, cfg *config.TaskConfig, taskName string) orchestra.Mounts {
 	if cfg == nil || len(cfg.Caches) == 0 {
 		return nil
 	}
 
 	mounts := make(orchestra.Mounts, 0, len(cfg.Caches))
 
-	for _, cache := range cfg.Caches {
-		volName, ok := sc.CacheVolumes[cache.Path]
+	for _, cacheEntry := range cfg.Caches {
+		// For task-scoped caches the lookup key includes the task name so
+		// each task gets its own volume (and therefore its own cache entry).
+		lookupKey := cacheEntry.Path
+		if cacheEntry.Scope == "task" {
+			lookupKey = taskName + "/" + cacheEntry.Path
+		}
+
+		volName, ok := sc.CacheVolumes[lookupKey]
 		if !ok {
 			// Volume name must be stable across runs so the cache layer can
-			// restore it from S3. Match the JS runtime: "cache-{sanitizedPath}".
-			volName = "cache-" + sanitizeCachePath(cache.Path)
-			sc.CacheVolumes[cache.Path] = volName
+			// restore it from S3. For task-scoped caches the volume name also
+			// includes the task name so different tasks get separate physical
+			// volumes (and therefore separate on-disk state within a run).
+			if cacheEntry.Scope == "task" {
+				volName = "cache-" + sanitizeCachePath(taskName) + "-" + sanitizeCachePath(cacheEntry.Path)
+			} else {
+				volName = "cache-" + sanitizeCachePath(cacheEntry.Path)
+			}
+			sc.CacheVolumes[lookupKey] = volName
+
+			// For task-scoped caches, augment the driver so the cache key
+			// includes the task name segment.
+			driver := sc.Driver
+			if cacheEntry.Scope == "task" {
+				driver = cache.AugmentKeyPrefix(sc.Driver, sanitizeCachePath(taskName))
+			}
 
 			// Explicitly create the volume so that the cache driver wrapper
 			// can intercept the call and restore from S3 before execution.
-			vol, err := sc.Driver.CreateVolume(sc.Ctx, volName, 0)
+			vol, err := driver.CreateVolume(sc.Ctx, volName, 0)
 			if err != nil {
-				sc.Logger.Warn("cache.volume.create.failed", "path", cache.Path, "volume", volName, "err", err)
+				sc.Logger.Warn("cache.volume.create.failed", "path", cacheEntry.Path, "volume", volName, "err", err)
 			} else {
-				sc.CacheVolumeObjects[cache.Path] = vol
+				sc.CacheVolumeObjects[lookupKey] = vol
 			}
 		}
 
 		mounts = append(mounts, orchestra.Mount{
 			Name: volName,
-			Path: cache.Path,
+			Path: cacheEntry.Path,
 		})
 	}
 

@@ -1,0 +1,43 @@
+---
+# Test that scope: task creates separate cache namespaces per task.
+# task-b should NOT see task-a's data because they have different cache keys.
+
+assert:
+  execution:
+    - cache-job
+
+jobs:
+  - name: cache-job
+    plan:
+      - task: task-a
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: busybox }
+          caches:
+            - path: cache
+              scope: task
+          run:
+            path: sh
+            args:
+              - -c
+              - echo task-a > ./cache/data.txt
+
+      - task: task-b
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: busybox }
+          caches:
+            - path: cache
+              scope: task
+          run:
+            path: sh
+            args:
+              - -c
+              - cat ./cache/data.txt 2>/dev/null || echo empty
+        assert:
+          stdout: empty
+          code: 0

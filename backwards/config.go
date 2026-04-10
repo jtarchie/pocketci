@@ -38,7 +38,8 @@ type ContainerLimits struct {
 
 // Cache represents a cached path for task execution.
 type Cache struct {
-	Path string `validate:"required" yaml:"path,omitempty"`
+	Path  string `validate:"required"                yaml:"path,omitempty"`
+	Scope string `validate:"oneof='' 'job' 'task'"   yaml:"scope,omitempty"` // "" or "job" = job-level (default); "task" = per-task
 }
 
 type Caches []Cache

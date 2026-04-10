@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	config "github.com/jtarchie/pocketci/backwards"
+	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
@@ -106,11 +107,19 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		return nil
 	}
 
-	pr := pipelinerunner.NewPipelineRunner(ctx, jr.driver, jr.storage, jr.logger, jr.job.Name, jr.runID)
+	// Scope cache keys to this pipeline+job so different jobs/pipelines
+	// never collide on the same cache entry. sanitizeCachePath reuses the
+	// same alphanum-hyphen normalization used for volume names.
+	jobDriver := cache.AugmentKeyPrefix(
+		jr.driver,
+		sanitizeCachePath(jr.pipelineID)+"/"+sanitizeCachePath(jr.job.Name),
+	)
+
+	pr := pipelinerunner.NewPipelineRunner(ctx, jobDriver, jr.storage, jr.logger, jr.job.Name, jr.runID)
 
 	sc := &StepContext{
 		Ctx:                ctx,
-		Driver:             jr.driver,
+		Driver:             jobDriver,
 		Storage:            jr.storage,
 		Logger:             jr.logger,
 		RunID:              jr.runID,

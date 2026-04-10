@@ -16,6 +16,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 	configpkg "github.com/jtarchie/pocketci/backwards"
+	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/orchestra/docker"
 	"github.com/jtarchie/pocketci/orchestra/native"
@@ -2804,4 +2805,131 @@ func TestWebhookDedup(t *testing.T) {
 		assert.Expect(results2).NotTo(BeEmpty())
 		assert.Expect(results2[len(results2)-1].Payload["status"]).To(Equal("success"))
 	})
+}
+
+// runnerKeyCaptureStore records every key passed to Exists so tests can assert
+// which cache keys were generated without a real storage backend.
+type runnerKeyCaptureStore struct {
+	mu   sync.Mutex
+	keys []string
+}
+
+func (k *runnerKeyCaptureStore) Restore(_ context.Context, _ string) (io.ReadCloser, error) {
+	return nil, cache.ErrCacheMiss
+}
+
+func (k *runnerKeyCaptureStore) Persist(_ context.Context, _ string, r io.Reader) error {
+	_, _ = io.ReadAll(r)
+	return nil
+}
+
+func (k *runnerKeyCaptureStore) Exists(_ context.Context, key string) (bool, error) {
+	k.mu.Lock()
+	k.keys = append(k.keys, key)
+	k.mu.Unlock()
+	return false, nil
+}
+
+func (k *runnerKeyCaptureStore) Delete(_ context.Context, _ string) error { return nil }
+
+func (k *runnerKeyCaptureStore) capturedKeys() []string {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	out := make([]string, len(k.keys))
+	copy(out, k.keys)
+	return out
+}
+
+var _ cache.CacheStore = (*runnerKeyCaptureStore)(nil)
+
+func TestCacheKeyScoping(t *testing.T) {
+	t.Parallel()
+
+	assert := NewGomegaWithT(t)
+	ctx := context.Background()
+
+	cfg := loadConfig(t, "steps/caches.yml")
+
+	nativeDriver, err := native.New(ctx, native.Config{Namespace: "test-cache-key-scoping"}, discardLogger())
+	assert.Expect(err).NotTo(HaveOccurred())
+	defer func() { _ = nativeDriver.Close() }()
+
+	sqliteStore, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-cache-scoping", discardLogger())
+	assert.Expect(err).NotTo(HaveOccurred())
+	defer func() { _ = sqliteStore.Close() }()
+
+	t.Run("different pipelines produce different cache keys for same path", func(t *testing.T) {
+		subAssert := NewGomegaWithT(t)
+
+		storeA := &runnerKeyCaptureStore{}
+		driverA := cache.WrapWithCaching(nativeDriver, storeA, "zstd", "test-prefix", discardLogger())
+		runnerA := backwards.New(cfg, driverA, sqliteStore, discardLogger(), "run-1", "pipeline-a", backwards.RunnerOptions{})
+		err := runnerA.Run(ctx)
+		subAssert.Expect(err).NotTo(HaveOccurred())
+		keysA := storeA.capturedKeys()
+
+		storeB := &runnerKeyCaptureStore{}
+		driverB := cache.WrapWithCaching(nativeDriver, storeB, "zstd", "test-prefix", discardLogger())
+		runnerB := backwards.New(cfg, driverB, sqliteStore, discardLogger(), "run-2", "pipeline-b", backwards.RunnerOptions{})
+		err = runnerB.Run(ctx)
+		subAssert.Expect(err).NotTo(HaveOccurred())
+		keysB := storeB.capturedKeys()
+
+		subAssert.Expect(keysA).NotTo(BeEmpty())
+		subAssert.Expect(keysA).NotTo(Equal(keysB))
+	})
+
+	t.Run("same pipeline and job produce the same cache key across runs", func(t *testing.T) {
+		subAssert := NewGomegaWithT(t)
+
+		storeRun1 := &runnerKeyCaptureStore{}
+		driverRun1 := cache.WrapWithCaching(nativeDriver, storeRun1, "zstd", "test-prefix", discardLogger())
+		runner1 := backwards.New(cfg, driverRun1, sqliteStore, discardLogger(), "run-3", "pipeline-stable", backwards.RunnerOptions{})
+		err := runner1.Run(ctx)
+		subAssert.Expect(err).NotTo(HaveOccurred())
+		keysRun1 := storeRun1.capturedKeys()
+
+		storeRun2 := &runnerKeyCaptureStore{}
+		driverRun2 := cache.WrapWithCaching(nativeDriver, storeRun2, "zstd", "test-prefix", discardLogger())
+		runner2 := backwards.New(cfg, driverRun2, sqliteStore, discardLogger(), "run-4", "pipeline-stable", backwards.RunnerOptions{})
+		err = runner2.Run(ctx)
+		subAssert.Expect(err).NotTo(HaveOccurred())
+		keysRun2 := storeRun2.capturedKeys()
+
+		subAssert.Expect(keysRun1).NotTo(BeEmpty())
+		subAssert.Expect(keysRun1).To(Equal(keysRun2))
+	})
+
+	_ = assert // used for outer-scope setup assertions
+}
+
+func TestCacheTaskScope(t *testing.T) {
+	t.Parallel()
+
+	assert := NewGomegaWithT(t)
+	ctx := context.Background()
+
+	cfg := loadConfig(t, "steps/caches_task_scope.yml")
+
+	nativeDriver, err := native.New(ctx, native.Config{Namespace: "test-cache-task-scope"}, discardLogger())
+	assert.Expect(err).NotTo(HaveOccurred())
+	defer func() { _ = nativeDriver.Close() }()
+
+	sqliteStore, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-cache-task-scope", discardLogger())
+	assert.Expect(err).NotTo(HaveOccurred())
+	defer func() { _ = sqliteStore.Close() }()
+
+	store := &runnerKeyCaptureStore{}
+	cachingDriver := cache.WrapWithCaching(nativeDriver, store, "zstd", "test-prefix", discardLogger())
+
+	runner := backwards.New(cfg, cachingDriver, sqliteStore, discardLogger(), "run-1", "pipeline-task-scope", backwards.RunnerOptions{})
+	err = runner.Run(ctx)
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	// Each task should have produced its own distinct cache key (not shared across tasks).
+	keys := store.capturedKeys()
+	assert.Expect(keys).To(HaveLen(2))
+	assert.Expect(keys[0]).NotTo(Equal(keys[1]))
+	assert.Expect(keys[0]).To(ContainSubstring("task-a"))
+	assert.Expect(keys[1]).To(ContainSubstring("task-b"))
 }

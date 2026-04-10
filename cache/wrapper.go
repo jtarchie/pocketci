@@ -37,3 +37,23 @@ func WrapWithCaching(
 
 	return NewCachingDriver(driver, store, compressor, keyPrefix, logger, volOpts...)
 }
+
+// AugmentKeyPrefix returns a copy of the CachingDriver with additionalPrefix appended
+// to its existing key prefix. If driver is not a *CachingDriver (caching not configured),
+// the original driver is returned unchanged.
+//
+// This is used to scope cache keys to a specific pipeline/job/task combination without
+// changing the global prefix configured at startup.
+func AugmentKeyPrefix(driver orchestra.Driver, additionalPrefix string) orchestra.Driver {
+	cd, ok := driver.(*CachingDriver)
+	if !ok {
+		return driver
+	}
+
+	newPrefix := additionalPrefix
+	if cd.keyPrefix != "" {
+		newPrefix = cd.keyPrefix + "/" + additionalPrefix
+	}
+
+	return NewCachingDriver(cd.inner, cd.store, cd.compressor, newPrefix, cd.logger, cd.volOpts...)
+}
