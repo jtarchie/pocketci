@@ -6,6 +6,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/jtarchie/pocketci/orchestra/k8s"
+	_ "github.com/jtarchie/pocketci/resources/mock"
 	"github.com/jtarchie/pocketci/testhelpers"
 	. "github.com/onsi/gomega"
 )

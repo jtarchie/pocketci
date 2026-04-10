@@ -30,14 +30,19 @@ func (h *GetHandler) Execute(sc *StepContext, step *config.Step, pathPrefix stri
 		return fmt.Errorf("get step: %w", err)
 	}
 
-	resourceType, err := findResourceType(sc.ResourceTypes, resource.Type)
-	if err != nil {
-		return fmt.Errorf("get step: %w", err)
+	isNative := resources.IsNative(resource.Type)
+
+	// resourceType is only needed for container-based resources; skip the lookup for native ones.
+	var resourceType *config.ResourceType
+	if !isNative {
+		resourceType, err = findResourceType(sc.ResourceTypes, resource.Type)
+		if err != nil {
+			return fmt.Errorf("get step: %w", err)
+		}
 	}
 
 	versionMode := step.GetConfig.GetVersionMode()
 	scopedName := getScopedResourceName(sc.PipelineID, resourceName)
-	isNative := sc.Driver.Name() == "native" && resources.IsNative(resource.Type)
 
 	version, err := h.resolveVersionToFetch(sc, step, resource, resourceType, versionMode, scopedName, isNative, pathPrefix)
 	if err != nil {

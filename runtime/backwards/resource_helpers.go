@@ -1,6 +1,7 @@
 package backwards
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	config "github.com/jtarchie/pocketci/backwards"
+	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/resources"
 	"github.com/samber/lo"
@@ -216,7 +218,34 @@ type nativeVolumeContext struct {
 	driver orchestra.Driver
 }
 
-func (v *nativeVolumeContext) WriteFile(_ context.Context, path string, data []byte) error {
+func (v *nativeVolumeContext) WriteFile(ctx context.Context, path string, data []byte) error {
+	if accessor, ok := v.driver.(cache.VolumeDataAccessor); ok {
+		var buf bytes.Buffer
+		tw := tar.NewWriter(&buf)
+
+		err := tw.WriteHeader(&tar.Header{Name: path, Mode: 0o600, Size: int64(len(data))})
+		if err != nil {
+			return fmt.Errorf("write tar header for %q: %w", path, err)
+		}
+
+		_, err = tw.Write(data)
+		if err != nil {
+			return fmt.Errorf("write tar data for %q: %w", path, err)
+		}
+
+		err = tw.Close()
+		if err != nil {
+			return fmt.Errorf("close tar for %q: %w", path, err)
+		}
+
+		err = accessor.CopyToVolume(ctx, v.vol.Name(), &buf)
+		if err != nil {
+			return fmt.Errorf("copy to volume for %q: %w", path, err)
+		}
+
+		return nil
+	}
+
 	err := os.WriteFile(filepath.Join(v.vol.Path(), path), data, 0o600)
 	if err != nil {
 		return fmt.Errorf("write file %q: %w", path, err)
@@ -225,7 +254,28 @@ func (v *nativeVolumeContext) WriteFile(_ context.Context, path string, data []b
 	return nil
 }
 
-func (v *nativeVolumeContext) ReadFile(_ context.Context, path string) ([]byte, error) {
+func (v *nativeVolumeContext) ReadFile(ctx context.Context, path string) ([]byte, error) {
+	if accessor, ok := v.driver.(cache.VolumeDataAccessor); ok {
+		rc, err := accessor.ReadFilesFromVolume(ctx, v.vol.Name(), path)
+		if err != nil {
+			return nil, fmt.Errorf("read from volume for %q: %w", path, err)
+		}
+		defer func() { _ = rc.Close() }()
+
+		tr := tar.NewReader(rc)
+		_, err = tr.Next()
+		if err != nil {
+			return nil, fmt.Errorf("read tar entry for %q: %w", path, err)
+		}
+
+		fileData, err := io.ReadAll(tr)
+		if err != nil {
+			return nil, fmt.Errorf("read tar data for %q: %w", path, err)
+		}
+
+		return fileData, nil
+	}
+
 	data, err := os.ReadFile(filepath.Join(v.vol.Path(), path))
 	if err != nil {
 		return nil, fmt.Errorf("read file %q: %w", path, err)

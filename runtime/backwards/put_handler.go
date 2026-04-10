@@ -31,12 +31,16 @@ func (h *PutHandler) Execute(sc *StepContext, step *config.Step, pathPrefix stri
 		return fmt.Errorf("put step: %w", err)
 	}
 
-	resourceType, err := findResourceType(sc.ResourceTypes, resource.Type)
-	if err != nil {
-		return fmt.Errorf("put step: %w", err)
-	}
+	isNative := resources.IsNative(resource.Type)
 
-	isNative := sc.Driver.Name() == "native" && resources.IsNative(resource.Type)
+	// resourceType is only needed for container-based resources; skip the lookup for native ones.
+	var resourceType *config.ResourceType
+	if !isNative {
+		resourceType, err = findResourceType(sc.ResourceTypes, resource.Type)
+		if err != nil {
+			return fmt.Errorf("put step: %w", err)
+		}
+	}
 
 	params := step.Params
 

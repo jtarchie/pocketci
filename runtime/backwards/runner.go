@@ -8,6 +8,7 @@ import (
 
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/resources"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
@@ -20,9 +21,9 @@ func validateResourceTypes(cfg *config.Config) error {
 		validTypes[rt.Name] = true
 	}
 
-	for _, resource := range cfg.Resources {
-		if !validTypes[resource.Type] {
-			return fmt.Errorf("resource %q has undefined resource type %q", resource.Name, resource.Type)
+	for _, r := range cfg.Resources {
+		if !validTypes[r.Type] && !resources.IsNative(r.Type) {
+			return fmt.Errorf("resource %q has undefined resource type %q", r.Name, r.Type)
 		}
 	}
 

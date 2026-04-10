@@ -1,9 +1,3 @@
-resource_types:
-  - name: mock
-    type: registry-image
-    source:
-      repository: concourse/mock-resource
-
 resources:
   - name: source-code
     type: mock
