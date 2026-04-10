@@ -1749,6 +1749,65 @@ func TestNotifyStepIntegration(t *testing.T) {
 	assert.Expect(payload["status"]).To(Equal("success"))
 }
 
+func TestNotifyStepMessageFile(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert := NewGomegaWithT(t)
+
+			var mu sync.Mutex
+
+			var receivedBody string
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer func() { _ = r.Body.Close() }()
+
+				body, _ := io.ReadAll(r.Body)
+
+				mu.Lock()
+				receivedBody = string(body)
+				mu.Unlock()
+
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer server.Close()
+
+			cfg := loadConfig(t, "steps/notify_message_file.yml")
+
+			logger := discardLogger()
+
+			driver, err := df.new("test-notify-msg-file-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			notifier := jsapi.NewNotifier(logger)
+			notifier.SetConfigs(map[string]jsapi.NotifyConfig{
+				"test-webhook": {Type: "http", URL: server.URL},
+			})
+			notifier.SetContext(jsapi.NotifyContext{
+				PipelineName: "test-pipeline",
+				Status:       "pending",
+			})
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-notify-msg-file-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{Notifier: notifier})
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			assert.Expect(receivedBody).To(ContainSubstring("Hello test-pipeline"))
+		})
+	}
+}
+
 func TestTargetedJobsRunsOnlyTargeted(t *testing.T) {
 	t.Parallel()
 

@@ -160,9 +160,10 @@ type Step struct {
 	// marshal/unmarshal round-trips.
 	Params map[string]string `yaml:"params,omitempty"`
 
-	Notify  any    `yaml:"notify,omitempty"`  // string or []string — notification config name(s)
-	Message string `yaml:"message,omitempty"` // Go template message with Sprig functions
-	Async   bool   `yaml:"async,omitempty"`   // fire-and-forget mode
+	Notify      any    `yaml:"notify,omitempty"`       // string or []string — notification config name(s)
+	Message     string `yaml:"message,omitempty"`      // Go template message with Sprig functions
+	MessageFile string `yaml:"message_file,omitempty"` // volume/path to Go template message file
+	Async       bool   `yaml:"async,omitempty"`        // fire-and-forget mode
 
 	Do        Steps `yaml:"do,omitempty"`
 	Ensure    *Step `yaml:"ensure,omitempty"`

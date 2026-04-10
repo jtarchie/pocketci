@@ -1,0 +1,25 @@
+assert:
+  execution:
+    - "notify-job"
+
+jobs:
+  - name: notify-job
+    plan:
+      - task: write-message
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          outputs:
+            - name: task-output
+          run:
+            path: sh
+            args:
+              - "-c"
+              - "printf 'Hello {{ .PipelineName }}' > task-output/message.txt"
+        assert:
+          code: 0
+      - notify: test-webhook
+        message_file: task-output/message.txt

@@ -40,6 +40,21 @@ func (h *NotifyHandler) Execute(sc *StepContext, step *config.Step, pathPrefix s
 
 	names := step.NotifyNames()
 
+	message := step.Message
+
+	if step.MessageFile != "" {
+		contents, err := loadRawBytesFromVolume(sc, step.MessageFile)
+		if err != nil {
+			_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+				"status": "failure",
+			})
+
+			return &TaskFailedError{TaskName: "notify/" + identifier, Code: 1}
+		}
+
+		message = string(contents)
+	}
+
 	var sendErr error
 
 	if step.Async {
@@ -54,11 +69,11 @@ func (h *NotifyHandler) Execute(sc *StepContext, step *config.Step, pathPrefix s
 						"error", err,
 					)
 				}
-			}(name, step.Message)
+			}(name, message)
 		}
 	} else {
 		for _, name := range names {
-			err := sc.Notifier.Send(sc.Ctx, name, step.Message)
+			err := sc.Notifier.Send(sc.Ctx, name, message)
 			if err != nil {
 				sendErr = err
 

@@ -91,6 +91,43 @@ The most common step. Runs a command inside a container:
   timeout: 10m
 ```
 
+### notify
+
+Send a notification to a configured backend (Slack, Teams, HTTP webhook). The
+`notify` key is the name (or list of names) of a notification config registered
+with the pipeline.
+
+```yaml
+# Inline message with Go/Sprig template
+- notify: my-webhook
+  message: "Build {{ .JobName }} finished: {{ .Status | upper }}"
+
+# Multiple destinations
+- notify:
+    - slack-channel
+    - teams-webhook
+  message: "Deploy done"
+
+# Fire-and-forget (does not block or fail the step on error)
+- notify: audit-log
+  message: "Pipeline {{ .PipelineName }} started"
+  async: true
+
+# Load the message template from a file in a prior task's output volume
+- notify: my-webhook
+  message_file: task-output/message.txt
+```
+
+The `message` and `message_file` fields are rendered as Go
+[`text/template`](https://pkg.go.dev/text/template) strings with
+[Sprig](https://masterminds.github.io/sprig/) functions. The template context
+exposes `.PipelineName`, `.JobName`, `.BuildID`, `.Status`, `.StartTime`,
+`.EndTime`, `.Duration`, `.Environment`, and `.TaskResults`.
+
+When `message_file` is set it takes precedence over `message`. The path format
+is `<volume-name>/<relative-path>`, matching the same convention used by `task`
+`file:` and `agent` `prompt_file:` fields.
+
 ### get / put
 
 Fetch and publish resources:
