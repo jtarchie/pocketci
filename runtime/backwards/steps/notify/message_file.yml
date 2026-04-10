@@ -18,7 +18,7 @@ jobs:
             path: sh
             args:
               - "-c"
-              - "printf 'Hello {{ .PipelineName }}' > task-output/message.txt"
+              - "printf 'Hello from file' > task-output/message.txt"
         assert:
           code: 0
       - notify: test-webhook

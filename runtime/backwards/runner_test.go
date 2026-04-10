@@ -1773,7 +1773,7 @@ func TestNotifyStepMessageFile(t *testing.T) {
 			}))
 			defer server.Close()
 
-			cfg := loadConfig(t, "steps/notify_message_file.yml")
+			cfg := loadConfig(t, "steps/notify/message_file.yml")
 
 			logger := discardLogger()
 
@@ -1803,7 +1803,7 @@ func TestNotifyStepMessageFile(t *testing.T) {
 			mu.Lock()
 			defer mu.Unlock()
 
-			assert.Expect(receivedBody).To(ContainSubstring("Hello test-pipeline"))
+			assert.Expect(receivedBody).To(ContainSubstring("Hello from file"))
 		})
 	}
 }
