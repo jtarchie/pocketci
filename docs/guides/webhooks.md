@@ -114,7 +114,8 @@ curl -X POST http://localhost:8080/api/webhooks/<pipeline-id> \
 Detected when the request includes an `X-Gitlab-Event` header.
 
 - **`provider`**: `"gitlab"`
-- **`eventType`**: value of `X-Gitlab-Event` (e.g. `"Push Hook"`, `"Merge Request Hook"`)
+- **`eventType`**: value of `X-Gitlab-Event` (e.g. `"Push Hook"`,
+  `"Merge Request Hook"`)
 - **Signature header**: `X-Gitlab-Token: sha256=<hex>` (HMAC-SHA256) or a plain
   token value for GitLab's older token-based auth
 - If a webhook secret is configured and the header is missing or invalid, the
@@ -125,7 +126,8 @@ Detected when the request includes an `X-Gitlab-Event` header.
 Detected when the request includes an `X-Event-Key` header.
 
 - **`provider`**: `"bitbucket"`
-- **`eventType`**: value of `X-Event-Key` (e.g. `"repo:push"`, `"pullrequest:created"`)
+- **`eventType`**: value of `X-Event-Key` (e.g. `"repo:push"`,
+  `"pullrequest:created"`)
 - **Signature header**: `X-Hub-Signature: sha256=<hex>` (HMAC-SHA256)
 - If a webhook secret is configured and the header is missing or invalid, the
   request is rejected with `401 Unauthorized`.
@@ -159,10 +161,11 @@ Detected when the request includes a `Honeybadger-Token` header.
 Detected when the request includes a `Stripe-Signature` header.
 
 - **`provider`**: `"stripe"`
-- **`eventType`**: top-level `type` field from the JSON body (e.g. `"charge.succeeded"`, `"payment_intent.created"`)
-- **Signature header**: `Stripe-Signature: t=<timestamp>,v1=<hex>` — Stripe signs
-  `<timestamp>.<body>` with HMAC-SHA256. Multiple `v1=` values are supported for
-  key rotation.
+- **`eventType`**: top-level `type` field from the JSON body (e.g.
+  `"charge.succeeded"`, `"payment_intent.created"`)
+- **Signature header**: `Stripe-Signature: t=<timestamp>,v1=<hex>` — Stripe
+  signs `<timestamp>.<body>` with HMAC-SHA256. Multiple `v1=` values are
+  supported for key rotation.
 - If a webhook secret is configured and the signature is missing or invalid, the
   request is rejected with `401 Unauthorized`.
 
@@ -186,7 +189,8 @@ Detected when the request includes a `Linear-Signature` header.
 - **`provider`**: `"linear"`
 - **`eventType`**: top-level `type` field, falling back to `action` (e.g.
   `"Issue"`, `"create"`)
-- **Signature header**: `Linear-Signature: <hex>` (plain hex HMAC-SHA256 of the body)
+- **Signature header**: `Linear-Signature: <hex>` (plain hex HMAC-SHA256 of the
+  body)
 - If a webhook secret is configured and the signature is missing or invalid, the
   request is rejected with `401 Unauthorized`.
 
@@ -197,7 +201,8 @@ Detected when the request includes a `Sentry-Hook-Signature` header.
 - **`provider`**: `"sentry"`
 - **`eventType`**: value of `Sentry-Hook-Resource` header (e.g. `"issue"`,
   `"error"`), falling back to `action` or `type` from the JSON body
-- **Signature header**: `Sentry-Hook-Signature: <hex>` (plain hex HMAC-SHA256 of the body)
+- **Signature header**: `Sentry-Hook-Signature: <hex>` (plain hex HMAC-SHA256 of
+  the body)
 - If a webhook secret is configured and the signature is missing or invalid, the
   request is rejected with `401 Unauthorized`.
 
@@ -378,15 +383,15 @@ webhook matches specific criteria, using the
 
 ### Available variables
 
-| Variable    | Type                     | Description                                                            |
-| ----------- | ------------------------ | ---------------------------------------------------------------------- |
+| Variable    | Type                     | Description                                                                                                                                          |
+| ----------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `provider`  | `string`                 | Detected provider: `"github"`, `"gitlab"`, `"bitbucket"`, `"slack"`, `"honeybadger"`, `"stripe"`, `"pagerduty"`, `"linear"`, `"sentry"`, `"generic"` |
-| `eventType` | `string`                 | Provider-specific event type (e.g. `"push"`)                           |
-| `method`    | `string`                 | HTTP method (`"GET"`, `"POST"`, …)                                     |
-| `headers`   | `map[string]string`      | Request headers (keys are lowercase)                                   |
-| `query`     | `map[string]string`      | Parsed query parameters                                                |
-| `body`      | `string`                 | Raw request body                                                       |
-| `payload`   | `map[string]any` / `nil` | JSON-decoded body; `nil` when body is not valid JSON                   |
+| `eventType` | `string`                 | Provider-specific event type (e.g. `"push"`)                                                                                                         |
+| `method`    | `string`                 | HTTP method (`"GET"`, `"POST"`, …)                                                                                                                   |
+| `headers`   | `map[string]string`      | Request headers (keys are lowercase)                                                                                                                 |
+| `query`     | `map[string]string`      | Parsed query parameters                                                                                                                              |
+| `body`      | `string`                 | Raw request body                                                                                                                                     |
+| `payload`   | `map[string]any` / `nil` | JSON-decoded body; `nil` when body is not valid JSON                                                                                                 |
 
 ### `webhookTrigger(expression)` — JS/TS pipelines
 
