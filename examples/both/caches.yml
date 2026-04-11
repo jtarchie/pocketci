@@ -1,6 +1,7 @@
 ---
-# Example pipeline demonstrating cache usage.
-# Caches persist across pipeline runs and are backed by S3 when configured.
+# Pipeline testing cache behavior with and without a backend.
+# Uses set -e so any failure in the cache directory (e.g. volume not mounted)
+# immediately causes exit 1, making the bug visible in tests.
 
 jobs:
   - name: build-with-cache
@@ -19,13 +20,12 @@ jobs:
             args:
               - -c
               - |
-                  echo "First build"
-                  echo "Cache before: $(ls -la ./cache 2>&1)"
-                  echo "hello" > ./cache/data.txt
-                  echo "Cache after: $(cat ./cache/data.txt)"
-                  echo "Done"
+                  set -e
+                  echo "first build"
+                  echo "pocketci" > ./cache/data.txt
+                  echo "written: $(cat ./cache/data.txt)"
         assert:
-          stdout: Done
+          stdout: "written: pocketci"
           code: 0
 
       - task: second-build
@@ -42,9 +42,9 @@ jobs:
             args:
               - -c
               - |
-                  echo "Second build"
-                  echo "Cache contents: $(cat ./cache/data.txt)"
-                  echo "Cache persisted!"
+                  set -e
+                  echo "second build"
+                  echo "read: $(cat ./cache/data.txt)"
         assert:
-          stdout: Cache persisted!
+          stdout: "read: pocketci"
           code: 0

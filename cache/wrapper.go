@@ -19,6 +19,7 @@ func WrapWithCaching(
 	volOpts ...CachingVolumeOption,
 ) orchestra.Driver {
 	if store == nil {
+		logger.Warn("cache.backend.unconfigured", "driver", driver.Name(), "note", "cache volumes will be ephemeral within each run and not persisted across runs")
 		return driver
 	}
 

@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -450,6 +451,11 @@ func buildInitExec(command []string, workDir string, mappings []mountMapping) []
 		for _, m := range mappings {
 			initParts = append(initParts, "mkdir -p /workspace/"+m.volumeName)
 			if m.mountPath != m.volumeName {
+				// Ensure the parent directory of the symlink target exists before
+				// creating the symlink. Without this, paths like "repo/.git" fail
+				// with exit 1 because /workspace/repo/ doesn't exist yet.
+				parentDir := path.Dir("/workspace/" + m.mountPath)
+				initParts = append(initParts, "mkdir -p "+parentDir)
 				initParts = append(initParts, "ln -sfn /workspace/"+m.volumeName+" /workspace/"+m.mountPath)
 			}
 		}
