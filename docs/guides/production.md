@@ -31,7 +31,8 @@ fly secrets set \
 flyctl deploy \
   --image ghcr.io/jtarchie/pocketci:latest \
   --env CI_STORAGE_SQLITE_PATH=/data/pocketci.db \
-  --env CI_SECRETS_SQLITE_PATH=/data/pocketci.db
+  --env CI_SECRETS_SQLITE_PATH=/data/pocketci.db \
+  --env CI_SECURE_COOKIES=true
 ```
 
 Your server is now live at `https://my-pocketci.fly.dev`, protected by basic

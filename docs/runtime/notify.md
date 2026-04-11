@@ -39,7 +39,8 @@ Send a notification to a named backend. Returns a Promise.
 
 - `name` — backend name (must match a key from `backends`)
 - `message` — Go template string rendered against the current context (supports
-  [Sprig functions](../runtime/templating.md))
+  most [Sprig functions](../runtime/templating.md); `env` and `expandenv` are
+  not available for security reasons)
 - `async` (optional) — fire-and-forget; resolves immediately without waiting for
   delivery
 

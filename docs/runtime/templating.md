@@ -41,7 +41,7 @@ This preprocessing happens at **pipeline validation time** (when you run
 
 ## Available Functions
 
-All [Sprig string functions] are available, including:
+Most [Sprig functions] are available, including:
 
 - **Case conversion**: `upper`, `lower`, `title`, `snakecase`, `camelcase`
 - **String operations**: `replace`, `repeat`, `substr`, `join`, `split`, `trim`,
@@ -51,7 +51,12 @@ All [Sprig string functions] are available, including:
 - **Defaults**: `default`, `coalesce`, `empty`
 - **Type functions**: `type`, `string`, `int`, `float`
 
-See the [Sprig documentation] for the complete list.
+> **Security note:** The `env` and `expandenv` functions are intentionally
+> unavailable. Templates cannot read server environment variables (which may
+> include secrets). Use PocketCI's [Secrets](../operations/secrets.md) feature
+> instead.
+
+See the [Sprig documentation] for the complete list of available functions.
 
 ## Example: Reducing Duplicate Agent Prompts
 
