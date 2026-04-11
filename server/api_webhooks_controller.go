@@ -58,21 +58,22 @@ func (c *APIWebhooksController) detectWebhookEvent(ctx *echo.Context, webhookSec
 		})
 	}
 
-	logger.Debug("webhook.detecting", "body_bytes", len(body))
-
-	for k, v := range ctx.Request().Header {
-		if len(v) > 0 {
-			logger.Debug("webhook.header", "key", k, "value", v[0])
-		}
+	// Log header names only — values may contain signature material or tokens.
+	headerNames := make([]string, 0, len(ctx.Request().Header))
+	for k := range ctx.Request().Header {
+		headerNames = append(headerNames, k)
 	}
+	logger.Debug("webhook.detecting", "body_bytes", len(body), "header_names", headerNames)
 
 	event, err := webhooks.Detect(c.providers, ctx.Request(), body, webhookSecret)
 	if err != nil {
 		if errors.Is(err, webhooks.ErrUnauthorized) {
+			// Do not log signature header values — they are cryptographic material
+			// and logging them aids offline secret-recovery attempts.
 			logger.Error("webhook.unauthorized",
-				"signature_header", ctx.Request().Header.Get("X-Hub-Signature-256"),
-				"slack_signature", ctx.Request().Header.Get("X-Slack-Signature"),
-				"generic_signature", ctx.Request().Header.Get("X-Webhook-Signature"),
+				"has_hub_signature", ctx.Request().Header.Get("X-Hub-Signature-256") != "",
+				"has_slack_signature", ctx.Request().Header.Get("X-Slack-Signature") != "",
+				"has_generic_signature", ctx.Request().Header.Get("X-Webhook-Signature") != "",
 			)
 
 			return nil, respondJSON(ctx, http.StatusUnauthorized, map[string]string{
