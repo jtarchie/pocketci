@@ -20,7 +20,8 @@ All pipelines have access to these globals:
   (see
   [Scheduling guide](../guides/scheduling.md#triggering-pipelines-from-javascript))
 - `assert` — test assertions (useful for inline validation)
-- `notify` — send notifications to Slack, Teams, Discord, HTTP webhooks, and email (see [notify](notify.md))
+- `notify` — send notifications to Slack, Teams, Discord, HTTP webhooks, and
+  email (see [notify](notify.md))
 
 ## Example
 

@@ -38,8 +38,10 @@ Set backends and pipeline context in a single call.
 Send a notification to a named backend. Returns a Promise.
 
 - `name` — backend name (must match a key from `backends`)
-- `message` — Go template string rendered against the current context (supports [Sprig functions](../runtime/templating.md))
-- `async` (optional) — fire-and-forget; resolves immediately without waiting for delivery
+- `message` — Go template string rendered against the current context (supports
+  [Sprig functions](../runtime/templating.md))
+- `async` (optional) — fire-and-forget; resolves immediately without waiting for
+  delivery
 
 ```typescript
 const result = await notify.send({
@@ -62,7 +64,8 @@ Send the same message to multiple backends at once. Returns a Promise.
 
 ## notify.updateContext(partial)
 
-Apply a partial update to the current context. Only non-empty fields overwrite existing values.
+Apply a partial update to the current context. Only non-empty fields overwrite
+existing values.
 
 ```typescript
 notify.updateContext({ status: "success", endTime: new Date().toISOString() });
@@ -70,7 +73,8 @@ notify.updateContext({ status: "success", endTime: new Date().toISOString() });
 
 ## NotifyConfig
 
-All fields support `secret:KEY` references for credentials (see [Secrets](../operations/secrets.md)).
+All fields support `secret:KEY` references for credentials (see
+[Secrets](../operations/secrets.md)).
 
 ### Slack
 
@@ -105,7 +109,8 @@ All fields support `secret:KEY` references for credentials (see [Secrets](../ope
 }
 ```
 
-Payload sent as JSON: `{ "subject": "Pipeline Notification", "message": "<rendered>" }`.
+Payload sent as JSON:
+`{ "subject": "Pipeline Notification", "message": "<rendered>" }`.
 
 ### Discord
 
@@ -135,17 +140,17 @@ Payload sent as JSON: `{ "subject": "Pipeline Notification", "message": "<render
 
 Fields available in message templates:
 
-| Field          | Description                            |
-| -------------- | -------------------------------------- |
-| `PipelineName` | Pipeline name                          |
-| `JobName`      | Current job name                       |
-| `BuildID`      | Unique build identifier                |
+| Field          | Description                                         |
+| -------------- | --------------------------------------------------- |
+| `PipelineName` | Pipeline name                                       |
+| `JobName`      | Current job name                                    |
+| `BuildID`      | Unique build identifier                             |
 | `Status`       | `pending`, `running`, `success`, `failure`, `error` |
-| `StartTime`    | ISO timestamp                          |
-| `EndTime`      | ISO timestamp                          |
-| `Duration`     | Human-readable duration                |
-| `Environment`  | Map of environment variables           |
-| `TaskResults`  | Map of task output values              |
+| `StartTime`    | ISO timestamp                                       |
+| `EndTime`      | ISO timestamp                                       |
+| `Duration`     | Human-readable duration                             |
+| `Environment`  | Map of environment variables                        |
+| `TaskResults`  | Map of task output values                           |
 
 ## Full example
 
@@ -183,7 +188,8 @@ const pipeline = async () => {
   } finally {
     await notify.send({
       name: "slack",
-      message: "{{ if eq .Status \"success\" }}✅{{ else }}❌{{ end }} {{ .PipelineName }}: {{ .Status }}",
+      message:
+        '{{ if eq .Status "success" }}✅{{ else }}❌{{ end }} {{ .PipelineName }}: {{ .Status }}',
     });
   }
 };
