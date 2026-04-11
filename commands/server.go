@@ -79,16 +79,17 @@ type Server struct {
 	HoneybadgerEnv           string   `env:"CI_HONEYBADGER_ENV"                                  help:"Honeybadger environment name (e.g., 'production')"`
 
 	// OAuth provider configuration
-	OAuthGithubClientID        string `env:"CI_OAUTH_GITHUB_CLIENT_ID"        help:"GitHub OAuth application client ID"                            name:"oauth-github-client-id"`
-	OAuthGithubClientSecret    string `env:"CI_OAUTH_GITHUB_CLIENT_SECRET"    help:"GitHub OAuth application client secret"                        name:"oauth-github-client-secret"`
-	OAuthGitlabClientID        string `env:"CI_OAUTH_GITLAB_CLIENT_ID"        help:"GitLab OAuth application client ID"                            name:"oauth-gitlab-client-id"`
-	OAuthGitlabClientSecret    string `env:"CI_OAUTH_GITLAB_CLIENT_SECRET"    help:"GitLab OAuth application client secret"                        name:"oauth-gitlab-client-secret"`
-	OAuthGitlabURL             string `env:"CI_OAUTH_GITLAB_URL"              help:"Self-hosted GitLab URL (defaults to https://gitlab.com)"       name:"oauth-gitlab-url"`
-	OAuthMicrosoftClientID     string `env:"CI_OAUTH_MICROSOFT_CLIENT_ID"     help:"Microsoft/Azure AD OAuth client ID"                            name:"oauth-microsoft-client-id"`
-	OAuthMicrosoftClientSecret string `env:"CI_OAUTH_MICROSOFT_CLIENT_SECRET" help:"Microsoft/Azure AD OAuth client secret"                        name:"oauth-microsoft-client-secret"`
-	OAuthMicrosoftTenant       string `env:"CI_OAUTH_MICROSOFT_TENANT"        help:"Azure AD tenant ID (defaults to 'common')"                     name:"oauth-microsoft-tenant"`
-	OAuthSessionSecret         string `env:"CI_OAUTH_SESSION_SECRET"          help:"Secret key for encrypting OAuth session cookies"               name:"oauth-session-secret"`
-	OAuthCallbackURL           string `env:"CI_OAUTH_CALLBACK_URL"            help:"Base URL for OAuth callbacks (e.g., 'https://ci.example.com')" name:"oauth-callback-url"`
+	OAuthGithubClientID        string `env:"CI_OAUTH_GITHUB_CLIENT_ID"        help:"GitHub OAuth application client ID"                                  name:"oauth-github-client-id"`
+	OAuthGithubClientSecret    string `env:"CI_OAUTH_GITHUB_CLIENT_SECRET"    help:"GitHub OAuth application client secret"                              name:"oauth-github-client-secret"`
+	OAuthGitlabClientID        string `env:"CI_OAUTH_GITLAB_CLIENT_ID"        help:"GitLab OAuth application client ID"                                  name:"oauth-gitlab-client-id"`
+	OAuthGitlabClientSecret    string `env:"CI_OAUTH_GITLAB_CLIENT_SECRET"    help:"GitLab OAuth application client secret"                              name:"oauth-gitlab-client-secret"`
+	OAuthGitlabURL             string `env:"CI_OAUTH_GITLAB_URL"              help:"Self-hosted GitLab URL (defaults to https://gitlab.com)"             name:"oauth-gitlab-url"`
+	OAuthMicrosoftClientID     string `env:"CI_OAUTH_MICROSOFT_CLIENT_ID"     help:"Microsoft/Azure AD OAuth client ID"                                  name:"oauth-microsoft-client-id"`
+	OAuthMicrosoftClientSecret string `env:"CI_OAUTH_MICROSOFT_CLIENT_SECRET" help:"Microsoft/Azure AD OAuth client secret"                              name:"oauth-microsoft-client-secret"`
+	OAuthMicrosoftTenant       string `env:"CI_OAUTH_MICROSOFT_TENANT"        help:"Azure AD tenant ID (defaults to 'common')"                           name:"oauth-microsoft-tenant"`
+	OAuthSessionSecret         string `env:"CI_OAUTH_SESSION_SECRET"          help:"Secret key for encrypting OAuth session cookies"                     name:"oauth-session-secret"`
+	OAuthCallbackURL           string `env:"CI_OAUTH_CALLBACK_URL"            help:"Base URL for OAuth callbacks (e.g., 'https://ci.example.com')"       name:"oauth-callback-url"`
+	SecureCookies              bool   `env:"CI_SECURE_COOKIES"                help:"Enable Secure flag on session cookies (set when serving over HTTPS)" name:"secure-cookies"`
 
 	// RBAC configuration
 	ServerRBAC string `env:"CI_SERVER_RBAC" help:"Expr expression for server-level access control (e.g., 'Email endsWith \"@company.com\"')" name:"server-rbac"`
@@ -204,6 +205,7 @@ func (c *Server) Run(logger *slog.Logger) error {
 		FetchMaxResponseBytes: int64(c.FetchMaxResponseMB) * 1024 * 1024,
 		DedupTTL:              c.DedupTTL,
 		AuthConfig:            authConfig,
+		SecureCookies:         c.SecureCookies,
 		ObservabilityProvider: obsProvider,
 		DefaultDriver:         defaultDriver,
 		DriverConfigs:         driverConfigs,

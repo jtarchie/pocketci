@@ -18,13 +18,16 @@ func init() {
 }
 
 // SessionStore creates a gorilla cookie store configured for secure session management.
-func SessionStore(secret string) *sessions.CookieStore {
+// Set secureCookie to true when the server is served over HTTPS to enable the
+// Secure flag, which prevents the cookie from being transmitted over plain HTTP.
+func SessionStore(secret string, secureCookie bool) *sessions.CookieStore {
 	store := sessions.NewCookieStore([]byte(secret))
 	store.Options = &sessions.Options{
 		Path:     "/",
 		MaxAge:   86400, // 24 hours
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
+		Secure:   secureCookie,
 	}
 
 	return store

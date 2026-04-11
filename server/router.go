@@ -61,6 +61,9 @@ type RouterOptions struct {
 	// WebhookProviders is the ordered list of webhook providers to use for detection.
 	// Providers are checked in order; the first match wins.
 	WebhookProviders []webhooks.Provider
+	// SecureCookies enables the Secure flag on session cookies.
+	// Set to true when the server is served over HTTPS.
+	SecureCookies bool
 }
 
 // Router wraps echo.Echo and provides access to the execution service.
@@ -293,7 +296,7 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	if opts.AuthConfig != nil && opts.AuthConfig.HasOAuthProviders() {
 		// Initialize OAuth providers and session store
 		auth.InitProviders(opts.AuthConfig)
-		sessionStore := auth.SessionStore(opts.AuthConfig.SessionSecret)
+		sessionStore := auth.SessionStore(opts.AuthConfig.SessionSecret, opts.SecureCookies)
 		tokenValidator := auth.TokenValidator(opts.AuthConfig.SessionSecret)
 
 		// Create OAuth authorization server for MCP clients.
@@ -351,7 +354,7 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	api := router.Group("/api")
 
 	if opts.AuthConfig != nil && opts.AuthConfig.HasOAuthProviders() {
-		sessionStore := auth.SessionStore(opts.AuthConfig.SessionSecret)
+		sessionStore := auth.SessionStore(opts.AuthConfig.SessionSecret, opts.SecureCookies)
 		tokenValidator := auth.TokenValidator(opts.AuthConfig.SessionSecret)
 		api.Use(auth.RequireAuth(opts.AuthConfig, sessionStore, tokenValidator, logger))
 
