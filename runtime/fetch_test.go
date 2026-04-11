@@ -81,7 +81,7 @@ func TestFetchBasicGET(t *testing.T) {
 	defer ts.Close()
 
 	js := runtime.NewJS(slog.Default())
-	err := js.Execute(context.Background(), fmt.Sprintf(`
+	err := js.ExecuteWithOptions(context.Background(), fmt.Sprintf(`
 		const pipeline = async () => {
 			const resp = await fetch("%s/text");
 			assert.equal(resp.status, 200);
@@ -91,7 +91,7 @@ func TestFetchBasicGET(t *testing.T) {
 			assert.equal(body, "hello world");
 		};
 		export { pipeline };
-	`, ts.URL), nil, nil)
+	`, ts.URL), nil, nil, runtime.ExecuteOptions{FetchAllowPrivateIPs: true})
 	assert.Expect(err).NotTo(HaveOccurred())
 }
 
@@ -102,7 +102,7 @@ func TestFetchJSON(t *testing.T) {
 	defer ts.Close()
 
 	js := runtime.NewJS(slog.Default())
-	err := js.Execute(context.Background(), fmt.Sprintf(`
+	err := js.ExecuteWithOptions(context.Background(), fmt.Sprintf(`
 		const pipeline = async () => {
 			const resp = await fetch("%s/json");
 			assert.equal(resp.status, 200);
@@ -111,7 +111,7 @@ func TestFetchJSON(t *testing.T) {
 			assert.equal(data.count, 42);
 		};
 		export { pipeline };
-	`, ts.URL), nil, nil)
+	`, ts.URL), nil, nil, runtime.ExecuteOptions{FetchAllowPrivateIPs: true})
 	assert.Expect(err).NotTo(HaveOccurred())
 }
 
@@ -122,7 +122,7 @@ func TestFetchPOSTWithBody(t *testing.T) {
 	defer ts.Close()
 
 	js := runtime.NewJS(slog.Default())
-	err := js.Execute(context.Background(), fmt.Sprintf(`
+	err := js.ExecuteWithOptions(context.Background(), fmt.Sprintf(`
 		const pipeline = async () => {
 			const resp = await fetch("%s/echo", {
 				method: "POST",
@@ -136,7 +136,7 @@ func TestFetchPOSTWithBody(t *testing.T) {
 			assert.equal(data.headers["X-Custom"], "test-value");
 		};
 		export { pipeline };
-	`, ts.URL), nil, nil)
+	`, ts.URL), nil, nil, runtime.ExecuteOptions{FetchAllowPrivateIPs: true})
 	assert.Expect(err).NotTo(HaveOccurred())
 }
 
@@ -147,13 +147,13 @@ func TestFetchResponseHeaders(t *testing.T) {
 	defer ts.Close()
 
 	js := runtime.NewJS(slog.Default())
-	err := js.Execute(context.Background(), fmt.Sprintf(`
+	err := js.ExecuteWithOptions(context.Background(), fmt.Sprintf(`
 		const pipeline = async () => {
 			const resp = await fetch("%s/json");
 			assert.equal(resp.headers["content-type"], "application/json");
 		};
 		export { pipeline };
-	`, ts.URL), nil, nil)
+	`, ts.URL), nil, nil, runtime.ExecuteOptions{FetchAllowPrivateIPs: true})
 	assert.Expect(err).NotTo(HaveOccurred())
 }
 
@@ -164,7 +164,7 @@ func TestFetchNon200Status(t *testing.T) {
 	defer ts.Close()
 
 	js := runtime.NewJS(slog.Default())
-	err := js.Execute(context.Background(), fmt.Sprintf(`
+	err := js.ExecuteWithOptions(context.Background(), fmt.Sprintf(`
 		const pipeline = async () => {
 			const resp = await fetch("%s/status/404");
 			assert.equal(resp.status, 404);
@@ -173,7 +173,7 @@ func TestFetchNon200Status(t *testing.T) {
 			assert.containsString(body, "404");
 		};
 		export { pipeline };
-	`, ts.URL), nil, nil)
+	`, ts.URL), nil, nil, runtime.ExecuteOptions{FetchAllowPrivateIPs: true})
 	assert.Expect(err).NotTo(HaveOccurred())
 }
 
@@ -184,14 +184,14 @@ func TestFetchServerError(t *testing.T) {
 	defer ts.Close()
 
 	js := runtime.NewJS(slog.Default())
-	err := js.Execute(context.Background(), fmt.Sprintf(`
+	err := js.ExecuteWithOptions(context.Background(), fmt.Sprintf(`
 		const pipeline = async () => {
 			const resp = await fetch("%s/status/500");
 			assert.equal(resp.status, 500);
 			assert.equal(resp.ok, false);
 		};
 		export { pipeline };
-	`, ts.URL), nil, nil)
+	`, ts.URL), nil, nil, runtime.ExecuteOptions{FetchAllowPrivateIPs: true})
 	assert.Expect(err).NotTo(HaveOccurred())
 }
 
@@ -202,7 +202,7 @@ func TestFetchTimeout(t *testing.T) {
 	defer ts.Close()
 
 	js := runtime.NewJS(slog.Default())
-	err := js.Execute(context.Background(), fmt.Sprintf(`
+	err := js.ExecuteWithOptions(context.Background(), fmt.Sprintf(`
 		const pipeline = async () => {
 			try {
 				await fetch("%s/slow", { timeout: 100 });
@@ -212,7 +212,7 @@ func TestFetchTimeout(t *testing.T) {
 			}
 		};
 		export { pipeline };
-	`, ts.URL), nil, nil)
+	`, ts.URL), nil, nil, runtime.ExecuteOptions{FetchAllowPrivateIPs: true})
 	assert.Expect(err).NotTo(HaveOccurred())
 }
 
@@ -235,6 +235,7 @@ func TestFetchMaxResponseSize(t *testing.T) {
 		export { pipeline };
 	`, ts.URL), nil, nil, runtime.ExecuteOptions{
 		FetchMaxResponseBytes: 1 * 1024 * 1024,
+		FetchAllowPrivateIPs:  true,
 	})
 	assert.Expect(err).NotTo(HaveOccurred())
 }
@@ -307,7 +308,7 @@ func TestFetchPUTMethod(t *testing.T) {
 	defer ts.Close()
 
 	js := runtime.NewJS(slog.Default())
-	err := js.Execute(context.Background(), fmt.Sprintf(`
+	err := js.ExecuteWithOptions(context.Background(), fmt.Sprintf(`
 		const pipeline = async () => {
 			const resp = await fetch("%s/echo", {
 				method: "PUT",
@@ -318,7 +319,7 @@ func TestFetchPUTMethod(t *testing.T) {
 			assert.containsString(data.body, "updated content");
 		};
 		export { pipeline };
-	`, ts.URL), nil, nil)
+	`, ts.URL), nil, nil, runtime.ExecuteOptions{FetchAllowPrivateIPs: true})
 	assert.Expect(err).NotTo(HaveOccurred())
 }
 
@@ -329,7 +330,7 @@ func TestFetchDELETEMethod(t *testing.T) {
 	defer ts.Close()
 
 	js := runtime.NewJS(slog.Default())
-	err := js.Execute(context.Background(), fmt.Sprintf(`
+	err := js.ExecuteWithOptions(context.Background(), fmt.Sprintf(`
 		const pipeline = async () => {
 			const resp = await fetch("%s/echo", {
 				method: "DELETE",
@@ -338,7 +339,7 @@ func TestFetchDELETEMethod(t *testing.T) {
 			assert.equal(data.method, "DELETE");
 		};
 		export { pipeline };
-	`, ts.URL), nil, nil)
+	`, ts.URL), nil, nil, runtime.ExecuteOptions{FetchAllowPrivateIPs: true})
 	assert.Expect(err).NotTo(HaveOccurred())
 }
 
@@ -349,7 +350,7 @@ func TestFetchMultipleSequential(t *testing.T) {
 	defer ts.Close()
 
 	js := runtime.NewJS(slog.Default())
-	err := js.Execute(context.Background(), fmt.Sprintf(`
+	err := js.ExecuteWithOptions(context.Background(), fmt.Sprintf(`
 		const pipeline = async () => {
 			const r1 = await fetch("%s/text");
 			assert.equal(r1.text(), "hello world");
@@ -363,6 +364,6 @@ func TestFetchMultipleSequential(t *testing.T) {
 			assert.equal(r3.ok, true);
 		};
 		export { pipeline };
-	`, ts.URL, ts.URL, ts.URL), nil, nil)
+	`, ts.URL, ts.URL, ts.URL), nil, nil, runtime.ExecuteOptions{FetchAllowPrivateIPs: true})
 	assert.Expect(err).NotTo(HaveOccurred())
 }

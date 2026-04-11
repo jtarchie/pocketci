@@ -48,6 +48,10 @@ type ExecuteOptions struct {
 	DisableNotifications bool
 	// DisableFetch prevents the fetch() function from making outbound HTTP requests.
 	DisableFetch bool
+	// FetchAllowPrivateIPs disables SSRF protection and allows fetch() to reach
+	// RFC1918 and link-local addresses. Should only be set in trusted environments
+	// where pipelines need to call internal services.
+	FetchAllowPrivateIPs bool
 	// FetchTimeout is the default timeout for fetch() calls.
 	FetchTimeout time.Duration
 	// FetchMaxResponseBytes is the maximum response body size for fetch() calls.
@@ -269,6 +273,7 @@ func (j *JS) setupJSVM(
 
 	fetchRuntime := jsapi.NewFetchRuntime(ctx, jsVM, runtime.promises, runtime.tasks, opts.FetchTimeout, opts.FetchMaxResponseBytes)
 	fetchRuntime.Disabled = opts.DisableFetch
+	fetchRuntime.BlockPrivateIPs = !opts.FetchAllowPrivateIPs
 
 	err = jsVM.Set("fetch", fetchRuntime.Fetch)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -13,6 +14,71 @@ import (
 	"github.com/dop251/goja"
 	"github.com/go-resty/resty/v2"
 )
+
+// privateIPRanges lists IP networks that should not be reachable from
+// user-authored pipelines to prevent Server-Side Request Forgery (SSRF)
+// against cloud metadata services, internal APIs, and RFC1918 networks.
+var privateIPRanges = func() []*net.IPNet {
+	blocks := []string{
+		"127.0.0.0/8",    // IPv4 loopback
+		"10.0.0.0/8",     // RFC 1918
+		"172.16.0.0/12",  // RFC 1918
+		"192.168.0.0/16", // RFC 1918
+		"169.254.0.0/16", // link-local / cloud metadata (169.254.169.254)
+		"100.64.0.0/10",  // shared address space (RFC 6598)
+		"::1/128",        // IPv6 loopback
+		"fc00::/7",       // IPv6 unique local
+		"fe80::/10",      // IPv6 link-local
+	}
+
+	nets := make([]*net.IPNet, 0, len(blocks))
+	for _, b := range blocks {
+		_, network, err := net.ParseCIDR(b)
+		if err == nil {
+			nets = append(nets, network)
+		}
+	}
+
+	return nets
+}()
+
+// isPrivateIP returns true if the given IP falls in any blocked private range.
+func isPrivateIP(ip net.IP) bool {
+	for _, network := range privateIPRanges {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// ssrfSafeDialer returns a DialContext function that resolves the target
+// hostname and rejects connections to private/internal IP addresses.
+func ssrfSafeDialer() func(ctx context.Context, network, addr string) (net.Conn, error) {
+	base := &net.Dialer{Timeout: 10 * time.Second}
+
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid address %q: %w", addr, err)
+		}
+
+		addrs, err := net.DefaultResolver.LookupHost(ctx, host)
+		if err != nil {
+			return nil, fmt.Errorf("could not resolve %q: %w", host, err)
+		}
+
+		for _, a := range addrs {
+			ip := net.ParseIP(a)
+			if ip != nil && isPrivateIP(ip) {
+				return nil, fmt.Errorf("fetch blocked: %q resolves to private address %s", host, a)
+			}
+		}
+
+		return base.DialContext(ctx, network, net.JoinHostPort(addrs[0], port))
+	}
+}
 
 const (
 	defaultFetchTimeout          = 30 * time.Second
@@ -52,6 +118,7 @@ type FetchRuntime struct {
 	promises         *sync.WaitGroup
 	tasks            chan func() error
 	Disabled         bool
+	BlockPrivateIPs  bool // when true, requests to RFC1918/link-local addresses are rejected
 	timeout          time.Duration
 	maxResponseBytes int64
 }
@@ -80,6 +147,7 @@ func NewFetchRuntime(
 		tasks:            tasks,
 		timeout:          timeout,
 		maxResponseBytes: maxResponseBytes,
+		BlockPrivateIPs:  true, // default on: prevent SSRF to internal services
 	}
 }
 
@@ -156,6 +224,13 @@ func (f *FetchRuntime) Fetch(call goja.FunctionCall) goja.Value {
 func (f *FetchRuntime) doFetch(url, method string, headers map[string]string, body string, timeout time.Duration) (*FetchResponse, error) {
 	client := resty.New().
 		SetTimeout(timeout)
+
+	if f.BlockPrivateIPs {
+		transport := &http.Transport{
+			DialContext: ssrfSafeDialer(),
+		}
+		client.SetTransport(transport)
+	}
 
 	r := client.R().
 		SetContext(f.ctx).

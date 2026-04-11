@@ -47,6 +47,9 @@ type ExecutorOptions struct {
 	DisableNotifications bool
 	// DisableFetch prevents the fetch() function from making outbound HTTP requests.
 	DisableFetch bool
+	// FetchAllowPrivateIPs disables SSRF protection and allows fetch() to reach
+	// RFC1918 and link-local addresses. Should only be set in trusted environments.
+	FetchAllowPrivateIPs bool
 	// FetchTimeout is the default timeout for fetch() calls.
 	FetchTimeout time.Duration
 	// FetchMaxResponseBytes is the maximum response body size for fetch() calls.
@@ -186,6 +189,7 @@ func ExecutePipeline(
 		SecretsManager:        opts.SecretsManager,
 		DisableNotifications:  opts.DisableNotifications,
 		DisableFetch:          opts.DisableFetch,
+		FetchAllowPrivateIPs:  opts.FetchAllowPrivateIPs,
 		FetchTimeout:          opts.FetchTimeout,
 		FetchMaxResponseBytes: opts.FetchMaxResponseBytes,
 		Args:                  opts.Args,
