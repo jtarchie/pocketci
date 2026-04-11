@@ -258,6 +258,7 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	}))
 	router.Use(newSlogMiddleware(logger))
 	router.Use(middleware.Recover())
+	router.Use(middleware.BodyLimit(10 * 1024 * 1024))
 
 	renderer, err := newTemplates()
 	if err != nil {
