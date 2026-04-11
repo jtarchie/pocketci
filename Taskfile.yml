@@ -47,7 +47,7 @@ tasks:
     dir: e2e
     cmds:
       - rm -f e2e-test.db
-      - npx playwright test
+      - npx playwright test tests/accordion.spec.ts tests/docs.spec.ts tests/pipelines.spec.ts tests/search_pagination.spec.ts tests/share.spec.ts
 
   docs:screenshots:
     desc: Regenerate getting-started guide screenshots (macOS only, not CI)
@@ -55,12 +55,6 @@ tasks:
     cmds:
       - rm -f e2e-test.db e2e-secrets.db
       - npx playwright test getting-started
-
-  docs:screenshots:production:
-    desc: Regenerate production guide screenshots (macOS only, not CI)
-    dir: e2e
-    cmds:
-      - rm -f e2e-test.db e2e-secrets.db
       - npx playwright test production
 
   test:vz:
