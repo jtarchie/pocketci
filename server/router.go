@@ -259,6 +259,11 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	router.Use(newSlogMiddleware(logger))
 	router.Use(middleware.Recover())
 	router.Use(middleware.BodyLimit(10 * 1024 * 1024))
+	router.Use(middleware.SecureWithConfig(middleware.SecureConfig{
+		XSSProtection:      "1; mode=block",
+		ContentTypeNosniff: "nosniff",
+		XFrameOptions:      "DENY",
+	}))
 
 	renderer, err := newTemplates()
 	if err != nil {
