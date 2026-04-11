@@ -63,11 +63,11 @@ func (m *mockCachingDriver) CreateVolume(_ context.Context, name string, _ int) 
 }
 
 func (m *mockCachingDriver) RunContainer(_ context.Context, _ orchestra.Task) (orchestra.Container, error) {
-	return nil, nil
+	return nil, nil //nolint:nilnil // stub; never called in these tests
 }
 
 func (m *mockCachingDriver) GetContainer(_ context.Context, _ string) (orchestra.Container, error) {
-	return nil, nil
+	return nil, nil //nolint:nilnil // stub; never called in these tests
 }
 
 func (m *mockCachingDriver) Close() error { return nil }
