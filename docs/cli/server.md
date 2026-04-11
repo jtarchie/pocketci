@@ -103,8 +103,8 @@ Set `--cache-s3-bucket` to enable volume caching. See
 - `--oauth-callback-url` — public callback URL for OAuth redirects (env:
   `CI_OAUTH_CALLBACK_URL`)
 - `--secure-cookies` — enable the `Secure` flag on session cookies; set this
-  when the server is served over HTTPS so cookies are never sent over plain
-  HTTP (env: `CI_SECURE_COOKIES`)
+  when the server is served over HTTPS so cookies are never sent over plain HTTP
+  (env: `CI_SECURE_COOKIES`)
 - `--server-rbac` — server-wide RBAC expression (env: `CI_SERVER_RBAC`)
 
 > **Note:** Basic auth and OAuth are mutually exclusive. You cannot enable both
@@ -137,8 +137,8 @@ pocketci server \
   --secure-cookies
 ```
 
-> **HTTPS deployments:** Always pass `--secure-cookies` when serving over
-> HTTPS. This prevents session cookies from being transmitted over plain HTTP
+> **HTTPS deployments:** Always pass `--secure-cookies` when serving over HTTPS.
+> This prevents session cookies from being transmitted over plain HTTP
 > connections.
 
 The server provides:
