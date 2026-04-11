@@ -5,21 +5,21 @@
 class Pocketci < Formula
   desc "Local-first CI/CD runtime with JavaScript/TypeScript pipelines"
   homepage "https://github.com/jtarchie/pocketci"
-  version "0.1.3"
+  version "0.1.4"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.intel?
-      url "https://github.com/jtarchie/pocketci/releases/download/v0.1.3/pocketci_0.1.3_darwin_amd64.tar.gz"
-      sha256 "e59661492a30f79107ee122f55d77445e0a9f3218b0505f8c15736dca31e21fd"
+      url "https://github.com/jtarchie/pocketci/releases/download/v0.1.4/pocketci_0.1.4_darwin_amd64.tar.gz"
+      sha256 "dc5dee9a54ccdd173ac93647e94d71bb039f20b337631b7e294db816986d0838"
 
       define_method(:install) do
         bin.install "pocketci"
       end
     end
     if Hardware::CPU.arm?
-      url "https://github.com/jtarchie/pocketci/releases/download/v0.1.3/pocketci_0.1.3_darwin_arm64.tar.gz"
-      sha256 "96d181e7b8ffa64dce24e8eb8956abba6f4a7201782e99a41a1e23e17e42cd08"
+      url "https://github.com/jtarchie/pocketci/releases/download/v0.1.4/pocketci_0.1.4_darwin_arm64.tar.gz"
+      sha256 "00f750c4dd16e9d721fdf7cb19068d129b9f782733abd22c4aa64de08e5dc175"
 
       define_method(:install) do
         bin.install "pocketci"
@@ -29,15 +29,15 @@ class Pocketci < Formula
 
   on_linux do
     if Hardware::CPU.intel? && Hardware::CPU.is_64_bit?
-      url "https://github.com/jtarchie/pocketci/releases/download/v0.1.3/pocketci_0.1.3_linux_amd64.tar.gz"
-      sha256 "a052f9a1611f614302292e6f02157d147ba98a1c169eb270542466ab74b65eb9"
+      url "https://github.com/jtarchie/pocketci/releases/download/v0.1.4/pocketci_0.1.4_linux_amd64.tar.gz"
+      sha256 "cfb7fddfa96f71be520565709a3952205035345a761d35e6b6553b890af84116"
       define_method(:install) do
         bin.install "pocketci"
       end
     end
     if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
-      url "https://github.com/jtarchie/pocketci/releases/download/v0.1.3/pocketci_0.1.3_linux_arm64.tar.gz"
-      sha256 "7514420d6214acd17ce7a3f69ee7321834304942720fec1fd5b2bffd965b5a89"
+      url "https://github.com/jtarchie/pocketci/releases/download/v0.1.4/pocketci_0.1.4_linux_arm64.tar.gz"
+      sha256 "3eec9f81819fc52bf05d0b6801194b944f76d4c7298246fd857e511c351571e9"
       define_method(:install) do
         bin.install "pocketci"
       end
