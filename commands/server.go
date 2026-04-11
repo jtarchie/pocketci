@@ -24,6 +24,9 @@ import (
 	"github.com/jtarchie/pocketci/orchestra/k8s"
 	"github.com/jtarchie/pocketci/orchestra/native"
 	"github.com/jtarchie/pocketci/orchestra/qemu"
+	"github.com/jtarchie/pocketci/orchestra/vz"
+	"github.com/jtarchie/pocketci/resources"
+	"github.com/jtarchie/pocketci/resources/mock"
 	"github.com/jtarchie/pocketci/s3config"
 	"github.com/jtarchie/pocketci/secrets"
 	secretsnoop "github.com/jtarchie/pocketci/secrets/noop"
@@ -223,6 +226,19 @@ func (c *Server) Run(logger *slog.Logger) error {
 			webhooklinear.New(),
 			webhooksentry.New(),
 			webhookgeneric.New(),
+		},
+		NativeResources: []resources.Resource{
+			&mock.Mock{},
+		},
+		DriverProviders: []orchestra.DriverProvider{
+			docker.NewProvider(),
+			native.NewProvider(),
+			fly.NewProvider(),
+			hetzner.NewProvider(),
+			digitalocean.NewProvider(),
+			k8s.NewProvider(),
+			qemu.NewProvider(),
+			vz.NewProvider(),
 		},
 	})
 	if err != nil {

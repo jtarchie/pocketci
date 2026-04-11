@@ -14,7 +14,10 @@ import (
 	"github.com/jtarchie/pocketci/storage"
 )
 
-func validateResourceTypes(cfg *config.Config) error {
+// emptyRegistry is used when no registry is provided to avoid nil checks everywhere.
+var emptyRegistry = resources.NewRegistry(nil)
+
+func validateResourceTypes(cfg *config.Config, registry *resources.Registry) error {
 	validTypes := map[string]bool{"registry-image": true}
 
 	for _, rt := range cfg.ResourceTypes {
@@ -22,7 +25,7 @@ func validateResourceTypes(cfg *config.Config) error {
 	}
 
 	for _, r := range cfg.Resources {
-		if !validTypes[r.Type] && !resources.IsNative(r.Type) {
+		if !validTypes[r.Type] && !registry.IsNative(r.Type) {
 			return fmt.Errorf("resource %q has undefined resource type %q", r.Name, r.Type)
 		}
 	}
@@ -136,8 +139,13 @@ func validateNoCycles(cfg *config.Config) error {
 // ValidateConfig validates the pipeline configuration before execution.
 // It checks resource types, job name uniqueness, resource references,
 // passed constraint validity, and circular dependency detection.
-func ValidateConfig(cfg *config.Config) error {
-	err := validateResourceTypes(cfg)
+// Pass nil for registry to use an empty registry (no native resources).
+func ValidateConfig(cfg *config.Config, registry *resources.Registry) error {
+	if registry == nil {
+		registry = emptyRegistry
+	}
+
+	err := validateResourceTypes(cfg, registry)
 	if err != nil {
 		return err
 	}
@@ -162,31 +170,33 @@ func ValidateConfig(cfg *config.Config) error {
 
 // RunnerOptions holds optional configuration for a Runner.
 type RunnerOptions struct {
-	Notifier       *jsapi.Notifier
-	TargetJobs     []string
-	WebhookData    *jsapi.WebhookData
-	DedupTTL       time.Duration
-	SecretsManager secrets.Manager
-	AgentBaseURLs  map[string]string         // overrides agent provider base URLs; used in tests to avoid global state
-	OutputCallback func(stream, data string) // called for each chunk of task stdout/stderr
+	Notifier         *jsapi.Notifier
+	TargetJobs       []string
+	WebhookData      *jsapi.WebhookData
+	DedupTTL         time.Duration
+	SecretsManager   secrets.Manager
+	ResourceRegistry *resources.Registry       // native resource implementations; nil uses an empty registry
+	AgentBaseURLs    map[string]string         // overrides agent provider base URLs; used in tests to avoid global state
+	OutputCallback   func(stream, data string) // called for each chunk of task stdout/stderr
 }
 
 // Runner executes a parsed pipeline Config using Go-native execution.
 type Runner struct {
-	config         *config.Config
-	driver         orchestra.Driver
-	storage        storage.Driver
-	logger         *slog.Logger
-	runID          string
-	pipelineID     string
-	notifier       *jsapi.Notifier
-	targetJobs     []string
-	webhookData    *jsapi.WebhookData
-	dedupTTL       time.Duration
-	secretsManager secrets.Manager
-	agentBaseURLs  map[string]string
-	outputCallback func(stream, data string)
-	dependents     map[string][]*config.Job // reverse index: jobName → jobs that depend on it
+	config           *config.Config
+	driver           orchestra.Driver
+	storage          storage.Driver
+	logger           *slog.Logger
+	runID            string
+	pipelineID       string
+	notifier         *jsapi.Notifier
+	targetJobs       []string
+	webhookData      *jsapi.WebhookData
+	dedupTTL         time.Duration
+	secretsManager   secrets.Manager
+	resourceRegistry *resources.Registry
+	agentBaseURLs    map[string]string
+	outputCallback   func(stream, data string)
+	dependents       map[string][]*config.Job // reverse index: jobName → jobs that depend on it
 }
 
 // New creates a Runner for the given pipeline config.
@@ -199,20 +209,26 @@ func New(
 	pipelineID string,
 	opts RunnerOptions,
 ) *Runner {
+	registry := opts.ResourceRegistry
+	if registry == nil {
+		registry = emptyRegistry
+	}
+
 	return &Runner{
-		config:         cfg,
-		driver:         driver,
-		storage:        store,
-		logger:         logger,
-		runID:          runID,
-		pipelineID:     pipelineID,
-		notifier:       opts.Notifier,
-		targetJobs:     opts.TargetJobs,
-		webhookData:    opts.WebhookData,
-		dedupTTL:       opts.DedupTTL,
-		secretsManager: opts.SecretsManager,
-		agentBaseURLs:  opts.AgentBaseURLs,
-		outputCallback: opts.OutputCallback,
+		config:           cfg,
+		driver:           driver,
+		storage:          store,
+		logger:           logger,
+		runID:            runID,
+		pipelineID:       pipelineID,
+		notifier:         opts.Notifier,
+		targetJobs:       opts.TargetJobs,
+		webhookData:      opts.WebhookData,
+		dedupTTL:         opts.DedupTTL,
+		secretsManager:   opts.SecretsManager,
+		resourceRegistry: registry,
+		agentBaseURLs:    opts.AgentBaseURLs,
+		outputCallback:   opts.OutputCallback,
 	}
 }
 
@@ -249,7 +265,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			return nil
 		}
 
-		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.pipelineID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight, r.notifier, r.webhookData, r.dedupTTL, r.secretsManager, r.agentBaseURLs, r.outputCallback)
+		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.pipelineID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight, r.notifier, r.webhookData, r.dedupTTL, r.secretsManager, r.resourceRegistry, r.agentBaseURLs, r.outputCallback)
 
 		err := jr.Run(ctx)
 		if err != nil {

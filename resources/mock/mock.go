@@ -126,10 +126,4 @@ func (m *Mock) Out(_ context.Context, _ resources.VolumeContext, req resources.O
 	}, nil
 }
 
-func init() {
-	resources.Register("mock", func() resources.Resource {
-		return &Mock{}
-	})
-}
-
 var _ resources.Resource = &Mock{}

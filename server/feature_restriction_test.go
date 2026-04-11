@@ -9,7 +9,6 @@ import (
 	"os"
 	"testing"
 
-	_ "github.com/jtarchie/pocketci/orchestra/native"
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/server"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"

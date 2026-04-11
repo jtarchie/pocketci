@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"strings"
+
 	"github.com/evanw/esbuild/pkg/api"
 	"github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/cache"
@@ -23,6 +25,8 @@ import (
 	"github.com/jtarchie/pocketci/orchestra/docker"
 	"github.com/jtarchie/pocketci/orchestra/k8s"
 	"github.com/jtarchie/pocketci/orchestra/native"
+	"github.com/jtarchie/pocketci/resources"
+	"github.com/jtarchie/pocketci/resources/mock"
 	"github.com/jtarchie/pocketci/runtime"
 	runtimebackwards "github.com/jtarchie/pocketci/runtime/backwards"
 	"github.com/jtarchie/pocketci/s3config"
@@ -30,7 +34,6 @@ import (
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/storage"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
-	"strings"
 )
 
 type Execute struct {
@@ -169,6 +172,7 @@ func (c *Execute) runJSPipeline(ctx context.Context, pipelinePath, runtimeID str
 		SecretsManager:        secretsManager,
 		FetchTimeout:          c.FetchTimeout,
 		FetchMaxResponseBytes: int64(c.FetchMaxResponseMB) * 1024 * 1024,
+		ResourceRegistry:      resources.NewRegistry([]resources.Resource{&mock.Mock{}}),
 	}
 
 	if c.Resume && opts.RunID == "" {
@@ -200,7 +204,7 @@ func (c *Execute) runYAMLPipeline(
 		return fmt.Errorf("could not load YAML pipeline: %w", err)
 	}
 
-	err = runtimebackwards.ValidateConfig(cfg)
+	err = runtimebackwards.ValidateConfig(cfg, nil)
 	if err != nil {
 		return fmt.Errorf("invalid pipeline: %w", err)
 	}
@@ -212,7 +216,8 @@ func (c *Execute) runYAMLPipeline(
 
 	runner := runtimebackwards.New(cfg, driver, store, logger, runID, runtimeID,
 		runtimebackwards.RunnerOptions{
-			SecretsManager: secretsManager,
+			SecretsManager:   secretsManager,
+			ResourceRegistry: resources.NewRegistry([]resources.Resource{&mock.Mock{}}),
 		},
 	)
 

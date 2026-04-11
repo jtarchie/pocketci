@@ -5,8 +5,6 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/jtarchie/pocketci/orchestra/docker"
-	_ "github.com/jtarchie/pocketci/orchestra/native"
 	"github.com/jtarchie/pocketci/runtime/runner"
 	storage "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"

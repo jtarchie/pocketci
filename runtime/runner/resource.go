@@ -15,15 +15,24 @@ import (
 type ResourceRunner struct {
 	ctx            context.Context //nolint: containedctx
 	logger         *slog.Logger
+	registry       *resources.Registry
 	secretsManager secrets.Manager
 	pipelineID     string
 }
 
+// emptyRegistry is used when no registry is provided.
+var emptyRegistry = resources.NewRegistry(nil)
+
 // NewResourceRunner creates a new ResourceRunner.
-func NewResourceRunner(ctx context.Context, logger *slog.Logger) *ResourceRunner {
+func NewResourceRunner(ctx context.Context, logger *slog.Logger, registry *resources.Registry) *ResourceRunner {
+	if registry == nil {
+		registry = emptyRegistry
+	}
+
 	return &ResourceRunner{
-		ctx:    ctx,
-		logger: logger.WithGroup("resource.run"),
+		ctx:      ctx,
+		logger:   logger.WithGroup("resource.run"),
+		registry: registry,
 	}
 }
 
@@ -56,7 +65,7 @@ func (r *ResourceRunner) Check(input ResourceCheckInput) (*ResourceCheckResult, 
 		return nil, fmt.Errorf("could not resolve secrets in source: %w", err)
 	}
 
-	res, err := resources.Get(input.Type)
+	res, err := r.registry.Get(input.Type)
 	if err != nil {
 		return nil, fmt.Errorf("resource type not found: %w", err)
 	}
@@ -114,7 +123,7 @@ func (r *ResourceRunner) Fetch(input ResourceFetchInput) (*ResourceFetchResult, 
 		return nil, fmt.Errorf("could not resolve secrets in params: %w", err)
 	}
 
-	res, err := resources.Get(input.Type)
+	res, err := r.registry.Get(input.Type)
 	if err != nil {
 		return nil, fmt.Errorf("resource type not found: %w", err)
 	}
@@ -178,7 +187,7 @@ func (r *ResourceRunner) Push(input ResourcePushInput) (*ResourcePushResult, err
 		return nil, fmt.Errorf("could not resolve secrets in params: %w", err)
 	}
 
-	res, err := resources.Get(input.Type)
+	res, err := r.registry.Get(input.Type)
 	if err != nil {
 		return nil, fmt.Errorf("resource type not found: %w", err)
 	}
@@ -211,12 +220,12 @@ func (r *ResourceRunner) Push(input ResourcePushInput) (*ResourcePushResult, err
 
 // IsNative returns true if the given resource type is a native resource.
 func (r *ResourceRunner) IsNative(resourceType string) bool {
-	return resources.IsNative(resourceType)
+	return r.registry.IsNative(resourceType)
 }
 
 // ListNativeResources returns a list of all registered native resource types.
 func (r *ResourceRunner) ListNativeResources() []string {
-	return resources.List()
+	return r.registry.List()
 }
 
 // NativeResourceInfo holds information about resource execution for JSON serialization.

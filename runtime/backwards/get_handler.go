@@ -30,7 +30,7 @@ func (h *GetHandler) Execute(sc *StepContext, step *config.Step, pathPrefix stri
 		return fmt.Errorf("get step: %w", err)
 	}
 
-	isNative := resources.IsNative(resource.Type)
+	isNative := sc.ResourceRegistry.IsNative(resource.Type)
 
 	// resourceType is only needed for container-based resources; skip the lookup for native ones.
 	var resourceType *config.ResourceType
@@ -151,7 +151,7 @@ func (h *GetHandler) checkNative(
 	resource *config.Resource,
 	lastKnownVersion map[string]string,
 ) ([]map[string]string, error) {
-	res, err := resources.Get(resource.Type)
+	res, err := sc.ResourceRegistry.Get(resource.Type)
 	if err != nil {
 		return nil, fmt.Errorf("get native resource %q: %w", resource.Type, err)
 	}

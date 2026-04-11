@@ -159,7 +159,7 @@ func TestResourceRunnerSecretResolutionRecursive(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	logger := slog.New(slog.DiscardHandler)
-	rr := runner.NewResourceRunner(context.Background(), logger)
+	rr := runner.NewResourceRunner(context.Background(), logger, nil)
 
 	mgr := newMapSecretsManager(map[string]string{
 		"pipeline/pipe1/DB_PASS": "s3cr3t",
@@ -191,7 +191,7 @@ func TestResourceRunnerSecretMissingReturnsError(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	logger := slog.New(slog.DiscardHandler)
-	rr := runner.NewResourceRunner(context.Background(), logger)
+	rr := runner.NewResourceRunner(context.Background(), logger, nil)
 
 	mgr := newMapSecretsManager(map[string]string{}) // no secrets stored
 	rr.SetSecretsManager(mgr, "pipe1")
@@ -211,7 +211,7 @@ func TestResourceRunnerFetchSecretMissing(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	logger := slog.New(slog.DiscardHandler)
-	rr := runner.NewResourceRunner(context.Background(), logger)
+	rr := runner.NewResourceRunner(context.Background(), logger, nil)
 
 	mgr := newMapSecretsManager(map[string]string{})
 	rr.SetSecretsManager(mgr, "pipe1")
@@ -233,7 +233,7 @@ func TestResourceRunnerPushSecretMissing(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	logger := slog.New(slog.DiscardHandler)
-	rr := runner.NewResourceRunner(context.Background(), logger)
+	rr := runner.NewResourceRunner(context.Background(), logger, nil)
 
 	mgr := newMapSecretsManager(map[string]string{})
 	rr.SetSecretsManager(mgr, "pipe1")

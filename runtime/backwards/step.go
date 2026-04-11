@@ -9,6 +9,7 @@ import (
 
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/resources"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
 	"github.com/jtarchie/pocketci/secrets"
@@ -67,8 +68,9 @@ type StepContext struct {
 	KnownVolumes       map[string]string // maps mount name → driver volume name, shared across tasks in a job
 
 	// --- Pipeline resources ---
-	Resources     config.Resources
-	ResourceTypes config.ResourceTypes
+	Resources        config.Resources
+	ResourceTypes    config.ResourceTypes
+	ResourceRegistry *resources.Registry
 
 	// --- Notification and agent subsystems ---
 	Notifier       *jsapi.Notifier

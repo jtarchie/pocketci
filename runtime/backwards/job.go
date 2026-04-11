@@ -12,6 +12,7 @@ import (
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/resources"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	pipelinerunner "github.com/jtarchie/pocketci/runtime/runner"
 	"github.com/jtarchie/pocketci/secrets"
@@ -37,6 +38,7 @@ type JobRunner struct {
 	webhookData         *jsapi.WebhookData
 	dedupTTL            time.Duration
 	secretsManager      secrets.Manager
+	resourceRegistry    *resources.Registry
 	agentBaseURLs       map[string]string
 	outputCallback      func(stream, data string)
 }
@@ -48,13 +50,14 @@ func newJobRunner(
 	logger *slog.Logger,
 	runID string,
 	pipelineID string,
-	resources config.Resources,
+	pipelineResources config.Resources,
 	resourceTypes config.ResourceTypes,
 	pipelineMaxInFlight int,
 	notifier *jsapi.Notifier,
 	webhookData *jsapi.WebhookData,
 	dedupTTL time.Duration,
 	secretsManager secrets.Manager,
+	resourceRegistry *resources.Registry,
 	agentBaseURLs map[string]string,
 	outputCallback func(stream, data string),
 ) *JobRunner {
@@ -65,13 +68,14 @@ func newJobRunner(
 		logger:              logger,
 		runID:               runID,
 		pipelineID:          pipelineID,
-		resources:           resources,
+		resources:           pipelineResources,
 		resourceTypes:       resourceTypes,
 		pipelineMaxInFlight: pipelineMaxInFlight,
 		notifier:            notifier,
 		webhookData:         webhookData,
 		dedupTTL:            dedupTTL,
 		secretsManager:      secretsManager,
+		resourceRegistry:    resourceRegistry,
 		agentBaseURLs:       agentBaseURLs,
 		outputCallback:      outputCallback,
 		handlers: map[string]StepHandler{
@@ -130,6 +134,7 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		KnownVolumes:       make(map[string]string),
 		Resources:          jr.resources,
 		ResourceTypes:      jr.resourceTypes,
+		ResourceRegistry:   jr.resourceRegistry,
 		JobParams:          extractJobParams(jr.job, jr.webhookData),
 		Notifier:           jr.notifier,
 		PipelineRunner:     pr,

@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	_ "github.com/jtarchie/pocketci/orchestra/docker"
 	"github.com/jtarchie/pocketci/testhelpers"
 )
 

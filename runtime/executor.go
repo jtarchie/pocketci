@@ -9,6 +9,7 @@ import (
 
 	backwards "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/resources"
 	runtimebackwards "github.com/jtarchie/pocketci/runtime/backwards"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/runtime/support"
@@ -81,6 +82,9 @@ type ExecutorOptions struct {
 	// ContentType indicates the pipeline content format. When set to
 	// ContentTypeYAML the Go-native runner is used instead of the JS VM.
 	ContentType storage.ContentType
+	// ResourceRegistry holds the set of native resource implementations available
+	// during pipeline execution. May be nil for pipelines that use no native resources.
+	ResourceRegistry *resources.Registry
 }
 
 // initExecutionDriver creates or reuses a driver for pipeline execution.
@@ -155,11 +159,12 @@ func ExecutePipeline(
 
 		runner := runtimebackwards.New(cfg, driver, store, logger, runID, opts.PipelineID,
 			runtimebackwards.RunnerOptions{
-				SecretsManager: opts.SecretsManager,
-				WebhookData:    opts.WebhookData,
-				TargetJobs:     opts.TargetJobs,
-				DedupTTL:       opts.DedupTTL,
-				OutputCallback: opts.OutputCallback,
+				SecretsManager:   opts.SecretsManager,
+				WebhookData:      opts.WebhookData,
+				TargetJobs:       opts.TargetJobs,
+				DedupTTL:         opts.DedupTTL,
+				OutputCallback:   opts.OutputCallback,
+				ResourceRegistry: opts.ResourceRegistry,
 			},
 		)
 
@@ -196,6 +201,7 @@ func ExecutePipeline(
 		DedupTTL:              opts.DedupTTL,
 		TargetJobs:            opts.TargetJobs,
 		TriggerCallback:       opts.TriggerCallback,
+		ResourceRegistry:      opts.ResourceRegistry,
 	}
 
 	// If pre-seeded volumes were provided, pass them through.

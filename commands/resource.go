@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jtarchie/pocketci/resources"
+	"github.com/jtarchie/pocketci/resources/mock"
 )
 
 // Resource command for executing native resource operations.
@@ -23,7 +24,11 @@ type Resource struct {
 }
 
 func (r *Resource) Run(logger *slog.Logger) error {
-	res, err := resources.Get(r.Type)
+	registry := resources.NewRegistry([]resources.Resource{
+		&mock.Mock{},
+	})
+
+	res, err := registry.Get(r.Type)
 	if err != nil {
 		return fmt.Errorf("failed to get resource: %w", err)
 	}

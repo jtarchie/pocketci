@@ -15,6 +15,7 @@ import (
 	"github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/resources"
 	"github.com/jtarchie/pocketci/runtime"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/secrets"
@@ -45,6 +46,8 @@ type ExecutionService struct {
 	FetchTimeout          time.Duration
 	FetchMaxResponseBytes int64
 	DedupTTL              time.Duration
+	ResourceRegistry      *resources.Registry
+	DriverRegistry        *orchestra.DriverRegistry
 	stopRegistry          map[string]context.CancelFunc
 	stopMu                sync.Mutex
 
@@ -584,6 +587,8 @@ func (s *ExecutionService) buildExecutorOptions(pipeline *storage.Pipeline, opts
 		execOpts.SecretsManager = s.SecretsManager
 	}
 
+	execOpts.ResourceRegistry = s.ResourceRegistry
+
 	if opts.webhook != nil && IsFeatureEnabled(FeatureWebhooks, s.AllowedFeatures) {
 		execOpts.WebhookData = opts.webhook.webhookData
 		execOpts.ResponseChan = opts.webhook.responseChan
@@ -888,6 +893,7 @@ func (s *ExecutionService) RunByNameSync(
 		FetchTimeout:          s.FetchTimeout,
 		FetchMaxResponseBytes: s.FetchMaxResponseBytes,
 		DedupTTL:              s.DedupTTL,
+		ResourceRegistry:      s.ResourceRegistry,
 	}
 	if IsFeatureEnabled(FeatureSecrets, s.AllowedFeatures) {
 		opts.SecretsManager = s.SecretsManager
@@ -1038,7 +1044,7 @@ func (s *ExecutionService) resolveDriverFactory(ctx context.Context, pipeline *s
 
 		raw, err := s.SecretsManager.Get(ctx, scope, "driver_config")
 		if err == nil && raw != "" {
-			cfg, unmarshalErr := unmarshalDriverConfig(driverName, json.RawMessage(raw))
+			cfg, unmarshalErr := s.DriverRegistry.UnmarshalConfig(driverName, json.RawMessage(raw))
 			if unmarshalErr == nil {
 				serverCfg = cfg
 			}
@@ -1055,9 +1061,9 @@ func (s *ExecutionService) resolveDriverFactory(ctx context.Context, pipeline *s
 	logger.Info("driver.resolve", "driver", driverName)
 
 	return func(ctx context.Context, ns string) (orchestra.Driver, error) {
-		d, err := createDriver(ctx, driverName, ns, serverCfg, logger)
+		d, err := s.DriverRegistry.CreateDriver(ctx, driverName, ns, serverCfg, logger)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("resolve driver: %w", err)
 		}
 
 		if s.CacheStore != nil {

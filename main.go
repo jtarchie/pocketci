@@ -7,7 +7,6 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/jtarchie/pocketci/commands"
-	_ "github.com/jtarchie/pocketci/resources/mock"
 	"github.com/lmittmann/tint"
 )
 

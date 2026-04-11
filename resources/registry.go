@@ -3,61 +3,53 @@ package resources
 import (
 	"fmt"
 	"sort"
-	"sync"
 )
 
-// Factory is a function that creates a new instance of a resource.
-type Factory func() Resource
-
-var (
-	registry   = make(map[string]Factory)
-	registryMu sync.RWMutex
-)
-
-// Register adds a new resource type to the registry.
-// This is typically called from init() in each resource package.
-func Register(name string, factory Factory) {
-	registryMu.Lock()
-	defer registryMu.Unlock()
-
-	if _, exists := registry[name]; exists {
-		panic(fmt.Sprintf("resource type %q already registered", name))
-	}
-
-	registry[name] = factory
+// Registry holds a set of native resource implementations, keyed by name.
+// Construct one with NewRegistry and pass it wherever native resources are needed.
+type Registry struct {
+	byName map[string]Resource
 }
 
-// Get retrieves a resource by name and creates a new instance.
-// Returns an error if the resource type is not registered.
-func Get(name string) (Resource, error) {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
+// NewRegistry builds a Registry from an explicit list of Resource values.
+// Each resource is indexed by its Name() return value. Panics on duplicate names.
+func NewRegistry(list []Resource) *Registry {
+	m := make(map[string]Resource, len(list))
 
-	factory, ok := registry[name]
+	for _, r := range list {
+		name := r.Name()
+		if _, exists := m[name]; exists {
+			panic(fmt.Sprintf("resource type %q already registered", name))
+		}
+
+		m[name] = r
+	}
+
+	return &Registry{byName: m}
+}
+
+// Get returns the resource for the given name.
+// Returns an error if the resource type is not registered.
+func (r *Registry) Get(name string) (Resource, error) {
+	res, ok := r.byName[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown resource type: %s", name)
 	}
 
-	return factory(), nil
+	return res, nil
 }
 
-// IsNative returns true if a resource type is registered as a native resource.
-func IsNative(name string) bool {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-
-	_, ok := registry[name]
+// IsNative returns true if a resource type is registered.
+func (r *Registry) IsNative(name string) bool {
+	_, ok := r.byName[name]
 
 	return ok
 }
 
 // List returns a sorted list of all registered resource type names.
-func List() []string {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-
-	names := make([]string, 0, len(registry))
-	for name := range registry {
+func (r *Registry) List() []string {
+	names := make([]string, 0, len(r.byName))
+	for name := range r.byName {
 		names = append(names, name)
 	}
 

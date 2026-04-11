@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/jtarchie/pocketci/orchestra/native"
 	"github.com/jtarchie/pocketci/server"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/jtarchie/pocketci/orchestra/native"
 	"github.com/jtarchie/pocketci/server"
 	"github.com/jtarchie/pocketci/server/auth"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"

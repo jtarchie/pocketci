@@ -19,6 +19,13 @@ import (
 	webhookslack "github.com/jtarchie/pocketci/webhooks/slack"
 )
 
+func defaultDriverProviders() []orchestra.DriverProvider {
+	return []orchestra.DriverProvider{
+		docker.NewProvider(),
+		native.NewProvider(),
+	}
+}
+
 func newStrictSecretRouter(t *testing.T, client storage.Driver, opts server.RouterOptions) *server.Router {
 	t.Helper()
 
@@ -28,6 +35,10 @@ func newStrictSecretRouter(t *testing.T, client storage.Driver, opts server.Rout
 			"docker": docker.ServerConfig{},
 		}
 		opts.DefaultDriver = "native"
+	}
+
+	if opts.DriverProviders == nil {
+		opts.DriverProviders = defaultDriverProviders()
 	}
 
 	if opts.WebhookProviders == nil {

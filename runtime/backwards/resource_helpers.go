@@ -152,7 +152,7 @@ func fetchNativeResource(sc *StepContext, resource *config.Resource, version map
 
 	sc.KnownVolumes[resource.Name] = volName
 
-	res, err := resources.Get(resource.Type)
+	res, err := sc.ResourceRegistry.Get(resource.Type)
 	if err != nil {
 		return fmt.Errorf("get native resource %q: %w", resource.Type, err)
 	}

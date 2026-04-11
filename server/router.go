@@ -14,6 +14,7 @@ import (
 
 	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/resources"
 	"github.com/jtarchie/pocketci/scheduler"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/server/auth"
@@ -61,6 +62,12 @@ type RouterOptions struct {
 	// WebhookProviders is the ordered list of webhook providers to use for detection.
 	// Providers are checked in order; the first match wins.
 	WebhookProviders []webhooks.Provider
+	// NativeResources is the explicit list of native resource implementations
+	// available during pipeline execution. Analogous to WebhookProviders.
+	NativeResources []resources.Resource
+	// DriverProviders is the explicit list of orchestrator driver providers
+	// available during pipeline execution. Analogous to WebhookProviders.
+	DriverProviders []orchestra.DriverProvider
 	// SecureCookies enables the Secure flag on session cookies.
 	// Set to true when the server is served over HTTPS.
 	SecureCookies bool
@@ -238,6 +245,8 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	execService.CacheStore = opts.CacheStore
 	execService.CacheCompression = opts.CacheCompression
 	execService.CacheKeyPrefix = opts.CacheKeyPrefix
+	execService.ResourceRegistry = resources.NewRegistry(opts.NativeResources)
+	execService.DriverRegistry = orchestra.NewDriverRegistry(opts.DriverProviders)
 
 	if opts.DefaultDriver != "" {
 		execService.DefaultDriver = opts.DefaultDriver

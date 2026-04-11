@@ -13,6 +13,7 @@ import (
 	"github.com/dop251/goja_nodejs/require"
 	"github.com/evanw/esbuild/pkg/api"
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/resources"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	ndiscord "github.com/jtarchie/pocketci/runtime/jsapi/notifiers/discord"
 	nhttp "github.com/jtarchie/pocketci/runtime/jsapi/notifiers/http"
@@ -74,6 +75,9 @@ type ExecuteOptions struct {
 	// TriggerCallback, if set, allows pipeline code to trigger other pipelines
 	// via the triggerPipeline() JS API.
 	TriggerCallback func(ctx context.Context, pipelineName string, jobs []string, args []string) (string, error)
+	// ResourceRegistry holds the set of native resource implementations.
+	// May be nil for pipelines that use no native resources.
+	ResourceRegistry *resources.Registry
 }
 
 type JS struct {
@@ -321,7 +325,7 @@ func (j *JS) setupNotifyAndResources(ctx context.Context, jsVM *goja.Runtime, rt
 		return fmt.Errorf("could not set notify: %w", err)
 	}
 
-	resourceRunner := runner.NewResourceRunner(ctx, j.logger)
+	resourceRunner := runner.NewResourceRunner(ctx, j.logger, opts.ResourceRegistry)
 	if opts.SecretsManager != nil {
 		resourceRunner.SetSecretsManager(opts.SecretsManager, opts.PipelineID)
 	}

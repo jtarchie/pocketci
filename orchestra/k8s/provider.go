@@ -1,0 +1,47 @@
+package k8s
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+
+	"github.com/jtarchie/pocketci/orchestra"
+)
+
+// Provider implements orchestra.DriverProvider for the Kubernetes driver.
+type Provider struct{}
+
+// NewProvider returns a new Kubernetes DriverProvider.
+func NewProvider() *Provider { return &Provider{} }
+
+// Name implements orchestra.DriverProvider.
+func (p *Provider) Name() string { return "k8s" }
+
+// NewDriver implements orchestra.DriverProvider.
+func (p *Provider) NewDriver(ctx context.Context, namespace string, cfg orchestra.DriverConfig, logger *slog.Logger) (orchestra.Driver, error) {
+	var sc ServerConfig
+	if cfg != nil {
+		var ok bool
+		sc, ok = cfg.(ServerConfig)
+		if !ok {
+			sc = ServerConfig{}
+		}
+	}
+
+	return New(ctx, Config{ServerConfig: sc, Namespace: namespace}, logger)
+}
+
+// UnmarshalConfig implements orchestra.DriverProvider.
+func (p *Provider) UnmarshalConfig(raw json.RawMessage) (orchestra.DriverConfig, error) {
+	var cfg ServerConfig
+	err := json.Unmarshal(raw, &cfg)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+
+	return cfg, nil
+}
+
+// EmptyConfig implements orchestra.DriverProvider.
+func (p *Provider) EmptyConfig() orchestra.DriverConfig { return ServerConfig{} }

@@ -7,18 +7,23 @@ import (
 	"testing"
 
 	"github.com/jtarchie/pocketci/resources"
-	_ "github.com/jtarchie/pocketci/resources/mock"
+	"github.com/jtarchie/pocketci/resources/mock"
 	. "github.com/onsi/gomega"
 )
+
+func newTestRegistry() *resources.Registry {
+	return resources.NewRegistry([]resources.Resource{&mock.Mock{}})
+}
 
 func TestMockResource(t *testing.T) {
 	t.Parallel()
 	t.Run("is registered", func(t *testing.T) {
 		assert := NewGomegaWithT(t)
+		registry := newTestRegistry()
 
-		assert.Expect(resources.IsNative("mock")).To(BeTrue())
+		assert.Expect(registry.IsNative("mock")).To(BeTrue())
 
-		res, err := resources.Get("mock")
+		res, err := registry.Get("mock")
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(res.Name()).To(Equal("mock"))
 	})
@@ -26,7 +31,7 @@ func TestMockResource(t *testing.T) {
 	t.Run("check returns force_version when specified", func(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
-		res, err := resources.Get("mock")
+		res, err := newTestRegistry().Get("mock")
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		ctx := context.Background()
@@ -43,7 +48,7 @@ func TestMockResource(t *testing.T) {
 	t.Run("in creates version file", func(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
-		res, err := resources.Get("mock")
+		res, err := newTestRegistry().Get("mock")
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		vol := &resources.DirVolumeContext{Dir: t.TempDir()}
@@ -67,7 +72,7 @@ func TestMockResource(t *testing.T) {
 	t.Run("out returns version from params", func(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
-		res, err := resources.Get("mock")
+		res, err := newTestRegistry().Get("mock")
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		ctx := context.Background()
@@ -84,7 +89,7 @@ func TestMockResource(t *testing.T) {
 	t.Run("check with no version returns version 1", func(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
-		res, err := resources.Get("mock")
+		res, err := newTestRegistry().Get("mock")
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		ctx := context.Background()
@@ -99,7 +104,7 @@ func TestMockResource(t *testing.T) {
 	t.Run("check with previous version increments", func(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
-		res, err := resources.Get("mock")
+		res, err := newTestRegistry().Get("mock")
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		ctx := context.Background()
@@ -116,7 +121,7 @@ func TestMockResource(t *testing.T) {
 	t.Run("check with force_version and previous version returns both", func(t *testing.T) {
 		assert := NewGomegaWithT(t)
 
-		res, err := resources.Get("mock")
+		res, err := newTestRegistry().Get("mock")
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		ctx := context.Background()
