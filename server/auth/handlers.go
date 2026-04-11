@@ -40,6 +40,7 @@ func RegisterRoutes(router *echo.Echo, cfg *Config, store *sessions.CookieStore,
 	router.POST("/auth/cli/begin", h.CLIBegin)
 	router.GET("/auth/cli/poll", h.CLIPoll)
 	router.GET("/auth/cli/approve", h.CLIApprove)
+	router.POST("/auth/cli/approve", h.CLIApproveConfirm)
 
 	// OAuth authorization server endpoints (for MCP clients).
 	if oauthSrv != nil {
@@ -266,7 +267,11 @@ func (h *authHandler) CLIBegin(c *echo.Context) error {
 	return nil
 }
 
-// CLIApprove renders a page where the user selects their OAuth provider to approve the CLI login.
+// CLIApprove renders a confirmation page. If the user is already logged in it
+// shows an explicit "Approve" button; otherwise it shows provider login links so
+// they can authenticate first (the cli_code is preserved through the OAuth flow).
+// Approval is intentionally NOT automatic on page load — the user must submit
+// the POST form to prevent device-code phishing via a crafted link.
 func (h *authHandler) CLIApprove(c *echo.Context) error {
 	code := c.QueryParam("code")
 
@@ -283,32 +288,74 @@ func (h *authHandler) CLIApprove(c *echo.Context) error {
 		return nil
 	}
 
-	// If user already has a valid session, approve directly.
 	user := GetUserFromSession(c.Request(), h.store)
 	if user != nil {
-		h.mu.Lock()
-		state.User = user
-		state.Approved = true
-		h.mu.Unlock()
-
-		renderErr2 := c.Render(http.StatusOK, "cli_approve.html", map[string]any{
-			"Approved": true,
+		// User is authenticated — show the explicit approval confirmation page.
+		renderErr := c.Render(http.StatusOK, "cli_approve.html", map[string]any{
+			"Approved":     false,
+			"NeedsConfirm": true,
+			"Code":         code,
+			"UserEmail":    user.Email,
 		})
-		if renderErr2 != nil {
-			return fmt.Errorf("render: %w", renderErr2)
+		if renderErr != nil {
+			return fmt.Errorf("render: %w", renderErr)
 		}
 
 		return nil
 	}
 
-	// Show login page with the code passed through.
-	renderErr3 := c.Render(http.StatusOK, "cli_approve.html", map[string]any{
+	// Not authenticated — show provider login links; cli_code is threaded through.
+	renderErr := c.Render(http.StatusOK, "cli_approve.html", map[string]any{
 		"Approved":  false,
 		"Code":      code,
 		"Providers": h.cfg.EnabledProviders(),
 	})
-	if renderErr3 != nil {
-		return fmt.Errorf("render: %w", renderErr3)
+	if renderErr != nil {
+		return fmt.Errorf("render: %w", renderErr)
+	}
+
+	return nil
+}
+
+// CLIApproveConfirm handles POST /auth/cli/approve — the explicit user consent step.
+// The user must be authenticated and submit the form with a valid code.
+func (h *authHandler) CLIApproveConfirm(c *echo.Context) error {
+	code := c.FormValue("code")
+
+	user := GetUserFromSession(c.Request(), h.store)
+	if user == nil {
+		strErr := c.String(http.StatusUnauthorized, "Authentication required")
+		if strErr != nil {
+			return fmt.Errorf("string: %w", strErr)
+		}
+
+		return nil
+	}
+
+	h.mu.Lock()
+	state, ok := h.cliCodes[code]
+	if ok && !time.Now().After(state.ExpiresAt) {
+		state.User = user
+		state.Approved = true
+	} else {
+		ok = false
+	}
+	h.mu.Unlock()
+
+	if !ok {
+		strErr := c.String(http.StatusBadRequest, "Invalid or expired login code")
+		if strErr != nil {
+			return fmt.Errorf("string: %w", strErr)
+		}
+
+		return nil
+	}
+
+	renderErr := c.Render(http.StatusOK, "cli_approve.html", map[string]any{
+		"Approved": true,
+	})
+	if renderErr != nil {
+		return fmt.Errorf("render: %w", renderErr)
 	}
 
 	return nil

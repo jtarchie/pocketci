@@ -21,6 +21,13 @@
           Approved</h1>
         <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">You can close
           this window and return to your terminal.</p>
+        {{ else if .NeedsConfirm }}
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Approve CLI
+          Login?</h1>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">
+          A CLI session is requesting access as <strong>{{ .UserEmail }}</strong>.
+          Only approve if you initiated this login request.
+        </p>
         {{ else }}
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Approve CLI
           Login</h1>
@@ -29,7 +36,19 @@
         {{ end }}
       </div>
 
-      {{ if not .Approved }}
+      {{ if .NeedsConfirm }}
+      <form method="POST" action="/auth/cli/approve" class="space-y-3">
+        <input type="hidden" name="code" value="{{ .Code }}">
+        <button type="submit"
+          class="flex items-center justify-center gap-3 w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium">
+          Approve CLI Access
+        </button>
+        <a href="/"
+          class="flex items-center justify-center gap-3 w-full px-4 py-3 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors font-medium">
+          Deny
+        </a>
+      </form>
+      {{ else if not .Approved }}
       <div class="space-y-3">
         {{ range .Providers }}
         {{ if eq . "github" }}
