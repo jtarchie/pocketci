@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jtarchie/pocketci/runtime/jsapi"
+	nhttp "github.com/jtarchie/pocketci/runtime/jsapi/notifiers/http"
 	. "github.com/onsi/gomega"
 )
 
@@ -21,7 +22,7 @@ func TestNotifyRenderTemplate(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	logger := slog.Default()
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, nil)
 
 	// Set up context
 	notifier.SetContext(jsapi.NotifyContext{
@@ -48,7 +49,7 @@ func TestNotifyContextUpdates(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	logger := slog.Default()
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, nil)
 
 	// Set initial context
 	notifier.SetContext(jsapi.NotifyContext{
@@ -82,7 +83,7 @@ func TestNotifyConfigLookup(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	logger := slog.Default()
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, nil)
 
 	// Set configs using map
 	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
@@ -118,7 +119,7 @@ func TestNotifySetConfigs(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	logger := slog.Default()
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, nil)
 
 	// Initially empty
 	_, exists := notifier.GetConfig("test")
@@ -188,7 +189,7 @@ func TestNotifyHTTPIntegration(t *testing.T) {
 
 	// Create notifier with HTTP config pointing to test server
 	logger := slog.Default()
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, []jsapi.Adapter{nhttp.New()})
 
 	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
 		"test-webhook": {
@@ -262,7 +263,7 @@ func TestNotifyHTTPIntegrationWithMultipleNotifications(t *testing.T) {
 
 	// Create notifier with multiple HTTP configs
 	logger := slog.Default()
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, []jsapi.Adapter{nhttp.New()})
 
 	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
 		"webhook-1": {
@@ -311,7 +312,7 @@ func TestNotifyHTTPIntegrationServerError(t *testing.T) {
 	defer server.Close()
 
 	logger := slog.Default()
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, []jsapi.Adapter{nhttp.New()})
 
 	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
 		"failing-webhook": {
@@ -340,7 +341,7 @@ func TestNotifyHTTPIntegrationMissingConfig(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	logger := slog.Default()
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"sync"
 	"text/template"
 
@@ -15,21 +14,29 @@ import (
 	"github.com/jtarchie/pocketci/runtime/support"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/nikoksr/notify"
-	nhttp "github.com/nikoksr/notify/service/http"
-	"github.com/nikoksr/notify/service/msteams"
-	"github.com/nikoksr/notify/service/slack"
 )
+
+// Adapter is implemented by each notification backend.
+// Add new backends by creating a subpackage under runtime/jsapi/notifiers/
+// and passing New() instances to NewNotifier.
+type Adapter interface {
+	Name() string
+	Configure(notifier *notify.Notify, config NotifyConfig) error
+}
 
 // NotifyConfig represents the configuration for a notification backend.
 type NotifyConfig struct {
-	Type       string            `json:"type"`       // slack, teams, http
-	Token      string            `json:"token"`      // For Slack
+	Type       string            `json:"type"`       // slack, teams, http, discord, smtp
+	Token      string            `json:"token"`      // For Slack/Discord (bot token)
 	Webhook    string            `json:"webhook"`    // For Teams
 	URL        string            `json:"url"`        // For HTTP
-	Channels   []string          `json:"channels"`   // For Slack
+	Channels   []string          `json:"channels"`   // For Slack/Discord
 	Headers    map[string]string `json:"headers"`    // For HTTP
 	Method     string            `json:"method"`     // For HTTP (defaults to POST)
-	Recipients []string          `json:"recipients"` // Generic recipients
+	Recipients []string          `json:"recipients"` // Generic recipients / SMTP to-addresses
+	SMTPHost   string            `json:"smtpHost"`   // For SMTP (e.g. "smtp.gmail.com:587")
+	From       string            `json:"from"`       // For SMTP sender address
+	Username   string            `json:"username"`   // For SMTP auth username
 }
 
 // NotifyContext provides metadata about the current pipeline execution for template rendering.
@@ -68,6 +75,7 @@ type NotifyResult struct {
 // Notifier handles notification sending with configuration management.
 type Notifier struct {
 	configs        map[string]NotifyConfig
+	adapters       map[string]Adapter
 	context        NotifyContext
 	logger         *slog.Logger
 	mu             sync.RWMutex
@@ -77,10 +85,16 @@ type Notifier struct {
 }
 
 // NewNotifier creates a new Notifier instance.
-func NewNotifier(logger *slog.Logger) *Notifier {
+func NewNotifier(logger *slog.Logger, adapters []Adapter) *Notifier {
+	registry := make(map[string]Adapter, len(adapters))
+	for _, a := range adapters {
+		registry[a.Name()] = a
+	}
+
 	return &Notifier{
-		configs: make(map[string]NotifyConfig),
-		logger:  logger.WithGroup("notifier.send"),
+		configs:  make(map[string]NotifyConfig),
+		adapters: registry,
+		logger:   logger.WithGroup("notifier.send"),
 	}
 }
 
@@ -114,6 +128,7 @@ func (n *Notifier) resolveConfigSecrets(ctx context.Context, config NotifyConfig
 		{"token", &config.Token},
 		{"webhook", &config.Webhook},
 		{"url", &config.URL},
+		{"username", &config.Username},
 	}
 
 	for _, f := range scalarFields {
@@ -232,23 +247,16 @@ func (n *Notifier) Send(ctx context.Context, name string, message string) error 
 	)
 
 	// Create and configure the notify service
-	notifier := notify.New()
-
-	var configErr error
-
-	switch config.Type {
-	case "slack":
-		configErr = n.configureSlack(notifier, config)
-	case "teams":
-		configErr = n.configureTeams(notifier, config)
-	case "http":
-		configErr = n.configureHTTP(notifier, config)
-	default:
+	adapter, ok := n.adapters[config.Type]
+	if !ok {
 		return fmt.Errorf("unsupported notification type: %s", config.Type)
 	}
 
-	if configErr != nil {
-		return fmt.Errorf("could not configure %s service: %w", config.Type, configErr)
+	notifier := notify.New()
+
+	err = adapter.Configure(notifier, config)
+	if err != nil {
+		return fmt.Errorf("could not configure %s service: %w", config.Type, err)
 	}
 
 	// Send the notification
@@ -269,77 +277,6 @@ func (n *Notifier) Send(ctx context.Context, name string, message string) error 
 	)
 
 	return nil
-}
-
-func (n *Notifier) configureSlack(notifier *notify.Notify, config NotifyConfig) error {
-	if config.Token == "" {
-		return errors.New("slack token is required")
-	}
-
-	slackService := slack.New(config.Token)
-
-	for _, channel := range config.Channels {
-		slackService.AddReceivers(channel)
-	}
-
-	for _, recipient := range config.Recipients {
-		slackService.AddReceivers(recipient)
-	}
-
-	notifier.UseServices(slackService)
-
-	return nil
-}
-
-func (n *Notifier) configureTeams(notifier *notify.Notify, config NotifyConfig) error {
-	if config.Webhook == "" {
-		return errors.New("teams webhook URL is required")
-	}
-
-	teamsService := msteams.New()
-	teamsService.AddReceivers(config.Webhook)
-
-	notifier.UseServices(teamsService)
-
-	return nil
-}
-
-func (n *Notifier) configureHTTP(notifier *notify.Notify, config NotifyConfig) error {
-	if config.URL == "" {
-		return errors.New("HTTP URL is required")
-	}
-
-	method := config.Method
-	if method == "" {
-		method = http.MethodPost
-	}
-
-	httpService := nhttp.New()
-	httpService.AddReceivers(&nhttp.Webhook{
-		URL:         config.URL,
-		Header:      n.headersToHTTPHeader(config.Headers),
-		ContentType: "application/json",
-		Method:      method,
-		BuildPayload: func(subject, message string) (payload any) {
-			return map[string]string{
-				"subject": subject,
-				"message": message,
-			}
-		},
-	})
-
-	notifier.UseServices(httpService)
-
-	return nil
-}
-
-func (n *Notifier) headersToHTTPHeader(headers map[string]string) http.Header {
-	h := make(http.Header)
-	for k, v := range headers {
-		h.Set(k, v)
-	}
-
-	return h
 }
 
 // NotifyRuntime wraps Notifier for use in Goja VM.

@@ -24,6 +24,7 @@ import (
 	"github.com/jtarchie/pocketci/runtime/agent"
 	backwards "github.com/jtarchie/pocketci/runtime/backwards"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
+	nhttp "github.com/jtarchie/pocketci/runtime/jsapi/notifiers/http"
 	"github.com/jtarchie/pocketci/storage"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
@@ -1403,7 +1404,7 @@ func TestNotifyStepSingle(t *testing.T) {
 	defer server.Close()
 
 	logger := discardLogger()
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, []jsapi.Adapter{nhttp.New()})
 	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
 		"test-webhook": {Type: "http", URL: server.URL},
 	})
@@ -1460,7 +1461,7 @@ func TestNotifyStepMultiple(t *testing.T) {
 	defer server.Close()
 
 	logger := discardLogger()
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, []jsapi.Adapter{nhttp.New()})
 	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
 		"webhook-1": {Type: "http", URL: server.URL + "/hook1"},
 		"webhook-2": {Type: "http", URL: server.URL + "/hook2"},
@@ -1510,7 +1511,7 @@ func TestNotifyStepFailure(t *testing.T) {
 	defer server.Close()
 
 	logger := discardLogger()
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, []jsapi.Adapter{nhttp.New()})
 	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
 		"failing-webhook": {Type: "http", URL: server.URL},
 	})
@@ -1569,7 +1570,7 @@ func TestNotifyStepAsync(t *testing.T) {
 	defer server.Close()
 
 	logger := discardLogger()
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, []jsapi.Adapter{nhttp.New()})
 	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
 		"async-webhook": {Type: "http", URL: server.URL},
 	})
@@ -1705,7 +1706,7 @@ func TestNotifyStepIntegration(t *testing.T) {
 
 	defer func() { _ = store.Close() }()
 
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, []jsapi.Adapter{nhttp.New()})
 	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
 		"hook-1": {Type: "http", URL: server.URL + "/hook1"},
 		"hook-2": {Type: "http", URL: server.URL + "/hook2"},
@@ -1783,7 +1784,7 @@ func TestNotifyStepMessageFile(t *testing.T) {
 
 			defer func() { _ = driver.Close() }()
 
-			notifier := jsapi.NewNotifier(logger)
+			notifier := jsapi.NewNotifier(logger, []jsapi.Adapter{nhttp.New()})
 			notifier.SetConfigs(map[string]jsapi.NotifyConfig{
 				"test-webhook": {Type: "http", URL: server.URL},
 			})
@@ -1828,7 +1829,7 @@ func TestTargetedJobsRunsOnlyTargeted(t *testing.T) {
 	defer server.Close()
 
 	logger := discardLogger()
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, []jsapi.Adapter{nhttp.New()})
 	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
 		"test-hook": {Type: "http", URL: server.URL},
 	})
@@ -1986,7 +1987,7 @@ func TestTargetedJobsAssertionsValidate(t *testing.T) {
 		defer server.Close()
 
 		logger := discardLogger()
-		notifier := jsapi.NewNotifier(logger)
+		notifier := jsapi.NewNotifier(logger, []jsapi.Adapter{nhttp.New()})
 		notifier.SetConfigs(map[string]jsapi.NotifyConfig{
 			"hook": {Type: "http", URL: server.URL},
 		})
@@ -2025,7 +2026,7 @@ func TestTargetedJobsAssertionsValidate(t *testing.T) {
 		defer server.Close()
 
 		logger := discardLogger()
-		notifier := jsapi.NewNotifier(logger)
+		notifier := jsapi.NewNotifier(logger, []jsapi.Adapter{nhttp.New()})
 		notifier.SetConfigs(map[string]jsapi.NotifyConfig{
 			"hook": {Type: "http", URL: server.URL},
 		})
@@ -2160,7 +2161,7 @@ func TestGateApproved(t *testing.T) {
 	}))
 	defer server.Close()
 
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, []jsapi.Adapter{nhttp.New()})
 	notifier.SetConfigs(map[string]jsapi.NotifyConfig{
 		"hook": {Type: "http", URL: server.URL},
 	})

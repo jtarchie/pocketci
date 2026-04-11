@@ -19,6 +19,7 @@ export default defineConfig({
         { text: "runtime.run()", link: "/runtime/runtime-run" },
         { text: "agent.run()", link: "/runtime/runtime-agent" },
         { text: "Volumes", link: "/runtime/volumes" },
+        { text: "notify", link: "/runtime/notify" },
       ],
       "/guides/": [
         { text: "Overview", link: "/guides/" },

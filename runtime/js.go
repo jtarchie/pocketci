@@ -14,6 +14,11 @@ import (
 	"github.com/evanw/esbuild/pkg/api"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
+	ndiscord "github.com/jtarchie/pocketci/runtime/jsapi/notifiers/discord"
+	nhttp "github.com/jtarchie/pocketci/runtime/jsapi/notifiers/http"
+	nslack "github.com/jtarchie/pocketci/runtime/jsapi/notifiers/slack"
+	nsmtp "github.com/jtarchie/pocketci/runtime/jsapi/notifiers/smtp"
+	nteams "github.com/jtarchie/pocketci/runtime/jsapi/notifiers/teams"
 	"github.com/jtarchie/pocketci/runtime/runner"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
@@ -291,7 +296,13 @@ func (j *JS) setupJSVM(
 
 // setupNotifyAndResources registers the notify and nativeResources globals on the VM.
 func (j *JS) setupNotifyAndResources(ctx context.Context, jsVM *goja.Runtime, rt *Runtime, opts ExecuteOptions) error {
-	notifier := jsapi.NewNotifier(j.logger)
+	notifier := jsapi.NewNotifier(j.logger, []jsapi.Adapter{
+		nslack.New(),
+		nteams.New(),
+		nhttp.New(),
+		ndiscord.New(),
+		nsmtp.New(),
+	})
 	notifier.Disabled = opts.DisableNotifications
 
 	if opts.SecretsManager != nil {

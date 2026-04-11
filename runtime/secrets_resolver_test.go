@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jtarchie/pocketci/runtime/jsapi"
+	nhttp "github.com/jtarchie/pocketci/runtime/jsapi/notifiers/http"
 	"github.com/jtarchie/pocketci/runtime/runner"
 	"github.com/jtarchie/pocketci/runtime/support"
 	"github.com/jtarchie/pocketci/secrets"
@@ -66,7 +67,7 @@ func TestNotifierSecretResolutionInURL(t *testing.T) {
 	defer server.Close()
 
 	logger := slog.New(slog.DiscardHandler)
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, []jsapi.Adapter{nhttp.New()})
 
 	mgr := newMapSecretsManager(map[string]string{
 		"pipeline/pipe1/WEBHOOK_URL": server.URL,
@@ -100,7 +101,7 @@ func TestNotifierSecretResolutionInHeaders(t *testing.T) {
 	defer server.Close()
 
 	logger := slog.New(slog.DiscardHandler)
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, []jsapi.Adapter{nhttp.New()})
 
 	mgr := newMapSecretsManager(map[string]string{
 		"pipeline/pipe1/API_TOKEN": "my-resolved-token",
@@ -131,7 +132,7 @@ func TestNotifierSecretMissingReturnsError(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	logger := slog.New(slog.DiscardHandler)
-	notifier := jsapi.NewNotifier(logger)
+	notifier := jsapi.NewNotifier(logger, nil)
 
 	mgr := newMapSecretsManager(map[string]string{}) // empty — secret not stored
 	notifier.SetSecretsManager(mgr, "pipe1")
