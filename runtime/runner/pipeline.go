@@ -524,6 +524,7 @@ func (c *PipelineRunner) waitAndFinalizeRun(
 				"status":     "abort",
 				"started_at": taskStartedAt.UTC().Format(time.RFC3339),
 				"elapsed":    formatElapsed(time.Since(taskStartedAt)),
+				"logs":       logs,
 			})
 
 			return &RunResult{Status: RunAbort}, nil
@@ -533,6 +534,7 @@ func (c *PipelineRunner) waitAndFinalizeRun(
 			"status":     "error",
 			"started_at": taskStartedAt.UTC().Format(time.RFC3339),
 			"elapsed":    formatElapsed(time.Since(taskStartedAt)),
+			"logs":       logs,
 		})
 
 		return nil, fmt.Errorf("could not get container logs: %w", err)

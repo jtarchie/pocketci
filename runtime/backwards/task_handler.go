@@ -187,6 +187,15 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		sc.Logger.Error("task.logs.error", "task", taskName, "err", err)
 	}
 
+	logs := make([]any, 0, 2)
+	if stdout.Len() > 0 {
+		logs = append(logs, map[string]string{"type": "stdout", "content": stdout.String()})
+	}
+
+	if stderr.Len() > 0 {
+		logs = append(logs, map[string]string{"type": "stderr", "content": stderr.String()})
+	}
+
 	if sc.OutputCallback != nil {
 		if stdout.Len() > 0 {
 			sc.OutputCallback("stdout", stdout.String())
@@ -208,6 +217,7 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		"code":       exitCode,
 		"started_at": startedAt.Format(time.RFC3339),
 		"elapsed":    elapsed.String(),
+		"logs":       logs,
 	})
 	if err != nil {
 		return fmt.Errorf("storage set result: %w", err)

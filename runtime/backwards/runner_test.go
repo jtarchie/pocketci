@@ -2939,3 +2939,56 @@ func TestCacheTaskScope(t *testing.T) {
 	assert.Expect(keys[0]).To(ContainSubstring("task-a"))
 	assert.Expect(keys[1]).To(ContainSubstring("task-b"))
 }
+
+func TestTaskLogsStoredInStorage(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			// task_logs.yml runs a task that echoes to both stdout and stderr
+			// without any YAML-level assert (so it passes on all drivers).
+			cfg := loadConfig(t, "steps/task_logs.yml")
+
+			logger := discardLogger()
+
+			driver, err := df.new("test-task-logs-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-task-logs", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run", "", backwards.RunnerOptions{ResourceRegistry: testRegistry()})
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			// jobs-job has a single task step at index 0; zeroPadWithLength(0,1)="0"
+			val, err := store.Get(context.Background(), "/pipeline/test-run/jobs/logs-job/0/tasks/logs-task")
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(val).To(HaveKeyWithValue("status", "success"))
+
+			rawLogs, ok := val["logs"]
+			assert.Expect(ok).To(BeTrue(), "expected 'logs' key in task storage payload")
+
+			entries, ok := rawLogs.([]any)
+			assert.Expect(ok).To(BeTrue(), "expected logs to be a []any slice")
+			assert.Expect(entries).NotTo(BeEmpty())
+
+			// Collect all output across entries — native driver merges stderr into
+			// stdout, so we check combined content rather than per-stream.
+			var combined string
+			for _, e := range entries {
+				m, ok := e.(map[string]any)
+				assert.Expect(ok).To(BeTrue())
+				assert.Expect(m).To(HaveKey("type"))
+				assert.Expect(m).To(HaveKey("content"))
+				combined += m["content"].(string)
+			}
+
+			assert.Expect(combined).To(ContainSubstring("hello from stdout"))
+		})
+	}
+}

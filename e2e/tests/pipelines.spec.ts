@@ -180,6 +180,59 @@ test.describe("Pipeline Management UI", () => {
       await pipelinesLink.click();
       await expect(page).toHaveURL(/\/pipelines\//);
     });
+
+    test(
+      "task stdout/stderr appears on tasks page",
+      async ({ page, request }) => {
+        const marker = uniqueName("task-log-marker");
+        const pipelineName = uniqueName("task-log-test");
+        const pipelineContent = `
+jobs:
+  - name: output-job
+    plan:
+      - task: output-task
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: sh
+            args: ["-c", "echo '${marker}'"]
+`;
+        await createPipeline(request, pipelineName, pipelineContent, "native");
+
+        await page.goto("/pipelines/");
+        await page.getByRole("link", { name: pipelineName }).click();
+
+        // Trigger the pipeline
+        await page.getByRole("button", { name: /trigger/i }).click();
+        await expect(page.getByText(/triggered successfully/i)).toBeVisible({
+          timeout: 5000,
+        });
+
+        // Wait for a Tasks link to appear and navigate to it
+        const tasksLink = page.getByRole("link", { name: "Tasks" }).first();
+        await expect(tasksLink).toBeVisible({ timeout: 30000 });
+        await tasksLink.click();
+
+        await expect(page).toHaveURL(/\/runs\/[^/]+\/tasks/);
+
+        // Wait for the task to finish
+        await expect(
+          page.getByText(/success|failure/i).first(),
+        ).toBeVisible({ timeout: 60000 });
+
+        // Expand the task accordion to reveal the log output
+        const taskItem = page.locator(".task-item").first();
+        await expect(taskItem).toBeVisible({ timeout: 10000 });
+        await taskItem.locator("summary").click();
+
+        // The marker string echoed by the task should now be visible
+        await expect(page.getByText(marker)).toBeVisible({ timeout: 10000 });
+      },
+    );
   });
 
   test.describe("Pipeline Triggering", () => {
