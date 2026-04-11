@@ -96,7 +96,7 @@ func (c *WebRunsController) preloadTerminalHTMLWithOptions(ctx *echo.Context, lo
 		if status == "running" || status == "" {
 			htmlByPath[r.Path] = template.HTML(fmt.Sprintf(
 				`<div class="term-container" hx-get="%s%s" hx-trigger="load delay:2s" hx-swap="outerHTML">%s</div>`,
-				terminalBaseURL, r.Path, html,
+				terminalBaseURL, template.HTMLEscapeString(r.Path), html,
 			))
 		} else {
 			htmlByPath[r.Path] = template.HTML(fmt.Sprintf(

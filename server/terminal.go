@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"html"
 	"strconv"
 	"strings"
 
@@ -56,31 +57,32 @@ func SanitizeTerminalID(fullPath string) string {
 
 // WrapTerminalLines wraps each line of terminal HTML output with numbered
 // anchors for permalink linking, similar to GitHub's code view.
-func WrapTerminalLines(html string, terminalID string) string {
-	if html == "" {
+func WrapTerminalLines(htmlContent string, terminalID string) string {
+	if htmlContent == "" {
 		return ""
 	}
 
-	lineCount := strings.Count(html, "\n") + 1
+	lineCount := strings.Count(htmlContent, "\n") + 1
 
 	var sb strings.Builder
 
-	sb.Grow(len(html) + lineCount*100)
+	sb.Grow(len(htmlContent) + lineCount*100)
 
+	safeID := html.EscapeString(terminalID)
 	lineNum := 1
 	start := 0
 
-	for i := 0; i <= len(html); i++ {
-		if i == len(html) || html[i] == '\n' {
-			line := html[start:i]
+	for i := 0; i <= len(htmlContent); i++ {
+		if i == len(htmlContent) || htmlContent[i] == '\n' {
+			line := htmlContent[start:i]
 			numStr := strconv.Itoa(lineNum)
 
 			sb.WriteString(`<div class="term-line" id="`)
-			sb.WriteString(terminalID)
+			sb.WriteString(safeID)
 			sb.WriteString("-L")
 			sb.WriteString(numStr)
 			sb.WriteString(`"><a class="term-line-num" href="#`)
-			sb.WriteString(terminalID)
+			sb.WriteString(safeID)
 			sb.WriteString("-L")
 			sb.WriteString(numStr)
 			sb.WriteString(`">`)
