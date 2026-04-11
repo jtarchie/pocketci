@@ -360,7 +360,7 @@ func (c *Server) buildAuthConfig() (*auth.Config, string, string, error) {
 	if c.BasicAuth != "" {
 		parts := strings.SplitN(c.BasicAuth, ":", 2)
 		if len(parts) != 2 {
-			return nil, "", "", fmt.Errorf("invalid basic auth format: expected 'username:password', got '%s'", c.BasicAuth)
+			return nil, "", "", errors.New("invalid basic auth format: expected 'username:password'")
 		}
 
 		basicAuthUsername = parts[0]
