@@ -14,6 +14,17 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
+// safeFuncMap returns a Sprig FuncMap with environment-access functions removed
+// to prevent pipeline YAML templates from leaking server process secrets via
+// {{ env "SESSION_SECRET" }} or {{ expandenv "$VAR" }}.
+func safeFuncMap() template.FuncMap {
+	fm := sprig.FuncMap()
+	delete(fm, "env")
+	delete(fm, "expandenv")
+
+	return fm
+}
+
 // preprocessYAML checks for an opt-in template marker ("pocketci: template" on
 // the first line) and renders the YAML using Go text/template with Sprig functions.
 // If no marker is found, returns the original content unchanged. Template
@@ -28,8 +39,8 @@ func preprocessYAML(content []byte) ([]byte, error) {
 		return content, nil
 	}
 
-	// Marker found; render as template with Sprig functions
-	tmpl, err := template.New("pipeline").Funcs(sprig.FuncMap()).Parse(contentStr)
+	// Marker found; render as template with safe Sprig functions
+	tmpl, err := template.New("pipeline").Funcs(safeFuncMap()).Parse(contentStr)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline template parse failed: %w", err)
 	}

@@ -191,13 +191,26 @@ func (n *Notifier) UpdateContext(updates func(*NotifyContext)) {
 	updates(&n.context)
 }
 
+// safeFuncMap returns a Sprig FuncMap with environment-access functions removed
+// to prevent user-controlled templates from leaking server process secrets.
+func safeFuncMap() template.FuncMap {
+	fm := sprig.FuncMap()
+	// Remove functions that can read the server process environment.
+	// An attacker who controls the message string could exfiltrate SESSION_SECRET,
+	// DATABASE_URL, or any other env var present in the server process.
+	delete(fm, "env")
+	delete(fm, "expandenv")
+
+	return fm
+}
+
 // RenderTemplate renders a Go template string with the current context using Sprig functions.
 func (n *Notifier) RenderTemplate(templateStr string) (string, error) {
 	n.mu.RLock()
 	ctx := n.context
 	n.mu.RUnlock()
 
-	tmpl, err := template.New("notify").Funcs(sprig.FuncMap()).Parse(templateStr)
+	tmpl, err := template.New("notify").Funcs(safeFuncMap()).Parse(templateStr)
 	if err != nil {
 		return "", fmt.Errorf("could not parse template: %w", err)
 	}
