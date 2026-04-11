@@ -187,7 +187,7 @@ func (c *APIGatesController) resolveGate(ctx *echo.Context, status storage.GateS
 		}
 
 		jsonErr3 := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to resolve gate: %v", err),
+			"error": "internal server error",
 		})
 		if jsonErr3 != nil {
 			return fmt.Errorf("gate error response: %w", jsonErr3)

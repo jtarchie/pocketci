@@ -143,7 +143,7 @@ func (c *APIPipelinesController) Index(ctx *echo.Context) error {
 	result, err := c.store.SearchPipelines(ctx.Request().Context(), "", page, perPage)
 	if err != nil {
 		jsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to list pipelines: %v", err),
+			"error": "internal server error",
 		})
 		if jsonErr != nil {
 			return fmt.Errorf("list pipelines error response: %w", jsonErr)
@@ -217,7 +217,7 @@ func (c *APIPipelinesController) Show(ctx *echo.Context) error {
 		}
 
 		jsonErr3 := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get pipeline: %v", err),
+			"error": "internal server error",
 		})
 		if jsonErr3 != nil {
 			return fmt.Errorf("show pipeline error response: %w", jsonErr3)
@@ -412,7 +412,7 @@ func (c *APIPipelinesController) upsertPostSave(ctx *echo.Context, pipeline *sto
 		err := c.store.UpdatePipeline(ctx.Request().Context(), pipeline.ID, storage.PipelineUpdate{ResumeEnabled: req.ResumeEnabled})
 		if err != nil {
 			return respondJSON(ctx, http.StatusInternalServerError, map[string]string{
-				"error": fmt.Sprintf("failed to update resume_enabled: %v", err),
+				"error": "internal server error",
 			})
 		}
 
@@ -440,7 +440,7 @@ func (c *APIPipelinesController) upsertPostSave(ctx *echo.Context, pipeline *sto
 		err := c.store.UpdatePipeline(ctx.Request().Context(), pipeline.ID, storage.PipelineUpdate{RBACExpression: req.RBACExpression})
 		if err != nil {
 			return respondJSON(ctx, http.StatusInternalServerError, map[string]string{
-				"error": fmt.Sprintf("failed to update rbac_expression: %v", err),
+				"error": "internal server error",
 			})
 		}
 
@@ -470,7 +470,7 @@ func (c *APIPipelinesController) upsertCheckExistingRBAC(ctx *echo.Context, name
 		}
 
 		jsonErr4 := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to check existing pipeline: %v", err),
+			"error": "internal server error",
 		})
 		if jsonErr4 != nil {
 			return nil, fmt.Errorf("upsert check existing error response: %w", jsonErr4)
@@ -518,7 +518,7 @@ func (c *APIPipelinesController) Upsert(ctx *echo.Context) error {
 	pipeline, err := c.store.SavePipeline(ctx.Request().Context(), name, req.Content, req.Driver, req.ContentType)
 	if err != nil {
 		jsonErr6 := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to save pipeline: %v", err),
+			"error": "internal server error",
 		})
 		if jsonErr6 != nil {
 			return fmt.Errorf("upsert save error response: %w", jsonErr6)
@@ -585,7 +585,7 @@ func (c *APIPipelinesController) Destroy(ctx *echo.Context) error {
 		}
 
 		jsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get pipeline: %v", err),
+			"error": "internal server error",
 		})
 		if jsonErr != nil {
 			return fmt.Errorf("destroy get error response: %w", jsonErr)
@@ -602,7 +602,7 @@ func (c *APIPipelinesController) Destroy(ctx *echo.Context) error {
 	err = c.store.DeletePipeline(ctx.Request().Context(), id)
 	if err != nil {
 		delJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to delete pipeline: %v", err),
+			"error": "internal server error",
 		})
 		if delJsonErr != nil {
 			return fmt.Errorf("destroy delete error response: %w", delJsonErr)
@@ -759,7 +759,7 @@ func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
 		}
 
 		getJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get pipeline: %v", err),
+			"error": "internal server error",
 		})
 		if getJsonErr != nil {
 			return fmt.Errorf("trigger get error response: %w", getJsonErr)
@@ -794,7 +794,7 @@ func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
 		}
 
 		trigJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to trigger pipeline: %v", err),
+			"error": "internal server error",
 		})
 		if trigJsonErr != nil {
 			return fmt.Errorf("trigger error response: %w", trigJsonErr)
@@ -853,7 +853,7 @@ func (c *APIPipelinesController) Run(ctx *echo.Context) error {
 		}
 
 		geJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get pipeline: %v", err),
+			"error": "internal server error",
 		})
 		if geJsonErr != nil {
 			return fmt.Errorf("run get error response: %w", geJsonErr)
@@ -1009,7 +1009,7 @@ func (c *APIPipelinesController) setPaused(ctx *echo.Context, paused bool) error
 		}
 
 		spJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get pipeline: %v", err),
+			"error": "internal server error",
 		})
 		if spJsonErr != nil {
 			return fmt.Errorf("set paused error response: %w", spJsonErr)
@@ -1026,7 +1026,7 @@ func (c *APIPipelinesController) setPaused(ctx *echo.Context, paused bool) error
 	updateErr := c.store.UpdatePipeline(ctx.Request().Context(), id, storage.PipelineUpdate{Paused: &paused})
 	if updateErr != nil {
 		upJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to update pipeline: %v", updateErr),
+			"error": "internal server error",
 		})
 		if upJsonErr != nil {
 			return fmt.Errorf("set paused update error response: %w", upJsonErr)
@@ -1091,7 +1091,7 @@ func (c *APIPipelinesController) SeedJobPassed(ctx *echo.Context) error {
 		}
 
 		seedGetJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get pipeline: %v", err),
+			"error": "internal server error",
 		})
 		if seedGetJsonErr != nil {
 			return fmt.Errorf("seed job get error response: %w", seedGetJsonErr)
@@ -1115,7 +1115,7 @@ func (c *APIPipelinesController) SeedJobPassed(ctx *echo.Context) error {
 	)
 	if err != nil {
 		saveRunJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to create seed run: %v", err),
+			"error": "internal server error",
 		})
 		if saveRunJsonErr != nil {
 			return fmt.Errorf("seed job save run error response: %w", saveRunJsonErr)
@@ -1132,7 +1132,7 @@ func (c *APIPipelinesController) SeedJobPassed(ctx *echo.Context) error {
 	})
 	if setErr != nil {
 		setJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to seed job status: %v", setErr),
+			"error": "internal server error",
 		})
 		if setJsonErr != nil {
 			return fmt.Errorf("seed job set error response: %w", setJsonErr)
@@ -1245,7 +1245,7 @@ func (c *APIPipelinesController) ListSchedules(ctx *echo.Context) error {
 		}
 
 		lsGetJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get pipeline: %v", err),
+			"error": "internal server error",
 		})
 		if lsGetJsonErr != nil {
 			return fmt.Errorf("list schedules get error response: %w", lsGetJsonErr)
@@ -1257,7 +1257,7 @@ func (c *APIPipelinesController) ListSchedules(ctx *echo.Context) error {
 	schedules, err := c.store.GetSchedulesByPipeline(ctx.Request().Context(), id)
 	if err != nil {
 		lsErrJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to list schedules: %v", err),
+			"error": "internal server error",
 		})
 		if lsErrJsonErr != nil {
 			return fmt.Errorf("list schedules error response: %w", lsErrJsonErr)

@@ -49,7 +49,7 @@ func (c *APISchedulesController) UpdateEnabled(ctx *echo.Context) error {
 		}
 
 		errJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to update schedule: %v", err),
+			"error": "internal server error",
 		})
 		if errJsonErr != nil {
 			return fmt.Errorf("schedule error response: %w", errJsonErr)

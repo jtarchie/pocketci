@@ -146,7 +146,7 @@ func (c *APIRunsController) Tasks(ctx *echo.Context) error {
 	results, err := c.store.GetAll(ctx.Request().Context(), prefix, []string{"*"})
 	if err != nil {
 		gaErrJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get tasks: %v", err),
+			"error": "internal server error",
 		})
 		if gaErrJsonErr != nil {
 			return fmt.Errorf("tasks get all error response: %w", gaErrJsonErr)
@@ -200,7 +200,7 @@ func (c *APIRunsController) tasksByPath(ctx *echo.Context, prefix, taskPath stri
 		}
 
 		tpErrJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get task: %v", getErr),
+			"error": "internal server error",
 		})
 		if tpErrJsonErr != nil {
 			return fmt.Errorf("tasks get task error response: %w", tpErrJsonErr)
@@ -267,7 +267,7 @@ func (c *APIRunsController) Stop(ctx *echo.Context) error {
 		}
 
 		stopInternalJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to stop run: %v", stopErr),
+			"error": "internal server error",
 		})
 		if stopInternalJsonErr != nil {
 			return fmt.Errorf("stop run internal error response: %w", stopInternalJsonErr)
@@ -308,7 +308,7 @@ func (c *APIRunsController) stopOrphanedRun(ctx *echo.Context, runID string) err
 	updateErr := c.store.UpdateRunStatus(reqCtx, runID, storage.RunStatusFailed, "Run stopped by user")
 	if updateErr != nil {
 		orphanErrJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to mark orphaned run as failed: %v", updateErr),
+			"error": "internal server error",
 		})
 		if orphanErrJsonErr != nil {
 			return fmt.Errorf("stop run orphan error response: %w", orphanErrJsonErr)
@@ -358,7 +358,7 @@ func (c *APIRunsController) resumeValidate(ctx *echo.Context, runID string) (*st
 		}
 
 		rvErrJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get run: %v", err),
+			"error": "internal server error",
 		})
 		if rvErrJsonErr != nil {
 			return nil, nil, fmt.Errorf("resume run error response: %w", rvErrJsonErr)
@@ -425,7 +425,7 @@ func (c *APIRunsController) Resume(ctx *echo.Context) error {
 		}
 
 		resumeInternalJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to resume run: %v", resumeErr),
+			"error": "internal server error",
 		})
 		if resumeInternalJsonErr != nil {
 			return fmt.Errorf("resume internal error response: %w", resumeInternalJsonErr)

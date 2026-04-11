@@ -43,7 +43,7 @@ func (c *APIWebhooksController) resolveWebhookSecret(ctx *echo.Context, pipeline
 	logger.Error("webhook.secret_error", "error", getErr)
 
 	return "", respondJSON(ctx, http.StatusInternalServerError, map[string]string{
-		"error": fmt.Sprintf("failed to get webhook secret: %v", getErr),
+		"error": "internal server error",
 	})
 }
 
@@ -190,7 +190,7 @@ func (c *APIWebhooksController) Trigger(ctx *echo.Context) error {
 		logger.Error("webhook.store_error", "error", err)
 
 		wStoreJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get pipeline: %v", err),
+			"error": "internal server error",
 		})
 		if wStoreJsonErr != nil {
 			return fmt.Errorf("webhook store error response: %w", wStoreJsonErr)
@@ -248,7 +248,7 @@ func (c *APIWebhooksController) Trigger(ctx *echo.Context) error {
 		logger.Error("webhook.trigger_error", "error", err)
 
 		wTriggerJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to trigger pipeline: %v", err),
+			"error": "internal server error",
 		})
 		if wTriggerJsonErr != nil {
 			return fmt.Errorf("webhook trigger error response: %w", wTriggerJsonErr)
