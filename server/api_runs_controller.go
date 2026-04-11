@@ -30,6 +30,40 @@ func normalizeRunTaskPath(path, runPrefix string) string {
 	return path
 }
 
+// checkRunRBAC fetches the run's pipeline and enforces pipeline-level RBAC.
+// Returns errHandled and writes an HTTP response if access is denied.
+func (c *APIRunsController) checkRunRBAC(ctx *echo.Context, run *storage.PipelineRun) error {
+	pipeline, err := c.store.GetPipeline(ctx.Request().Context(), run.PipelineID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			rbacNFErr := ctx.JSON(http.StatusNotFound, map[string]string{
+				"error": "pipeline not found",
+			})
+			if rbacNFErr != nil {
+				return fmt.Errorf("run rbac pipeline not found response: %w", rbacNFErr)
+			}
+
+			return errHandled
+		}
+
+		rbacErrErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "internal server error",
+		})
+		if rbacErrErr != nil {
+			return fmt.Errorf("run rbac pipeline error response: %w", rbacErrErr)
+		}
+
+		return errHandled
+	}
+
+	rbacErr := checkPipelineRBAC(ctx, pipeline)
+	if rbacErr != nil {
+		return rbacErr
+	}
+
+	return nil
+}
+
 // Status handles GET /api/runs/:run_id/status - Get run status.
 func (c *APIRunsController) Status(ctx *echo.Context) error {
 	runID := ctx.Param("run_id")
@@ -48,13 +82,18 @@ func (c *APIRunsController) Status(ctx *echo.Context) error {
 		}
 
 		errJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get run: %v", err),
+			"error": "internal server error",
 		})
 		if errJsonErr != nil {
 			return fmt.Errorf("run status error response: %w", errJsonErr)
 		}
 
 		return nil
+	}
+
+	rbacErr := c.checkRunRBAC(ctx, run)
+	if rbacErr != nil {
+		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
 	okJsonErr := ctx.JSON(http.StatusOK, run)
@@ -69,7 +108,7 @@ func (c *APIRunsController) Status(ctx *echo.Context) error {
 func (c *APIRunsController) Tasks(ctx *echo.Context) error {
 	runID := ctx.Param("run_id")
 
-	_, err := c.store.GetRun(ctx.Request().Context(), runID)
+	run, err := c.store.GetRun(ctx.Request().Context(), runID)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			tNFJsonErr := ctx.JSON(http.StatusNotFound, map[string]string{
@@ -83,13 +122,18 @@ func (c *APIRunsController) Tasks(ctx *echo.Context) error {
 		}
 
 		tErrJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get run: %v", err),
+			"error": "internal server error",
 		})
 		if tErrJsonErr != nil {
 			return fmt.Errorf("tasks run error response: %w", tErrJsonErr)
 		}
 
 		return nil
+	}
+
+	rbacErr := c.checkRunRBAC(ctx, run)
+	if rbacErr != nil {
+		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
 	prefix := "/pipeline/" + runID + "/"
@@ -191,13 +235,18 @@ func (c *APIRunsController) Stop(ctx *echo.Context) error {
 		}
 
 		stopErrJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get run: %v", err),
+			"error": "internal server error",
 		})
 		if stopErrJsonErr != nil {
 			return fmt.Errorf("stop run error response: %w", stopErrJsonErr)
 		}
 
 		return nil
+	}
+
+	rbacErr := c.checkRunRBAC(ctx, run)
+	if rbacErr != nil {
+		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
 	if run.Status != storage.RunStatusRunning && run.Status != storage.RunStatusQueued {
@@ -332,13 +381,18 @@ func (c *APIRunsController) resumeValidate(ctx *echo.Context, runID string) (*st
 	pipeline, err := c.store.GetPipeline(reqCtx, run.PipelineID)
 	if err != nil {
 		rvPipelineJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get pipeline: %v", err),
+			"error": "internal server error",
 		})
 		if rvPipelineJsonErr != nil {
 			return nil, nil, fmt.Errorf("resume get pipeline error response: %w", rvPipelineJsonErr)
 		}
 
 		return nil, nil, errHandled
+	}
+
+	rbacErr := checkPipelineRBAC(ctx, pipeline)
+	if rbacErr != nil {
+		return nil, nil, rbacErr
 	}
 
 	return run, pipeline, nil

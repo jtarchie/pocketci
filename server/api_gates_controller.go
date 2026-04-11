@@ -17,14 +17,78 @@ type APIGatesController struct {
 	logger          *slog.Logger
 }
 
+// checkGateRBAC fetches the gate's pipeline and enforces pipeline-level RBAC.
+// Returns errHandled and writes an HTTP response if access is denied.
+func (c *APIGatesController) checkGateRBAC(ctx *echo.Context, gate *storage.Gate) error {
+	pipeline, err := c.store.GetPipeline(ctx.Request().Context(), gate.PipelineID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			grbacNFErr := ctx.JSON(http.StatusNotFound, map[string]string{
+				"error": "pipeline not found",
+			})
+			if grbacNFErr != nil {
+				return fmt.Errorf("gate rbac pipeline not found response: %w", grbacNFErr)
+			}
+
+			return errHandled
+		}
+
+		grbacErrErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "internal server error",
+		})
+		if grbacErrErr != nil {
+			return fmt.Errorf("gate rbac pipeline error response: %w", grbacErrErr)
+		}
+
+		return errHandled
+	}
+
+	rbacErr := checkPipelineRBAC(ctx, pipeline)
+	if rbacErr != nil {
+		return rbacErr
+	}
+
+	return nil
+}
+
 // ListByRun handles GET /api/runs/:run_id/gates - List gates for a run.
 func (c *APIGatesController) ListByRun(ctx *echo.Context) error {
 	runID := ctx.Param("run_id")
 
+	// Enforce RBAC by fetching the run and checking its pipeline.
+	run, err := c.store.GetRun(ctx.Request().Context(), runID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			lgNFErr := ctx.JSON(http.StatusNotFound, map[string]string{
+				"error": "run not found",
+			})
+			if lgNFErr != nil {
+				return fmt.Errorf("gates list run not found response: %w", lgNFErr)
+			}
+
+			return nil
+		}
+
+		lgErrErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "internal server error",
+		})
+		if lgErrErr != nil {
+			return fmt.Errorf("gates list run error response: %w", lgErrErr)
+		}
+
+		return nil
+	}
+
+	// Use a synthetic gate with the run's pipeline_id to reuse the RBAC helper.
+	rbacErr := c.checkGateRBAC(ctx, &storage.Gate{PipelineID: run.PipelineID})
+	if rbacErr != nil {
+		return nil //nolint:nilerr // helper already wrote the HTTP response
+	}
+
 	gates, err := c.store.GetGatesByRunID(ctx.Request().Context(), runID)
 	if err != nil {
 		jsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
-			"error": fmt.Sprintf("failed to get gates: %v", err),
+			"error": "internal server error",
 		})
 		if jsonErr != nil {
 			return fmt.Errorf("gates error response: %w", jsonErr)
@@ -82,10 +146,32 @@ func (c *APIGatesController) resolveGate(ctx *echo.Context, status storage.GateS
 	gateID := ctx.Param("gate_id")
 
 	reqCtx := ctx.Request().Context()
+
+	// Fetch gate first to enforce pipeline-level RBAC before resolving.
+	gate, gateGetErr := c.store.GetGate(reqCtx, gateID)
+	if gateGetErr != nil {
+		if errors.Is(gateGetErr, storage.ErrNotFound) {
+			return c.resolveGateNotFound(ctx, gateID)
+		}
+
+		rgErrErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "internal server error",
+		})
+		if rgErrErr != nil {
+			return fmt.Errorf("resolve gate fetch error response: %w", rgErrErr)
+		}
+
+		return nil
+	}
+
+	rbacErr := c.checkGateRBAC(ctx, gate)
+	if rbacErr != nil {
+		return nil //nolint:nilerr // helper already wrote the HTTP response
+	}
+
 	approvedBy := formatActor(ctx)
 
-	// ResolveGate atomically updates only pending gates (WHERE status = 'pending'),
-	// so no pre-fetch is needed, avoiding a TOCTOU race.
+	// ResolveGate atomically updates only pending gates (WHERE status = 'pending').
 	resolveErr := c.store.ResolveGate(reqCtx, gateID, status, approvedBy)
 	if resolveErr != nil {
 		err := resolveErr
