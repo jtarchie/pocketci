@@ -204,7 +204,9 @@ func (c *Execute) runYAMLPipeline(
 		return fmt.Errorf("could not load YAML pipeline: %w", err)
 	}
 
-	err = runtimebackwards.ValidateConfig(cfg, nil)
+	registry := resources.NewRegistry([]resources.Resource{&mock.Mock{}})
+
+	err = runtimebackwards.ValidateConfig(cfg, registry)
 	if err != nil {
 		return fmt.Errorf("invalid pipeline: %w", err)
 	}
@@ -217,7 +219,7 @@ func (c *Execute) runYAMLPipeline(
 	runner := runtimebackwards.New(cfg, driver, store, logger, runID, runtimeID,
 		runtimebackwards.RunnerOptions{
 			SecretsManager:   secretsManager,
-			ResourceRegistry: resources.NewRegistry([]resources.Resource{&mock.Mock{}}),
+			ResourceRegistry: registry,
 		},
 	)
 
