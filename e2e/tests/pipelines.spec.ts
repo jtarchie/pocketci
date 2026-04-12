@@ -233,6 +233,70 @@ jobs:
         await expect(page.getByText(marker)).toBeVisible({ timeout: 10000 });
       },
     );
+
+    test(
+      "task output appears during execution (streaming)",
+      async ({ page, request }) => {
+        test.setTimeout(120000);
+
+        const earlyMarker = uniqueName("early-log");
+        const lateMarker = uniqueName("late-log");
+        const pipelineName = uniqueName("streaming-test");
+        const pipelineContent = `
+jobs:
+  - name: streaming-job
+    plan:
+      - task: streaming-task
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: busybox
+          run:
+            path: sh
+            args: ["-c", "echo '${earlyMarker}' && sleep 10 && echo '${lateMarker}'"]
+`;
+        await createPipeline(request, pipelineName, pipelineContent, "docker");
+
+        await page.goto("/pipelines/");
+        await page.getByRole("link", { name: pipelineName }).click();
+
+        await page.getByRole("button", { name: /trigger/i }).click();
+        await expect(page.getByText(/triggered successfully/i)).toBeVisible({
+          timeout: 5000,
+        });
+
+        // Navigate to the tasks page while the task is still running
+        const tasksLink = page.getByRole("link", { name: "Tasks" }).first();
+        await expect(tasksLink).toBeVisible({ timeout: 30000 });
+        await tasksLink.click();
+        await expect(page).toHaveURL(/\/runs\/[^/]+\/tasks/);
+
+        // Confirm the task is still in progress (Live indicator visible)
+        const liveIndicator = page.getByText("Live", { exact: true });
+        await expect(liveIndicator).toBeVisible({ timeout: 30000 });
+
+        // Expand the task accordion
+        const taskItem = page.locator(".task-item").first();
+        await expect(taskItem).toBeVisible({ timeout: 30000 });
+        await taskItem.locator("summary").click();
+
+        // EARLY_MARKER must be visible while the task is still running —
+        // this is the key assertion proving real-time streaming, not batch output.
+        await expect(page.getByText(earlyMarker)).toBeVisible({
+          timeout: 20000,
+        });
+
+        // Wait for the run to complete, then the late marker must also appear
+        await expect(
+          page.getByText(/success|failure/i).first(),
+        ).toBeVisible({ timeout: 60000 });
+        await expect(page.getByText(lateMarker)).toBeVisible({
+          timeout: 10000,
+        });
+      },
+    );
   });
 
   test.describe("Pipeline Triggering", () => {

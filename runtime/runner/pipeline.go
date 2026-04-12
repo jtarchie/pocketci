@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -495,12 +496,36 @@ func (c *PipelineRunner) waitAndFinalizeRun(
 	stdout, stderr := &strings.Builder{}, &strings.Builder{}
 	var streamWg errgroup.Group
 
-	if input.OnOutput != nil {
-		streamWg.Go(func() error {
-			c.streamLogsWithCallback(streamCtx, container, streamCallback, stdout, stderr)
-			return nil
-		})
-	}
+	streamWg.Go(func() error {
+		c.streamLogsWithCallback(streamCtx, container, streamCallback, stdout, stderr)
+		return nil
+	})
+
+	// Periodically write accumulated logs to storage so the UI can show
+	// live output via HTMX polling (every 2 s matches the poll cadence).
+	streamWg.Go(func() error {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-streamCtx.Done():
+				return nil
+			case <-ticker.C:
+				logsMu.Lock()
+				snapshot := slices.Clone(logs)
+				logsMu.Unlock()
+
+				if len(snapshot) > 0 {
+					c.setTaskStatus(storageKey, map[string]any{
+						"status":     "running",
+						"started_at": taskStartedAt.UTC().Format(time.RFC3339),
+						"logs":       snapshot,
+					})
+				}
+			}
+		}
+	})
 
 	containerStatus, err := c.pollContainerStatus(ctx, container, storageKey, taskStartedAt, cancelStream)
 	if errors.Is(err, errContainerAborted) {

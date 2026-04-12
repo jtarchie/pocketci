@@ -2,7 +2,6 @@ package backwards
 
 import (
 	"archive/tar"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/goccy/go-yaml"
@@ -160,51 +160,122 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 
 	defer func() { _ = container.Cleanup(sc.Ctx) }()
 
-	status, err := waitForContainer(execCtx, container)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			elapsed := time.Since(startedAt)
+	// Stream logs concurrently with container execution.
+	streamCtx, cancelStream := context.WithCancel(execCtx)
+	defer cancelStream()
+
+	var (
+		logsMu sync.Mutex
+		logs   []any
+		stdout strings.Builder
+		stderr strings.Builder
+	)
+
+	appendLog := func(stream, data string) {
+		logsMu.Lock()
+		logs = append(logs, map[string]string{"type": stream, "content": data})
+		logsMu.Unlock()
+	}
+
+	stdoutPR, stdoutPW := io.Pipe()
+	stderrPR, stderrPW := io.Pipe()
+
+	var streamWg errgroup.Group
+
+	// Goroutine 1: follow container logs until streamCtx is cancelled.
+	streamWg.Go(func() error {
+		defer func() {
+			_ = stdoutPW.Close()
+			_ = stderrPW.Close()
+		}()
+
+		streamErr := container.Logs(streamCtx, stdoutPW, stderrPW, true)
+		if streamErr != nil && streamCtx.Err() == nil {
+			sc.Logger.Debug("task.stream.logs.error", "task", taskName, "err", streamErr)
+		}
+
+		return nil
+	})
+
+	readChunks := func(stream string, r io.Reader, builder *strings.Builder) {
+		buf := make([]byte, 4096)
+
+		for {
+			n, readErr := r.Read(buf)
+			if n > 0 {
+				chunk := string(buf[:n])
+				builder.WriteString(chunk)
+				appendLog(stream, chunk)
+
+				if sc.OutputCallback != nil {
+					sc.OutputCallback(stream, chunk)
+				}
+			}
+
+			if readErr != nil {
+				break
+			}
+		}
+	}
+
+	// Goroutines 2 & 3: drain pipe readers into string builders.
+	streamWg.Go(func() error { readChunks("stdout", stdoutPR, &stdout); return nil })
+	streamWg.Go(func() error { readChunks("stderr", stderrPR, &stderr); return nil })
+
+	// Goroutine 4: write intermediate storage updates every 2s so the UI
+	// can display logs while the task is still running.
+	streamWg.Go(func() error {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-streamCtx.Done():
+				return nil
+			case <-ticker.C:
+				logsMu.Lock()
+				snapshot := append([]any(nil), logs...)
+				logsMu.Unlock()
+
+				if len(snapshot) > 0 {
+					_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
+						"status":     "running",
+						"started_at": startedAt.Format(time.RFC3339),
+						"logs":       snapshot,
+					})
+				}
+			}
+		}
+	})
+
+	status, waitErr := waitForContainer(execCtx, container)
+
+	// Cancel streaming and wait for all goroutines to finish draining.
+	cancelStream()
+	_ = streamWg.Wait()
+
+	elapsed := time.Since(startedAt)
+
+	if waitErr != nil {
+		if errors.Is(waitErr, context.DeadlineExceeded) {
+			logsMu.Lock()
+			snapshot := append([]any(nil), logs...)
+			logsMu.Unlock()
 
 			_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
 				"status":     "abort",
 				"started_at": startedAt.Format(time.RFC3339),
 				"elapsed":    elapsed.String(),
+				"logs":       snapshot,
 			})
 
 			return &TaskAbortedError{TaskName: taskName}
 		}
 
-		return &TaskErroredError{TaskName: taskName, Err: err}
+		return &TaskErroredError{TaskName: taskName, Err: waitErr}
 	}
 
 	exitCode := status.ExitCode()
-	elapsed := time.Since(startedAt)
-
-	var stdout, stderr bytes.Buffer
-
-	err = container.Logs(sc.Ctx, &stdout, &stderr, false)
-	if err != nil {
-		sc.Logger.Error("task.logs.error", "task", taskName, "err", err)
-	}
-
-	logs := make([]any, 0, 2)
-	if stdout.Len() > 0 {
-		logs = append(logs, map[string]string{"type": "stdout", "content": stdout.String()})
-	}
-
-	if stderr.Len() > 0 {
-		logs = append(logs, map[string]string{"type": "stderr", "content": stderr.String()})
-	}
-
-	if sc.OutputCallback != nil {
-		if stdout.Len() > 0 {
-			sc.OutputCallback("stdout", stdout.String())
-		}
-
-		if stderr.Len() > 0 {
-			sc.OutputCallback("stderr", stderr.String())
-		}
-	}
 
 	resultStatus := "success"
 	if exitCode != 0 {
@@ -212,12 +283,16 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		sc.Logger.Debug("task.failed", "task", taskName, "code", exitCode)
 	}
 
+	logsMu.Lock()
+	finalLogs := append([]any(nil), logs...)
+	logsMu.Unlock()
+
 	err = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
 		"status":     resultStatus,
 		"code":       exitCode,
 		"started_at": startedAt.Format(time.RFC3339),
 		"elapsed":    elapsed.String(),
-		"logs":       logs,
+		"logs":       finalLogs,
 	})
 	if err != nil {
 		return fmt.Errorf("storage set result: %w", err)
