@@ -17,6 +17,11 @@ async function createPipeline(
   if (webhookSecret !== undefined) {
     body.webhook_secret = webhookSecret;
   }
+  // Auto-detect YAML pipelines so the server uses the YAML runner instead
+  // of trying to parse the content as JavaScript.
+  if (content.trimStart().startsWith("jobs:")) {
+    body.content_type = "yaml";
+  }
   const response = await request.put(
     `/api/pipelines/${encodeURIComponent(name)}`,
     { data: body },

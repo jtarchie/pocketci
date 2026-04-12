@@ -67,6 +67,40 @@ func (n *Container) Cleanup(_ context.Context) error {
 // When follow is false, returns a snapshot of all accumulated output so far.
 // When follow is true, streams output in real time until the process exits or
 // ctx is cancelled, then returns.
+// writeChunk routes a liveChunk to the appropriate writer.
+func writeChunk(chunk liveChunk, stdout, stderr io.Writer) error {
+	w := stderr
+	if chunk.stream == "stdout" {
+		w = stdout
+	}
+
+	_, err := w.Write(chunk.data)
+	if err != nil {
+		return fmt.Errorf("failed to write %s: %w", chunk.stream, err)
+	}
+
+	return nil
+}
+
+// drainLiveCh flushes any buffered chunks from liveCh without blocking.
+func drainLiveCh(liveCh <-chan liveChunk, stdout, stderr io.Writer) error {
+	for {
+		select {
+		case chunk, ok := <-liveCh:
+			if !ok {
+				return nil
+			}
+
+			err := writeChunk(chunk, stdout, stderr)
+			if err != nil {
+				return err
+			}
+		default:
+			return nil
+		}
+	}
+}
+
 func (n *Container) Logs(ctx context.Context, stdout io.Writer, stderr io.Writer, follow bool) error {
 	if !follow {
 		_, err := io.WriteString(stdout, n.stdoutLog.Snapshot())
@@ -85,24 +119,18 @@ func (n *Container) Logs(ctx context.Context, stdout io.Writer, stderr io.Writer
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			// Drain remaining buffered chunks before returning so no data is
+			// lost when ctx is cancelled (e.g. during an abort).
+			return drainLiveCh(n.liveCh, stdout, stderr)
 		case chunk, ok := <-n.liveCh:
 			if !ok {
 				// Channel closed: process has exited and all output is drained.
 				return nil
 			}
 
-			var w io.Writer
-
-			if chunk.stream == "stdout" {
-				w = stdout
-			} else {
-				w = stderr
-			}
-
-			_, err := w.Write(chunk.data)
+			err := writeChunk(chunk, stdout, stderr)
 			if err != nil {
-				return fmt.Errorf("failed to write %s: %w", chunk.stream, err)
+				return err
 			}
 		}
 	}
@@ -279,10 +307,13 @@ func (n *Native) RunContainer(ctx context.Context, task orchestra.Task) (orchest
 	}()
 
 	go func() {
-		// Wait for the process then for both stream goroutines to drain their
-		// pipes before closing liveCh, so Logs(follow=true) sees all output.
-		err := command.Wait()
+		// Drain teeStream goroutines BEFORE calling command.Wait().
+		// command.Wait() closes the pipe read ends (via closeAfterWait), which
+		// races with teeStream's Read calls: if Wait wins, the pipe is closed
+		// before teeStream can read the remaining bytes, leaving logBuffer
+		// empty. Draining first ensures all output is captured.
 		streamWg.Wait()
+		err := command.Wait()
 		close(liveCh)
 
 		if err != nil {

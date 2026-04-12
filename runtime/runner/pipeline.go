@@ -490,14 +490,17 @@ func (c *PipelineRunner) waitAndFinalizeRun(
 		}
 	})
 
-	streamCtx, cancelStream := context.WithCancel(ctx)
-	defer cancelStream()
+	// tickerCtx controls only the 2 s periodic storage-update ticker.
+	// The streaming goroutine uses ctx directly so each driver closes its
+	// stream naturally on container exit without early cancellation.
+	tickerCtx, cancelTicker := context.WithCancel(ctx)
+	defer cancelTicker()
 
 	stdout, stderr := &strings.Builder{}, &strings.Builder{}
 	var streamWg errgroup.Group
 
 	streamWg.Go(func() error {
-		c.streamLogsWithCallback(streamCtx, container, streamCallback, stdout, stderr)
+		c.streamLogsWithCallback(ctx, container, streamCallback, stdout, stderr)
 		return nil
 	})
 
@@ -509,7 +512,7 @@ func (c *PipelineRunner) waitAndFinalizeRun(
 
 		for {
 			select {
-			case <-streamCtx.Done():
+			case <-tickerCtx.Done():
 				return nil
 			case <-ticker.C:
 				logsMu.Lock()
@@ -527,16 +530,22 @@ func (c *PipelineRunner) waitAndFinalizeRun(
 		}
 	})
 
-	containerStatus, err := c.pollContainerStatus(ctx, container, storageKey, taskStartedAt, cancelStream)
+	containerStatus, err := c.pollContainerStatus(ctx, container, storageKey, taskStartedAt)
 	if errors.Is(err, errContainerAborted) {
+		cancelTicker()
+		_ = streamWg.Wait()
+
 		return &RunResult{Status: RunAbort}, nil
 	}
 
 	if err != nil {
+		cancelTicker()
+		_ = streamWg.Wait()
+
 		return nil, err
 	}
 
-	cancelStream()
+	cancelTicker()
 	_ = streamWg.Wait()
 
 	finalStdout, finalStderr := &strings.Builder{}, &strings.Builder{}
@@ -591,13 +600,10 @@ func (c *PipelineRunner) pollContainerStatus(
 	container orchestra.Container,
 	storageKey string,
 	taskStartedAt time.Time,
-	cancelStream context.CancelFunc,
 ) (orchestra.ContainerStatus, error) {
 	for {
 		containerStatus, err := container.Status(ctx)
 		if err != nil {
-			cancelStream()
-
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 				c.setTaskStatus(storageKey, map[string]any{
 					"status":     "abort",
