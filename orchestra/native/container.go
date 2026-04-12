@@ -100,7 +100,8 @@ func (n *Container) Logs(ctx context.Context, stdout io.Writer, stderr io.Writer
 				w = stderr
 			}
 
-			if _, err := w.Write(chunk.data); err != nil {
+			_, err := w.Write(chunk.data)
+			if err != nil {
 				return fmt.Errorf("failed to write %s: %w", chunk.stream, err)
 			}
 		}
@@ -150,6 +151,22 @@ func (n *Container) Status(ctx context.Context) (orchestra.ContainerStatus, erro
 // teeStream reads from r, writes every chunk to log and sends a non-blocking
 // copy on liveCh. Non-blocking sends ensure the process is never stalled if
 // nobody is consuming liveCh; logBuffer always captures the full output.
+// warnUnsupportedFeatures logs warnings for task fields that the native driver
+// does not support. Extracted to keep RunContainer's cyclomatic complexity low.
+func warnUnsupportedFeatures(logger interface{ Warn(string, ...any) }, task orchestra.Task) {
+	if task.Image != "" {
+		logger.Warn("orchestra.native.image.unsupported", "image", task.Image)
+	}
+
+	if task.User != "" {
+		logger.Warn("orchestra.native.user.unsupported", "user", task.User)
+	}
+
+	if task.Privileged {
+		logger.Warn("orchestra.native.privileged.unsupported", "msg", "privileged is not supported in native mode")
+	}
+}
+
 func teeStream(stream string, r io.Reader, log *logBuffer, liveCh chan<- liveChunk) {
 	buf := make([]byte, 4096)
 
@@ -236,19 +253,10 @@ func (n *Native) RunContainer(ctx context.Context, task orchestra.Task) (orchest
 		command.Stdin = task.Stdin
 	}
 
-	if task.Image != "" {
-		logger.Warn("orchestra.native.image.unsupported", "image", task.Image)
-	}
+	warnUnsupportedFeatures(logger, task)
 
-	if task.User != "" {
-		logger.Warn("orchestra.native.user.unsupported", "user", task.User)
-	}
-
-	if task.Privileged {
-		logger.Warn("orchestra.native.privileged.unsupported", "msg", "privileged is not supported in native mode")
-	}
-
-	if err := command.Start(); err != nil {
+	err = command.Start()
+	if err != nil {
 		return nil, fmt.Errorf("failed to start command: %w", err)
 	}
 

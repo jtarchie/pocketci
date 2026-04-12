@@ -161,112 +161,30 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 	defer func() { _ = container.Cleanup(sc.Ctx) }()
 
 	// Stream logs concurrently with container execution.
-	streamCtx, cancelStream := context.WithCancel(execCtx)
-	defer cancelStream()
+	// tickerCtx controls only the periodic storage-update goroutine; goroutine 1
+	// uses sc.Ctx directly so each driver (Docker, native, fly) closes its stream
+	// naturally on container exit without the HTTP connection being torn down early.
+	tickerCtx, cancelTicker := context.WithCancel(sc.Ctx)
+	defer cancelTicker()
 
-	var (
-		logsMu sync.Mutex
-		logs   []any
-		stdout strings.Builder
-		stderr strings.Builder
-	)
-
-	appendLog := func(stream, data string) {
-		logsMu.Lock()
-		logs = append(logs, map[string]string{"type": stream, "content": data})
-		logsMu.Unlock()
-	}
-
-	stdoutPR, stdoutPW := io.Pipe()
-	stderrPR, stderrPW := io.Pipe()
-
-	var streamWg errgroup.Group
-
-	// Goroutine 1: follow container logs until streamCtx is cancelled.
-	streamWg.Go(func() error {
-		defer func() {
-			_ = stdoutPW.Close()
-			_ = stderrPW.Close()
-		}()
-
-		streamErr := container.Logs(streamCtx, stdoutPW, stderrPW, true)
-		if streamErr != nil && streamCtx.Err() == nil {
-			sc.Logger.Debug("task.stream.logs.error", "task", taskName, "err", streamErr)
-		}
-
-		return nil
-	})
-
-	readChunks := func(stream string, r io.Reader, builder *strings.Builder) {
-		buf := make([]byte, 4096)
-
-		for {
-			n, readErr := r.Read(buf)
-			if n > 0 {
-				chunk := string(buf[:n])
-				builder.WriteString(chunk)
-				appendLog(stream, chunk)
-
-				if sc.OutputCallback != nil {
-					sc.OutputCallback(stream, chunk)
-				}
-			}
-
-			if readErr != nil {
-				break
-			}
-		}
-	}
-
-	// Goroutines 2 & 3: drain pipe readers into string builders.
-	streamWg.Go(func() error { readChunks("stdout", stdoutPR, &stdout); return nil })
-	streamWg.Go(func() error { readChunks("stderr", stderrPR, &stderr); return nil })
-
-	// Goroutine 4: write intermediate storage updates every 2s so the UI
-	// can display logs while the task is still running.
-	streamWg.Go(func() error {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-streamCtx.Done():
-				return nil
-			case <-ticker.C:
-				logsMu.Lock()
-				snapshot := append([]any(nil), logs...)
-				logsMu.Unlock()
-
-				if len(snapshot) > 0 {
-					_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
-						"status":     "running",
-						"started_at": startedAt.Format(time.RFC3339),
-						"logs":       snapshot,
-					})
-				}
-			}
-		}
-	})
+	ts := startTaskStream(tickerCtx, sc, container, storageKey, taskName, startedAt)
 
 	status, waitErr := waitForContainer(execCtx, container)
 
-	// Cancel streaming and wait for all goroutines to finish draining.
-	cancelStream()
-	_ = streamWg.Wait()
+	// Stop the periodic ticker; goroutines 1-3 finish naturally once the
+	// container exits and its log stream closes.
+	cancelTicker()
+	_ = ts.wg.Wait()
 
 	elapsed := time.Since(startedAt)
 
 	if waitErr != nil {
 		if errors.Is(waitErr, context.DeadlineExceeded) {
-			logsMu.Lock()
-			snapshot := append([]any(nil), logs...)
-			logsMu.Unlock()
-
 			_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
 				"status":     "abort",
 				"started_at": startedAt.Format(time.RFC3339),
 				"elapsed":    elapsed.String(),
-				"logs":       snapshot,
+				"logs":       ts.snapshot(),
 			})
 
 			return &TaskAbortedError{TaskName: taskName}
@@ -283,22 +201,18 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		sc.Logger.Debug("task.failed", "task", taskName, "code", exitCode)
 	}
 
-	logsMu.Lock()
-	finalLogs := append([]any(nil), logs...)
-	logsMu.Unlock()
-
 	err = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{
 		"status":     resultStatus,
 		"code":       exitCode,
 		"started_at": startedAt.Format(time.RFC3339),
 		"elapsed":    elapsed.String(),
-		"logs":       finalLogs,
+		"logs":       ts.snapshot(),
 	})
 	if err != nil {
 		return fmt.Errorf("storage set result: %w", err)
 	}
 
-	err = checkTaskAssertions(step, taskName, exitCode, stdout.String(), stderr.String())
+	err = checkTaskAssertions(step, taskName, exitCode, ts.stdout.String(), ts.stderr.String())
 	if err != nil {
 		return err
 	}
@@ -308,6 +222,111 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 	}
 
 	return nil
+}
+
+// taskStream accumulates output from a running container across four concurrent
+// goroutines started by startTaskStream.
+type taskStream struct {
+	mu     sync.Mutex
+	logs   []any
+	stdout strings.Builder
+	stderr strings.Builder
+	wg     errgroup.Group
+}
+
+func (ts *taskStream) snapshot() []any {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+
+	return append([]any(nil), ts.logs...)
+}
+
+// startTaskStream launches four goroutines:
+//  1. container.Logs(sc.Ctx, …, follow=true) — uses sc.Ctx so each driver closes
+//     the stream naturally on container exit (no early HTTP cancellation).
+//  2. stdout pipe reader → accumulates ts.stdout, appends to ts.logs.
+//  3. stderr pipe reader → accumulates ts.stderr, appends to ts.logs.
+//  4. 2-second ticker (tickerCtx) → writes intermediate storage updates so the
+//     UI can show live output via HTMX polling.
+func startTaskStream(
+	tickerCtx context.Context,
+	sc *StepContext,
+	container orchestra.Container,
+	storageKey, taskName string,
+	startedAt time.Time,
+) *taskStream {
+	ts := &taskStream{}
+
+	stdoutPR, stdoutPW := io.Pipe()
+	stderrPR, stderrPW := io.Pipe()
+
+	// Goroutine 1: follow container logs using the parent sc.Ctx.
+	ts.wg.Go(func() error {
+		defer func() {
+			_ = stdoutPW.Close()
+			_ = stderrPW.Close()
+		}()
+
+		streamErr := container.Logs(sc.Ctx, stdoutPW, stderrPW, true)
+		if streamErr != nil && sc.Ctx.Err() == nil {
+			sc.Logger.Debug("task.stream.logs.error", "task", taskName, "err", streamErr)
+		}
+
+		return nil
+	})
+
+	readChunks := func(stream string, r io.Reader, builder *strings.Builder) {
+		buf := make([]byte, 4096)
+
+		for {
+			n, readErr := r.Read(buf)
+			if n > 0 {
+				chunk := string(buf[:n])
+				builder.WriteString(chunk)
+
+				ts.mu.Lock()
+				ts.logs = append(ts.logs, map[string]string{"type": stream, "content": chunk})
+				ts.mu.Unlock()
+
+				if sc.OutputCallback != nil {
+					sc.OutputCallback(stream, chunk)
+				}
+			}
+
+			if readErr != nil {
+				break
+			}
+		}
+	}
+
+	// Goroutines 2 & 3: drain pipe readers.
+	ts.wg.Go(func() error { readChunks("stdout", stdoutPR, &ts.stdout); return nil })
+	ts.wg.Go(func() error { readChunks("stderr", stderrPR, &ts.stderr); return nil })
+
+	// Goroutine 4: periodic storage updates so the UI sees live progress.
+	ts.wg.Go(func() error {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-tickerCtx.Done():
+				return nil
+			case <-ticker.C:
+				snapshot := ts.snapshot()
+
+				if len(snapshot) > 0 {
+					_ = sc.Storage.Set(sc.Ctx, storageKey, storage.Payload{ //nolint:contextcheck // deliberate: storage writes use parent ctx to outlive tickerCtx
+						"status":     "running",
+						"started_at": startedAt.Format(time.RFC3339),
+						"logs":       snapshot,
+					})
+				}
+			}
+		}
+	})
+
+	return ts
 }
 
 func checkTaskAssertions(step *config.Step, taskName string, exitCode int, stdout, stderr string) error {
