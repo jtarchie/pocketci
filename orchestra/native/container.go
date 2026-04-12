@@ -36,10 +36,21 @@ func (l *logBuffer) Snapshot() string {
 	return string(bytes.Clone(l.data))
 }
 
+// liveChunk carries a single chunk of output from a stream.
+type liveChunk struct {
+	data   []byte
+	stream string // "stdout" or "stderr"
+}
+
 type Container struct {
-	id      string
-	command *exec.Cmd
-	stdout  *logBuffer
+	id        string
+	command   *exec.Cmd
+	stdoutLog *logBuffer
+	stderrLog *logBuffer
+	// liveCh delivers chunks in real time to a Logs(follow=true) caller.
+	// Sends are non-blocking (chunks dropped from live view if full) so the
+	// process is never stalled; logBuffers always have the full output.
+	liveCh  chan liveChunk
 	errChan chan error
 }
 
@@ -52,21 +63,48 @@ func (n *Container) Cleanup(_ context.Context) error {
 	return nil
 }
 
-// Logs retrieves container logs. When follow is false, returns all logs up to now.
-// When follow is true, waits for context cancellation then writes accumulated output.
-// Note: Native driver buffers output and doesn't support true real-time streaming.
-func (n *Container) Logs(ctx context.Context, stdout io.Writer, _ io.Writer, follow bool) error {
-	if follow {
-		// Wait for the context to be cancelled (container finished or timeout)
-		<-ctx.Done()
+// Logs retrieves container logs.
+// When follow is false, returns a snapshot of all accumulated output so far.
+// When follow is true, streams output in real time until the process exits or
+// ctx is cancelled, then returns.
+func (n *Container) Logs(ctx context.Context, stdout io.Writer, stderr io.Writer, follow bool) error {
+	if !follow {
+		_, err := io.WriteString(stdout, n.stdoutLog.Snapshot())
+		if err != nil {
+			return fmt.Errorf("failed to copy stdout: %w", err)
+		}
+
+		_, err = io.WriteString(stderr, n.stderrLog.Snapshot())
+		if err != nil {
+			return fmt.Errorf("failed to copy stderr: %w", err)
+		}
+
+		return nil
 	}
 
-	_, err := io.WriteString(stdout, n.stdout.Snapshot())
-	if err != nil {
-		return fmt.Errorf("failed to copy stdout: %w", err)
-	}
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case chunk, ok := <-n.liveCh:
+			if !ok {
+				// Channel closed: process has exited and all output is drained.
+				return nil
+			}
 
-	return nil
+			var w io.Writer
+
+			if chunk.stream == "stdout" {
+				w = stdout
+			} else {
+				w = stderr
+			}
+
+			if _, err := w.Write(chunk.data); err != nil {
+				return fmt.Errorf("failed to write %s: %w", chunk.stream, err)
+			}
+		}
+	}
 }
 
 type Status struct {
@@ -106,6 +144,32 @@ func (n *Container) Status(ctx context.Context) (orchestra.ContainerStatus, erro
 			exitCode: -1,
 			isDone:   false,
 		}, nil
+	}
+}
+
+// teeStream reads from r, writes every chunk to log and sends a non-blocking
+// copy on liveCh. Non-blocking sends ensure the process is never stalled if
+// nobody is consuming liveCh; logBuffer always captures the full output.
+func teeStream(stream string, r io.Reader, log *logBuffer, liveCh chan<- liveChunk) {
+	buf := make([]byte, 4096)
+
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			chunk := make([]byte, n)
+			copy(chunk, buf[:n])
+			log.Write(chunk) //nolint:errcheck // logBuffer.Write never errors
+
+			select {
+			case liveCh <- liveChunk{data: chunk, stream: stream}:
+			default:
+				// liveCh full — live delivery skipped; logBuffer has the data.
+			}
+		}
+
+		if err != nil {
+			break
+		}
 	}
 }
 
@@ -155,9 +219,18 @@ func (n *Native) RunContainer(ctx context.Context, task orchestra.Task) (orchest
 
 	command.Env = env
 
-	stdout := &logBuffer{}
-	command.Stderr = stdout
-	command.Stdout = stdout
+	stdoutLog := &logBuffer{}
+	stderrLog := &logBuffer{}
+
+	stdoutPipe, err := command.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	stderrPipe, err := command.StderrPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
 
 	if task.Stdin != nil {
 		command.Stdin = task.Stdin
@@ -175,23 +248,54 @@ func (n *Native) RunContainer(ctx context.Context, task orchestra.Task) (orchest
 		logger.Warn("orchestra.native.privileged.unsupported", "msg", "privileged is not supported in native mode")
 	}
 
+	if err := command.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start command: %w", err)
+	}
+
+	// liveCh is buffered so teeStream goroutines are never blocked by a slow
+	// or absent Logs(follow=true) consumer.
+	liveCh := make(chan liveChunk, 128)
+
+	var streamWg sync.WaitGroup
+
+	streamWg.Add(2)
+
 	go func() {
-		err := command.Run()
+		defer streamWg.Done()
+		teeStream("stdout", stdoutPipe, stdoutLog, liveCh)
+	}()
+
+	go func() {
+		defer streamWg.Done()
+		teeStream("stderr", stderrPipe, stderrLog, liveCh)
+	}()
+
+	go func() {
+		// Wait for the process then for both stream goroutines to drain their
+		// pipes before closing liveCh, so Logs(follow=true) sees all output.
+		err := command.Wait()
+		streamWg.Wait()
+		close(liveCh)
+
 		if err != nil {
-			logger.Error("orchestra.native.run.failed", "err", err)
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) {
+				logger.Error("orchestra.native.run.failed", "err", err)
+				errChan <- fmt.Errorf("failed to run command: %w", err)
 
-			errChan <- fmt.Errorf("failed to run command: %w", err)
-
-			return
+				return
+			}
 		}
 
 		errChan <- nil
 	}()
 
 	return &Container{
-		id:      task.ID,
-		command: command,
-		errChan: errChan,
-		stdout:  stdout,
+		id:        task.ID,
+		command:   command,
+		stdoutLog: stdoutLog,
+		stderrLog: stderrLog,
+		liveCh:    liveCh,
+		errChan:   errChan,
 	}, nil
 }

@@ -639,10 +639,6 @@ func TestTaskURIStep(t *testing.T) {
 func TestStderrAssertionStep(t *testing.T) {
 	for _, df := range drivers {
 		t.Run(df.name, func(t *testing.T) {
-			if df.name == "native" {
-				t.Skip("native driver does not separate stderr from stdout")
-			}
-
 			assert := NewGomegaWithT(t)
 
 			cfg := loadConfig(t, "steps/stderr.yml")
@@ -2977,18 +2973,18 @@ func TestTaskLogsStoredInStorage(t *testing.T) {
 			assert.Expect(ok).To(BeTrue(), "expected logs to be a []any slice")
 			assert.Expect(entries).NotTo(BeEmpty())
 
-			// Collect all output across entries — native driver merges stderr into
-			// stdout, so we check combined content rather than per-stream.
-			var combined string
+			// Collect per-stream output and verify both streams are present.
+			streamContent := map[string]string{}
 			for _, e := range entries {
 				m, ok := e.(map[string]any)
 				assert.Expect(ok).To(BeTrue())
 				assert.Expect(m).To(HaveKey("type"))
 				assert.Expect(m).To(HaveKey("content"))
-				combined += m["content"].(string)
+				streamContent[m["type"].(string)] += m["content"].(string)
 			}
 
-			assert.Expect(combined).To(ContainSubstring("hello from stdout"))
+			assert.Expect(streamContent["stdout"]).To(ContainSubstring("hello from stdout"))
+			assert.Expect(streamContent["stderr"]).To(ContainSubstring("hello from stderr"))
 		})
 	}
 }

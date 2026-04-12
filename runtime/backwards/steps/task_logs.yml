@@ -22,3 +22,4 @@ jobs:
         assert:
           code: 0
           stdout: "hello from stdout"
+          stderr: "hello from stderr"
