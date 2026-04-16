@@ -22,14 +22,16 @@ type ByteSize int64
 func (b *ByteSize) UnmarshalYAML(unmarshal func(any) error) error {
 	// Try integer first (already in bytes).
 	var n int64
-	if err := unmarshal(&n); err == nil {
+	err := unmarshal(&n)
+	if err == nil {
 		*b = ByteSize(n)
 		return nil
 	}
 
 	// Fall back to string with unit suffix.
 	var s string
-	if err := unmarshal(&s); err != nil {
+	err = unmarshal(&s)
+	if err != nil {
 		return fmt.Errorf("bytesize: expected integer or string, got: %w", err)
 	}
 
@@ -87,12 +89,12 @@ type TaskConfigRun struct {
 }
 
 type Input struct {
-	Name   string `validate:"required" yaml:"name,omitempty"`
+	Name   string `validate:"required"      yaml:"name,omitempty"`
 	SizeGB int    `yaml:"size_gb,omitempty"` // volume size in GB; 0 means driver default
 }
 
 type Output struct {
-	Name   string `validate:"required" yaml:"name,omitempty"`
+	Name   string `validate:"required"      yaml:"name,omitempty"`
 	SizeGB int    `yaml:"size_gb,omitempty"` // volume size in GB; 0 means driver default
 }
 
@@ -116,18 +118,18 @@ type Cache struct {
 type Caches []Cache
 
 type TaskConfig struct {
-	Caches          Caches            `yaml:"caches,omitempty"`
-	ContainerLimits ContainerLimits   `yaml:"container_limits,omitempty"`
+	Caches          Caches          `yaml:"caches,omitempty"`
+	ContainerLimits ContainerLimits `yaml:"container_limits,omitempty"`
 	// Limits is an alias for ContainerLimits using the shorter "limits:" key.
 	// When both are set, Limits takes precedence.
-	Limits          ContainerLimits   `yaml:"limits,omitempty"`
-	Env             map[string]string `yaml:"env,omitempty"`
-	Image           string            `yaml:"image,omitempty"`
-	ImageResource   ImageResource     `yaml:"image_resource,omitempty"`
-	Inputs          Inputs            `yaml:"inputs,omitempty"`
-	Outputs         Outputs           `yaml:"outputs,omitempty"`
-	Platform        string            `validate:"oneof='linux' 'darwin' 'windows'" yaml:"platform,omitempty"`
-	Run             *TaskConfigRun    `yaml:"run,omitempty"`
+	Limits        ContainerLimits   `yaml:"limits,omitempty"`
+	Env           map[string]string `yaml:"env,omitempty"`
+	Image         string            `yaml:"image,omitempty"`
+	ImageResource ImageResource     `yaml:"image_resource,omitempty"`
+	Inputs        Inputs            `yaml:"inputs,omitempty"`
+	Outputs       Outputs           `yaml:"outputs,omitempty"`
+	Platform      string            `validate:"oneof='linux' 'darwin' 'windows'" yaml:"platform,omitempty"`
+	Run           *TaskConfigRun    `yaml:"run,omitempty"`
 }
 
 // EffectiveLimits returns the active ContainerLimits, preferring Limits over

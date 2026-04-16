@@ -836,7 +836,12 @@ func (c *APIPipelinesController) Run(ctx *echo.Context) error {
 
 	args, workdirTar := parseRunInput(ctx)
 	if workdirTar != nil {
-		defer workdirTar.Close()
+		defer func() {
+			err := workdirTar.Close()
+			if err != nil {
+				c.logger.Warn("workdir.tar.close", slog.String("error", err.Error()))
+			}
+		}()
 	}
 
 	w := ctx.Response()

@@ -940,9 +940,9 @@ func (s *ExecutionService) RunByNameSync(
 		s.stopMu.Unlock()
 	}()
 
-	execErr := runtime.ExecutePipeline(execCtx, executableContent, s.store, s.logger, opts)
+	execErr := runtime.ExecutePipeline(execCtx, executableContent, s.store, s.logger, opts) //nolint:contextcheck // intentionally decoupled from HTTP request context so client disconnects do not cancel the pipeline
 
-	s.finalizeSyncRun(execCtx, run, pipeline, execErr, w)
+	s.finalizeSyncRun(execCtx, run, pipeline, execErr, w) //nolint:contextcheck // same intentional decoupling
 
 	return nil
 }
