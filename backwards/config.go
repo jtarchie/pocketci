@@ -1,11 +1,77 @@
 package backwards
 
 import (
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	agent "github.com/jtarchie/pocketci/runtime/agent"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 )
+
+// ByteSize is an int64 (bytes) that YAML-unmarshals from either a plain integer
+// (already in bytes) or a human-readable string with a unit suffix:
+//
+//	512MB, 1GB, 2GiB, 256MiB, 1TB, etc.
+//
+// Recognised unit suffixes (case-insensitive): KB, KiB, MB, MiB, GB, GiB, TB, TiB.
+// A bare number is treated as bytes.
+type ByteSize int64
+
+func (b *ByteSize) UnmarshalYAML(unmarshal func(any) error) error {
+	// Try integer first (already in bytes).
+	var n int64
+	if err := unmarshal(&n); err == nil {
+		*b = ByteSize(n)
+		return nil
+	}
+
+	// Fall back to string with unit suffix.
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return fmt.Errorf("bytesize: expected integer or string, got: %w", err)
+	}
+
+	s = strings.TrimSpace(s)
+	if s == "" {
+		*b = 0
+		return nil
+	}
+
+	// Split into numeric prefix and unit suffix.
+	i := len(s)
+	for i > 0 && (s[i-1] < '0' || s[i-1] > '9') {
+		i--
+	}
+	numStr := s[:i]
+	unit := strings.ToLower(strings.TrimSpace(s[i:]))
+
+	val, err := strconv.ParseInt(numStr, 10, 64)
+	if err != nil {
+		return fmt.Errorf("bytesize: cannot parse %q: %w", s, err)
+	}
+
+	multipliers := map[string]int64{
+		"":    1,
+		"b":   1,
+		"kb":  1000,
+		"kib": 1024,
+		"mb":  1000 * 1000,
+		"mib": 1024 * 1024,
+		"gb":  1000 * 1000 * 1000,
+		"gib": 1024 * 1024 * 1024,
+		"tb":  1000 * 1000 * 1000 * 1000,
+		"tib": 1024 * 1024 * 1024 * 1024,
+	}
+	mult, ok := multipliers[unit]
+	if !ok {
+		return fmt.Errorf("bytesize: unknown unit %q in %q", unit, s)
+	}
+
+	*b = ByteSize(val * mult)
+	return nil
+}
 
 // https://github.com/concourse/concourse/blob/master/atc/config.go
 type ImageResource struct {
@@ -15,16 +81,19 @@ type ImageResource struct {
 
 type TaskConfigRun struct {
 	Args []string `yaml:"args,omitempty"`
+	Dir  string   `yaml:"dir,omitempty"`
 	Path string   `validate:"required"   yaml:"path,omitempty"`
 	User string   `yaml:"user,omitempty"`
 }
 
 type Input struct {
-	Name string `validate:"required" yaml:"name,omitempty"`
+	Name   string `validate:"required" yaml:"name,omitempty"`
+	SizeGB int    `yaml:"size_gb,omitempty"` // volume size in GB; 0 means driver default
 }
 
 type Output struct {
-	Name string `validate:"required" yaml:"name,omitempty"`
+	Name   string `validate:"required" yaml:"name,omitempty"`
+	SizeGB int    `yaml:"size_gb,omitempty"` // volume size in GB; 0 means driver default
 }
 
 type Inputs []Input
@@ -32,14 +101,16 @@ type Inputs []Input
 type Outputs []Output
 
 type ContainerLimits struct {
-	CPU    int64 `yaml:"cpu,omitempty"`
-	Memory int64 `yaml:"memory,omitempty"`
+	CPU     int64    `yaml:"cpu,omitempty"`
+	CPUKind string   `yaml:"cpu_kind,omitempty"` // "shared" or "performance"; empty = driver default
+	Memory  ByteSize `yaml:"memory,omitempty"`
 }
 
 // Cache represents a cached path for task execution.
 type Cache struct {
-	Path  string `validate:"required"              yaml:"path,omitempty"`
-	Scope string `validate:"oneof='' 'job' 'task'" yaml:"scope,omitempty"` // "" or "job" = job-level (default); "task" = per-task
+	Path   string `validate:"required"              yaml:"path,omitempty"`
+	Scope  string `validate:"oneof='' 'job' 'task'" yaml:"scope,omitempty"` // "" or "job" = job-level (default); "task" = per-task
+	SizeGB int    `yaml:"size_gb,omitempty"`                                // volume size in GB; 0 means driver default
 }
 
 type Caches []Cache
@@ -47,6 +118,9 @@ type Caches []Cache
 type TaskConfig struct {
 	Caches          Caches            `yaml:"caches,omitempty"`
 	ContainerLimits ContainerLimits   `yaml:"container_limits,omitempty"`
+	// Limits is an alias for ContainerLimits using the shorter "limits:" key.
+	// When both are set, Limits takes precedence.
+	Limits          ContainerLimits   `yaml:"limits,omitempty"`
 	Env             map[string]string `yaml:"env,omitempty"`
 	Image           string            `yaml:"image,omitempty"`
 	ImageResource   ImageResource     `yaml:"image_resource,omitempty"`
@@ -54,6 +128,15 @@ type TaskConfig struct {
 	Outputs         Outputs           `yaml:"outputs,omitempty"`
 	Platform        string            `validate:"oneof='linux' 'darwin' 'windows'" yaml:"platform,omitempty"`
 	Run             *TaskConfigRun    `yaml:"run,omitempty"`
+}
+
+// EffectiveLimits returns the active ContainerLimits, preferring Limits over
+// ContainerLimits when both are set.
+func (t *TaskConfig) EffectiveLimits() ContainerLimits {
+	if t.Limits.Memory != 0 || t.Limits.CPU != 0 || t.Limits.CPUKind != "" {
+		return t.Limits
+	}
+	return t.ContainerLimits
 }
 
 type GetConfig struct {

@@ -3,8 +3,9 @@ package orchestra
 import "io"
 
 type Mount struct {
-	Name string
-	Path string
+	Name   string
+	Path   string
+	SizeGB int // volume size in GB; 0 means driver default
 }
 
 type Mounts []Mount
@@ -12,6 +13,8 @@ type Mounts []Mount
 type ContainerLimits struct {
 	// CPU shares (0 means unlimited)
 	CPU int64
+	// CPUKind selects the Fly CPU class: "shared" or "performance"; empty = driver default
+	CPUKind string
 	// Memory in bytes (0 means unlimited)
 	Memory int64
 }
