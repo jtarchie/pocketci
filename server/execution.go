@@ -124,11 +124,13 @@ func (s *ExecutionService) processQueue() {
 
 		runs, err := s.store.GetRunsByStatus(ctx, storage.RunStatusQueued, s.maxInFlight)
 		if err != nil {
-			s.logger.Error("queue.processor.list_failed", "error", err)
+			s.logger.Error("queue.processor.list_failed", slog.String("error", err.Error()))
 
 			if s.queueDone.Load() {
 				return
 			}
+
+			time.Sleep(500 * time.Millisecond)
 
 			continue
 		}
@@ -921,9 +923,26 @@ func (s *ExecutionService) RunByNameSync(
 	if driver == nil {
 		opts.DriverFactory = factory
 	}
-	execErr := runtime.ExecutePipeline(ctx, executableContent, s.store, s.logger, opts)
 
-	s.finalizeSyncRun(ctx, run, pipeline, execErr, w)
+	// Decouple pipeline execution from the HTTP request context so that client
+	// disconnects and client-side timeouts (CI_TIMEOUT) do not cancel a
+	// long-running pipeline mid-flight. Use an independent background context
+	// with an explicit cancel so the stop-run API can still cancel the run.
+	execCtx, execCancel := context.WithCancel(context.Background())
+	defer execCancel()
+
+	s.stopMu.Lock()
+	s.stopRegistry[run.ID] = execCancel
+	s.stopMu.Unlock()
+	defer func() {
+		s.stopMu.Lock()
+		delete(s.stopRegistry, run.ID)
+		s.stopMu.Unlock()
+	}()
+
+	execErr := runtime.ExecutePipeline(execCtx, executableContent, s.store, s.logger, opts)
+
+	s.finalizeSyncRun(execCtx, run, pipeline, execErr, w)
 
 	return nil
 }
