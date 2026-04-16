@@ -85,7 +85,10 @@ func (f *Fly) CreateVolume(ctx context.Context, name string, size int) (orchestr
 		volumeName := sanitizeVolumeName(f.namespace + "_workspace")
 
 		if size <= 0 {
-			size = 1 // Fly volumes must be at least 1 GB
+			size = f.diskGB
+		}
+		if size <= 0 {
+			size = 10 // default 10 GB — enough for Go modules, Deno, node_modules
 		}
 
 		f.logger.Debug("fly.volume.create.shared", "name", volumeName, "size_gb", size, "region", f.region)

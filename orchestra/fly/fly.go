@@ -18,11 +18,12 @@ import (
 
 // ServerConfig holds server-level configuration for the Fly.io driver.
 type ServerConfig struct {
-	Token  string `json:"token,omitempty"`  // Fly.io API token (required)
-	App    string `json:"app,omitempty"`    // Fly.io app name; if empty, an ephemeral app is created
-	Region string `json:"region,omitempty"` // Fly.io machine region
-	Org    string `json:"org,omitempty"`    // Fly.io org slug (default: "personal")
-	Size   string `json:"size,omitempty"`   // Fly.io machine size (default: "shared-cpu-1x")
+	Token  string `json:"token,omitempty"`   // Fly.io API token (required)
+	App    string `json:"app,omitempty"`     // Fly.io app name; if empty, an ephemeral app is created
+	Region string `json:"region,omitempty"`  // Fly.io machine region
+	Org    string `json:"org,omitempty"`     // Fly.io org slug (default: "personal")
+	Size   string `json:"size,omitempty"`    // Fly.io machine size (default: "shared-cpu-1x")
+	DiskGB int    `json:"disk_gb,omitempty"` // Workspace volume size in GB (default: 10)
 }
 
 // DriverName implements orchestra.DriverConfig.
@@ -42,6 +43,7 @@ type Fly struct {
 	appName   string
 	region    string
 	size      string
+	diskGB    int    // workspace volume size in GB
 	org       string
 	token     string // raw API token, needed for SSH cert/WireGuard operations
 
@@ -110,6 +112,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (orchestra.Driver
 		namespace:         cfg.Namespace,
 		region:            cfg.Region,
 		size:              size,
+		diskGB:            cfg.DiskGB,
 		org:               org,
 		token:             cfg.Token,
 		volumes:           make(map[string]*Volume),

@@ -52,19 +52,39 @@ func (s *containerStatus) ExitCode() int {
 	return s.exitCode
 }
 
+// pollUntilStopped loops the Fly Wait endpoint until the machine reaches a
+// terminal state. The Fly proxy caps the Wait timeout at 60 s regardless of
+// what we request, so long-running tasks require multiple poll iterations.
+func (c *Container) pollUntilStopped(ctx context.Context) {
+	for {
+		err := c.driver.client.Wait(ctx, c.driver.appName, c.machineID, flaps.WithWaitStates("stopped"), flaps.WithWaitTimeout(60*time.Second))
+		if err == nil {
+			return
+		}
+
+		c.driver.logger.Debug("fly.machine.wait.polling", "machine", c.machineID, "err", err)
+
+		// Check whether the machine is already in a terminal state or still running.
+		m, getErr := c.driver.client.Get(ctx, c.driver.appName, c.machineID)
+		if getErr != nil {
+			c.driver.logger.Warn("fly.machine.get.polling.error", "machine", c.machineID, "err", getErr)
+			return
+		}
+
+		switch m.State {
+		case "stopped", "destroyed", "error":
+			return
+		}
+		// Machine still running ("started", "starting", etc.) — loop.
+	}
+}
+
 // waitForStop blocks until the machine reaches the "stopped" state, then
 // caches the exit code. Called as a goroutine after launch.
 func (c *Container) waitForStop() {
 	ctx := context.Background()
 
-	// Use the Fly Wait endpoint which long-polls instead of repeated GETs.
-	// This is much more efficient and avoids rate limiting.
-	machine := &fly.Machine{ID: c.machineID, InstanceID: c.instanceID}
-
-	err := c.driver.client.Wait(ctx, c.driver.appName, machine.ID, flaps.WithWaitStates("stopped"), flaps.WithWaitTimeout(5*time.Minute))
-	if err != nil {
-		c.driver.logger.Warn("fly.machine.wait.error", "machine", c.machineID, "err", err)
-	}
+	c.pollUntilStopped(ctx)
 
 	// Fetch final state to get exit code
 	finalMachine, err := c.driver.client.Get(ctx, c.driver.appName, c.machineID)
@@ -79,7 +99,10 @@ func (c *Container) waitForStop() {
 		return
 	}
 
-	exitCode := 0
+	// Default to -1 (unknown/force-kill). A missing exit event means the machine
+	// was killed by Fly (OOM, disk exhaustion, resource limit) without a clean
+	// shutdown — treat that as failure, not success.
+	exitCode := -1
 
 	for i := len(finalMachine.Events) - 1; i >= 0; i-- {
 		event := finalMachine.Events[i]
@@ -268,7 +291,7 @@ func (f *Fly) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 	var sharedVolumeID string
 
 	for _, taskMount := range task.Mounts {
-		volume, err := f.CreateVolume(ctx, taskMount.Name, 1)
+		volume, err := f.CreateVolume(ctx, taskMount.Name, taskMount.SizeGB)
 		if err != nil {
 			logger.Error("fly.volume.create.error", "name", taskMount.Name, "err", err)
 			return nil, fmt.Errorf("failed to create volume: %w", err)
@@ -319,14 +342,7 @@ func (f *Fly) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 		guest.MemoryMB = 256
 	}
 
-	// Override with task-specific limits if provided
-	if task.ContainerLimits.CPU > 0 {
-		guest.CPUs = int(task.ContainerLimits.CPU)
-	}
-
-	if task.ContainerLimits.Memory > 0 {
-		guest.MemoryMB = int(task.ContainerLimits.Memory / (1024 * 1024)) // Convert bytes to MB
-	}
+	applyGuestLimits(guest, task.ContainerLimits)
 
 	initExec := buildInitExec(task.Command, task.WorkDir, mountMappings)
 
@@ -367,7 +383,7 @@ func (f *Fly) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 		// caller cannot use it (e.g. insufficient Fly resources).
 		f.cleanupStrandedVolume(ctx, sharedVolumeID, logger)
 
-		logger.Error("fly.machine.launch.error", "name", machineName, "err", err)
+		logger.Error("fly.machine.launch.error", slog.String("name", machineName), slog.String("error", err.Error()))
 
 		return nil, fmt.Errorf("failed to launch fly machine: %w", err)
 	}
@@ -441,9 +457,64 @@ func (f *Fly) recoverExistingMachine(ctx context.Context, machineName, sharedVol
 
 // buildInitExec constructs the init exec command for a Fly machine,
 // handling workdir and workspace volume mount mappings.
+//
+// workDir may be absolute or relative; relative paths are resolved under
+// /workspace (e.g. "repo" → "/workspace/repo").  Both workDir and mappings
+// applyGuestLimits overrides a MachineGuest's cpu_kind, CPU count, and memory
+// with per-task limits from the pipeline YAML.  It must be called after
+// guest.SetSize() so the driver-level preset is already applied as the base.
+func applyGuestLimits(guest *fly.MachineGuest, limits orchestra.ContainerLimits) {
+	if limits.CPUKind != "" {
+		guest.CPUKind = limits.CPUKind
+	}
+
+	if limits.CPU > 0 {
+		guest.CPUs = int(limits.CPU)
+	}
+
+	if limits.Memory > 0 {
+		mb := int(limits.Memory / (1024 * 1024))
+		// Memory must be a multiple of the increment required for the CPU kind:
+		//   shared-CPU:      256 MB increments
+		//   performance-CPU: 1024 MB increments
+		memStep := 256
+		if guest.CPUKind == "performance" {
+			memStep = 1024
+		}
+		if mb%memStep != 0 {
+			mb = ((mb / memStep) + 1) * memStep
+		}
+		guest.MemoryMB = mb
+		// Fly shared-CPU machines have per-size memory ceilings.
+		// Automatically upgrade the CPU count so the requested memory is valid:
+		//   shared-cpu-1x: max 2048 MB (1 CPU)
+		//   shared-cpu-2x: max 4096 MB (2 CPUs)
+		//   shared-cpu-4x: max 8192 MB (4 CPUs)
+		if guest.CPUKind == "shared" {
+			switch {
+			case mb > 4096 && guest.CPUs < 4:
+				guest.CPUs = 4
+			case mb > 2048 && guest.CPUs < 2:
+				guest.CPUs = 2
+			}
+		}
+	}
+}
+
+// may be set at the same time — the mount symlinks are always created first.
 func buildInitExec(command []string, workDir string, mappings []mountMapping) []string {
+	// Resolve the final working directory.
+	// Empty workDir defaults to /workspace when there are mounts; otherwise
+	// the command inherits the process cwd as-is.
+	finalCD := ""
 	if workDir != "" {
-		return []string{"/bin/sh", "-c", "cd " + shellescape(workDir) + " && exec " + shelljoin(command)}
+		if path.IsAbs(workDir) {
+			finalCD = workDir
+		} else {
+			finalCD = "/workspace/" + workDir
+		}
+	} else if len(mappings) > 0 {
+		finalCD = "/workspace"
 	}
 
 	if len(mappings) > 0 {
@@ -451,25 +522,35 @@ func buildInitExec(command []string, workDir string, mappings []mountMapping) []
 		for _, m := range mappings {
 			initParts = append(initParts, "mkdir -p /workspace/"+m.volumeName)
 			if m.mountPath != m.volumeName {
-				// Ensure the parent directory of the symlink target exists before
-				// creating the symlink. Without this, paths like "repo/.git" fail
-				// with exit 1 because /workspace/repo/ doesn't exist yet.
-				parentDir := path.Dir("/workspace/" + m.mountPath)
+				// Absolute mount paths (e.g. /root/.deno, /go/pkg/mod) must be
+				// symlinked at their real container path, not under /workspace.
+				// Relative paths live under /workspace as before.
+				symlinkTarget := "/workspace/" + m.mountPath
+				if path.IsAbs(m.mountPath) {
+					symlinkTarget = m.mountPath
+				}
+				parentDir := path.Dir(symlinkTarget)
 				initParts = append(initParts, "mkdir -p "+parentDir)
-				initParts = append(initParts, "ln -sfn /workspace/"+m.volumeName+" /workspace/"+m.mountPath)
+				initParts = append(initParts, "ln -sfn /workspace/"+m.volumeName+" "+symlinkTarget)
 			}
 		}
 
 		return []string{"/bin/sh", "-c",
 			strings.Join(initParts, " && ") +
-				" && cd /workspace && exec " + shelljoin(command),
+				" && cd " + shellescape(finalCD) + " && exec " + shelljoin(command),
 		}
+	}
+
+	if finalCD != "" {
+		return []string{"/bin/sh", "-c", "cd " + shellescape(finalCD) + " && exec " + shelljoin(command)}
 	}
 
 	return command
 }
 
 // extractExitCode scans machine events in reverse to find the exit code.
+// Returns -1 when no exit event is found, indicating a forced kill (OOM,
+// resource limit, etc.) rather than a clean process exit.
 func (f *Fly) extractExitCode(m *fly.Machine) int {
 	for i := len(m.Events) - 1; i >= 0; i-- {
 		event := m.Events[i]
@@ -478,7 +559,7 @@ func (f *Fly) extractExitCode(m *fly.Machine) int {
 		}
 	}
 
-	return 0
+	return -1
 }
 
 // cleanupStrandedVolume removes a shared volume that can't be used because the

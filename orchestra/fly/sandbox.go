@@ -143,7 +143,7 @@ func (f *Fly) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 	var sharedVolumeID string
 
 	for _, taskMount := range task.Mounts {
-		volume, err := f.CreateVolume(ctx, taskMount.Name, 1)
+		volume, err := f.CreateVolume(ctx, taskMount.Name, taskMount.SizeGB)
 		if err != nil {
 			return nil, fmt.Errorf("sandbox: failed to create volume: %w", err)
 		}
@@ -183,13 +183,7 @@ func (f *Fly) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 		guest.MemoryMB = 256
 	}
 
-	if task.ContainerLimits.CPU > 0 {
-		guest.CPUs = int(task.ContainerLimits.CPU)
-	}
-
-	if task.ContainerLimits.Memory > 0 {
-		guest.MemoryMB = int(task.ContainerLimits.Memory / (1024 * 1024))
-	}
+	applyGuestLimits(guest, task.ContainerLimits)
 
 	config := &fly.MachineConfig{
 		Image: task.Image,

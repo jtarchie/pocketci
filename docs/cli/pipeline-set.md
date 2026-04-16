@@ -12,8 +12,9 @@ pocketci pipeline set <pipeline-file> --server <url> [options]
 - `--name` — pipeline name (if omitted, derived from filename)
 - `--driver` — orchestration driver (e.g., `docker`, `native`, `k8s`)
 - `--docker-host` — Docker daemon host URL (env: `CI_DOCKER_HOST`)
-- `--fly-token`, `--fly-app`, `--fly-region`, `--fly-org`, `--fly-size` — Fly.io
-  driver config
+- `--fly-token`, `--fly-app`, `--fly-region`, `--fly-org`, `--fly-size`,
+  `--fly-disk-gb` — Fly.io driver config (`--fly-disk-gb` sets the workspace
+  volume size in GB; default 10)
 - `--hetzner-token`, `--hetzner-image`, `--hetzner-server-type`,
   `--hetzner-location` — Hetzner driver config
 - `--digitalocean-token`, `--digitalocean-image`, `--digitalocean-size`,

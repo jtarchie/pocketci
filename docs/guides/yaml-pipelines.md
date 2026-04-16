@@ -91,6 +91,77 @@ The most common step. Runs a command inside a container:
   timeout: 10m
 ```
 
+### Task Configuration Reference
+
+#### `run` — working directory
+
+Use `run.dir` to set the working directory inside the container. Relative paths
+are resolved under `/workspace`; absolute paths are used as-is.
+
+```yaml
+- task: test
+  config:
+    platform: linux
+    image_resource:
+      type: registry-image
+      source:
+        repository: golang
+    inputs:
+      - name: repo
+    run:
+      dir: repo           # → /workspace/repo
+      path: go
+      args: [test, ./...]
+```
+
+#### `env` — environment variables and secrets
+
+Pass environment variables to the task. Values prefixed with `secret:` are
+resolved from the pipeline's secrets store at runtime:
+
+```yaml
+- task: deploy
+  config:
+    ...
+    env:
+      DEPLOY_ENV: production
+      API_TOKEN: "secret:DEPLOY_API_TOKEN"  # resolved from secrets
+```
+
+See [Secrets](../operations/secrets.md) for how to register secrets.
+
+#### `limits` — container resource limits
+
+Control CPU and memory allocation for the container. Supported by the Fly.io
+driver; other drivers may ignore these fields.
+
+| Field      | Type   | Description                                           |
+| ---------- | ------ | ----------------------------------------------------- |
+| `cpu`      | int    | Number of vCPUs                                       |
+| `memory`   | string | Memory with unit suffix: `512MB`, `4GB`, `2GiB`       |
+| `cpu_kind` | string | CPU class: `shared` (default) or `performance`        |
+
+```yaml
+- task: heavy-build
+  config:
+    platform: linux
+    limits:
+      cpu_kind: performance   # dedicated CPUs (Fly.io)
+      cpu: 4
+      memory: 8GB
+    image_resource:
+      type: registry-image
+      source:
+        repository: golang
+    run:
+      path: go
+      args: [build, ./...]
+```
+
+`performance` CPUs provide dedicated (non-shared) compute. Memory for
+performance machines is rounded up to the nearest 1 GB; shared machines round
+to the nearest 256 MB.
+
 ### notify
 
 Send a notification to a configured backend (Slack, Teams, HTTP webhook). The
