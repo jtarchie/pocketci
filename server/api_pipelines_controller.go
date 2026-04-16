@@ -835,6 +835,9 @@ func (c *APIPipelinesController) Run(ctx *echo.Context) error {
 	name := ctx.Param("name")
 
 	args, workdirTar := parseRunInput(ctx)
+	if workdirTar != nil {
+		defer workdirTar.Close()
+	}
 
 	w := ctx.Response()
 
@@ -922,11 +925,17 @@ func (c *APIPipelinesController) runHandleSyncError(ctx *echo.Context, w http.Re
 	return nil
 }
 
+// zstdReadCloser wraps *zstd.Decoder to satisfy io.ReadCloser.
+// zstd.Decoder.Close() has no return value, so we adapt it here.
+type zstdReadCloser struct{ *zstd.Decoder }
+
+func (z zstdReadCloser) Close() error { z.Decoder.Close(); return nil }
+
 // parseRunInput extracts args and an optional workdir tar from the request,
 // trying multipart streaming first then falling back to JSON body.
-func parseRunInput(ctx *echo.Context) ([]string, io.Reader) {
+func parseRunInput(ctx *echo.Context) ([]string, io.ReadCloser) {
 	var args []string
-	var workdirTar io.Reader
+	var workdirTar io.ReadCloser
 
 	mr, mrErr := ctx.Request().MultipartReader()
 	if mrErr == nil {
@@ -948,8 +957,7 @@ func parseRunInput(ctx *echo.Context) ([]string, io.Reader) {
 				if zErr != nil {
 					break
 				}
-				defer zr.Close()
-				workdirTar = zr
+				workdirTar = zstdReadCloser{zr}
 			}
 
 			if workdirTar != nil {
