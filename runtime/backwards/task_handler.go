@@ -16,6 +16,7 @@ import (
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
+	"github.com/jtarchie/pocketci/runtime/support"
 	"github.com/jtarchie/pocketci/storage"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
@@ -130,7 +131,17 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		return fmt.Errorf("storage set pending: %w", err)
 	}
 
+	env, err = resolveEnvSecrets(sc, taskName, env)
+	if err != nil {
+		return &TaskErroredError{TaskName: taskName, Err: err}
+	}
+
 	mounts := resolveMounts(sc, taskConfig, taskName)
+
+	workDir := ""
+	if taskConfig.Run != nil {
+		workDir = taskConfig.Run.Dir
+	}
 
 	task := orchestra.Task{
 		ID:         fmt.Sprintf("%s-%s", sc.JobName, taskName),
@@ -139,9 +150,11 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		Image:      resolveImage(taskConfig),
 		Mounts:     mounts,
 		Privileged: step.Privileged,
+		WorkDir:    workDir,
 		ContainerLimits: orchestra.ContainerLimits{
-			CPU:    taskConfig.ContainerLimits.CPU,
-			Memory: taskConfig.ContainerLimits.Memory,
+			CPU:     taskConfig.EffectiveLimits().CPU,
+			CPUKind: taskConfig.EffectiveLimits().CPUKind,
+			Memory:  int64(taskConfig.EffectiveLimits().Memory),
 		},
 	}
 
@@ -458,8 +471,9 @@ func resolveInputsOutputs(sc *StepContext, cfg *config.TaskConfig) orchestra.Mou
 		}
 
 		mounts = append(mounts, orchestra.Mount{
-			Name: volName,
-			Path: output.Name,
+			Name:   volName,
+			Path:   output.Name,
+			SizeGB: output.SizeGB,
 		})
 	}
 
@@ -471,8 +485,9 @@ func resolveInputsOutputs(sc *StepContext, cfg *config.TaskConfig) orchestra.Mou
 		}
 
 		mounts = append(mounts, orchestra.Mount{
-			Name: volName,
-			Path: input.Name,
+			Name:   volName,
+			Path:   input.Name,
+			SizeGB: input.SizeGB,
 		})
 	}
 
@@ -525,7 +540,7 @@ func resolveCaches(sc *StepContext, cfg *config.TaskConfig, taskName string) orc
 
 			// Explicitly create the volume so that the cache driver wrapper
 			// can intercept the call and restore from S3 before execution.
-			vol, err := driver.CreateVolume(sc.Ctx, volName, 0)
+			vol, err := driver.CreateVolume(sc.Ctx, volName, cacheEntry.SizeGB)
 			if err != nil {
 				sc.Logger.Warn("cache.volume.create.failed", "path", cacheEntry.Path, "volume", volName, "err", err)
 			} else {
@@ -534,12 +549,35 @@ func resolveCaches(sc *StepContext, cfg *config.TaskConfig, taskName string) orc
 		}
 
 		mounts = append(mounts, orchestra.Mount{
-			Name: volName,
-			Path: cacheEntry.Path,
+			Name:   volName,
+			Path:   cacheEntry.Path,
+			SizeGB: cacheEntry.SizeGB,
 		})
 	}
 
 	return mounts
+}
+
+// resolveEnvSecrets resolves "secret:<KEY>" references in an env map using the
+// StepContext's SecretsManager. Returns a new map with secrets substituted.
+// Fails fast if a referenced secret is not found (matching the documented behaviour).
+func resolveEnvSecrets(sc *StepContext, taskName string, env map[string]string) (map[string]string, error) {
+	if sc.SecretsManager == nil || len(env) == 0 {
+		return env, nil
+	}
+
+	resolved := make(map[string]string, len(env))
+
+	for k, v := range env {
+		val, _, err := support.ResolveSecretString(sc.Ctx, sc.SecretsManager, sc.PipelineID, v)
+		if err != nil {
+			return nil, fmt.Errorf("task %q env %q: %w", taskName, k, err)
+		}
+
+		resolved[k] = val
+	}
+
+	return resolved, nil
 }
 
 // sanitizeCachePath converts a cache path to a safe volume name component.
