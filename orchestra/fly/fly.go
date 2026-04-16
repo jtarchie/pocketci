@@ -43,7 +43,7 @@ type Fly struct {
 	appName   string
 	region    string
 	size      string
-	diskGB    int    // workspace volume size in GB
+	diskGB    int // workspace volume size in GB
 	org       string
 	token     string // raw API token, needed for SSH cert/WireGuard operations
 

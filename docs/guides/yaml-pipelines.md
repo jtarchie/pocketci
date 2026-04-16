@@ -109,7 +109,7 @@ are resolved under `/workspace`; absolute paths are used as-is.
     inputs:
       - name: repo
     run:
-      dir: repo           # → /workspace/repo
+      dir: repo # → /workspace/repo
       path: go
       args: [test, ./...]
 ```
@@ -135,18 +135,18 @@ See [Secrets](../operations/secrets.md) for how to register secrets.
 Control CPU and memory allocation for the container. Supported by the Fly.io
 driver; other drivers may ignore these fields.
 
-| Field      | Type   | Description                                           |
-| ---------- | ------ | ----------------------------------------------------- |
-| `cpu`      | int    | Number of vCPUs                                       |
-| `memory`   | string | Memory with unit suffix: `512MB`, `4GB`, `2GiB`       |
-| `cpu_kind` | string | CPU class: `shared` (default) or `performance`        |
+| Field      | Type   | Description                                     |
+| ---------- | ------ | ----------------------------------------------- |
+| `cpu`      | int    | Number of vCPUs                                 |
+| `memory`   | string | Memory with unit suffix: `512MB`, `4GB`, `2GiB` |
+| `cpu_kind` | string | CPU class: `shared` (default) or `performance`  |
 
 ```yaml
 - task: heavy-build
   config:
     platform: linux
     limits:
-      cpu_kind: performance   # dedicated CPUs (Fly.io)
+      cpu_kind: performance # dedicated CPUs (Fly.io)
       cpu: 4
       memory: 8GB
     image_resource:
@@ -159,8 +159,8 @@ driver; other drivers may ignore these fields.
 ```
 
 `performance` CPUs provide dedicated (non-shared) compute. Memory for
-performance machines is rounded up to the nearest 1 GB; shared machines round
-to the nearest 256 MB.
+performance machines is rounded up to the nearest 1 GB; shared machines round to
+the nearest 256 MB.
 
 ### notify
 
