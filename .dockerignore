@@ -1,15 +1,52 @@
+# Version control / IDE
 .git
 .gitignore
 .github
 .vscode
 .idea
+.history
+.ionide
 *.swp
 *.swo
 *~
 .DS_Store
+
+# Runtime data (local volume mounts — never needed for builds)
+data
+*.db
+*.db-*
+
+# Large app directories not needed for the Fly Go build
+saas
+site
+packages
+e2e
+testhelpers
+examples
+
+# Node / JS tooling
 node_modules
 dist
 build
+.npm
+.cache
+.parcel-cache
+.next
+.nuxt
+.svelte-kit
+.docusaurus
+*.tsbuildinfo
+*.tgz
+
+# Docs VitePress cache (source is built in a separate stage)
+docs/.vitepress/cache
+docs/node_modules
+
+# CloudFlare Wrangler
+.wrangler
+.dev.vars*
+
+# Test / dev artifacts
 .env
 .env.local
 *.log
@@ -18,8 +55,14 @@ playwright-report
 coverage
 benchmarks
 .task
-.cache
 *.test.db
-e2e
-testhelpers
-examples
+*.test
+*.out
+
+# Compiled binary (in case it exists locally)
+/pocketci
+/pocketci-*
+
+# Claude / scratch
+.claude
+.scratch
