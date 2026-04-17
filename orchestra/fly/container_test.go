@@ -1,6 +1,7 @@
 package fly
 
 import (
+	"strings"
 	"testing"
 
 	fly "github.com/superfly/fly-go"
@@ -87,6 +88,39 @@ func TestBuildInitExec_AbsoluteCachePath(t *testing.T) {
 	// Symlink at the actual container path, not /workspace/root/.deno.
 	assert.Expect(script).To(ContainSubstring("ln -sfn /workspace/cache-root--deno /root/.deno"))
 	assert.Expect(script).NotTo(ContainSubstring("/workspace/root/.deno"))
+}
+
+func TestMountSetupCommands_AbsolutePath(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	// Regression test for the sandbox path: setupWorkspaceMounts used to
+	// always prefix /workspace/, producing "/workspace//root/.deno" — a
+	// broken symlink target. Both sandbox and task modes now share
+	// mountSetupCommands, which honours absolute mount paths.
+	parts := mountSetupCommands([]mountMapping{
+		{volumeName: "cache-root--deno", mountPath: "/root/.deno"},
+	})
+
+	joined := strings.Join(parts, " && ")
+
+	assert.Expect(joined).To(ContainSubstring("mkdir -p /workspace/cache-root--deno"))
+	assert.Expect(joined).To(ContainSubstring("mkdir -p /root"))
+	assert.Expect(joined).To(ContainSubstring("ln -sfn /workspace/cache-root--deno /root/.deno"))
+	assert.Expect(joined).NotTo(ContainSubstring("/workspace//root"))
+	assert.Expect(joined).NotTo(ContainSubstring("/workspace/root/.deno"))
+}
+
+func TestMountSetupCommands_RelativePath(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	parts := mountSetupCommands([]mountMapping{
+		{volumeName: "cache-cache", mountPath: "cache"},
+	})
+
+	joined := strings.Join(parts, " && ")
+
+	assert.Expect(joined).To(ContainSubstring("mkdir -p /workspace/cache-cache"))
+	assert.Expect(joined).To(ContainSubstring("ln -sfn /workspace/cache-cache /workspace/cache"))
 }
 
 func TestBuildInitExec_NoMappings(t *testing.T) {

@@ -518,22 +518,7 @@ func buildInitExec(command []string, workDir string, mappings []mountMapping) []
 	}
 
 	if len(mappings) > 0 {
-		var initParts []string
-		for _, m := range mappings {
-			initParts = append(initParts, "mkdir -p /workspace/"+m.volumeName)
-			if m.mountPath != m.volumeName {
-				// Absolute mount paths (e.g. /root/.deno, /go/pkg/mod) must be
-				// symlinked at their real container path, not under /workspace.
-				// Relative paths live under /workspace as before.
-				symlinkTarget := "/workspace/" + m.mountPath
-				if path.IsAbs(m.mountPath) {
-					symlinkTarget = m.mountPath
-				}
-				parentDir := path.Dir(symlinkTarget)
-				initParts = append(initParts, "mkdir -p "+parentDir)
-				initParts = append(initParts, "ln -sfn /workspace/"+m.volumeName+" "+symlinkTarget)
-			}
-		}
+		initParts := mountSetupCommands(mappings)
 
 		return []string{"/bin/sh", "-c",
 			strings.Join(initParts, " && ") +
@@ -546,6 +531,36 @@ func buildInitExec(command []string, workDir string, mappings []mountMapping) []
 	}
 
 	return command
+}
+
+// mountSetupCommands returns the shell commands that create each volume
+// subdirectory under /workspace and symlink the mount path to it.
+//
+// Absolute mount paths (e.g. /root/.deno, /go/pkg/mod) are symlinked at
+// their real container path. Relative paths live under /workspace. Both
+// init-exec (task mode) and setupWorkspaceMounts (sandbox mode) use this
+// so the two code paths can't drift.
+func mountSetupCommands(mappings []mountMapping) []string {
+	var parts []string
+
+	for _, m := range mappings {
+		parts = append(parts, "mkdir -p /workspace/"+m.volumeName)
+
+		if m.mountPath == m.volumeName {
+			continue
+		}
+
+		symlinkTarget := "/workspace/" + m.mountPath
+		if path.IsAbs(m.mountPath) {
+			symlinkTarget = m.mountPath
+		}
+
+		parentDir := path.Dir(symlinkTarget)
+		parts = append(parts, "mkdir -p "+parentDir)
+		parts = append(parts, "ln -sfn /workspace/"+m.volumeName+" "+symlinkTarget)
+	}
+
+	return parts
 }
 
 // extractExitCode scans machine events in reverse to find the exit code.

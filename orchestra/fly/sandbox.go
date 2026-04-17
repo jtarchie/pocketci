@@ -247,19 +247,17 @@ func (f *Fly) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 }
 
 // setupWorkspaceMounts creates volume subdirectories and symlinks inside the
-// shared workspace volume on the given machine.
+// shared workspace volume on the given machine. Delegates to the shared
+// mountSetupCommands helper so task-mode init-exec and sandbox-mode stay
+// consistent (in particular both honour absolute mount paths like
+// /root/.deno — previously this function always prefixed /workspace/,
+// silently breaking absolute cache paths in sandboxes).
 func (f *Fly) setupWorkspaceMounts(ctx context.Context, machineID string, mappings []mountMapping, logger *slog.Logger) {
 	if len(mappings) == 0 {
 		return
 	}
 
-	var cmdParts []string
-	for _, m := range mappings {
-		cmdParts = append(cmdParts, "mkdir -p /workspace/"+m.volumeName)
-		if m.mountPath != m.volumeName {
-			cmdParts = append(cmdParts, "ln -sfn /workspace/"+m.volumeName+" /workspace/"+m.mountPath)
-		}
-	}
+	cmdParts := mountSetupCommands(mappings)
 
 	_, err := f.client.Exec(ctx, f.appName, machineID, &fly.MachineExecRequest{
 		Cmd: strings.Join(cmdParts, " && "),
