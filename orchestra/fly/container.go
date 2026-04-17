@@ -28,6 +28,11 @@ type Container struct {
 	instanceID string
 	driver     *Fly
 
+	// Cancel signal for the background waitForStop goroutine. Set before
+	// the goroutine is launched; invoked from Cleanup() so the goroutine
+	// exits promptly even when Fly's Wait endpoint is hanging.
+	waitCancel context.CancelFunc
+
 	// Cached final state, set when the machine finishes
 	mu       sync.Mutex
 	done     bool
@@ -81,9 +86,11 @@ func (c *Container) pollUntilStopped(ctx context.Context) {
 
 // waitForStop blocks until the machine reaches the "stopped" state, then
 // caches the exit code. Called as a goroutine after launch.
-func (c *Container) waitForStop() {
-	ctx := context.Background()
-
+//
+// The context is owned by this goroutine and cancelled from Cleanup() so
+// a hung Fly Wait endpoint can't pin the goroutine for the lifetime of
+// the process.
+func (c *Container) waitForStop(ctx context.Context) {
 	c.pollUntilStopped(ctx)
 
 	// Fetch final state to get exit code
@@ -244,6 +251,13 @@ func (c *Container) fetchLogs(ctx context.Context, nextToken string) ([]logEntry
 
 func (c *Container) Cleanup(ctx context.Context) error {
 	c.driver.logger.Debug("fly.machine.cleanup", "machine", c.machineID)
+
+	// Signal the background waitForStop goroutine to exit. Even if the
+	// Destroy below succeeds, Fly's Wait may take seconds to notice; the
+	// cancel short-circuits it.
+	if c.waitCancel != nil {
+		c.waitCancel()
+	}
 
 	// Stop the machine first if it's running
 	machine, err := c.driver.client.Get(ctx, c.driver.appName, c.machineID)
@@ -408,7 +422,12 @@ func (f *Fly) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 	// Start background goroutine to wait for the machine to stop.
 	// This uses the Fly Wait endpoint (long-poll) instead of repeated GETs,
 	// avoiding rate limiting and providing immediate status updates.
-	go container.waitForStop() //nolint:contextcheck // deliberate: background goroutine outlives parent context
+	// Ctx is decoupled from the parent: a client disconnect must not
+	// interrupt the goroutine. Cleanup() cancels it explicitly.
+	waitCtx, waitCancel := context.WithCancel(context.Background())
+	container.waitCancel = waitCancel
+
+	go container.waitForStop(waitCtx) //nolint:contextcheck // deliberate: background goroutine outlives parent context
 
 	return container, nil
 }
@@ -446,7 +465,10 @@ func (f *Fly) recoverExistingMachine(ctx context.Context, machineName, sharedVol
 			container.exitCode = f.extractExitCode(m)
 			container.done = true
 		} else {
-			go container.waitForStop() //nolint:contextcheck // deliberate: background goroutine outlives parent context
+			waitCtx, waitCancel := context.WithCancel(context.Background())
+			container.waitCancel = waitCancel
+
+			go container.waitForStop(waitCtx) //nolint:contextcheck // deliberate: background goroutine outlives parent context
 		}
 
 		return container, nil
