@@ -50,8 +50,8 @@ testing and background execution.
 ## Limits
 
 The client compresses your working directory (excluding `--ignore` patterns)
-with zstd and uploads it as the `workdir` part of the request. The server
-caps the **decompressed** size to protect against zstd-bomb uploads.
+with zstd and uploads it as the `workdir` part of the request. The server caps
+the **decompressed** size to protect against zstd-bomb uploads.
 
 - **Default cap:** 1 GiB decompressed. Sufficient for typical workdirs after
   `.gitignore`-style filtering on the client.

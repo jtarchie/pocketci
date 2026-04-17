@@ -27,10 +27,10 @@ pocketci server [options]
 - `--fetch-max-response-mb` — max response body size for `fetch()` in MB
   (default: `10`, env: `CI_FETCH_MAX_RESPONSE_MB`)
 - `--max-workdir-mb` — max **decompressed** workdir upload size in MB for
-  `pocketci pipeline run` (default: `1024`, env: `CI_MAX_WORKDIR_MB`). The
-  HTTP body is zstd-compressed on the client, so a small payload can expand
-  to tens of GB; this cap rejects the upload once the decompressed stream
-  exceeds the limit. Raise it for monorepos with large fixtures.
+  `pocketci pipeline run` (default: `1024`, env: `CI_MAX_WORKDIR_MB`). The HTTP
+  body is zstd-compressed on the client, so a small payload can expand to tens
+  of GB; this cap rejects the upload once the decompressed stream exceeds the
+  limit. Raise it for monorepos with large fixtures.
 - `--basic-auth` — basic auth credentials (`username:password` format, env:
   `CI_BASIC_AUTH`)
 
