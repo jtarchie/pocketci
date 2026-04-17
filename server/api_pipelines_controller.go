@@ -930,6 +930,68 @@ func (c *APIPipelinesController) runHandleSyncError(ctx *echo.Context, w http.Re
 	return nil
 }
 
+// MaxWorkdirDecompressedBytes caps how much data the zstd-compressed
+// "workdir" multipart part is allowed to decompress into. Without this cap,
+// a small adversarial zstd payload (a zip bomb) can expand to tens of GB and
+// exhaust the driver volume or server disk before any other limit fires.
+// The echo BodyLimit middleware caps the compressed body, not the
+// decompressed stream, so that check is not sufficient on its own.
+const MaxWorkdirDecompressedBytes int64 = 1 << 30 // 1 GiB
+
+// ErrWorkdirTooLarge is returned when the decompressed workdir stream
+// exceeds MaxWorkdirDecompressedBytes.
+var ErrWorkdirTooLarge = errors.New("workdir decompressed size exceeds cap")
+
+// cappedReadCloser bounds the total bytes read through it. Reads past the
+// cap return ErrWorkdirTooLarge so callers (tar extractors, volume copiers)
+// surface a clear error rather than silently truncating.
+type cappedReadCloser struct {
+	inner io.ReadCloser
+	cap   int64
+	read  int64
+}
+
+func (c *cappedReadCloser) Read(p []byte) (int, error) {
+	remaining := c.cap - c.read
+	if remaining <= 0 {
+		return 0, ErrWorkdirTooLarge
+	}
+
+	if int64(len(p)) > remaining {
+		p = p[:remaining]
+	}
+
+	n, err := c.inner.Read(p)
+	c.read += int64(n)
+
+	if c.read >= c.cap && (err == nil || errors.Is(err, io.EOF)) {
+		// Peek one extra byte to distinguish "exactly at cap" from
+		// "cap reached with more data available".
+		var peek [1]byte
+		pn, _ := c.inner.Read(peek[:])
+
+		if pn > 0 {
+			return n, ErrWorkdirTooLarge
+		}
+	}
+
+	switch {
+	case err == nil, errors.Is(err, io.EOF):
+		return n, err //nolint:wrapcheck // io.EOF is a sentinel and must pass through unwrapped
+	default:
+		return n, fmt.Errorf("cappedRead: %w", err)
+	}
+}
+
+func (c *cappedReadCloser) Close() error {
+	err := c.inner.Close()
+	if err != nil {
+		return fmt.Errorf("cappedClose: %w", err)
+	}
+
+	return nil
+}
+
 // zstdReadCloser wraps *zstd.Decoder to satisfy io.ReadCloser.
 // zstd.Decoder.Close() has no return value, so we adapt it here.
 type zstdReadCloser struct{ *zstd.Decoder }
@@ -975,7 +1037,11 @@ func parseRunInput(ctx *echo.Context) ([]string, io.ReadCloser) {
 
 					continue
 				}
-				workdirTar = zstdReadCloser{zr}
+				// Cap the decompressed stream to reject zstd bombs.
+				workdirTar = &cappedReadCloser{
+					inner: zstdReadCloser{zr},
+					cap:   MaxWorkdirDecompressedBytes,
+				}
 			default:
 				_ = part.Close()
 			}

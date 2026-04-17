@@ -103,6 +103,43 @@ func TestParseRunInput_ArgsFirstParsesWorkdir(t *testing.T) {
 	assert.Expect(workdirTar.Close()).To(gomega.Succeed())
 }
 
+func TestCappedReadCloser_ReturnsErrAtCap(t *testing.T) {
+	t.Parallel()
+
+	assert := gomega.NewGomegaWithT(t)
+
+	src := io.NopCloser(bytes.NewReader(bytes.Repeat([]byte("A"), 4096)))
+
+	c := &cappedReadCloser{inner: src, cap: 100}
+
+	// First 100 bytes should read fine.
+	got := make([]byte, 100)
+
+	n, err := io.ReadFull(c, got)
+	assert.Expect(err).NotTo(gomega.HaveOccurred())
+	assert.Expect(n).To(gomega.Equal(100))
+
+	// Any subsequent read should surface ErrWorkdirTooLarge.
+	var tail [1]byte
+
+	_, err = c.Read(tail[:])
+	assert.Expect(err).To(gomega.MatchError(ErrWorkdirTooLarge))
+}
+
+func TestCappedReadCloser_PassesEOFUnderCap(t *testing.T) {
+	t.Parallel()
+
+	assert := gomega.NewGomegaWithT(t)
+
+	src := io.NopCloser(bytes.NewReader([]byte("small")))
+
+	c := &cappedReadCloser{inner: src, cap: 1 << 20}
+
+	out, err := io.ReadAll(c)
+	assert.Expect(err).NotTo(gomega.HaveOccurred())
+	assert.Expect(string(out)).To(gomega.Equal("small"))
+}
+
 func TestParseRunInput_ArgsOnly(t *testing.T) {
 	t.Parallel()
 
