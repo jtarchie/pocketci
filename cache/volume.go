@@ -206,6 +206,12 @@ func (v *CachingVolume) persistDirect(
 ) error {
 	err := v.store.Persist(ctx, v.cacheKey, pipeReader)
 	if err != nil {
+		// Unblock the compression goroutine: without CloseWithError, its
+		// deferred compressedWriter.Close() flushes bytes into pipeWriter
+		// that nobody will read, hanging the goroutine indefinitely.
+		_ = pipeReader.CloseWithError(err)
+		<-errChan
+
 		return fmt.Errorf("failed to persist to cache: %w", err)
 	}
 

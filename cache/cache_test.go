@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
@@ -356,6 +357,95 @@ func TestCachingVolumeRestoreOnlyMode(t *testing.T) {
 	err = vol.Cleanup(ctx)
 	assert.Expect(err).NotTo(gomega.HaveOccurred())
 	assert.Expect(store.persistCalls).To(gomega.Equal(0))
+}
+
+// failingPersistStore returns an error from Persist without reading the whole
+// stream. This simulates a mid-upload S3 failure and exercises the pipe
+// cleanup in CachingVolume.PersistToCache.
+type failingPersistStore struct {
+	err       error
+	readBytes int
+}
+
+func (s *failingPersistStore) Restore(_ context.Context, _ string) (io.ReadCloser, error) {
+	return nil, cache.ErrCacheMiss
+}
+
+func (s *failingPersistStore) Persist(_ context.Context, _ string, reader io.Reader) error {
+	// Drain `readBytes` and then return without further reads, emulating
+	// an HTTP upload that errors partway through.
+	if s.readBytes > 0 {
+		_, _ = io.CopyN(io.Discard, reader, int64(s.readBytes))
+	}
+
+	return s.err
+}
+
+func (s *failingPersistStore) Exists(_ context.Context, _ string) (bool, error) {
+	return false, nil
+}
+
+func (s *failingPersistStore) Delete(_ context.Context, _ string) error {
+	return nil
+}
+
+type largeVolumeAccessor struct{}
+
+func (a *largeVolumeAccessor) CopyToVolume(_ context.Context, _ string, reader io.Reader) error {
+	_, _ = io.ReadAll(reader)
+	return nil
+}
+
+func (a *largeVolumeAccessor) CopyFromVolume(_ context.Context, _ string) (io.ReadCloser, error) {
+	// Return enough bytes that io.Copy makes multiple passes after the
+	// consumer stops reading — this is what would hang the goroutine
+	// without the CloseWithError in persistDirect. Use high-entropy data
+	// so compression can't collapse the whole stream into one tiny write.
+	buf := make([]byte, 16*1024*1024)
+	for i := range buf {
+		buf[i] = byte(i)
+	}
+
+	return io.NopCloser(bytes.NewReader(buf)), nil
+}
+
+func (a *largeVolumeAccessor) ReadFilesFromVolume(_ context.Context, _ string, _ ...string) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(nil)), nil
+}
+
+var _ cache.VolumeDataAccessor = (*largeVolumeAccessor)(nil)
+
+func TestCachingVolumePersistReleasesGoroutineOnStoreError(t *testing.T) {
+	t.Parallel()
+
+	assert := gomega.NewGomegaWithT(t)
+	ctx := context.Background()
+
+	store := &failingPersistStore{err: errors.New("s3 upload failed"), readBytes: 1024}
+	compressor := cache.NewCompressor("none")
+	logger := slog.Default()
+
+	vol := cache.NewCachingVolume(
+		&mockVolume{name: "test-vol"},
+		&largeVolumeAccessor{},
+		store,
+		compressor,
+		"test-key",
+		logger,
+	)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- vol.PersistToCache(ctx)
+	}()
+
+	select {
+	case err := <-done:
+		assert.Expect(err).To(gomega.HaveOccurred())
+		assert.Expect(err.Error()).To(gomega.ContainSubstring("s3 upload failed"))
+	case <-time.After(5 * time.Second):
+		t.Fatal("PersistToCache did not return after store.Persist error — pipe/goroutine leak")
+	}
 }
 
 func TestCachingVolumePersistOnlyMode(t *testing.T) {
