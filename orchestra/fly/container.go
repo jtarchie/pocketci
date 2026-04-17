@@ -17,6 +17,18 @@ import (
 	"github.com/jtarchie/pocketci/orchestra"
 )
 
+// Fly's flaps events feed is eventually consistent: client.Wait(states=stopped)
+// returns as soon as the state flips, but the exit event may not be appended
+// to machine.Events yet. Without retry, a single Get right after Wait can
+// observe a stopped machine with no exit event and produce a spurious -1.
+// These vars bound how long resolveFinalExitCode waits for the event. They
+// are var (not const) so tests can shrink the backoff budget.
+var (
+	finalStateRetryAttempts = 5
+	finalStateRetryInitial  = 500 * time.Millisecond
+	finalStateRetryMax      = 8 * time.Second
+)
+
 // mountMapping tracks the relationship between a volume subdirectory and its mount path.
 type mountMapping struct {
 	volumeName string // subdirectory on the shared volume (volume's userFacingName)
@@ -93,31 +105,9 @@ func (c *Container) pollUntilStopped(ctx context.Context) {
 func (c *Container) waitForStop(ctx context.Context) {
 	c.pollUntilStopped(ctx)
 
-	// Fetch final state to get exit code
-	finalMachine, err := c.driver.client.Get(ctx, c.driver.appName, c.machineID)
-	if err != nil {
-		c.driver.logger.Warn("fly.machine.get.final.error", "machine", c.machineID, "err", err)
-
-		c.mu.Lock()
-		c.done = true
-		c.exitCode = -1
-		c.mu.Unlock()
-
-		return
-	}
-
-	// Default to -1 (unknown/force-kill). A missing exit event means the machine
-	// was killed by Fly (OOM, disk exhaustion, resource limit) without a clean
-	// shutdown — treat that as failure, not success.
-	exitCode := -1
-
-	for i := len(finalMachine.Events) - 1; i >= 0; i-- {
-		event := finalMachine.Events[i]
-		if event.Type == "exit" && event.Request != nil && event.Request.ExitEvent != nil {
-			exitCode = event.Request.ExitEvent.ExitCode
-			break
-		}
-	}
+	exitCode := resolveFinalExitCode(ctx, c.driver.logger, c.machineID, func(gctx context.Context) (*fly.Machine, error) {
+		return c.driver.client.Get(gctx, c.driver.appName, c.machineID)
+	})
 
 	c.mu.Lock()
 	c.done = true
@@ -125,6 +115,112 @@ func (c *Container) waitForStop(ctx context.Context) {
 	c.mu.Unlock()
 
 	c.driver.logger.Debug("fly.machine.stopped", "machine", c.machineID, "exitCode", exitCode)
+}
+
+// resolveFinalExitCode fetches a stopped machine and returns its exit code,
+// retrying when the events feed hasn't yet recorded the "exit" event.
+//
+// Fly's flaps API is eventually consistent, so "stopped machine with no exit
+// event yet" is distinct from "stopped machine that will never have an exit
+// event" (OOM, resource kill). We give the events feed a bounded window to
+// catch up before falling back to the -1 "forced kill" sentinel.
+//
+// getMachine is the fetch callback so the retry loop is unit-testable without
+// a real flaps client. It is invoked at least once (for the happy path) and
+// at most finalStateRetryAttempts times.
+func resolveFinalExitCode(ctx context.Context, logger *slog.Logger, machineID string, getMachine func(context.Context) (*fly.Machine, error)) int {
+	var (
+		lastMachine *fly.Machine
+		lastErr     error
+	)
+
+	delay := finalStateRetryInitial
+
+	for attempt := 1; attempt <= finalStateRetryAttempts; attempt++ {
+		machine, err := getMachine(ctx)
+		if err == nil {
+			lastMachine = machine
+			lastErr = nil
+
+			if code, ok := exitCodeFromEvents(machine); ok {
+				return code
+			}
+		} else {
+			lastErr = err
+
+			logger.Debug("fly.machine.get.final.retry",
+				"machine", machineID,
+				"attempt", attempt,
+				"max", finalStateRetryAttempts,
+				"err", err,
+			)
+		}
+
+		if attempt == finalStateRetryAttempts {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			logger.Warn("fly.machine.exit.resolve.cancelled",
+				"machine", machineID,
+				"attempt", attempt,
+				"err", ctx.Err(),
+			)
+
+			return -1
+		case <-time.After(delay):
+		}
+
+		delay *= 2
+		if delay > finalStateRetryMax {
+			delay = finalStateRetryMax
+		}
+	}
+
+	// Exhausted retries without finding an exit event. Distinguish the two
+	// degraded cases so operators can tell an API outage from a real
+	// forced-kill scenario.
+	if lastErr != nil {
+		logger.Warn("fly.machine.get.final.error",
+			"machine", machineID,
+			"attempts", finalStateRetryAttempts,
+			"err", lastErr,
+		)
+	} else {
+		logger.Warn("fly.machine.exit.missing",
+			"machine", machineID,
+			"attempts", finalStateRetryAttempts,
+			"state", machineState(lastMachine),
+		)
+	}
+
+	return -1
+}
+
+// exitCodeFromEvents returns the most recent exit event's code and true if
+// one is present, or (0, false) if the events feed has no exit event yet.
+func exitCodeFromEvents(m *fly.Machine) (int, bool) {
+	if m == nil {
+		return 0, false
+	}
+
+	for i := len(m.Events) - 1; i >= 0; i-- {
+		event := m.Events[i]
+		if event.Type == "exit" && event.Request != nil && event.Request.ExitEvent != nil {
+			return event.Request.ExitEvent.ExitCode, true
+		}
+	}
+
+	return 0, false
+}
+
+func machineState(m *fly.Machine) string {
+	if m == nil {
+		return ""
+	}
+
+	return m.State
 }
 
 func (c *Container) Status(_ context.Context) (orchestra.ContainerStatus, error) {
@@ -462,7 +558,13 @@ func (f *Fly) recoverExistingMachine(ctx context.Context, machineName, sharedVol
 		}
 
 		if m.State == "stopped" || m.State == "destroyed" {
-			container.exitCode = f.extractExitCode(m)
+			// Use the retrying resolver even when we already have a Machine:
+			// the events feed on the snapshot we received may not yet have
+			// the exit event populated (same eventual-consistency window that
+			// affects waitForStop immediately after Wait returns).
+			container.exitCode = resolveFinalExitCode(ctx, logger, m.ID, func(gctx context.Context) (*fly.Machine, error) {
+				return f.client.Get(gctx, f.appName, m.ID)
+			})
 			container.done = true
 		} else {
 			waitCtx, waitCancel := context.WithCancel(context.Background())
@@ -630,12 +732,13 @@ func mountSetupCommands(mappings []mountMapping) []string {
 // extractExitCode scans machine events in reverse to find the exit code.
 // Returns -1 when no exit event is found, indicating a forced kill (OOM,
 // resource limit, etc.) rather than a clean process exit.
+//
+// This is a snapshot helper — it does not retry. Callers that have just
+// observed a state transition to "stopped" should use resolveFinalExitCode
+// instead so Fly's eventually-consistent events feed has time to catch up.
 func (f *Fly) extractExitCode(m *fly.Machine) int {
-	for i := len(m.Events) - 1; i >= 0; i-- {
-		event := m.Events[i]
-		if event.Type == "exit" && event.Request != nil && event.Request.ExitEvent != nil {
-			return event.Request.ExitEvent.ExitCode
-		}
+	if code, ok := exitCodeFromEvents(m); ok {
+		return code
 	}
 
 	return -1

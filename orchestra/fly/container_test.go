@@ -2,15 +2,60 @@ package fly
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	fly "github.com/superfly/fly-go"
 
 	"github.com/jtarchie/pocketci/orchestra"
 	. "github.com/onsi/gomega"
 )
+
+// shrinkRetryBudget installs a small retry budget for the duration of the
+// test so unit tests don't pay the production backoff.
+func shrinkRetryBudget(t *testing.T, attempts int, initial time.Duration) {
+	t.Helper()
+
+	oldAttempts, oldInitial, oldMax := finalStateRetryAttempts, finalStateRetryInitial, finalStateRetryMax
+	finalStateRetryAttempts = attempts
+	finalStateRetryInitial = initial
+	finalStateRetryMax = initial * 4
+
+	t.Cleanup(func() {
+		finalStateRetryAttempts = oldAttempts
+		finalStateRetryInitial = oldInitial
+		finalStateRetryMax = oldMax
+	})
+}
+
+func newExitMachine(exitCode int) *fly.Machine {
+	return &fly.Machine{
+		State: "stopped",
+		Events: []*fly.MachineEvent{
+			{Type: "start"},
+			{
+				Type: "exit",
+				Request: &fly.MachineRequest{
+					ExitEvent: &fly.MachineExitEvent{ExitCode: exitCode},
+				},
+			},
+		},
+	}
+}
+
+func newStoppedNoExitMachine() *fly.Machine {
+	return &fly.Machine{
+		State: "stopped",
+		Events: []*fly.MachineEvent{
+			{Type: "start"},
+		},
+	}
+}
 
 // TestBuildInitExec_SubdirCachePath is a regression test for the bug where a
 // cache path with a subdirectory component (e.g. "repo/.git") caused exit 1
@@ -218,6 +263,110 @@ func TestExtractExitCode_ReturnsLastExitEvent(t *testing.T) {
 
 	// Scans in reverse — the last event (index 1, exit code 0) wins.
 	assert.Expect(f.extractExitCode(m)).To(Equal(0))
+}
+
+func TestResolveFinalExitCode_RetryFindsEventOnLaterAttempt(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	shrinkRetryBudget(t, 5, 1*time.Millisecond)
+
+	var calls atomic.Int32
+
+	getMachine := func(_ context.Context) (*fly.Machine, error) {
+		n := calls.Add(1)
+		if n < 3 {
+			return newStoppedNoExitMachine(), nil
+		}
+
+		return newExitMachine(0), nil
+	}
+
+	code := resolveFinalExitCode(context.Background(), slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)), "m-1", getMachine)
+
+	// Exit event appears on the third Get; resolver must return its code.
+	assert.Expect(code).To(Equal(0))
+	assert.Expect(calls.Load()).To(Equal(int32(3)))
+}
+
+func TestResolveFinalExitCode_RetryExhaustedReturnsMinusOne(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	shrinkRetryBudget(t, 3, 1*time.Millisecond)
+
+	var calls atomic.Int32
+
+	getMachine := func(_ context.Context) (*fly.Machine, error) {
+		calls.Add(1)
+
+		return newStoppedNoExitMachine(), nil
+	}
+
+	buf := &bytes.Buffer{}
+	logger := slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	code := resolveFinalExitCode(context.Background(), logger, "m-2", getMachine)
+
+	// No exit event ever arrives: fall back to -1 and log the missing-event warn.
+	assert.Expect(code).To(Equal(-1))
+	assert.Expect(calls.Load()).To(Equal(int32(3)))
+	assert.Expect(buf.String()).To(ContainSubstring("fly.machine.exit.missing"))
+}
+
+func TestResolveFinalExitCode_RetryExhaustedWithGetErrorReturnsMinusOne(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	shrinkRetryBudget(t, 3, 1*time.Millisecond)
+
+	boom := errors.New("flaps boom")
+
+	getMachine := func(_ context.Context) (*fly.Machine, error) {
+		return nil, boom
+	}
+
+	buf := &bytes.Buffer{}
+	logger := slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	code := resolveFinalExitCode(context.Background(), logger, "m-3", getMachine)
+
+	assert.Expect(code).To(Equal(-1))
+	// Logs the get error, not the missing-event warn, so operators can tell
+	// an API outage from a real forced-kill scenario.
+	assert.Expect(buf.String()).To(ContainSubstring("fly.machine.get.final.error"))
+	assert.Expect(buf.String()).NotTo(ContainSubstring("fly.machine.exit.missing"))
+}
+
+func TestResolveFinalExitCode_ContextCancelledShortCircuits(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	// Long backoff, but the test should finish fast because ctx cancel
+	// must break the sleep.
+	shrinkRetryBudget(t, 5, 1*time.Second)
+
+	var calls atomic.Int32
+
+	getMachine := func(_ context.Context) (*fly.Machine, error) {
+		calls.Add(1)
+
+		return newStoppedNoExitMachine(), nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel during the first backoff sleep.
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	code := resolveFinalExitCode(ctx, slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)), "m-4", getMachine)
+	elapsed := time.Since(start)
+
+	assert.Expect(code).To(Equal(-1))
+	// Budget would be 5 seconds without cancellation; we expect much less.
+	assert.Expect(elapsed).To(BeNumerically("<", 500*time.Millisecond))
+	// First Get happened, at most two (cancel racing with the second attempt is ok).
+	assert.Expect(calls.Load()).To(BeNumerically(">=", int32(1)))
+	assert.Expect(calls.Load()).To(BeNumerically("<=", int32(2)))
 }
 
 func TestApplyGuestLimits_PerformanceCPUKind(t *testing.T) {
