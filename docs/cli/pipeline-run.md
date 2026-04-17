@@ -46,3 +46,18 @@ pocketci pipeline run my-pipeline \
 
 See [Run Pipelines](../guides/run.md) for detailed examples including k6 load
 testing and background execution.
+
+## Limits
+
+The client compresses your working directory (excluding `--ignore` patterns)
+with zstd and uploads it as the `workdir` part of the request. The server
+caps the **decompressed** size to protect against zstd-bomb uploads.
+
+- **Default cap:** 1 GiB decompressed. Sufficient for typical workdirs after
+  `.gitignore`-style filtering on the client.
+- **Override:** raise the server's `--max-workdir-mb` flag (env
+  `CI_MAX_WORKDIR_MB`) on monorepos with large checked-in fixtures.
+- **Exceeding the cap** surfaces as an SSE `error` event with
+  `workdir decompressed size exceeds cap` before the pipeline starts.
+
+See [pocketci server](server.md#options) for the server-side flag.

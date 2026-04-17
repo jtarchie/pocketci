@@ -73,6 +73,9 @@ type APIPipelinesController struct {
 	allowedDrivers  []string
 	allowedFeatures []Feature
 	secretsMgr      secrets.Manager
+	// maxWorkdirBytes caps the decompressed "workdir" upload on Run.
+	// 0 falls back to the default inside parseRunInput.
+	maxWorkdirBytes int64
 }
 
 // formatActor extracts the authenticated actor identity from the request context for audit logging.
@@ -834,7 +837,7 @@ func (c *APIPipelinesController) Trigger(ctx *echo.Context) error {
 func (c *APIPipelinesController) Run(ctx *echo.Context) error {
 	name := ctx.Param("name")
 
-	args, workdirTar := parseRunInput(ctx)
+	args, workdirTar := parseRunInput(ctx, c.maxWorkdirBytes)
 	if workdirTar != nil {
 		defer func() {
 			err := workdirTar.Close()
@@ -930,16 +933,15 @@ func (c *APIPipelinesController) runHandleSyncError(ctx *echo.Context, w http.Re
 	return nil
 }
 
-// MaxWorkdirDecompressedBytes caps how much data the zstd-compressed
-// "workdir" multipart part is allowed to decompress into. Without this cap,
-// a small adversarial zstd payload (a zip bomb) can expand to tens of GB and
-// exhaust the driver volume or server disk before any other limit fires.
-// The echo BodyLimit middleware caps the compressed body, not the
-// decompressed stream, so that check is not sufficient on its own.
-const MaxWorkdirDecompressedBytes int64 = 1 << 30 // 1 GiB
+// DefaultMaxWorkdirBytes is the fallback cap when the server is configured
+// with 0 (or nothing wired through). Rejects zstd bombs that would expand
+// past the cap. Echo's BodyLimit caps the compressed body; this caps the
+// decompressed stream, which a bomb can inflate by 1,000,000× or more.
+// The caller (server config, CLI flag CI_MAX_WORKDIR_MB) overrides this.
+const DefaultMaxWorkdirBytes int64 = 1 << 30 // 1 GiB
 
 // ErrWorkdirTooLarge is returned when the decompressed workdir stream
-// exceeds MaxWorkdirDecompressedBytes.
+// exceeds the configured cap.
 var ErrWorkdirTooLarge = errors.New("workdir decompressed size exceeds cap")
 
 // cappedReadCloser bounds the total bytes read through it. Reads past the
@@ -1001,13 +1003,21 @@ func (z zstdReadCloser) Close() error { z.Decoder.Close(); return nil }
 // parseRunInput extracts args and an optional workdir tar from the request,
 // trying multipart streaming first then falling back to JSON body.
 //
+// maxWorkdirBytes bounds the decompressed "workdir" zstd stream to reject
+// zip-bomb uploads. Zero or negative values fall back to
+// DefaultMaxWorkdirBytes so unwired callers still get the cap.
+//
 // Part ordering contract: clients must send "args" before "workdir".
 // Multipart is a single stream — once we hand the zstd-wrapped "workdir"
 // part to the caller, we cannot advance to further parts without
 // invalidating the wrapped reader. Parts encountered after "workdir" are
 // silently ignored; the CLI client already honours this ordering.
 // Non-workdir parts are closed eagerly so the connection reader can advance.
-func parseRunInput(ctx *echo.Context) ([]string, io.ReadCloser) {
+func parseRunInput(ctx *echo.Context, maxWorkdirBytes int64) ([]string, io.ReadCloser) {
+	if maxWorkdirBytes <= 0 {
+		maxWorkdirBytes = DefaultMaxWorkdirBytes
+	}
+
 	var args []string
 	var workdirTar io.ReadCloser
 
@@ -1040,7 +1050,7 @@ func parseRunInput(ctx *echo.Context) ([]string, io.ReadCloser) {
 				// Cap the decompressed stream to reject zstd bombs.
 				workdirTar = &cappedReadCloser{
 					inner: zstdReadCloser{zr},
-					cap:   MaxWorkdirDecompressedBytes,
+					cap:   maxWorkdirBytes,
 				}
 			default:
 				_ = part.Close()

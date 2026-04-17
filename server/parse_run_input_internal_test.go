@@ -67,7 +67,7 @@ func TestParseRunInput_UnknownPartIsSkipped(t *testing.T) {
 	rec := httptest.NewRecorder()
 	ctx := echo.New().NewContext(req, rec)
 
-	args, workdirTar := parseRunInput(ctx)
+	args, workdirTar := parseRunInput(ctx, 1<<30)
 
 	assert.Expect(args).To(gomega.Equal([]string{"a"}))
 	assert.Expect(workdirTar).NotTo(gomega.BeNil())
@@ -92,7 +92,7 @@ func TestParseRunInput_ArgsFirstParsesWorkdir(t *testing.T) {
 	rec := httptest.NewRecorder()
 	ctx := echo.New().NewContext(req, rec)
 
-	args, workdirTar := parseRunInput(ctx)
+	args, workdirTar := parseRunInput(ctx, 1<<30)
 
 	assert.Expect(args).To(gomega.Equal([]string{"x"}))
 	assert.Expect(workdirTar).NotTo(gomega.BeNil())
@@ -140,6 +140,64 @@ func TestCappedReadCloser_PassesEOFUnderCap(t *testing.T) {
 	assert.Expect(string(out)).To(gomega.Equal("small"))
 }
 
+func TestParseRunInput_ZeroCapFallsBackToDefault(t *testing.T) {
+	t.Parallel()
+
+	assert := gomega.NewGomegaWithT(t)
+
+	// Passing 0 must fall back to DefaultMaxWorkdirBytes (1 GiB).
+	// A small 5-byte workdir should read fine; the cap isn't triggered.
+	argsJSON, _ := json.Marshal([]string{"x"})
+
+	body, contentType := buildMultipart(t, []struct{ name, contents string }{
+		{"args", string(argsJSON)},
+		{"workdir", "hello"},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req.Header.Set("Content-Type", contentType)
+
+	rec := httptest.NewRecorder()
+	ctx := echo.New().NewContext(req, rec)
+
+	_, workdirTar := parseRunInput(ctx, 0)
+	assert.Expect(workdirTar).NotTo(gomega.BeNil())
+
+	// Confirm the default was applied, not "unlimited" — inspect the wrapper.
+	cap, ok := workdirTar.(*cappedReadCloser)
+	assert.Expect(ok).To(gomega.BeTrue(), "workdirTar should be a cappedReadCloser")
+	assert.Expect(cap.cap).To(gomega.Equal(DefaultMaxWorkdirBytes))
+
+	assert.Expect(workdirTar.Close()).To(gomega.Succeed())
+}
+
+func TestParseRunInput_CustomCapAppliedToReader(t *testing.T) {
+	t.Parallel()
+
+	assert := gomega.NewGomegaWithT(t)
+
+	// A tiny cap forces ErrWorkdirTooLarge while reading a small workdir.
+	argsJSON, _ := json.Marshal([]string{"x"})
+
+	body, contentType := buildMultipart(t, []struct{ name, contents string }{
+		{"args", string(argsJSON)},
+		{"workdir", "this-exceeds-the-tiny-cap"},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/", body)
+	req.Header.Set("Content-Type", contentType)
+
+	rec := httptest.NewRecorder()
+	ctx := echo.New().NewContext(req, rec)
+
+	_, workdirTar := parseRunInput(ctx, 4)
+	assert.Expect(workdirTar).NotTo(gomega.BeNil())
+
+	_, err := io.Copy(io.Discard, workdirTar)
+	assert.Expect(err).To(gomega.MatchError(ErrWorkdirTooLarge))
+	assert.Expect(workdirTar.Close()).To(gomega.Succeed())
+}
+
 func TestParseRunInput_ArgsOnly(t *testing.T) {
 	t.Parallel()
 
@@ -157,7 +215,7 @@ func TestParseRunInput_ArgsOnly(t *testing.T) {
 	rec := httptest.NewRecorder()
 	ctx := echo.New().NewContext(req, rec)
 
-	args, workdirTar := parseRunInput(ctx)
+	args, workdirTar := parseRunInput(ctx, 1<<30)
 
 	assert.Expect(args).To(gomega.Equal([]string{"only"}))
 	assert.Expect(workdirTar).To(gomega.BeNil())

@@ -63,6 +63,7 @@ type Server struct {
 	AllowedFeatures    string        `default:"*"         env:"CI_ALLOWED_FEATURES"                                              help:"Comma-separated list of allowed features (webhooks,secrets,notifications,fetch,resume), or '*' for all"`
 	FetchTimeout       time.Duration `default:"30s"       env:"CI_FETCH_TIMEOUT"                                                 help:"Default timeout for fetch() calls in pipelines"`
 	FetchMaxResponseMB int           `default:"10"        env:"CI_FETCH_MAX_RESPONSE_MB"                                         help:"Maximum response body size in MB for fetch() calls"                                                     name:"fetch-max-response-mb"`
+	MaxWorkdirMB       int           `default:"1024"      env:"CI_MAX_WORKDIR_MB"                                                help:"Maximum decompressed workdir upload size in MB for pipeline run"                                        name:"max-workdir-mb"`
 	// SQLite secrets backend
 	SecretsSQLitePath       string `env:"CI_SECRETS_SQLITE_PATH"       help:"SQLite secrets database file path (use ':memory:' for in-memory)" name:"secrets-sqlite-path"`
 	SecretsSQLitePassphrase string `env:"CI_SECRETS_SQLITE_PASSPHRASE" help:"Encryption passphrase for SQLite secrets backend (required)"      name:"secrets-sqlite-passphrase"`
@@ -206,6 +207,7 @@ func (c *Server) Run(logger *slog.Logger) error {
 		SecretsManager:        secretsManager,
 		FetchTimeout:          c.FetchTimeout,
 		FetchMaxResponseBytes: int64(c.FetchMaxResponseMB) * 1024 * 1024,
+		MaxWorkdirBytes:       int64(c.MaxWorkdirMB) * 1024 * 1024,
 		DedupTTL:              c.DedupTTL,
 		AuthConfig:            authConfig,
 		SecureCookies:         c.SecureCookies,

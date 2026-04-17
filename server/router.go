@@ -44,6 +44,10 @@ type RouterOptions struct {
 	SecretsManager        secrets.Manager
 	FetchTimeout          time.Duration
 	FetchMaxResponseBytes int64
+	// MaxWorkdirBytes caps the decompressed size of a "workdir" upload on
+	// POST /api/pipelines/:name/run. Rejects zstd bombs that expand past
+	// the cap. 0 falls back to a 1 GiB default in the controller.
+	MaxWorkdirBytes       int64
 	DedupTTL              time.Duration
 	AuthConfig            *auth.Config
 	ObservabilityProvider ObservabilityProvider
@@ -385,7 +389,7 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 		configuredDrivers = append(configuredDrivers, name)
 	}
 
-	registerRoutes(router, api, web, store, execService, allowedDrivers, configuredDrivers, allowedFeatures, opts.SecretsManager, opts.WebhookProviders, webhookTimeout, logger)
+	registerRoutes(router, api, web, store, execService, allowedDrivers, configuredDrivers, allowedFeatures, opts.SecretsManager, opts.WebhookProviders, webhookTimeout, opts.MaxWorkdirBytes, logger)
 
 	return &Router{Echo: router, execService: execService, scheduler: sched, webGroup: web, allowedDrivers: allowedDrivers, allowedFeatures: allowedFeatures}, nil
 }
@@ -432,12 +436,13 @@ func registerRoutes(
 	secretsMgr secrets.Manager,
 	webhookProviders []webhooks.Provider,
 	webhookTimeout time.Duration,
+	maxWorkdirBytes int64,
 	logger *slog.Logger,
 ) {
 	base := BaseController{store: store, execService: execService}
 
 	// API controllers (JSON responses)
-	(&APIPipelinesController{BaseController: base, logger: logger, allowedDrivers: allowedDrivers, allowedFeatures: allowedFeatures, secretsMgr: secretsMgr}).RegisterRoutes(api)
+	(&APIPipelinesController{BaseController: base, logger: logger, allowedDrivers: allowedDrivers, allowedFeatures: allowedFeatures, secretsMgr: secretsMgr, maxWorkdirBytes: maxWorkdirBytes}).RegisterRoutes(api)
 	(&APIRunsController{BaseController: base, allowedFeatures: allowedFeatures}).RegisterRoutes(api)
 	(&APIGatesController{BaseController: base, allowedFeatures: allowedFeatures, logger: logger.WithGroup("gates")}).RegisterRoutes(api)
 	(&APIDriversController{allowedDrivers: allowedDrivers, configuredDrivers: configuredDrivers}).RegisterRoutes(api)
