@@ -356,7 +356,7 @@ func (f *Fly) RunContainer(ctx context.Context, task orchestra.Task) (orchestra.
 		guest.MemoryMB = 256
 	}
 
-	applyGuestLimits(guest, task.ContainerLimits)
+	applyGuestLimits(guest, logger, task.ContainerLimits)
 
 	initExec := buildInitExec(task.Command, task.WorkDir, mountMappings)
 
@@ -485,7 +485,12 @@ func (f *Fly) recoverExistingMachine(ctx context.Context, machineName, sharedVol
 // applyGuestLimits overrides a MachineGuest's cpu_kind, CPU count, and memory
 // with per-task limits from the pipeline YAML.  It must be called after
 // guest.SetSize() so the driver-level preset is already applied as the base.
-func applyGuestLimits(guest *fly.MachineGuest, limits orchestra.ContainerLimits) {
+//
+// When the requested memory is not a multiple of Fly's CPU-kind increment,
+// it is rounded up. When memory exceeds the per-size ceiling for shared
+// CPUs, the CPU count is auto-upgraded. Both adjustments are logged at Info
+// level so users see why they're billed for more than they asked for.
+func applyGuestLimits(guest *fly.MachineGuest, logger *slog.Logger, limits orchestra.ContainerLimits) {
 	if limits.CPUKind != "" {
 		guest.CPUKind = limits.CPUKind
 	}
@@ -495,32 +500,69 @@ func applyGuestLimits(guest *fly.MachineGuest, limits orchestra.ContainerLimits)
 	}
 
 	if limits.Memory > 0 {
-		mb := int(limits.Memory / (1024 * 1024))
-		// Memory must be a multiple of the increment required for the CPU kind:
-		//   shared-CPU:      256 MB increments
-		//   performance-CPU: 1024 MB increments
-		memStep := 256
-		if guest.CPUKind == "performance" {
-			memStep = 1024
-		}
-		if mb%memStep != 0 {
-			mb = ((mb / memStep) + 1) * memStep
-		}
-		guest.MemoryMB = mb
-		// Fly shared-CPU machines have per-size memory ceilings.
-		// Automatically upgrade the CPU count so the requested memory is valid:
-		//   shared-cpu-1x: max 2048 MB (1 CPU)
-		//   shared-cpu-2x: max 4096 MB (2 CPUs)
-		//   shared-cpu-4x: max 8192 MB (4 CPUs)
-		if guest.CPUKind == "shared" {
-			switch {
-			case mb > 4096 && guest.CPUs < 4:
-				guest.CPUs = 4
-			case mb > 2048 && guest.CPUs < 2:
-				guest.CPUs = 2
-			}
-		}
+		guest.MemoryMB = roundMemory(guest.CPUKind, int(limits.Memory/(1024*1024)), logger)
+		upgradeSharedCPUs(guest, logger)
 	}
+}
+
+// roundMemory rounds requestedMB up to the nearest Fly memory step
+// (256 MB for shared, 1024 MB for performance CPUs).
+func roundMemory(cpuKind string, requestedMB int, logger *slog.Logger) int {
+	memStep := 256
+	if cpuKind == "performance" {
+		memStep = 1024
+	}
+
+	if requestedMB%memStep == 0 {
+		return requestedMB
+	}
+
+	rounded := ((requestedMB / memStep) + 1) * memStep
+
+	if logger != nil {
+		logger.Info("fly.guest.memory.rounded",
+			"requested_mb", requestedMB,
+			"rounded_mb", rounded,
+			"step_mb", memStep,
+			"cpu_kind", cpuKind,
+		)
+	}
+
+	return rounded
+}
+
+// upgradeSharedCPUs auto-upgrades the CPU count so the requested memory
+// stays within the shared-CPU per-size ceiling:
+//
+//	shared-cpu-1x: max 2048 MB (1 CPU)
+//	shared-cpu-2x: max 4096 MB (2 CPUs)
+//	shared-cpu-4x: max 8192 MB (4 CPUs)
+//
+// Only applies to shared CPUs; performance machines accept any memory.
+func upgradeSharedCPUs(guest *fly.MachineGuest, logger *slog.Logger) {
+	if guest.CPUKind != "shared" {
+		return
+	}
+
+	originalCPUs := guest.CPUs
+
+	switch {
+	case guest.MemoryMB > 4096 && guest.CPUs < 4:
+		guest.CPUs = 4
+	case guest.MemoryMB > 2048 && guest.CPUs < 2:
+		guest.CPUs = 2
+	}
+
+	if logger == nil || guest.CPUs == originalCPUs {
+		return
+	}
+
+	logger.Info("fly.guest.cpu.upgraded",
+		"from_cpus", originalCPUs,
+		"to_cpus", guest.CPUs,
+		"memory_mb", guest.MemoryMB,
+		"reason", "shared-CPU size ceiling",
+	)
 }
 
 // may be set at the same time — the mount symlinks are always created first.

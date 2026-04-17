@@ -1,6 +1,8 @@
 package fly
 
 import (
+	"bytes"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -222,7 +224,7 @@ func TestApplyGuestLimits_PerformanceCPUKind(t *testing.T) {
 	assert := NewGomegaWithT(t)
 
 	guest := &fly.MachineGuest{CPUKind: "shared", CPUs: 1, MemoryMB: 256}
-	applyGuestLimits(guest, orchestra.ContainerLimits{
+	applyGuestLimits(guest, nil, orchestra.ContainerLimits{
 		CPUKind: "performance",
 		CPU:     2,
 		Memory:  4 * 1024 * 1024 * 1024, // 4 GB
@@ -239,7 +241,7 @@ func TestApplyGuestLimits_PerformanceMemoryRounding(t *testing.T) {
 
 	// 3 GB = 3072 MB — multiple of 1024, no rounding needed
 	guest := &fly.MachineGuest{CPUKind: "shared", CPUs: 1, MemoryMB: 256}
-	applyGuestLimits(guest, orchestra.ContainerLimits{
+	applyGuestLimits(guest, nil, orchestra.ContainerLimits{
 		CPUKind: "performance",
 		Memory:  3 * 1024 * 1024 * 1024, // 3 GB
 	})
@@ -247,7 +249,7 @@ func TestApplyGuestLimits_PerformanceMemoryRounding(t *testing.T) {
 
 	// 3.5 GB = 3584 MB — NOT a multiple of 1024 (3584/1024=3.5), round up to 4096
 	guest2 := &fly.MachineGuest{CPUKind: "shared", CPUs: 1, MemoryMB: 256}
-	applyGuestLimits(guest2, orchestra.ContainerLimits{
+	applyGuestLimits(guest2, nil, orchestra.ContainerLimits{
 		CPUKind: "performance",
 		Memory:  int64(3.5 * 1024 * 1024 * 1024),
 	})
@@ -259,14 +261,14 @@ func TestApplyGuestLimits_SharedMemoryRounding(t *testing.T) {
 
 	// 1 GB = 1024 MB — multiple of 256, no rounding
 	guest := &fly.MachineGuest{CPUKind: "shared", CPUs: 1, MemoryMB: 256}
-	applyGuestLimits(guest, orchestra.ContainerLimits{
+	applyGuestLimits(guest, nil, orchestra.ContainerLimits{
 		Memory: 1024 * 1024 * 1024,
 	})
 	assert.Expect(guest.MemoryMB).To(Equal(1024))
 
 	// 1.1 GB = 1126 MB — round up to next 256 = 1280
 	guest2 := &fly.MachineGuest{CPUKind: "shared", CPUs: 1, MemoryMB: 256}
-	applyGuestLimits(guest2, orchestra.ContainerLimits{
+	applyGuestLimits(guest2, nil, orchestra.ContainerLimits{
 		Memory: 1181116006, // ~1.1 GB
 	})
 	assert.Expect(guest2.MemoryMB % 256).To(Equal(0))
@@ -278,7 +280,7 @@ func TestApplyGuestLimits_SharedAutoUpgrade(t *testing.T) {
 
 	// 8 GB on a shared machine should auto-upgrade to 4 CPUs
 	guest := &fly.MachineGuest{CPUKind: "shared", CPUs: 1, MemoryMB: 256}
-	applyGuestLimits(guest, orchestra.ContainerLimits{
+	applyGuestLimits(guest, nil, orchestra.ContainerLimits{
 		Memory: 8 * 1024 * 1024 * 1024,
 	})
 	assert.Expect(guest.CPUs).To(Equal(4))
@@ -290,7 +292,7 @@ func TestApplyGuestLimits_PerformanceNoAutoUpgrade(t *testing.T) {
 
 	// 8 GB on a performance machine should NOT auto-upgrade CPUs
 	guest := &fly.MachineGuest{CPUKind: "shared", CPUs: 1, MemoryMB: 256}
-	applyGuestLimits(guest, orchestra.ContainerLimits{
+	applyGuestLimits(guest, nil, orchestra.ContainerLimits{
 		CPUKind: "performance",
 		Memory:  8 * 1024 * 1024 * 1024,
 	})
@@ -303,10 +305,35 @@ func TestApplyGuestLimits_NoLimits(t *testing.T) {
 
 	// Zero limits should leave guest unchanged
 	guest := &fly.MachineGuest{CPUKind: "shared", CPUs: 2, MemoryMB: 512}
-	applyGuestLimits(guest, orchestra.ContainerLimits{})
+	applyGuestLimits(guest, nil, orchestra.ContainerLimits{})
 	assert.Expect(guest.CPUKind).To(Equal("shared"))
 	assert.Expect(guest.CPUs).To(Equal(2))
 	assert.Expect(guest.MemoryMB).To(Equal(512))
+}
+
+func TestApplyGuestLimits_LogsRoundingAndUpgrade(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	var buf bytes.Buffer
+
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+	// 5000 MB on shared: rounds to next 256 step (5120) and upgrades to 4 CPUs.
+	guest := &fly.MachineGuest{CPUKind: "shared", CPUs: 1, MemoryMB: 256}
+	applyGuestLimits(guest, logger, orchestra.ContainerLimits{
+		Memory: 5000 * 1024 * 1024,
+	})
+
+	assert.Expect(guest.MemoryMB).To(Equal(5120))
+	assert.Expect(guest.CPUs).To(Equal(4))
+
+	logs := buf.String()
+	assert.Expect(logs).To(ContainSubstring("fly.guest.memory.rounded"))
+	assert.Expect(logs).To(ContainSubstring("requested_mb=5000"))
+	assert.Expect(logs).To(ContainSubstring("rounded_mb=5120"))
+	assert.Expect(logs).To(ContainSubstring("fly.guest.cpu.upgraded"))
+	assert.Expect(logs).To(ContainSubstring("from_cpus=1"))
+	assert.Expect(logs).To(ContainSubstring("to_cpus=4"))
 }
 
 // indexOfSubstring returns the byte position of needle in s, or -1.

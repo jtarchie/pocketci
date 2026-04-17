@@ -187,7 +187,7 @@ func (f *Fly) StartSandbox(ctx context.Context, task orchestra.Task) (orchestra.
 		guest.MemoryMB = 256
 	}
 
-	applyGuestLimits(guest, task.ContainerLimits)
+	applyGuestLimits(guest, logger, task.ContainerLimits)
 
 	config := &fly.MachineConfig{
 		Image: task.Image,
