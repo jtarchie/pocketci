@@ -11,6 +11,13 @@ import (
 
 const SecretPrefix = "secret:"
 
+// ErrSecretContainsNUL is returned when a resolved secret value contains
+// a NUL byte. POSIX env vars cannot contain NUL, and passing one through
+// to a container runtime truncates the value silently or corrupts the
+// env block. Reject at the resolution boundary so downstream code
+// (sandbox env-export, exec env lists) stays simple.
+var ErrSecretContainsNUL = errors.New("secret value contains NUL byte")
+
 // ResolveSecretString resolves a single "secret:<KEY>" value using the given
 // secrets manager. Returns the resolved plaintext (true) when the value used
 // the prefix, or the original value unchanged (false) when it did not.
@@ -30,7 +37,7 @@ func ResolveSecretString(ctx context.Context, mgr secrets.Manager, pipelineID, v
 	// Try pipeline scope first.
 	val, err := mgr.Get(ctx, pipelineScope, key)
 	if err == nil {
-		return val, true, nil
+		return validateSecretValue(key, val)
 	}
 
 	if !errors.Is(err, secrets.ErrNotFound) {
@@ -40,7 +47,7 @@ func ResolveSecretString(ctx context.Context, mgr secrets.Manager, pipelineID, v
 	// Fall back to global scope.
 	val, err = mgr.Get(ctx, secrets.GlobalScope, key)
 	if err == nil {
-		return val, true, nil
+		return validateSecretValue(key, val)
 	}
 
 	if !errors.Is(err, secrets.ErrNotFound) {
@@ -49,6 +56,14 @@ func ResolveSecretString(ctx context.Context, mgr secrets.Manager, pipelineID, v
 
 	return "", false, fmt.Errorf("secret %q not found in scopes %q or %q: %w",
 		key, pipelineScope, secrets.GlobalScope, secrets.ErrNotFound)
+}
+
+func validateSecretValue(key, val string) (string, bool, error) {
+	if strings.ContainsRune(val, 0) {
+		return "", false, fmt.Errorf("secret %q: %w", key, ErrSecretContainsNUL)
+	}
+
+	return val, true, nil
 }
 
 // ResolveSecretsInMap walks a map[string]any recursively and resolves any

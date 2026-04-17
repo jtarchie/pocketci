@@ -60,7 +60,11 @@ func (s *FlySandbox) Exec(
 		var parts []string
 
 		for k, v := range env {
-			parts = append(parts, fmt.Sprintf("export %s=%q", k, v))
+			// Go's %q uses double-quote form, which the shell still expands
+			// ($VAR, $(cmd), `cmd`) — a secret value like "$(evil)" would
+			// be executed. Use single-quoted shellescape so the value is
+			// passed literally.
+			parts = append(parts, "export "+k+"="+shellescape(v))
 		}
 
 		if workDir != "" {
