@@ -938,6 +938,13 @@ func (z zstdReadCloser) Close() error { z.Decoder.Close(); return nil }
 
 // parseRunInput extracts args and an optional workdir tar from the request,
 // trying multipart streaming first then falling back to JSON body.
+//
+// Part ordering contract: clients must send "args" before "workdir".
+// Multipart is a single stream — once we hand the zstd-wrapped "workdir"
+// part to the caller, we cannot advance to further parts without
+// invalidating the wrapped reader. Parts encountered after "workdir" are
+// silently ignored; the CLI client already honours this ordering.
+// Non-workdir parts are closed eagerly so the connection reader can advance.
 func parseRunInput(ctx *echo.Context) ([]string, io.ReadCloser) {
 	var args []string
 	var workdirTar io.ReadCloser
@@ -957,12 +964,20 @@ func parseRunInput(ctx *echo.Context) ([]string, io.ReadCloser) {
 			case "args":
 				data, _ := io.ReadAll(part)
 				_ = json.Unmarshal(data, &args)
+				_ = part.Close()
 			case "workdir":
+				// The returned zstd reader wraps `part`; the caller
+				// defer-closes workdirTar, which transitively finishes
+				// the part. Return immediately — see ordering contract.
 				zr, zErr := zstd.NewReader(part)
 				if zErr != nil {
-					break
+					_ = part.Close()
+
+					continue
 				}
 				workdirTar = zstdReadCloser{zr}
+			default:
+				_ = part.Close()
 			}
 
 			if workdirTar != nil {
