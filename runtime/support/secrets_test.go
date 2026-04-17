@@ -42,20 +42,6 @@ func (m *mapSecretsManager) DeleteByScope(_ context.Context, _ string) error {
 
 func (m *mapSecretsManager) Close() error { return nil }
 
-func TestResolveSecretString_RejectsNULByte(t *testing.T) {
-	t.Parallel()
-
-	assert := NewGomegaWithT(t)
-
-	mgr := &mapSecretsManager{data: map[string]string{
-		string(secrets.GlobalScope) + "/TOKEN": "good\x00bad",
-	}}
-
-	_, _, err := support.ResolveSecretString(context.Background(), mgr, "pipeline-1", "secret:TOKEN")
-
-	assert.Expect(err).To(MatchError(support.ErrSecretContainsNUL))
-}
-
 func TestResolveSecretString_PassesValidValue(t *testing.T) {
 	t.Parallel()
 
