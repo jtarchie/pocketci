@@ -97,6 +97,7 @@ func (ar *AgentRuntime) prepareAgentConfig(config *agent.AgentConfig) {
 	config.Storage = r.storage
 	config.Namespace = r.namespace
 	config.RunID = r.runID
+	config.PipelineID = r.pipelineID
 	config.TriggeredBy = r.triggeredBy
 }
 

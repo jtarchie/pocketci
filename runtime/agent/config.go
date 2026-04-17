@@ -15,6 +15,14 @@ type AgentThinkingConfig = agentmodel.ThinkingConfig
 // DefaultBaseURLs maps providers to their base URLs.
 var DefaultBaseURLs = agentmodel.DefaultBaseURLs
 
+// AgentMemoryConfig enables cross-run agent memory. When Enabled, the agent
+// gains recall_memory and save_memory tools scoped by pipeline + agent name.
+type AgentMemoryConfig struct {
+	Enabled         bool `json:"enabled"                     yaml:"enabled"`
+	MaxRecall       int  `json:"max_recall,omitempty"        yaml:"max_recall,omitempty"`
+	MaxContentBytes int  `json:"max_content_bytes,omitempty" yaml:"max_content_bytes,omitempty"`
+}
+
 // ToolDef describes a tool available to the parent agent. Covers both
 // agent tools (LLM sub-agents) and task tools (container commands).
 // Distinguish by the IsTask flag.
@@ -49,6 +57,7 @@ type AgentConfig struct {
 	Tools            []ToolDef                              `json:"tools,omitempty"`
 	OutputSchema     map[string]interface{}                 `json:"outputSchema,omitempty"`
 	ToolTimeout      string                                 `json:"toolTimeout,omitempty"`
+	Memory           *AgentMemoryConfig                     `json:"memory,omitempty"`
 	// OnOutput is called with streaming chunks. Not serialised from JS.
 	OnOutput pipelinerunner.OutputCallback `json:"-"`
 	// OnAuditEvent is called every time an audit event is appended.

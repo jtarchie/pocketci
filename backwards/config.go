@@ -230,6 +230,7 @@ type Step struct {
 	AgentLimits       *agent.AgentLimitsConfig       `yaml:"limits,omitempty"`
 	AgentContext      *agent.AgentContext            `yaml:"context,omitempty"`
 	AgentValidation   *agent.AgentValidationConfig   `yaml:"validation,omitempty"`
+	AgentMemory       *agent.AgentMemoryConfig       `yaml:"memory,omitempty"`
 	AgentToolTimeout  string                         `yaml:"tool_timeout,omitempty"`
 	AgentOutputSchema map[string]interface{}         `json:"output_schema,omitempty" yaml:"output_schema,omitempty"`
 	Description       string                         `json:"description,omitempty"   yaml:"description,omitempty"`

@@ -187,6 +187,58 @@ func TestAgentLimitExceeded(t *testing.T) {
 	}
 }
 
+func TestAgentWithMemory(t *testing.T) {
+	for _, df := range drivers {
+		t.Run(df.name, func(t *testing.T) {
+			assert := NewGomegaWithT(t)
+
+			var capturedBody string
+			configureFakeLLMWithCapture(t, fakeLLMResponse("Acknowledged", 10, 5, 15), &capturedBody)
+
+			cfg := loadConfig(t, "steps/agent_with_memory.yml")
+
+			logger := discardLogger()
+
+			driver, err := df.new("test-agent-memory-"+df.name, logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = driver.Close() }()
+
+			store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "test-agent-memory", logger)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = store.Close() }()
+
+			// Seed the pipeline so the agent_memories FK can resolve.
+			pipeline, err := store.SavePipeline(context.Background(), "mem-test", "x", "docker", "")
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			// Pre-seed a memory from a fictitious prior run so recall can find it.
+			_, _, err = store.SaveAgentMemory(
+				context.Background(), pipeline.ID, "test-agent",
+				"always start with a greeting", []string{"convention"},
+			)
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			runner := backwards.New(cfg, driver, store, logger, "test-run", pipeline.ID, backwards.RunnerOptions{})
+			err = runner.Run(context.Background())
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			// Verify memory tools were advertised to the LLM.
+			assert.Expect(capturedBody).To(ContainSubstring("recall_memory"))
+			assert.Expect(capturedBody).To(ContainSubstring("save_memory"))
+
+			// The pre-seeded memory must remain retrievable via storage API.
+			memories, err := store.RecallAgentMemories(
+				context.Background(), pipeline.ID, "test-agent", "greeting", nil, 5,
+			)
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(memories).To(HaveLen(1))
+			assert.Expect(memories[0].Content).To(Equal("always start with a greeting"))
+		})
+	}
+}
+
 func TestResolveAgentImage(t *testing.T) {
 	t.Parallel()
 

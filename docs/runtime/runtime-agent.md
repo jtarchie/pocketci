@@ -37,6 +37,7 @@ const result = await agent.run(options);
 | `outputSchema`     | object | JSON schema for structured output (see [Output Schema](#output-schema))             |
 | `toolTimeout`      | string | Per-tool timeout duration, e.g. `"60s"`, `"5m"` (see [Tool Timeout](#tool-timeout)) |
 | `tools`            | array  | Agent + task tools callable by the LLM (see [Tools](#tools))                        |
+| `memory`           | object | Cross-run memory (see [Agent Memory](/runtime/runtime-agent-memory))                |
 
 ## Providers
 

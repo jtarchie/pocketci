@@ -155,6 +155,53 @@ CREATE TABLE IF NOT EXISTS gates (
 CREATE INDEX IF NOT EXISTS idx_gates_run_id ON gates(run_id);
 CREATE INDEX IF NOT EXISTS idx_gates_status ON gates(status);
 
+-- Agent memories: durable lessons an agent saves in one run and recalls in later runs.
+-- Scoped by (pipeline_id, agent_name); cascade-deleted with the pipeline.
+CREATE TABLE IF NOT EXISTS agent_memories (
+  id            INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  pipeline_id   TEXT    NOT NULL,
+  agent_name    TEXT    NOT NULL,
+  content_hash  TEXT    NOT NULL,
+  tags          TEXT    NOT NULL DEFAULT '[]',
+  content       TEXT    NOT NULL,
+  recall_count  INTEGER NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+  last_recalled INTEGER,
+  UNIQUE(pipeline_id, agent_name, content_hash),
+  FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_agent_memories_scope
+  ON agent_memories(pipeline_id, agent_name);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS agent_memories_fts USING fts5(
+  content,
+  tags,
+  content       = agent_memories,
+  content_rowid = id,
+  tokenize      = 'unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS agent_memories_fts_insert
+AFTER INSERT ON agent_memories BEGIN
+  INSERT INTO agent_memories_fts(rowid, content, tags)
+  VALUES (NEW.id, NEW.content, NEW.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS agent_memories_fts_update
+AFTER UPDATE ON agent_memories BEGIN
+  INSERT INTO agent_memories_fts(agent_memories_fts, rowid, content, tags)
+  VALUES ('delete', OLD.id, OLD.content, OLD.tags);
+  INSERT INTO agent_memories_fts(rowid, content, tags)
+  VALUES (NEW.id, NEW.content, NEW.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS agent_memories_fts_delete
+AFTER DELETE ON agent_memories BEGIN
+  INSERT INTO agent_memories_fts(agent_memories_fts, rowid, content, tags)
+  VALUES ('delete', OLD.id, OLD.content, OLD.tags);
+END;
+
 -- Webhook deduplication: stores truncated SHA-256 hashes of evaluated dedup keys.
 -- The (pipeline_id, key_hash) primary key prevents duplicate inserts efficiently.
 -- ON DELETE CASCADE removes entries when a pipeline is deleted.

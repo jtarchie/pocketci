@@ -67,7 +67,18 @@ func buildSandboxTools(
 		return nil, fmt.Errorf("failed to create get_task_result tool: %w", err)
 	}
 
-	return []adktool.Tool{runScript, readFileTool, grepTool, globTool, writeFileTool, listTasksTool, getTaskResultTool}, nil
+	memoryTools, err := buildMemoryTools(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+
+	tools := make([]adktool.Tool, 0, 7+len(memoryTools))
+	tools = append(tools,
+		runScript, readFileTool, grepTool, globTool, writeFileTool, listTasksTool, getTaskResultTool,
+	)
+	tools = append(tools, memoryTools...)
+
+	return tools, nil
 }
 
 // buildAgentTools creates all the tools available to the agent, including

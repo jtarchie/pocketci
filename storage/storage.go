@@ -154,6 +154,20 @@ type PipelineRun struct {
 	CreatedAt    time.Time    `json:"created_at"`
 }
 
+// AgentMemory represents a durable lesson an agent saved in one run so future
+// runs of the same pipeline can recall it. Scoped by (PipelineID, AgentName).
+type AgentMemory struct {
+	ID           int64      `json:"id"`
+	PipelineID   string     `json:"pipeline_id"`
+	AgentName    string     `json:"agent_name"`
+	ContentHash  string     `json:"content_hash"`
+	Tags         []string   `json:"tags"`
+	Content      string     `json:"content"`
+	RecallCount  int64      `json:"recall_count"`
+	CreatedAt    time.Time  `json:"created_at"`
+	LastRecalled *time.Time `json:"last_recalled,omitempty"`
+}
+
 // PaginationResult holds paginated items along with pagination metadata.
 type PaginationResult[T any] struct {
 	Items      []T  `json:"items"`
@@ -236,6 +250,17 @@ type Driver interface {
 	GetGate(ctx context.Context, gateID string) (*Gate, error)
 	ResolveGate(ctx context.Context, gateID string, status GateStatus, approvedBy string) error
 	GetGatesByRunID(ctx context.Context, runID string) ([]Gate, error)
+
+	// Agent memory operations
+	//
+	// SaveAgentMemory inserts a memory for (pipelineID, agentName). If an entry
+	// with an identical content hash already exists it is left in place and
+	// (deduped=true) is returned; RecallCount is not bumped on save.
+	SaveAgentMemory(ctx context.Context, pipelineID, agentName, content string, tags []string) (memory *AgentMemory, deduped bool, err error)
+	// RecallAgentMemories returns memories for (pipelineID, agentName) whose
+	// content or tags match query via FTS5 ranking. An empty query returns the
+	// most recently created memories. Hits bump recall_count and last_recalled.
+	RecallAgentMemories(ctx context.Context, pipelineID, agentName, query string, tags []string, limit int) ([]AgentMemory, error)
 
 	// Webhook dedup operations
 	//
