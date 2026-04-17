@@ -2,14 +2,10 @@ package cache
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"log/slog"
-	"os"
 
 	"github.com/jtarchie/pocketci/orchestra"
 )
@@ -146,8 +142,6 @@ func (v *CachingVolume) RestoreFromCache(ctx context.Context) error {
 
 // PersistToCache saves volume contents to the cache.
 // This should be called before volume cleanup.
-// If the store implements HashAwareCacheStore, content hashing is used
-// to skip redundant uploads when the volume content has not changed.
 func (v *CachingVolume) PersistToCache(ctx context.Context) error {
 	if v.restoreOnly {
 		v.logger.Debug("volume.persist.skipped", "volume", v.inner.Name(), "reason", "restore-only mode")
@@ -170,13 +164,9 @@ func (v *CachingVolume) PersistToCache(ctx context.Context) error {
 		_ = reader.Close()
 	}()
 
-	// Create a pipe for compression
+	// Create a pipe for streaming compression directly to the store
 	pipeReader, pipeWriter := newPipe()
 
-	// Hash the compressed output to detect unchanged content
-	hasher := sha256.New()
-
-	// Compress in a goroutine
 	errChan := make(chan error, 1)
 
 	go func() {
@@ -184,10 +174,7 @@ func (v *CachingVolume) PersistToCache(ctx context.Context) error {
 			_ = pipeWriter.Close()
 		}()
 
-		// Tee the compressed output through the hasher
-		hashedWriter := io.MultiWriter(pipeWriter, hasher)
-
-		compressedWriter, err := v.compressor.Compress(hashedWriter)
+		compressedWriter, err := v.compressor.Compress(pipeWriter)
 		if err != nil {
 			errChan <- fmt.Errorf("failed to create compressor: %w", err)
 
@@ -202,78 +189,12 @@ func (v *CachingVolume) PersistToCache(ctx context.Context) error {
 		errChan <- err
 	}()
 
-	// Check if store supports hash-aware persistence
-	hashStore, isHashAware := v.store.(HashAwareCacheStore)
-
-	if isHashAware {
-		err = v.persistWithHashCheck(ctx, hashStore, pipeReader, hasher, errChan)
-	} else {
-		err = v.persistDirect(ctx, pipeReader, errChan)
-	}
-
+	err = v.persistDirect(ctx, pipeReader, errChan)
 	if err != nil {
 		return err
 	}
 
 	v.logger.Info("volume.persisted.success", "volume", v.inner.Name())
-
-	return nil
-}
-
-func (v *CachingVolume) persistWithHashCheck(
-	ctx context.Context,
-	hashStore HashAwareCacheStore,
-	pipeReader *io.PipeReader,
-	hasher hash.Hash,
-	errChan <-chan error,
-) error {
-	// Spill to a temp file instead of io.ReadAll to avoid loading the entire
-	// compressed volume into RAM (can be hundreds of MB for large caches).
-	tmpFile, err := os.CreateTemp("", "pocketci-cache-*.tmp")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file for cache upload: %w", err)
-	}
-
-	defer func() {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpFile.Name())
-	}()
-
-	_, err = io.Copy(tmpFile, pipeReader)
-	if err != nil {
-		return fmt.Errorf("failed to buffer compressed data: %w", err)
-	}
-
-	compressErr := <-errChan
-	if compressErr != nil {
-		return fmt.Errorf("compression failed: %w", compressErr)
-	}
-
-	newHash := hex.EncodeToString(hasher.Sum(nil))
-
-	storedHash, err := hashStore.GetHash(ctx, v.cacheKey)
-	if err != nil {
-		v.logger.Warn("volume.persist.hash.check.failed",
-			"volume", v.inner.Name(),
-			"error", err,
-		)
-	} else if storedHash == newHash {
-		v.logger.Info("volume.persist.skipped",
-			"volume", v.inner.Name(),
-			"reason", "content unchanged",
-		)
-
-		return nil
-	}
-
-	if _, err = tmpFile.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("failed to seek temp file for upload: %w", err)
-	}
-
-	err = hashStore.PersistWithHash(ctx, v.cacheKey, tmpFile, newHash)
-	if err != nil {
-		return fmt.Errorf("failed to persist to cache: %w", err)
-	}
 
 	return nil
 }
