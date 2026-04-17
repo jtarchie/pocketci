@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,6 +9,7 @@ import (
 	"hash"
 	"io"
 	"log/slog"
+	"os"
 
 	"github.com/jtarchie/pocketci/orchestra"
 )
@@ -227,9 +227,21 @@ func (v *CachingVolume) persistWithHashCheck(
 	hasher hash.Hash,
 	errChan <-chan error,
 ) error {
-	compressed, err := io.ReadAll(pipeReader)
+	// Spill to a temp file instead of io.ReadAll to avoid loading the entire
+	// compressed volume into RAM (can be hundreds of MB for large caches).
+	tmpFile, err := os.CreateTemp("", "pocketci-cache-*.tmp")
 	if err != nil {
-		return fmt.Errorf("failed to read compressed data: %w", err)
+		return fmt.Errorf("failed to create temp file for cache upload: %w", err)
+	}
+
+	defer func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+	}()
+
+	_, err = io.Copy(tmpFile, pipeReader)
+	if err != nil {
+		return fmt.Errorf("failed to buffer compressed data: %w", err)
 	}
 
 	compressErr := <-errChan
@@ -254,7 +266,11 @@ func (v *CachingVolume) persistWithHashCheck(
 		return nil
 	}
 
-	err = hashStore.PersistWithHash(ctx, v.cacheKey, bytes.NewReader(compressed), newHash)
+	if _, err = tmpFile.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("failed to seek temp file for upload: %w", err)
+	}
+
+	err = hashStore.PersistWithHash(ctx, v.cacheKey, tmpFile, newHash)
 	if err != nil {
 		return fmt.Errorf("failed to persist to cache: %w", err)
 	}

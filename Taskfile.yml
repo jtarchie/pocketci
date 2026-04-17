@@ -113,10 +113,19 @@ tasks:
     cmds:
       - ./bin/cleanup.sh
 
+  deploy:storage:
+    desc: Provision Tigris object storage on Fly.io (idempotent — skips if already provisioned)
+    cmds:
+      - |
+          if ! flyctl secrets list | grep -q '^BUCKET_NAME'; then
+            flyctl storage create --name ci-tigris --yes
+          fi
+
   deploy:
     desc: Deploy to Fly.io (requires flyctl and authentication)
     cmds:
       - task: build
+      - task: deploy:storage
       - flyctl deploy
 
   deploy:nuke:
