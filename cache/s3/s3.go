@@ -130,7 +130,6 @@ func (s *S3Store) Exists(ctx context.Context, key string) (bool, error) {
 	return true, nil
 }
 
-
 // Delete removes a cache entry from S3.
 func (s *S3Store) Delete(ctx context.Context, key string) error {
 	fullKey := s.FullKey(key)

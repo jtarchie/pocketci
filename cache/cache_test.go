@@ -222,7 +222,6 @@ func TestMockCacheStore(t *testing.T) {
 	assert.Expect(exists).To(gomega.BeFalse())
 }
 
-
 func TestCachingVolumeExistsCheckBeforeRestore(t *testing.T) {
 	t.Parallel()
 

@@ -135,4 +135,3 @@ func (s *FilesystemStore) Delete(_ context.Context, key string) error {
 
 	return nil
 }
-
