@@ -212,9 +212,9 @@ type BuildImageRegistry struct {
 // the produced image is available at Tag for any downstream task that names it.
 type BuildImageConfig struct {
 	Name            string              `yaml:"name,omitempty"`       // optional; defaults to a sanitized form of Tag
-	Context         string              `validate:"required"         yaml:"context,omitempty"`
+	Context         string              `validate:"required"               yaml:"context,omitempty"`
 	Dockerfile      string              `yaml:"dockerfile,omitempty"` // defaults to "Dockerfile"
-	Tag             string              `validate:"required"         yaml:"tag,omitempty"`
+	Tag             string              `validate:"required"               yaml:"tag,omitempty"`
 	Push            bool                `yaml:"push,omitempty"`
 	BuildArgs       map[string]string   `yaml:"build_args,omitempty"`
 	Target          string              `yaml:"target,omitempty"`
