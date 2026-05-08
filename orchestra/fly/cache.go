@@ -1,17 +1,14 @@
 package fly
 
 import (
-	"archive/tar"
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path"
 	"strings"
 	"time"
 
-	"github.com/pkg/sftp"
 	fly "github.com/superfly/fly-go"
 	"github.com/superfly/fly-go/flaps"
 	"golang.org/x/crypto/ssh"
@@ -252,9 +249,11 @@ func (f *Fly) destroyHelperMachine(ctx context.Context, machineID string) {
 
 // CopyToVolume implements cache.VolumeDataAccessor.
 // It launches a busybox helper machine with the volume mounted, establishes a
-// WireGuard tunnel + SSH connection, then walks the tar stream on the client
-// side and uploads each entry to /volume via SFTP. This requires no tar binary
-// on the remote machine.
+// WireGuard tunnel + SSH connection, and pipes the tar stream into a remote
+// `tar xf -` rooted at /volume/<name>. The remote tar reproduces hard
+// links, symlinks, file modes, and ownership exactly — which the SFTP
+// per-entry upload approach silently dropped, breaking BuildKit's content
+// store (it relies on hard links between the snapshotter and content blobs).
 func (f *Fly) CopyToVolume(ctx context.Context, volumeName string, reader io.Reader) error {
 	vol := f.findVolumeByName(volumeName)
 	if vol == nil {
@@ -282,40 +281,34 @@ func (f *Fly) CopyToVolume(ctx context.Context, volumeName string, reader io.Rea
 	}
 	defer func() { _ = sshClient.Close() }()
 
-	// Open SFTP subsystem over the existing SSH connection.
-	sftpClient, err := sftp.NewClient(sshClient,
-		sftp.UseConcurrentReads(true),
-		sftp.UseConcurrentWrites(true),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to open SFTP subsystem: %w", err)
-	}
-	defer func() { _ = sftpClient.Close() }()
-
 	f.logger.Debug("fly.cache.copytov.start", "volume", volumeName)
 
-	// Mirror the per-subdir tar layout from CopyFromVolume. Restore writes
-	// into /volume/<volumeName>/<entry>, keeping each logical volume's
-	// cache isolated within the shared physical Fly volume.
 	subdir := "/volume/" + vol.userFacingName
 
-	mkErr := sftpClient.MkdirAll(subdir)
-	if mkErr != nil {
-		return fmt.Errorf("create subdir %q: %w", subdir, mkErr)
-	}
-
-	err = uploadTarEntries(sftpClient, reader, subdir)
+	session, err := sshClient.NewSession()
 	if err != nil {
-		return err
+		return fmt.Errorf("create SSH session: %w", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	session.Stdin = reader
+
+	var stderrBuf strings.Builder
+	session.Stderr = &stderrBuf
+
+	cmd := "mkdir -p " + shellescape(subdir) + " && tar xf - -C " + shellescape(subdir)
+
+	err = session.Run(cmd)
+	if err != nil {
+		return fmt.Errorf("remote tar extract failed: %w (stderr=%q)", err, stderrBuf.String())
 	}
 
 	f.logger.Info("fly.cache.copytov.done", "volume", volumeName)
 
 	// Flush the filesystem to disk before the SSH connection closes.
 	// The helper machine will be suspended (not shut down), so the kernel
-	// won't automatically flush page cache. The k6 (or any other) container
-	// that mounts the same volume afterward sees the block device state, so
-	// we must ensure all SFTP-written data is committed to disk first.
+	// won't automatically flush page cache. We must ensure data is on the
+	// block device before the next consumer mounts it.
 	syncSession, syncErr := sshClient.NewSession()
 	if syncErr == nil {
 		_ = syncSession.Run("sync")
@@ -323,56 +316,6 @@ func (f *Fly) CopyToVolume(ctx context.Context, volumeName string, reader io.Rea
 	}
 
 	return nil
-}
-
-// uploadTarEntries walks a tar stream and uploads each entry under root via
-// SFTP. Entries are written to <root>/<hdr.Name>.
-func uploadTarEntries(sftpClient *sftp.Client, reader io.Reader, root string) error {
-	tr := tar.NewReader(reader)
-
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			return nil
-		}
-
-		if err != nil {
-			return fmt.Errorf("failed to read tar entry: %w", err)
-		}
-
-		remotePath := path.Join(root, hdr.Name)
-
-		switch hdr.Typeflag {
-		case tar.TypeDir:
-			mkErr := sftpClient.MkdirAll(remotePath)
-			if mkErr != nil {
-				return fmt.Errorf("failed to create remote directory %q: %w", remotePath, mkErr)
-			}
-
-		case tar.TypeReg:
-			mkErr := sftpClient.MkdirAll(path.Dir(remotePath))
-			if mkErr != nil {
-				return fmt.Errorf("failed to create parent dir for %q: %w", remotePath, mkErr)
-			}
-
-			rf, err := sftpClient.OpenFile(remotePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
-			if err != nil {
-				return fmt.Errorf("failed to open remote file %q: %w", remotePath, err)
-			}
-
-			_, cpErr := io.Copy(rf, tr)
-			if cpErr != nil {
-				_ = rf.Close()
-
-				return fmt.Errorf("failed to write remote file %q: %w", remotePath, cpErr)
-			}
-
-			closeErr := rf.Close()
-			if closeErr != nil {
-				return fmt.Errorf("failed to close remote file %q: %w", remotePath, closeErr)
-			}
-		}
-	}
 }
 
 // CopyFromVolume implements cache.VolumeDataAccessor.
