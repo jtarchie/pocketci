@@ -205,3 +205,4 @@ backwards/deno.lock
 site/.DS_Store
 docs/.vitepress/cache/
 .scratch/
+.claude/
