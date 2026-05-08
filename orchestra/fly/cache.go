@@ -294,7 +294,17 @@ func (f *Fly) CopyToVolume(ctx context.Context, volumeName string, reader io.Rea
 
 	f.logger.Debug("fly.cache.copytov.start", "volume", volumeName)
 
-	err = uploadTarEntries(sftpClient, reader)
+	// Mirror the per-subdir tar layout from CopyFromVolume. Restore writes
+	// into /volume/<volumeName>/<entry>, keeping each logical volume's
+	// cache isolated within the shared physical Fly volume.
+	subdir := "/volume/" + vol.userFacingName
+
+	mkErr := sftpClient.MkdirAll(subdir)
+	if mkErr != nil {
+		return fmt.Errorf("create subdir %q: %w", subdir, mkErr)
+	}
+
+	err = uploadTarEntries(sftpClient, reader, subdir)
 	if err != nil {
 		return err
 	}
@@ -315,8 +325,9 @@ func (f *Fly) CopyToVolume(ctx context.Context, volumeName string, reader io.Rea
 	return nil
 }
 
-// uploadTarEntries walks a tar stream and uploads each entry to /volume via SFTP.
-func uploadTarEntries(sftpClient *sftp.Client, reader io.Reader) error {
+// uploadTarEntries walks a tar stream and uploads each entry under root via
+// SFTP. Entries are written to <root>/<hdr.Name>.
+func uploadTarEntries(sftpClient *sftp.Client, reader io.Reader, root string) error {
 	tr := tar.NewReader(reader)
 
 	for {
@@ -329,7 +340,7 @@ func uploadTarEntries(sftpClient *sftp.Client, reader io.Reader) error {
 			return fmt.Errorf("failed to read tar entry: %w", err)
 		}
 
-		remotePath := path.Join("/volume", hdr.Name)
+		remotePath := path.Join(root, hdr.Name)
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
@@ -414,7 +425,15 @@ func (f *Fly) CopyFromVolume(ctx context.Context, volumeName string) (io.ReadClo
 
 	f.logger.Debug("fly.cache.copyfromv.start", "volume", volumeName)
 
-	err = session.Start("tar cf - -C /volume .")
+	// Each logical volume on Fly is a subdirectory under /volume on the
+	// helper machine (see mountSetupCommands). Tar only that subdir so a
+	// per-cache-mount persist isn't streaming the entire shared physical
+	// volume (which can be many GB and OOM the server during zstd compress).
+	subdir := "/volume/" + vol.userFacingName
+
+	tarCmd := "if [ -d " + shellescape(subdir) + " ]; then tar cf - -C " + shellescape(subdir) + " .; else tar cf - -T /dev/null; fi"
+
+	err = session.Start(tarCmd)
 	if err != nil {
 		_ = session.Close()
 		_ = sshClient.Close()
