@@ -90,3 +90,13 @@ func MergeAgentFromContents(contents []byte, ts *TestStep) *MergeResult {
 		Model:  merged.Model,
 	}
 }
+
+// StepKind exposes identifyStepType for tests.
+func StepKind(step *config.Step) string {
+	return identifyStepType(step)
+}
+
+// StepStorageID exposes stepStorageIdentifier for tests.
+func StepStorageID(step *config.Step) string {
+	return stepStorageIdentifier(step)
+}

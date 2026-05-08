@@ -264,6 +264,12 @@ func (j *JS) setupJSVM(
 		return fmt.Errorf("could not set pipeline: %w", err)
 	}
 
+	imageNS := runtime.ImageNS()
+	err = jsVM.Set("image", imageNS)
+	if err != nil {
+		return fmt.Errorf("could not set image: %w", err)
+	}
+
 	err = j.setupNotifyAndResources(ctx, jsVM, runtime, opts)
 	if err != nil {
 		return err

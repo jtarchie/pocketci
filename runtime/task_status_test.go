@@ -27,6 +27,7 @@ func newTestStore(t *testing.T) *os.File {
 
 func TestTaskStatusPersistence(t *testing.T) {
 	t.Parallel()
+	requireDocker(t)
 
 	t.Run("successful task writes status to storage", func(t *testing.T) {
 		t.Parallel()

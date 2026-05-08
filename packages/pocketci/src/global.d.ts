@@ -467,6 +467,75 @@ declare global {
     function startSandbox(config: SandboxConfig): Promise<SandboxHandle>;
   }
 
+  /** Container image build registry credentials. */
+  interface ImageBuildRegistryAuth {
+    /** Registry hostname; if empty, inferred from the tag. */
+    registry?: string;
+    username?: string;
+    /** May be a "secret:KEY" reference, resolved by the secrets manager. */
+    password?: string;
+    /** Permits plain-HTTP and self-signed certs (test registries only). */
+    insecure?: boolean;
+  }
+
+  /** Configuration for a container image build via image.build(). */
+  interface ImageBuildConfig {
+    /** Step name, used in storage paths. Optional; defaults to a sanitized tag. */
+    name?: string;
+    /** Path (relative to the build container's WorkDir) of the build context. */
+    context: string;
+    /** Path to the Dockerfile, relative to context. Defaults to "Dockerfile". */
+    dockerfile?: string;
+    /** Image reference (registry/name:tag) to produce. */
+    tag: string;
+    /** Push the built image to its registry. */
+    push?: boolean;
+    /** --build-arg KEY=VALUE pairs. */
+    buildArgs?: Record<string, string>;
+    /** Optional Dockerfile build stage. */
+    target?: string;
+    /** Target platforms (e.g. "linux/amd64"). Defaults to host arch. */
+    platforms?: string[];
+    /** Override the default moby/buildkit:latest image. */
+    image?: string;
+    /** Input volumes mounted under the build container's WorkDir. */
+    inputs?: KnownMounts;
+    /** Cache volumes (e.g. mount /var/lib/buildkit for layer cache). */
+    caches?: KnownMounts;
+    /** Extra environment variables; values may use "secret:KEY". */
+    env?: EnvVars;
+    /** Registry credentials. */
+    registryAuth?: ImageBuildRegistryAuth;
+    /** Optional duration string (e.g. "10m"). */
+    timeout?: string;
+    /** Streaming build output callback. */
+    onOutput?: OutputCallback;
+  }
+
+  /** Result of image.build(). */
+  interface ImageBuildResult {
+    /** Echoes the input tag. */
+    ref: string;
+    /** OCI image digest (sha256:...) extracted from BuildKit metadata. */
+    digest: string;
+    /** Underlying container exit code. */
+    code: number;
+    /** Underlying container stdout. */
+    stdout: string;
+    /** Underlying container stderr. */
+    stderr: string;
+  }
+
+  /** Container image build API. */
+  namespace image {
+    /**
+     * Builds a container image from a Dockerfile using moby/buildkit. The
+     * build runs as a privileged task. When `push` is true, the image is
+     * shipped to its registry; downstream tasks reference it by `result.ref`.
+     */
+    function build(config: ImageBuildConfig): Promise<ImageBuildResult>;
+  }
+
   /** Configuration for creating a sandbox. */
   interface SandboxConfig {
     image: string;
@@ -821,6 +890,39 @@ declare global {
     fail_fast?: boolean;
   }
 
+  // Registry credentials for build_image steps.
+  interface BuildImageRegistry {
+    hostname?: string;
+    username?: string;
+    password?: string;
+    insecure?: boolean;
+  }
+
+  // build_image step: builds a container image via moby/buildkit and
+  // optionally pushes to a registry. Subsequent task steps reference the
+  // built image by its tag.
+  interface BuildImageStep extends StepHooks {
+    build_image: {
+      name?: string;
+      context: string;
+      dockerfile?: string;
+      tag: string;
+      push?: boolean;
+      build_args?: Record<string, string>;
+      target?: string;
+      platforms?: string[];
+      image?: string; // override moby/buildkit:latest
+      inputs?: { name: string }[];
+      caches?: CacheConfig[];
+      env?: EnvVars;
+      registry?: BuildImageRegistry;
+      timeout?: string;
+    };
+    attempts?: number;
+    across?: AcrossVar[];
+    fail_fast?: boolean;
+  }
+
   // Agent step: runs an LLM agent with tools in a sandbox container.
   interface AgentStep extends StepHooks {
     agent: string; // Agent name (used as step identifier)
@@ -845,7 +947,16 @@ declare global {
     fail_fast?: boolean;
   }
 
-  type Step = Task | Get | Put | Do | Try | InParallel | NotifyStep | AgentStep;
+  type Step =
+    | Task
+    | Get
+    | Put
+    | Do
+    | Try
+    | InParallel
+    | NotifyStep
+    | AgentStep
+    | BuildImageStep;
 
   // Pipeline configuration
   interface Job extends StepHooks {

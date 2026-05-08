@@ -409,11 +409,21 @@ func resolveImage(cfg *config.TaskConfig) string {
 		return cfg.Image
 	}
 
-	if repo, ok := cfg.ImageResource.Source["repository"].(string); ok {
-		return repo
+	repo, ok := cfg.ImageResource.Source["repository"].(string)
+	if !ok || repo == "" {
+		return ""
 	}
 
-	return ""
+	if tag, ok := cfg.ImageResource.Source["tag"].(string); ok && tag != "" {
+		// If repo already has a tag (registry.example.com/foo:bar), don't append.
+		// Detect by looking for ':' AFTER the last '/'.
+		lastSlash := strings.LastIndex(repo, "/")
+		if !strings.Contains(repo[lastSlash+1:], ":") {
+			return repo + ":" + tag
+		}
+	}
+
+	return repo
 }
 
 func buildCommand(cfg *config.TaskConfig) []string {

@@ -1,7 +1,7 @@
 # PocketCI — Agent Onboarding Instructions
 
-Trust these instructions. Only fall back to repo-wide search if something here is
-demonstrably wrong or missing.
+Trust these instructions. Only fall back to repo-wide search if something here
+is demonstrably wrong or missing.
 
 ## What this repo is
 
@@ -12,17 +12,19 @@ executed inside containers/VMs by one of several orchestration **drivers**
 State is persisted to a single SQLite database. There is also a web server with
 HTMX-driven UI, REST API, MCP server, and webhook receivers.
 
-- Primary language: **Go 1.26** (`go.mod` → `module github.com/jtarchie/pocketci`).
-  `main.go` wires the CLI via [alecthomas/kong](https://github.com/alecthomas/kong).
-- Pipeline scripting language: **TypeScript/JavaScript**, executed in-process
-  by [dop251/goja](https://github.com/dop251/goja) (a pure-Go ES5+ runtime).
+- Primary language: **Go 1.26** (`go.mod` →
+  `module github.com/jtarchie/pocketci`). `main.go` wires the CLI via
+  [alecthomas/kong](https://github.com/alecthomas/kong).
+- Pipeline scripting language: **TypeScript/JavaScript**, executed in-process by
+  [dop251/goja](https://github.com/dop251/goja) (a pure-Go ES5+ runtime).
   `runtime/jsapi/` exposes Go ↔ JS bindings.
 - Front end: HTMX + Tailwind v4 + esbuild bundle in `server/static/`.
 - Docs: VitePress in `docs/` (also embedded into the server at build time).
 - E2E: Playwright in `e2e/`.
 - Repo size: ~50k+ LoC of Go across ~30 top-level packages, plus a TS/Node front
-  end and docs site. `go.sum` is large (~66 KB) — many third-party deps including
-  Docker, AWS SDK v2, k8s client-go, fly.io machines, goja, esbuild, VZ, qemu.
+  end and docs site. `go.sum` is large (~66 KB) — many third-party deps
+  including Docker, AWS SDK v2, k8s client-go, fly.io machines, goja, esbuild,
+  VZ, qemu.
 
 The **CLAUDE.md** at the repo root is a symlink to **this file** — anything you
 add here is what both Copilot and Claude Code agents will see.
@@ -32,16 +34,16 @@ add here is what both Copilot and Claude Code agents will see.
 Install via Homebrew on macOS (`brew bundle` in repo root reads `Brewfile`) or
 the equivalents on Linux. CI installs them via `setup-*` actions.
 
-| Tool | Where it's used | Notes |
-|------|-----------------|-------|
-| `go` (1.26+, `stable`) | All Go code | `setup-go@v6 with go-version: stable, check-latest: true` in CI |
-| `task` (go-task) | The single entry point for all build/test/lint | `Taskfile.yml`. Always invoke commands through `task <name>`, not bare `go build`/`npm run` — tasks chain prerequisites. |
-| `deno` (v2.x) | TS formatting, linting, type checking of `examples/`. Also bundles `backwards/` (Concourse YAML compat). |
-| `node` (LTS) + `npm` | `docs/`, `e2e/`, `server/static/`, `examples/`, `packages/pocketci/` each have their own `package.json` and `package-lock.json`. Always run `npm install` from inside the relevant subdir before its npm scripts. |
-| `shellcheck`, `shfmt` | Lint/format `bin/*.sh` |
-| `golangci-lint` (v2 config) | `.golangci.yml`. Skipped locally when `CI=true` to avoid double work — CI runs it as its own job. |
-| `playwright` (`@playwright/test` 1.59) | E2E. Browsers cached in CI under `~/.cache/ms-playwright`. Install with `cd e2e && npx playwright install --with-deps` once. |
-| **Docker** | Required for almost every test path that exercises the Docker driver, runtime, examples, or e2e. The `task cleanup` target wipes leaked Docker containers/volumes — `task test` invokes it before and after. |
+| Tool                                   | Where it's used                                                                                                                                                                                                   | Notes                                                                                                                    |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `go` (1.26+, `stable`)                 | All Go code                                                                                                                                                                                                       | `setup-go@v6 with go-version: stable, check-latest: true` in CI                                                          |
+| `task` (go-task)                       | The single entry point for all build/test/lint                                                                                                                                                                    | `Taskfile.yml`. Always invoke commands through `task <name>`, not bare `go build`/`npm run` — tasks chain prerequisites. |
+| `deno` (v2.x)                          | TS formatting, linting, type checking of `examples/`. Also bundles `backwards/` (Concourse YAML compat).                                                                                                          |                                                                                                                          |
+| `node` (LTS) + `npm`                   | `docs/`, `e2e/`, `server/static/`, `examples/`, `packages/pocketci/` each have their own `package.json` and `package-lock.json`. Always run `npm install` from inside the relevant subdir before its npm scripts. |                                                                                                                          |
+| `shellcheck`, `shfmt`                  | Lint/format `bin/*.sh`                                                                                                                                                                                            |                                                                                                                          |
+| `golangci-lint` (v2 config)            | `.golangci.yml`. Skipped locally when `CI=true` to avoid double work — CI runs it as its own job.                                                                                                                 |                                                                                                                          |
+| `playwright` (`@playwright/test` 1.59) | E2E. Browsers cached in CI under `~/.cache/ms-playwright`. Install with `cd e2e && npx playwright install --with-deps` once.                                                                                      |                                                                                                                          |
+| **Docker**                             | Required for almost every test path that exercises the Docker driver, runtime, examples, or e2e. The `task cleanup` target wipes leaked Docker containers/volumes — `task test` invokes it before and after.      |                                                                                                                          |
 
 `Brewfile` covers `go-task`, `go`, `deno`, `shellcheck`, `shfmt`, `minio`. There
 is no `node` in `Brewfile` — install separately if needed.
@@ -82,10 +84,10 @@ Important caveats observed in practice:
   tests**, otherwise leaked containers/volumes from a previous failed run can
   break the next run. `bin/cleanup.sh` force-removes ALL local containers and
   volumes — do not run it on a workstation that has unrelated Docker work.
-- **`task build:static` and `task build:docs` MUST run before `go generate ./...`**
-  because the Go embed targets pull in `server/static/dist/` and
-  `server/docs/site/`. The default `task build` already orders them correctly —
-  prefer it over running steps individually.
+- **`task build:static` and `task build:docs` MUST run before
+  `go generate ./...`** because the Go embed targets pull in
+  `server/static/dist/` and `server/docs/site/`. The default `task build`
+  already orders them correctly — prefer it over running steps individually.
 - `task fmt` will mutate files (`-w`, `--fix`). If you only want to verify, use
   `gofmt -l .`, `deno fmt --check`, `golangci-lint run ./...` (no `--fix`).
 - Tests use `-race`. Some tests rely on `goleak` (see `*_goleak_test.go` files
@@ -96,10 +98,11 @@ Important caveats observed in practice:
 - **Do not commit** `*.db`, `*.test`, `pocketci`/`pocketci.exe` binaries, or
   anything in `.scratch/` — they're in `.gitignore`.
 - **Do not commit** `.envrc`, `.env`, `.dev.vars*` — they may carry secrets.
-- The Kubernetes driver tests require `minikube` (CI uses `medyagh/setup-minikube`).
-  Locally these tests are skipped if minikube/kubeconfig is unavailable.
-- The macOS VZ driver test has its own task: `task test:vz` (codesigns the
-  test binary with a virtualization entitlement). Don't run on Linux.
+- The Kubernetes driver tests require `minikube` (CI uses
+  `medyagh/setup-minikube`). Locally these tests are skipped if
+  minikube/kubeconfig is unavailable.
+- The macOS VZ driver test has its own task: `task test:vz` (codesigns the test
+  binary with a virtualization entitlement). Don't run on Linux.
 
 ## CI pipeline (must pass)
 
@@ -110,7 +113,8 @@ Important caveats observed in practice:
    `PodLogsQuerySplitStreams=true`), Playwright browsers, Go `stable`, Task.
 2. `task build:static`
 3. `task build:docs`
-4. `golangci-lint` (via `golangci/golangci-lint-action@v8`, reads `.golangci.yml`)
+4. `golangci-lint` (via `golangci/golangci-lint-action@v8`, reads
+   `.golangci.yml`)
 5. `task` (= `build` + `fmt` + `test`)
 
 `.github/workflows/release.yml` runs on `v*` tags via GoReleaser
@@ -183,23 +187,22 @@ Top-level structure:
 - `.gitignore` — already excludes `*.db`, `*.test`, `node_modules/`,
   `server/docs/site/`, `site/docs/`, `backwards/bundle.js`, `.scratch/`, and
   generated assets.
-- `deno.json`/`deno.jsonc` is **not** present at the root — Deno is invoked
-  with explicit ignore lists in `Taskfile.yml`'s `fmt` task. If you add TS
-  files, ensure they pass `deno fmt`/`deno lint` (or are added to the ignore
-  list there).
-- `.envrc` is gitignored. It is a developer-local file; **never commit it**
-  and never read it in CI.
+- `deno.json`/`deno.jsonc` is **not** present at the root — Deno is invoked with
+  explicit ignore lists in `Taskfile.yml`'s `fmt` task. If you add TS files,
+  ensure they pass `deno fmt`/`deno lint` (or are added to the ignore list
+  there).
+- `.envrc` is gitignored. It is a developer-local file; **never commit it** and
+  never read it in CI.
 
 ### Code conventions worth knowing
 
 - All loggers come through `log/slog` configured in `main.go` (text via
-  [`tint`](https://github.com/lmittmann/tint), or JSON when `--log-format=json`).
-  `sloglint` enforces consistency. Use `slog.DiscardHandler`, not
-  `slog.NewTextHandler(io.Discard, nil)`.
+  [`tint`](https://github.com/lmittmann/tint), or JSON when
+  `--log-format=json`). `sloglint` enforces consistency. Use
+  `slog.DiscardHandler`, not `slog.NewTextHandler(io.Discard, nil)`.
 - Errors crossing package boundaries should be wrapped (`%w`); `wrapcheck` and
   `errorlint` will flag violations.
-- Anything that the Goja JS VM marshals must have JSON struct tags
-  (`musttag`).
+- Anything that the Goja JS VM marshals must have JSON struct tags (`musttag`).
 - Don't store `context.Context` inside structs (`containedctx`); always
   propagate it as the first argument (`contextcheck`).
 - Receiver style must be consistent per type (`recvcheck`).
@@ -208,13 +211,14 @@ Top-level structure:
 
 ### Testing tips
 
-- `go test -race ./...` runs everything. To target a package: `go test -race
-  ./server/... -run TestX`. Most tests are deterministic; flaky tests usually
-  indicate a real race or leaked goroutine.
-- `examples/examples_test.go` actually executes the pipelines under
-  `examples/` against Docker. They will fail without Docker available.
-- Playwright tests in `e2e/tests/` run against a freshly created
-  `e2e-test.db`; deleting that DB between runs is part of `task test:e2e`.
+- `go test -race ./...` runs everything. To target a package:
+  `go test -race
+  ./server/... -run TestX`. Most tests are deterministic; flaky
+  tests usually indicate a real race or leaked goroutine.
+- `examples/examples_test.go` actually executes the pipelines under `examples/`
+  against Docker. They will fail without Docker available.
+- Playwright tests in `e2e/tests/` run against a freshly created `e2e-test.db`;
+  deleting that DB between runs is part of `task test:e2e`.
 - For a UI-only iteration loop: `task server` runs `wgo` (file watcher) →
   `go generate ./...` → `go run main.go server --storage sqlite://test.db`.
 
@@ -224,15 +228,16 @@ Top-level structure:
   embed-related compile failures because `server/static/dist/bundle.js` and
   `server/docs/site/` are required by `//go:embed` directives.
 - Running `golangci-lint` locally with `CI=true` set will be a no-op inside
-  `task fmt` (by design) — invoke `golangci-lint run ./...` directly if you
-  want to lint without `task`.
-- Editing `server/templates/*.html` does not require a rebuild for `task
-  server`'s watcher (`-file .html` is watched), but a fresh `go run` rebuild is
-  needed if you change a `//go:embed` set.
+  `task fmt` (by design) — invoke `golangci-lint run ./...` directly if you want
+  to lint without `task`.
+- Editing `server/templates/*.html` does not require a rebuild for
+  `task
+  server`'s watcher (`-file .html` is watched), but a fresh `go run`
+  rebuild is needed if you change a `//go:embed` set.
 - Do not run `bin/cleanup.sh` manually if you have unrelated Docker workloads —
   it removes **all** containers and volumes.
-- The Concourse YAML compatibility bundle lives in `backwards/bundle.js` and
-  is generated; do not hand-edit. Source is in `backwards/src/`.
+- The Concourse YAML compatibility bundle lives in `backwards/bundle.js` and is
+  generated; do not hand-edit. Source is in `backwards/src/`.
 
 If anything above conflicts with what you observe in the repo, prefer the repo
 state, fix the discrepancy in this file, and continue.

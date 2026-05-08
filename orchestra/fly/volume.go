@@ -3,10 +3,8 @@ package fly
 import (
 	"context"
 	"fmt"
-	"time"
 
 	fly "github.com/superfly/fly-go"
-	"github.com/superfly/fly-go/flaps"
 
 	"github.com/jtarchie/pocketci/orchestra"
 )
@@ -27,38 +25,18 @@ func (v *Volume) Path() string {
 	return v.path
 }
 
-func (v *Volume) Cleanup(ctx context.Context) error {
-	v.driver.logger.Debug("fly.volume.cleanup", "volume", v.id, "name", v.name)
-
-	// Destroy any helper machine attached to this volume before deleting it,
-	// otherwise the Fly API rejects the delete with "volume is currently bound to machine".
-	v.driver.mu.Lock()
-	helperID := v.driver.helperMachines[v.id]
-	v.driver.mu.Unlock()
-
-	if helperID != "" {
-		v.driver.logger.Debug("fly.volume.cleanup.helper", "volume", v.id, "machine", helperID)
-
-		_ = v.driver.client.Kill(ctx, v.driver.appName, helperID)
-
-		machine := &fly.Machine{ID: helperID}
-		_ = v.driver.client.Wait(ctx, v.driver.appName, machine.ID, flaps.WithWaitStates("stopped"), flaps.WithWaitTimeout(30*time.Second))
-
-		_ = v.driver.client.Destroy(ctx, v.driver.appName, fly.RemoveMachineInput{
-			ID:   helperID,
-			Kill: true,
-		}, "")
-
-		v.driver.mu.Lock()
-		delete(v.driver.helperMachines, v.id)
-		delete(v.driver.volumeAttachments, v.id)
-		v.driver.mu.Unlock()
-	}
-
-	_, err := v.driver.client.DeleteVolume(ctx, v.driver.appName, v.id)
-	if err != nil {
-		return fmt.Errorf("failed to delete volume %s: %w", v.id, err)
-	}
+func (v *Volume) Cleanup(_ context.Context) error {
+	// Per-logical-volume cleanup is a no-op on Fly because every logical
+	// volume shares one physical Fly volume (`<namespace>_workspace`).
+	// Deleting the physical volume from the first cleanup invalidated all
+	// other logical volumes (and any in-flight cache persist that needs to
+	// mount the volume on a helper machine — see issue with the cache
+	// helper getting "volume not found").
+	//
+	// Final teardown of the shared volume + any persistent cache helpers
+	// happens in `Fly.Close()`, which iterates `volumeIDs` and helper
+	// machines once at the end of the run.
+	v.driver.logger.Debug("fly.volume.cleanup.noop", "volume", v.id, "name", v.name)
 
 	return nil
 }

@@ -3,6 +3,7 @@ package runtime_test
 import (
 	"context"
 	"log/slog"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -14,8 +15,22 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// requireDocker skips a test when a docker CLI/daemon isn't reachable. The
+// streaming tests below shell out via the docker SDK against the local
+// daemon, which CI runners (including the Fly task that builds + runs tests)
+// don't have.
+func requireDocker(t *testing.T) {
+	t.Helper()
+
+	_, err := exec.LookPath("docker")
+	if err != nil {
+		t.Skip("docker CLI not on PATH; skipping streaming tests")
+	}
+}
+
 func TestStreamLogsWithCallback(t *testing.T) {
 	t.Parallel()
+	requireDocker(t)
 
 	t.Run("streams logs via callback while container runs", func(t *testing.T) {
 		t.Parallel()

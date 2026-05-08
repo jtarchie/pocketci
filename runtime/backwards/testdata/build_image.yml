@@ -1,0 +1,34 @@
+---
+jobs:
+  - name: build-and-ship
+    plan:
+      - task: seed-context
+        config:
+          platform: linux
+          image: busybox:latest
+          outputs:
+            - name: source
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                  printf 'FROM busybox\nRUN echo built > /msg\n' > source/Dockerfile
+
+      - build_image:
+          name: build-app
+          context: source
+          dockerfile: Dockerfile
+          tag: registry.example.com/myapp:latest
+          push: false
+          build_args:
+            EXTRA_TAG: dev
+          inputs:
+            - name: source
+          caches:
+            - path: /var/lib/buildkit
+          registry:
+            hostname: registry.example.com
+            username: ((registry_user))
+            password: ((registry_password))
+            insecure: false

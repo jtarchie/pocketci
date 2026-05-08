@@ -87,6 +87,7 @@ func newJobRunner(
 			"in_parallel": &InParallelHandler{},
 			"notify":      &NotifyHandler{},
 			"agent":       &AgentHandler{},
+			"build_image": &BuildImageHandler{},
 		},
 	}
 }
@@ -120,6 +121,12 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	)
 
 	pr := pipelinerunner.NewPipelineRunner(ctx, jobDriver, jr.storage, jr.logger, jr.job.Name, jr.runID)
+
+	// Forward the secrets manager so any handler that goes through pr.Run
+	// (e.g. build_image) gets "secret:KEY" env values resolved + redacted.
+	if jr.secretsManager != nil {
+		pr.SetSecretsManager(jr.secretsManager, jr.pipelineID)
+	}
 
 	sc := &StepContext{
 		Ctx:                ctx,
@@ -503,6 +510,8 @@ func identifyStepType(step *config.Step) string {
 		return "get"
 	case step.Put != "":
 		return "put"
+	case step.BuildImage != nil:
+		return "build_image"
 	case step.Notify != nil:
 		return "notify"
 	case len(step.Try) > 0:
@@ -534,6 +543,8 @@ func stepStorageIdentifier(step *config.Step) string {
 		return "get/" + step.Get
 	case step.Put != "":
 		return "put/" + step.Put
+	case step.BuildImage != nil:
+		return "build_image/" + buildImageStepName(step.BuildImage)
 	case step.Notify != nil:
 		return "notify/" + notifyIdentifier(step)
 	case len(step.Do) > 0:

@@ -198,6 +198,48 @@ type AcrossVar struct {
 	MaxInFlight int      `yaml:"max_in_flight,omitempty"`
 }
 
+// BuildImageRegistry holds authentication for a single registry. Username
+// and password may be "secret:<KEY>" references, resolved by the runner.
+type BuildImageRegistry struct {
+	Hostname string `yaml:"hostname,omitempty"`
+	Username string `yaml:"username,omitempty"`
+	Password string `yaml:"password,omitempty"`
+	Insecure bool   `yaml:"insecure,omitempty"` // permits plain-HTTP push (test registries)
+}
+
+// BuildImageConfig declares a container image build using moby/buildkit.
+// The build runs as a privileged task with the buildkit image; on completion
+// the produced image is available at Tag for any downstream task that names it.
+type BuildImageConfig struct {
+	Name            string              `yaml:"name,omitempty"`       // optional; defaults to a sanitized form of Tag
+	Context         string              `validate:"required"         yaml:"context,omitempty"`
+	Dockerfile      string              `yaml:"dockerfile,omitempty"` // defaults to "Dockerfile"
+	Tag             string              `validate:"required"         yaml:"tag,omitempty"`
+	Push            bool                `yaml:"push,omitempty"`
+	BuildArgs       map[string]string   `yaml:"build_args,omitempty"`
+	Target          string              `yaml:"target,omitempty"`
+	Platforms       []string            `yaml:"platforms,omitempty"`
+	Image           string              `yaml:"image,omitempty"` // override moby/buildkit:latest
+	Inputs          Inputs              `yaml:"inputs,omitempty"`
+	Caches          Caches              `yaml:"caches,omitempty"`
+	Env             map[string]string   `yaml:"env,omitempty"`
+	Registry        *BuildImageRegistry `yaml:"registry,omitempty"`
+	Timeout         time.Duration       `yaml:"timeout,omitempty"`
+	ContainerLimits ContainerLimits     `yaml:"container_limits,omitempty"`
+	// Limits is an alias for ContainerLimits using the shorter "limits:" key.
+	Limits ContainerLimits `yaml:"limits,omitempty"`
+}
+
+// EffectiveLimits returns the active ContainerLimits, preferring Limits over
+// ContainerLimits when both are set.
+func (b *BuildImageConfig) EffectiveLimits() ContainerLimits {
+	if b.Limits.Memory != 0 || b.Limits.CPU != 0 || b.Limits.CPUKind != "" {
+		return b.Limits
+	}
+
+	return b.ContainerLimits
+}
+
 // AgentSafetyConfig maps harm category names to block thresholds.
 type AgentSafetyConfig = map[string]string
 
@@ -235,6 +277,8 @@ type Step struct {
 	AgentOutputSchema map[string]interface{}         `json:"output_schema,omitempty" yaml:"output_schema,omitempty"`
 	Description       string                         `json:"description,omitempty"   yaml:"description,omitempty"`
 	Tools             Steps                          `yaml:"tools,omitempty"`
+
+	BuildImage *BuildImageConfig `yaml:"build_image,omitempty"`
 
 	Get       string    `yaml:"get,omitempty"`
 	GetConfig GetConfig `yaml:",inline,omitempty"`

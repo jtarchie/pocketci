@@ -52,7 +52,11 @@ type TaskErroredError struct {
 }
 
 func (e *TaskErroredError) Error() string {
-	return fmt.Sprintf("Task %s errored", e.TaskName)
+	if e.Err == nil {
+		return fmt.Sprintf("Task %s errored", e.TaskName)
+	}
+
+	return fmt.Sprintf("Task %s errored: %s", e.TaskName, e.Err)
 }
 
 func (e *TaskErroredError) Unwrap() error {
