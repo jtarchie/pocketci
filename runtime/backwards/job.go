@@ -228,10 +228,21 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 }
 
 func (jr *JobRunner) cleanupCacheVolumes(sc *StepContext) {
+	paths := make([]string, 0, len(sc.CacheVolumeObjects))
+	for path := range sc.CacheVolumeObjects {
+		paths = append(paths, path)
+	}
+
+	jr.logger.Info("cache.volumes.cleanup.start", "count", len(paths), "paths", paths)
+
 	for path, vol := range sc.CacheVolumeObjects {
+		jr.logger.Info("cache.volume.cleanup", "path", path, "name", vol.Name())
+
 		err := vol.Cleanup(sc.Ctx)
 		if err != nil {
 			jr.logger.Warn("cache.volume.cleanup.failed", "path", path, "err", err)
+		} else {
+			jr.logger.Info("cache.volume.cleanup.done", "path", path)
 		}
 	}
 }
