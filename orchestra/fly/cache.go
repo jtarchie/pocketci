@@ -296,7 +296,11 @@ func (f *Fly) CopyToVolume(ctx context.Context, volumeName string, reader io.Rea
 	var stderrBuf strings.Builder
 	session.Stderr = &stderrBuf
 
-	cmd := "mkdir -p " + shellescape(subdir) + " && tar xf - -C " + shellescape(subdir)
+	// Wrap in `/bin/sh -c '...'` because Fly's SSH exec channel on the
+	// busybox helper does not invoke a shell automatically — the literal
+	// command is split and passed to the first token, so `&&` ends up as
+	// an argument to mkdir.
+	cmd := "/bin/sh -c " + shellescape("mkdir -p "+shellescape(subdir)+" && tar xf - -C "+shellescape(subdir))
 
 	err = session.Run(cmd)
 	if err != nil {
@@ -376,7 +380,9 @@ func (f *Fly) CopyFromVolume(ctx context.Context, volumeName string) (io.ReadClo
 	// the cache-miss-no-data-yet case without a brittle if/else shell.
 	subdir := "/volume/" + vol.userFacingName
 
-	tarCmd := "mkdir -p " + shellescape(subdir) + " && tar cf - -C " + shellescape(subdir) + " ."
+	// Wrap with /bin/sh -c so the busybox helper actually runs the && chain
+	// through a shell instead of treating the whole thing as a single argv.
+	tarCmd := "/bin/sh -c " + shellescape("mkdir -p "+shellescape(subdir)+" && tar cf - -C "+shellescape(subdir)+" .")
 
 	err = session.Start(tarCmd)
 	if err != nil {
