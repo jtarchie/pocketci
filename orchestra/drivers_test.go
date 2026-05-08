@@ -523,6 +523,15 @@ func runSandboxDriverTests(t *testing.T, name string, newDriver func(namespace s
 		t.Skip("FLY_API_TOKEN not set, skipping Fly integration tests")
 	}
 
+	// Skip docker tests when no docker CLI is on PATH (e.g. inside the
+	// CI base image which has no docker daemon).
+	if name == "docker" {
+		_, err := exec.LookPath("docker")
+		if err != nil {
+			t.Skip("docker CLI not on PATH, skipping Docker integration tests")
+		}
+	}
+
 	// Check driver supports SandboxDriver interface using a probe client.
 	probeClient, err := newDriver("test-" + gonanoid.Must())
 	if err != nil {

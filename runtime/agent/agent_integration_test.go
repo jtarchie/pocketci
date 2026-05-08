@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,19 @@ import (
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	. "github.com/onsi/gomega"
 )
+
+// requireDocker skips a test when no docker CLI is on PATH. The agent
+// integration tests need a real docker daemon to spin up sandbox
+// containers; CI runners that build the test image instead of mounting a
+// docker socket have neither.
+func requireDocker(t *testing.T) {
+	t.Helper()
+
+	_, err := exec.LookPath("docker")
+	if err != nil {
+		t.Skip("docker CLI not on PATH; skipping RealDocker test")
+	}
+}
 
 func newTestStorage(t *testing.T) storage.Driver {
 	t.Helper()
@@ -164,6 +178,8 @@ func readResultArtifact(t *testing.T, runner *pipelinerunner.PipelineRunner, out
 }
 
 func TestRunAgent_FakeLLM_RealDocker(t *testing.T) {
+	requireDocker(t)
+
 	assert := NewGomegaWithT(t)
 
 	responses := []string{
@@ -288,6 +304,8 @@ func TestRunAgent_FakeLLM_RealDocker(t *testing.T) {
 // executes a multi-line script in a single round-trip and that the audit log
 // records one tool_call (not two) even though two commands run in the script.
 func TestRunAgent_FakeLLM_RunScript_RealDocker(t *testing.T) {
+	requireDocker(t)
+
 	assert := NewGomegaWithT(t)
 
 	responses := []string{
@@ -381,6 +399,8 @@ func TestRunAgent_FakeLLM_RunScript_RealDocker(t *testing.T) {
 }
 
 func TestRunAgent_FakeLLM_InvalidToolArgs_RealDocker(t *testing.T) {
+	requireDocker(t)
+
 	assert := NewGomegaWithT(t)
 
 	responses := []string{
@@ -466,6 +486,8 @@ func TestRunAgent_FakeLLM_InvalidToolArgs_RealDocker(t *testing.T) {
 // TestRunAgent_ContextFiles_RealDocker consolidates context file pre-injection
 // tests into subtests sharing a single Docker runner.
 func TestRunAgent_ContextFiles_RealDocker(t *testing.T) {
+	requireDocker(t)
+
 	runner := newDockerRunner(t, "agent-ctx-files")
 
 	t.Run("pre_injection", func(t *testing.T) {
@@ -586,6 +608,8 @@ func TestRunAgent_ContextFiles_RealDocker(t *testing.T) {
 }
 
 func TestRunAgent_ContextTasksPreInjection_RealDocker(t *testing.T) {
+	requireDocker(t)
+
 	assert := NewGomegaWithT(t)
 
 	responses := []string{
@@ -688,6 +712,8 @@ func findAuditEvent(auditLog []agent.AuditEvent, eventType string) *agent.AuditE
 // TestRunAgent_Validation_RealDocker consolidates all validation and follow-up
 // scenarios into subtests sharing a single Docker runner.
 func TestRunAgent_Validation_RealDocker(t *testing.T) {
+	requireDocker(t)
+
 	runner := newDockerRunner(t, "agent-val")
 
 	t.Run("passes_no_followup", func(t *testing.T) {
@@ -972,6 +998,8 @@ func TestRunAgent_Validation_RealDocker(t *testing.T) {
 // returns multiple tool_calls in a single response, ADK executes them
 // concurrently and the audit log records each call and response separately.
 func TestRunAgent_FakeLLM_ParallelToolCalls_RealDocker(t *testing.T) {
+	requireDocker(t)
+
 	assert := NewGomegaWithT(t)
 
 	responses := []string{
