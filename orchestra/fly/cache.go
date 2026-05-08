@@ -429,9 +429,11 @@ func (f *Fly) CopyFromVolume(ctx context.Context, volumeName string) (io.ReadClo
 	// helper machine (see mountSetupCommands). Tar only that subdir so a
 	// per-cache-mount persist isn't streaming the entire shared physical
 	// volume (which can be many GB and OOM the server during zstd compress).
+	// mkdir -p makes this a no-op when the subdir already exists; covers
+	// the cache-miss-no-data-yet case without a brittle if/else shell.
 	subdir := "/volume/" + vol.userFacingName
 
-	tarCmd := "if [ -d " + shellescape(subdir) + " ]; then tar cf - -C " + shellescape(subdir) + " .; else tar cf - -T /dev/null; fi"
+	tarCmd := "mkdir -p " + shellescape(subdir) + " && tar cf - -C " + shellescape(subdir) + " ."
 
 	err = session.Start(tarCmd)
 	if err != nil {
