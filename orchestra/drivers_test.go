@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -67,6 +68,13 @@ func runDriverTests(t *testing.T, name string, newDriver func(namespace string) 
 
 	if name == "fly" && os.Getenv("FLY_API_TOKEN") == "" {
 		t.Skip("FLY_API_TOKEN not set, skipping Fly integration tests")
+	}
+
+	if name == "docker" {
+		_, err := exec.LookPath("docker")
+		if err != nil {
+			t.Skip("docker CLI not on PATH, skipping Docker integration tests")
+		}
 	}
 
 	dtc := driverTestCtx{
