@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -146,19 +147,44 @@ type driverFactory struct {
 	new  func(namespace string, logger *slog.Logger) (orchestra.Driver, error)
 }
 
-var drivers = []driverFactory{
-	{
-		name: "native",
-		new: func(namespace string, logger *slog.Logger) (orchestra.Driver, error) {
-			return native.New(context.Background(), native.Config{Namespace: namespace}, logger)
+var drivers = buildDrivers()
+
+func buildDrivers() []driverFactory {
+	all := []driverFactory{
+		{
+			name: "native",
+			new: func(namespace string, logger *slog.Logger) (orchestra.Driver, error) {
+				return native.New(context.Background(), native.Config{Namespace: namespace}, logger)
+			},
 		},
-	},
-	{
-		name: "docker",
-		new: func(namespace string, logger *slog.Logger) (orchestra.Driver, error) {
-			return docker.New(context.Background(), docker.Config{Namespace: namespace}, logger)
+		{
+			name: "docker",
+			new: func(namespace string, logger *slog.Logger) (orchestra.Driver, error) {
+				return docker.New(context.Background(), docker.Config{Namespace: namespace}, logger)
+			},
 		},
-	},
+	}
+
+	// Skip the docker entry when no docker CLI is on PATH (e.g. inside the
+	// CI base image). The dozens of step-handler tests in this package fan
+	// out across the slice; without this filter every "docker" subtest hits
+	// "Cannot connect to the Docker daemon" and fails its assertions.
+	_, dockerErr := exec.LookPath("docker")
+	if dockerErr != nil {
+		filtered := all[:0]
+
+		for _, df := range all {
+			if df.name == "docker" {
+				continue
+			}
+
+			filtered = append(filtered, df)
+		}
+
+		return filtered
+	}
+
+	return all
 }
 
 func TestTryStep(t *testing.T) {
