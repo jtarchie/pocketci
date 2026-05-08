@@ -291,6 +291,9 @@ func buildImageScript(input BuildImageInput, contextPath, dfDir, dfName, registr
 	var b strings.Builder
 
 	b.WriteString("set -eu\n")
+	// Debug: report whether /var/lib/buildkit was restored from cache.
+	b.WriteString(`echo "[debug] /var/lib/buildkit contents:"; ls -la /var/lib/buildkit/ 2>/dev/null | head -20 || echo "[debug] dir missing"` + "\n")
+	b.WriteString(`echo "[debug] /var/lib/buildkit total size: $(du -sh /var/lib/buildkit 2>/dev/null || echo unknown)"` + "\n")
 
 	if registry != "" && input.RegistryAuth != nil &&
 		(input.RegistryAuth.Username != "" || input.RegistryAuth.Password != "") {
