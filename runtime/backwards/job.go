@@ -147,7 +147,6 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		AgentBaseURLs:      jr.agentBaseURLs,
 		CacheS3:            jr.cacheS3,
 		CacheRestored:      make(map[string]bool),
-		DiskGB:             jr.job.DiskGB,
 		OutputCallback:     jr.outputCallback,
 	}
 	sc.ProcessStep = func(step *config.Step, pathPrefix string) error { //nolint:contextcheck // context flows via sc.Ctx; StepHandler interface cannot accept a context parameter

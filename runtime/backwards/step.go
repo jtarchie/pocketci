@@ -89,11 +89,6 @@ type StepContext struct {
 	// cache mount don't trigger N restores.
 	CacheRestored map[string]bool
 
-	// DiskGB, when > 0, is used as the workspace volume size for the first
-	// CreateVolume call in this job (which determines the shared Fly volume
-	// size). Set from the job-level disk_gb: YAML field.
-	DiskGB int
-
 	// OutputCallback, if set, is called for each line of task stdout/stderr.
 	OutputCallback func(stream, data string)
 }

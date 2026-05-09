@@ -59,34 +59,17 @@ func (f *Fly) CreateVolume(ctx context.Context, name string, size int) (orchestr
 	f.mu.Unlock()
 
 	if sharedID == "" {
-		// No shared volume yet — create one.
-		volumeName := sanitizeVolumeName(f.namespace + "_workspace")
-
-		if size <= 0 {
-			size = f.diskGB
-		}
-		if size <= 0 {
-			size = 10 // default 10 GB — enough for Go modules, Deno, node_modules
-		}
-
-		f.logger.Debug("fly.volume.create.shared", "name", volumeName, "size_gb", size, "region", f.region)
-
-		vol, err := f.client.CreateVolume(ctx, f.appName, fly.CreateVolumeRequest{
-			Name:   volumeName,
-			Region: f.region,
-			SizeGb: &size,
-		})
+		newID, err := f.createSharedVolume(ctx, size)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create fly shared volume %q: %w", volumeName, err)
+			return nil, err
 		}
 
-		f.trackVolume(vol.ID)
-		f.logger.Info("fly.volume.created.shared", "volume", vol.ID, "name", volumeName)
-
-		f.mu.Lock()
-		f.sharedVolumeID = vol.ID
-		sharedID = vol.ID
-		f.mu.Unlock()
+		sharedID = newID
+	} else {
+		err := f.extendSharedVolumeIfNeeded(ctx, sharedID, size)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Create a logical volume backed by the shared physical volume.
@@ -104,4 +87,73 @@ func (f *Fly) CreateVolume(ctx context.Context, name string, size int) (orchestr
 	f.mu.Unlock()
 
 	return v, nil
+}
+
+// createSharedVolume creates the per-namespace shared Fly volume. Called once
+// per Fly driver lifetime (the first CreateVolume call). Returns the new
+// volume's Fly ID.
+func (f *Fly) createSharedVolume(ctx context.Context, size int) (string, error) {
+	volumeName := sanitizeVolumeName(f.namespace + "_workspace")
+
+	if size <= 0 {
+		size = f.diskGB
+	}
+
+	if size <= 0 {
+		size = 10 // default 10 GB — enough for Go modules, Deno, node_modules
+	}
+
+	f.logger.Debug("fly.volume.create.shared", "name", volumeName, "size_gb", size, "region", f.region)
+
+	vol, err := f.client.CreateVolume(ctx, f.appName, fly.CreateVolumeRequest{
+		Name:   volumeName,
+		Region: f.region,
+		SizeGb: &size,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to create fly shared volume %q: %w", volumeName, err)
+	}
+
+	f.trackVolume(vol.ID)
+	f.logger.Info("fly.volume.created.shared", "volume", vol.ID, "name", volumeName)
+
+	f.mu.Lock()
+	f.sharedVolumeID = vol.ID
+	f.sharedVolumeSize = size
+	f.mu.Unlock()
+
+	return vol.ID, nil
+}
+
+// extendSharedVolumeIfNeeded grows the shared volume when a later CreateVolume
+// call requests more capacity than what was provisioned. The Fly Firecracker
+// init resizes the filesystem on next attach, so the next machine boot will
+// see the larger /workspace.
+func (f *Fly) extendSharedVolumeIfNeeded(ctx context.Context, sharedID string, size int) error {
+	if size <= 0 {
+		return nil
+	}
+
+	f.mu.Lock()
+	currentSize := f.sharedVolumeSize
+	f.mu.Unlock()
+
+	if size <= currentSize {
+		return nil
+	}
+
+	f.logger.Debug("fly.volume.extend", "volume", sharedID, "from_gb", currentSize, "to_gb", size)
+
+	_, _, err := f.client.ExtendVolume(ctx, f.appName, sharedID, size)
+	if err != nil {
+		return fmt.Errorf("failed to extend fly shared volume %q to %d GB: %w", sharedID, size, err)
+	}
+
+	f.mu.Lock()
+	f.sharedVolumeSize = size
+	f.mu.Unlock()
+
+	f.logger.Info("fly.volume.extended", "volume", sharedID, "size_gb", size)
+
+	return nil
 }

@@ -561,17 +561,9 @@ func resolveCaches(sc *StepContext, cfg *config.TaskConfig, taskName, pathPrefix
 				driver = cache.AugmentKeyPrefix(sc.Driver, sanitizeCachePath(taskName))
 			}
 
-			// Resolve effective size: per-cache size_gb takes precedence;
-			// fall back to the job-level disk_gb so the workspace volume is
-			// large enough for all caches in the job.
-			volSize := cacheEntry.SizeGB
-			if volSize <= 0 && sc.DiskGB > 0 {
-				volSize = sc.DiskGB
-			}
-
 			// Explicitly create the volume so that the cache driver wrapper
 			// can intercept the call and restore from S3 before execution.
-			vol, err := driver.CreateVolume(sc.Ctx, volName, volSize)
+			vol, err := driver.CreateVolume(sc.Ctx, volName, cacheEntry.SizeGB)
 			if err != nil {
 				sc.Logger.Warn("cache.volume.create.failed", "path", cacheEntry.Path, "volume", volName, "err", err)
 			} else {

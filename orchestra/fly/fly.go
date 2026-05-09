@@ -59,6 +59,7 @@ type Fly struct {
 	// volume (Fly machines only support 1 volume). Each mount name becomes a
 	// subdirectory under /workspace.
 	sharedVolumeID    string             // physical Fly volume ID (empty until first CreateVolume)
+	sharedVolumeSize  int                // current size of shared volume in GB
 	volumes           map[string]*Volume // mount name → logical Volume
 	volumeAttachments map[string]string  // volume ID → machine ID
 
