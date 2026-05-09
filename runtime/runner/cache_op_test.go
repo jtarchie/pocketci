@@ -37,9 +37,11 @@ func TestCacheOpScriptPersist(t *testing.T) {
 	script := cacheOpScript(in, "cache-var-lib-buildkit")
 
 	g.Expect(script).To(gomega.ContainSubstring("set -eu"))
-	g.Expect(script).To(gomega.ContainSubstring("tar cf - -C './cache-var-lib-buildkit' . | zstd -T0 | aws s3 cp -"))
-	g.Expect(script).To(gomega.ContainSubstring("'s3://ci-tigris/pipeline/job/cache-var-lib-buildkit.tar.gz'"))
+	g.Expect(script).To(gomega.ContainSubstring("tar cf - -C './cache-var-lib-buildkit' . | zstd -T0 | s5cmd"))
+	g.Expect(script).To(gomega.ContainSubstring("pipe --concurrency 10 's3://ci-tigris/pipeline/job/cache-var-lib-buildkit.tar.gz'"))
 	g.Expect(script).To(gomega.ContainSubstring("--endpoint-url 'https://fly.storage.tigris.dev'"))
+	// s5cmd is curl-installed only on persist; restore stays on aws-cli.
+	g.Expect(script).To(gomega.ContainSubstring("installing s5cmd"))
 }
 
 func TestCacheOpScriptRestore(t *testing.T) {
@@ -83,7 +85,9 @@ func TestCacheOpScriptNoEndpoint(t *testing.T) {
 	script := cacheOpScript(in, "cache")
 
 	g.Expect(script).NotTo(gomega.ContainSubstring("--endpoint-url"))
-	g.Expect(script).To(gomega.ContainSubstring("aws s3 cp - 's3://b/k.tar.gz'"))
+	// Persist uses s5cmd; without an endpoint it should be a bare
+	// `s5cmd pipe`, no `--endpoint-url` flag at all.
+	g.Expect(script).To(gomega.ContainSubstring("s5cmd pipe --concurrency 10 's3://b/k.tar.gz'"))
 }
 
 func TestCacheOpEnvSecretsPassthrough(t *testing.T) {
