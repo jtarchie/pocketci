@@ -28,6 +28,13 @@ func cacheS3Key(cfg *CacheS3Config, pipelineID, jobName, volumeName string) stri
 	return strings.Join(parts, "/")
 }
 
+// cacheOpDefaultMemory is the memory floor (1 GiB) given to every cache
+// task. The smallest Fly machine size (256 MiB) OOM-kills `dnf install
+// tar gzip` on the slim amazon/aws-cli base image, so we ensure cache
+// tasks always get a bigger machine even when no caller-supplied
+// limits override.
+const cacheOpDefaultMemory int64 = 1024 * 1024 * 1024
+
 // cacheOpInputBase returns a CacheOpInput pre-filled with the S3 config
 // and volume metadata for a job-level cache op. Caller sets Direction
 // and StorageKey.
@@ -46,17 +53,26 @@ func cacheOpInputBase(sc *StepContext, volName string) pipelinerunner.CacheOpInp
 		AccessKeyID:     cfg.AccessKeyID,
 		SecretAccessKey: cfg.SecretAccessKey,
 		OnOutput:        sc.OutputCallback,
+		Limits: pipelinerunner.BuildImageLimits{
+			CPU:     1,
+			CPUKind: "shared",
+			Memory:  cacheOpDefaultMemory,
+		},
 	}
 }
 
 // runCacheRestoreTask runs a cache_restore task for a single volume the
-// first time the volume is created in a job. A miss exits zero — downstream
-// tasks see an empty cache directory and proceed normally.
+// first time the volume is created in a job. A cache miss exits non-zero
+// (script exit code 1) so the /tasks UI shows the restore as failure and
+// makes it visually obvious whether the cache was warm. The job continues
+// regardless: the consuming task starts with an empty cache and
+// repopulates it.
 //
-// Restore failures are logged but do not abort the job: the consuming task
-// will start with an empty (or partially filled) cache, which is degraded
-// but not broken.
-func runCacheRestoreTask(sc *StepContext, volName string) {
+// stepPathPrefix is the consuming step's storage prefix (e.g. "0",
+// "1/on_success"). The restore's storage path lives under that prefix so
+// the /tasks tree renders cache_restore immediately above the task it
+// precedes.
+func runCacheRestoreTask(sc *StepContext, volName, stepPathPrefix string) {
 	if sc.CacheS3 == nil {
 		return
 	}
@@ -69,7 +85,7 @@ func runCacheRestoreTask(sc *StepContext, volName string) {
 
 	in := cacheOpInputBase(sc, volName)
 	in.Direction = pipelinerunner.CacheRestoreDirection
-	in.StorageKey = fmt.Sprintf("%s/cache/restore/%s", sc.BaseStorageKey(), volName)
+	in.StorageKey = fmt.Sprintf("%s/%s/cache/restore/%s", sc.BaseStorageKey(), stepPathPrefix, volName)
 
 	sc.Logger.Info("cache.restore.start",
 		slog.String("volume", volName),

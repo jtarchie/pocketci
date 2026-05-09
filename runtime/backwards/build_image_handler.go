@@ -50,7 +50,7 @@ func (h *BuildImageHandler) Execute(sc *StepContext, step *config.Step, pathPref
 	}
 
 	inputMounts := resolveInputsOutputs(sc, pseudoCfg)
-	cacheMounts := resolveCaches(sc, pseudoCfg, name)
+	cacheMounts := resolveCaches(sc, pseudoCfg, name, pathPrefix)
 
 	env, err := resolveEnvSecrets(sc, name, cfg.Env)
 	if err != nil {

@@ -136,7 +136,7 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		return &TaskErroredError{TaskName: taskName, Err: err}
 	}
 
-	mounts := resolveMounts(sc, taskConfig, taskName)
+	mounts := resolveMounts(sc, taskConfig, taskName, pathPrefix)
 
 	workDir := ""
 	if taskConfig.Run != nil {
@@ -439,8 +439,11 @@ func buildCommand(cfg *config.TaskConfig) []string {
 }
 
 // resolveMounts combines cache mounts and input/output mounts for a task.
-func resolveMounts(sc *StepContext, cfg *config.TaskConfig, taskName string) orchestra.Mounts {
-	cacheMounts := resolveCaches(sc, cfg, taskName)
+// pathPrefix is the consuming step's storage prefix; it is forwarded to
+// resolveCaches so cache_restore tasks land under the step they precede
+// in the /tasks tree.
+func resolveMounts(sc *StepContext, cfg *config.TaskConfig, taskName, pathPrefix string) orchestra.Mounts {
+	cacheMounts := resolveCaches(sc, cfg, taskName, pathPrefix)
 	ioMounts := resolveInputsOutputs(sc, cfg)
 
 	if len(cacheMounts) == 0 {
@@ -513,7 +516,12 @@ func resolveInputsOutputs(sc *StepContext, cfg *config.TaskConfig) orchestra.Mou
 //
 // When a cache entry has Scope=="task", the volume gets a per-task key prefix
 // so different tasks never share cached data even for the same path.
-func resolveCaches(sc *StepContext, cfg *config.TaskConfig, taskName string) orchestra.Mounts {
+//
+// pathPrefix is the consuming step's storage prefix (e.g. "0", "1/on_success"
+// — anything that's a child of /pipeline/<runID>/jobs/<job>/). It is
+// forwarded to runCacheRestoreTask so the restore's storage path lands
+// under that step in the /tasks tree.
+func resolveCaches(sc *StepContext, cfg *config.TaskConfig, taskName, pathPrefix string) orchestra.Mounts {
 	if cfg == nil || len(cfg.Caches) == 0 {
 		return nil
 	}
@@ -559,8 +567,10 @@ func resolveCaches(sc *StepContext, cfg *config.TaskConfig, taskName string) orc
 				// When CacheS3 is configured, restore happens as a regular task
 				// (visible in /tasks) instead of as an in-server stream. The
 				// restore runs synchronously here so the consuming task sees
-				// cached data on its first read.
-				runCacheRestoreTask(sc, volName)
+				// cached data on its first read. The storage path lives under
+				// the consuming step's prefix so the /tasks tree shows the
+				// restore immediately above the task it precedes.
+				runCacheRestoreTask(sc, volName, pathPrefix)
 			}
 		}
 

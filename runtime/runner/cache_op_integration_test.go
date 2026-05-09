@@ -121,8 +121,8 @@ func TestCacheOpRoundTrip(t *testing.T) {
 }
 
 // TestCacheOpRestoreMiss verifies that a restore against a nonexistent S3
-// key exits cleanly (downstream tasks see an empty cache directory) rather
-// than failing the task.
+// key reports failure (exit 1) so the /tasks UI flags a cold cache.
+// The volume is left empty so the consuming task can repopulate it.
 func TestCacheOpRestoreMiss(t *testing.T) {
 	_, dockerErr := exec.LookPath("docker")
 	if dockerErr != nil {
@@ -159,10 +159,13 @@ func TestCacheOpRestoreMiss(t *testing.T) {
 		SecretAccessKey: mc.SecretAccessKey(),
 		Region:          "us-east-1",
 	})
-	g.Expect(err).NotTo(HaveOccurred(),
-		"miss should not error; stdout=%s stderr=%s",
-		debugRunStdout(result), debugRunStderr2(result))
-	g.Expect(result.Code).To(Equal(0))
+	// runCacheOp wraps a non-zero exit as an error so the runner's logs are
+	// preserved on the result even when the task "failed". A miss is
+	// surfaced as exit 1 + a wrapped error, distinct from a real transport
+	// failure (exit 2).
+	g.Expect(err).To(HaveOccurred(), "miss should report failure to make a cold cache visible")
+	g.Expect(result).NotTo(BeNil())
+	g.Expect(result.Code).To(Equal(1), "miss should use exit code 1; got %d", result.Code)
 	g.Expect(result.Stdout + result.Stderr).To(ContainSubstring("miss (no prior data)"))
 }
 

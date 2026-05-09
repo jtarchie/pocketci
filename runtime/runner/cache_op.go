@@ -250,18 +250,25 @@ func cacheOpScript(input CacheOpInput, mountName string) string {
 	case CacheRestoreDirection:
 		b.WriteString("mkdir -p " + shellQuote(mountPath) + "\n")
 		b.WriteString("echo '[cache] restoring " + mountName + " from " + s3Url + "'\n")
-		// A cache miss returns a non-zero exit from `aws s3 cp`; treat it as
-		// a no-op, not a task failure. Other errors still propagate via
-		// `set -eu` once we see the cp command actually started downloading.
+		// Distinguish three outcomes via exit code so the /tasks UI can
+		// show whether the cache hit, missed, or hit a transport error:
+		//   exit 0 → restore complete (cache hit)
+		//   exit 1 → cache miss (no prior data) — visible as a "failure"
+		//             status, but the job continues; the consuming task
+		//             starts with an empty cache and repopulates it.
+		//   exit 2 → transport error (auth, network, corrupt archive) —
+		//             also "failure", but distinct so operators can spot
+		//             a real problem versus a cold cache.
 		b.WriteString("if aws s3 cp " + shellQuote(s3Url) + " - " + endpointFlag + " 2>/tmp/cache-stderr | gzip -d | tar xf - -C " + shellQuote(mountPath) + "; then\n")
 		b.WriteString("  echo '[cache] restore complete'\n")
 		b.WriteString("else\n")
 		b.WriteString("  if grep -q -E 'Not Found|NoSuchKey|404' /tmp/cache-stderr 2>/dev/null; then\n")
 		b.WriteString("    echo '[cache] miss (no prior data)'\n")
+		b.WriteString("    exit 1\n")
 		b.WriteString("  else\n")
 		b.WriteString("    echo '[cache] restore failed:'\n")
 		b.WriteString("    cat /tmp/cache-stderr 1>&2\n")
-		b.WriteString("    exit 1\n")
+		b.WriteString("    exit 2\n")
 		b.WriteString("  fi\n")
 		b.WriteString("fi\n")
 	}

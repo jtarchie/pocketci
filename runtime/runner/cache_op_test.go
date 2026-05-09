@@ -61,6 +61,10 @@ func TestCacheOpScriptRestore(t *testing.T) {
 	g.Expect(script).To(gomega.ContainSubstring("aws s3 cp 's3://ci-tigris/pipeline/job/cache-repo--git.tar.gz' -"))
 	g.Expect(script).To(gomega.ContainSubstring("gzip -d | tar xf - -C './cache-repo--git'"))
 	g.Expect(script).To(gomega.ContainSubstring("[cache] miss (no prior data)"))
+	// A miss must exit non-zero so the /tasks UI flags a cold cache as failure.
+	g.Expect(script).To(gomega.MatchRegexp(`\[cache\] miss.*\n\s*exit 1`))
+	// A real transport error stays distinct from a miss (exit 2).
+	g.Expect(script).To(gomega.MatchRegexp(`restore failed.*\n.*\n\s*exit 2`))
 }
 
 func TestCacheOpScriptNoEndpoint(t *testing.T) {
