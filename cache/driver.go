@@ -93,6 +93,15 @@ func (d *CachingDriver) CreateVolume(ctx context.Context, name string, size int)
 	return cachingVol, nil
 }
 
+// Unwrap returns the underlying driver. Useful when a caller wants to
+// bypass the in-server cache restore/persist (e.g. when using the
+// task-based cache lifecycle that runs cache_restore and cache_persist
+// as ordinary container tasks instead of streaming bytes through the
+// pocketci server).
+func (d *CachingDriver) Unwrap() orchestra.Driver {
+	return d.inner
+}
+
 // Close implements orchestra.Driver.
 func (d *CachingDriver) Close() error {
 	err := d.inner.Close()

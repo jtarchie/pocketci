@@ -555,6 +555,12 @@ func resolveCaches(sc *StepContext, cfg *config.TaskConfig, taskName string) orc
 				sc.Logger.Warn("cache.volume.create.failed", "path", cacheEntry.Path, "volume", volName, "err", err)
 			} else {
 				sc.CacheVolumeObjects[lookupKey] = vol
+
+				// When CacheS3 is configured, restore happens as a regular task
+				// (visible in /tasks) instead of as an in-server stream. The
+				// restore runs synchronously here so the consuming task sees
+				// cached data on its first read.
+				runCacheRestoreTask(sc, volName)
 			}
 		}
 

@@ -41,6 +41,7 @@ type JobRunner struct {
 	resourceRegistry    *resources.Registry
 	agentBaseURLs       map[string]string
 	outputCallback      func(stream, data string)
+	cacheS3             *CacheS3Config
 }
 
 func newJobRunner(
@@ -60,6 +61,7 @@ func newJobRunner(
 	resourceRegistry *resources.Registry,
 	agentBaseURLs map[string]string,
 	outputCallback func(stream, data string),
+	cacheS3 *CacheS3Config,
 ) *JobRunner {
 	return &JobRunner{
 		job:                 job,
@@ -78,6 +80,7 @@ func newJobRunner(
 		resourceRegistry:    resourceRegistry,
 		agentBaseURLs:       agentBaseURLs,
 		outputCallback:      outputCallback,
+		cacheS3:             cacheS3,
 		handlers: map[string]StepHandler{
 			"task":        &TaskHandler{},
 			"get":         &GetHandler{},
@@ -112,11 +115,25 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		return nil
 	}
 
+	// When CacheS3 is configured the cache lifecycle runs as visible
+	// tasks (amazon/aws-cli containers) instead of streaming bytes through
+	// the pocketci server. Unwrap any CachingDriver so volume creation
+	// doesn't trigger an eager in-server restore and volume Cleanup
+	// doesn't trigger an in-server persist.
+	driver := jr.driver
+	if jr.cacheS3 != nil {
+		if cd, ok := driver.(*cache.CachingDriver); ok {
+			driver = cd.Unwrap()
+		}
+	}
+
 	// Scope cache keys to this pipeline+job so different jobs/pipelines
 	// never collide on the same cache entry. sanitizeCachePath reuses the
 	// same alphanum-hyphen normalization used for volume names.
+	// AugmentKeyPrefix is a no-op for non-CachingDriver, so this is safe
+	// in task-based cache mode too.
 	jobDriver := cache.AugmentKeyPrefix(
-		jr.driver,
+		driver,
 		sanitizeCachePath(jr.pipelineID)+"/"+sanitizeCachePath(jr.job.Name),
 	)
 
@@ -148,6 +165,8 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		SecretsManager:     jr.secretsManager,
 		PipelineID:         jr.pipelineID,
 		AgentBaseURLs:      jr.agentBaseURLs,
+		CacheS3:            jr.cacheS3,
+		CacheRestored:      make(map[string]bool),
 		OutputCallback:     jr.outputCallback,
 	}
 	sc.ProcessStep = func(step *config.Step, pathPrefix string) error { //nolint:contextcheck // context flows via sc.Ctx; StepHandler interface cannot accept a context parameter
@@ -157,7 +176,14 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	// Clean up cache volumes at job end so S3-backed caches are persisted.
 	// This must happen after all tasks (including hooks) finish — not per-task —
 	// so volumes remain live for tasks sharing the same cache within a job.
-	defer jr.cleanupCacheVolumes(sc)
+	//
+	// When CacheS3 is configured, persistence runs as a regular task (in an
+	// amazon/aws-cli container) so the work is visible in /tasks and the
+	// bytes flow container → S3 directly, never through the pocketci server.
+	defer func() {
+		runCachePersistTasks(sc)
+		jr.cleanupCacheVolumes(sc)
+	}()
 
 	if jr.job.Gate != nil {
 		err := jr.runGate(ctx)

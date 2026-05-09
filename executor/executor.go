@@ -220,6 +220,7 @@ func (c *Execute) runYAMLPipeline(
 		runtimebackwards.RunnerOptions{
 			SecretsManager:   secretsManager,
 			ResourceRegistry: registry,
+			CacheS3:          c.cacheS3Config(),
 		},
 	)
 
@@ -338,6 +339,25 @@ func handleSignals(ctx context.Context, cancel context.CancelFunc, logger *slog.
 		logger.Debug("execution.canceled", "signal", sig)
 		cancel()
 	case <-ctx.Done():
+	}
+}
+
+// cacheS3Config returns a CacheS3Config built from the executor's CI_CACHE_S3_*
+// flags, or nil when no bucket is configured. The YAML runner uses this to
+// run cache restore/persist as ordinary tasks instead of streaming bytes
+// through the pocketci server.
+func (c *Execute) cacheS3Config() *runtimebackwards.CacheS3Config {
+	if c.CacheS3Bucket == "" {
+		return nil
+	}
+
+	return &runtimebackwards.CacheS3Config{
+		Endpoint:        c.CacheS3Endpoint,
+		Region:          c.CacheS3Region,
+		Bucket:          c.CacheS3Bucket,
+		Prefix:          c.CacheS3Prefix,
+		AccessKeyID:     c.CacheS3AccessKeyID,
+		SecretAccessKey: c.CacheS3SecretAccessKey,
 	}
 }
 

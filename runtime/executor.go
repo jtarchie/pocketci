@@ -85,6 +85,11 @@ type ExecutorOptions struct {
 	// ResourceRegistry holds the set of native resource implementations available
 	// during pipeline execution. May be nil for pipelines that use no native resources.
 	ResourceRegistry *resources.Registry
+	// CacheS3, when set, configures the YAML runner to perform cache
+	// restore/persist as ordinary container tasks (amazon/aws-cli) rather
+	// than streaming bytes through the pocketci server. Ignored for
+	// JS pipelines, which keep the existing in-server cache path.
+	CacheS3 *runtimebackwards.CacheS3Config
 }
 
 // initExecutionDriver creates or reuses a driver for pipeline execution.
@@ -165,6 +170,7 @@ func ExecutePipeline(
 				DedupTTL:         opts.DedupTTL,
 				OutputCallback:   opts.OutputCallback,
 				ResourceRegistry: opts.ResourceRegistry,
+				CacheS3:          opts.CacheS3,
 			},
 		)
 

@@ -15,6 +15,7 @@ import (
 	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/resources"
+	runtimebackwards "github.com/jtarchie/pocketci/runtime/backwards"
 	"github.com/jtarchie/pocketci/scheduler"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/server/auth"
@@ -63,6 +64,11 @@ type RouterOptions struct {
 	CacheCompression string
 	// CacheKeyPrefix is prepended to all cache keys.
 	CacheKeyPrefix string
+	// CacheS3, when set, configures YAML pipelines to perform cache
+	// restore/persist as ordinary container tasks (amazon/aws-cli) rather
+	// than streaming bytes through the pocketci server. Ignored for JS
+	// pipelines, which keep the existing in-server cache path.
+	CacheS3 *runtimebackwards.CacheS3Config
 	// WebhookProviders is the ordered list of webhook providers to use for detection.
 	// Providers are checked in order; the first match wins.
 	WebhookProviders []webhooks.Provider
@@ -249,6 +255,7 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	execService.CacheStore = opts.CacheStore
 	execService.CacheCompression = opts.CacheCompression
 	execService.CacheKeyPrefix = opts.CacheKeyPrefix
+	execService.CacheS3 = opts.CacheS3
 	execService.ResourceRegistry = resources.NewRegistry(opts.NativeResources)
 	execService.DriverRegistry = orchestra.NewDriverRegistry(opts.DriverProviders)
 

@@ -78,6 +78,17 @@ type StepContext struct {
 	SecretsManager secrets.Manager       // for agent API key resolution
 	AgentBaseURLs  map[string]string     // overrides agent provider base URLs; used in tests to avoid global state
 
+	// CacheS3, when set, configures the S3 backend for cache restore +
+	// persist tasks (which run in amazon/aws-cli containers, off the
+	// pocketci server). nil disables those tasks; cache mounts behave
+	// like regular volumes.
+	CacheS3 *CacheS3Config
+
+	// CacheRestored tracks volume names that have already had their
+	// restore task run within this job, so multiple tasks sharing a
+	// cache mount don't trigger N restores.
+	CacheRestored map[string]bool
+
 	// OutputCallback, if set, is called for each line of task stdout/stderr.
 	OutputCallback func(stream, data string)
 }

@@ -178,6 +178,23 @@ type RunnerOptions struct {
 	ResourceRegistry *resources.Registry       // native resource implementations; nil uses an empty registry
 	AgentBaseURLs    map[string]string         // overrides agent provider base URLs; used in tests to avoid global state
 	OutputCallback   func(stream, data string) // called for each chunk of task stdout/stderr
+	CacheS3          *CacheS3Config            // S3 backend for cache restore/persist tasks; nil disables them
+}
+
+// CacheS3Config tells the JobRunner where to push/pull cache archives.
+// When set on RunnerOptions, every job-level cache mount is restored at
+// the start of the consuming task and persisted at job end via tasks
+// that run amazon/aws-cli. The pocketci server is no longer in the data
+// path. AccessKeyID/SecretAccessKey may use the "secret:KEY" prefix —
+// the runner resolves them at task launch through the same path used for
+// other secret env values.
+type CacheS3Config struct {
+	Endpoint        string
+	Region          string
+	Bucket          string
+	Prefix          string // optional key prefix prepended to every cache key
+	AccessKeyID     string
+	SecretAccessKey string
 }
 
 // Runner executes a parsed pipeline Config using Go-native execution.
@@ -196,6 +213,7 @@ type Runner struct {
 	resourceRegistry *resources.Registry
 	agentBaseURLs    map[string]string
 	outputCallback   func(stream, data string)
+	cacheS3          *CacheS3Config
 	dependents       map[string][]*config.Job // reverse index: jobName → jobs that depend on it
 }
 
@@ -229,6 +247,7 @@ func New(
 		resourceRegistry: registry,
 		agentBaseURLs:    opts.AgentBaseURLs,
 		outputCallback:   opts.OutputCallback,
+		cacheS3:          opts.CacheS3,
 	}
 }
 
@@ -265,7 +284,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			return nil
 		}
 
-		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.pipelineID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight, r.notifier, r.webhookData, r.dedupTTL, r.secretsManager, r.resourceRegistry, r.agentBaseURLs, r.outputCallback)
+		jr := newJobRunner(job, r.driver, r.storage, r.logger, r.runID, r.pipelineID, r.config.Resources, r.config.ResourceTypes, r.config.MaxInFlight, r.notifier, r.webhookData, r.dedupTTL, r.secretsManager, r.resourceRegistry, r.agentBaseURLs, r.outputCallback, r.cacheS3)
 
 		err := jr.Run(ctx)
 		if err != nil {

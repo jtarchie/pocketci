@@ -17,6 +17,7 @@ import (
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/resources"
 	"github.com/jtarchie/pocketci/runtime"
+	runtimebackwards "github.com/jtarchie/pocketci/runtime/backwards"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/server/auth"
@@ -41,6 +42,7 @@ type ExecutionService struct {
 	CacheStore            cache.CacheStore
 	CacheCompression      string
 	CacheKeyPrefix        string
+	CacheS3               *runtimebackwards.CacheS3Config
 	SecretsManager        secrets.Manager
 	AllowedFeatures       []Feature
 	FetchTimeout          time.Duration
@@ -633,6 +635,7 @@ func (s *ExecutionService) buildExecutorOptions(pipeline *storage.Pipeline, opts
 	execOpts.FetchTimeout = s.FetchTimeout
 	execOpts.FetchMaxResponseBytes = s.FetchMaxResponseBytes
 	execOpts.DedupTTL = s.DedupTTL
+	execOpts.CacheS3 = s.CacheS3
 
 	return execOpts
 }

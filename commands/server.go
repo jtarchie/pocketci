@@ -27,6 +27,7 @@ import (
 	"github.com/jtarchie/pocketci/orchestra/vz"
 	"github.com/jtarchie/pocketci/resources"
 	"github.com/jtarchie/pocketci/resources/mock"
+	runtimebackwards "github.com/jtarchie/pocketci/runtime/backwards"
 	"github.com/jtarchie/pocketci/s3config"
 	"github.com/jtarchie/pocketci/secrets"
 	secretsnoop "github.com/jtarchie/pocketci/secrets/noop"
@@ -217,6 +218,7 @@ func (c *Server) Run(logger *slog.Logger) error {
 		CacheStore:            cacheStore,
 		CacheCompression:      c.CacheCompression,
 		CacheKeyPrefix:        c.CacheKeyPrefix,
+		CacheS3:               c.cacheS3Config(),
 		WebhookProviders: []webhooks.Provider{
 			webhookgithub.New(),
 			webhookgitlab.New(),
@@ -484,6 +486,25 @@ func (c *Server) defaultDriverName() string {
 		return "qemu"
 	default:
 		return "docker"
+	}
+}
+
+// cacheS3Config returns a CacheS3Config built from the server's CI_CACHE_S3_*
+// flags, or nil when no bucket is configured. The YAML runner uses this to
+// run cache restore/persist as ordinary tasks instead of streaming bytes
+// through the pocketci server.
+func (c *Server) cacheS3Config() *runtimebackwards.CacheS3Config {
+	if c.CacheS3Bucket == "" {
+		return nil
+	}
+
+	return &runtimebackwards.CacheS3Config{
+		Endpoint:        c.CacheS3Endpoint,
+		Region:          c.CacheS3Region,
+		Bucket:          c.CacheS3Bucket,
+		Prefix:          c.CacheS3Prefix,
+		AccessKeyID:     c.CacheS3AccessKeyID,
+		SecretAccessKey: c.CacheS3SecretAccessKey,
 	}
 }
 
