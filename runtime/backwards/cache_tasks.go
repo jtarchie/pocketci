@@ -30,10 +30,17 @@ func cacheS3Key(cfg *CacheS3Config, pipelineID, jobName, volumeName string) stri
 
 // cacheOpDefaultMemory is the memory floor (1 GiB) given to every cache
 // task. The smallest Fly machine size (256 MiB) OOM-kills `dnf install
-// tar gzip` on the slim amazon/aws-cli base image, so we ensure cache
+// tar pigz` on the slim amazon/aws-cli base image, so we ensure cache
 // tasks always get a bigger machine even when no caller-supplied
 // limits override.
 const cacheOpDefaultMemory int64 = 1024 * 1024 * 1024
+
+// cacheOpDefaultCPU is the CPU count given to every cache task. pigz
+// scales near-linearly with cores on compress-bound caches (multi-GB
+// /var/lib/buildkit), so 4 cores roughly quarters wall-clock time
+// versus single-core gzip. CPUKind defaults to "shared" — cache tasks
+// are bursty and finite, so we don't reserve performance cores.
+const cacheOpDefaultCPU int64 = 4
 
 // cacheOpInputBase returns a CacheOpInput pre-filled with the S3 config
 // and volume metadata for a job-level cache op. Caller sets Direction
@@ -54,7 +61,7 @@ func cacheOpInputBase(sc *StepContext, volName string) pipelinerunner.CacheOpInp
 		SecretAccessKey: cfg.SecretAccessKey,
 		OnOutput:        sc.OutputCallback,
 		Limits: pipelinerunner.BuildImageLimits{
-			CPU:     1,
+			CPU:     cacheOpDefaultCPU,
 			CPUKind: "shared",
 			Memory:  cacheOpDefaultMemory,
 		},
