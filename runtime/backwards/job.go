@@ -115,27 +115,7 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		return nil
 	}
 
-	// When CacheS3 is configured the cache lifecycle runs as visible
-	// tasks (amazon/aws-cli containers) instead of streaming bytes through
-	// the pocketci server. Unwrap any CachingDriver so volume creation
-	// doesn't trigger an eager in-server restore and volume Cleanup
-	// doesn't trigger an in-server persist.
-	driver := jr.driver
-	if jr.cacheS3 != nil {
-		if cd, ok := driver.(*cache.CachingDriver); ok {
-			driver = cd.Unwrap()
-		}
-	}
-
-	// Scope cache keys to this pipeline+job so different jobs/pipelines
-	// never collide on the same cache entry. sanitizeCachePath reuses the
-	// same alphanum-hyphen normalization used for volume names.
-	// AugmentKeyPrefix is a no-op for non-CachingDriver, so this is safe
-	// in task-based cache mode too.
-	jobDriver := cache.AugmentKeyPrefix(
-		driver,
-		sanitizeCachePath(jr.pipelineID)+"/"+sanitizeCachePath(jr.job.Name),
-	)
+	jobDriver := jr.resolveJobDriver()
 
 	pr := pipelinerunner.NewPipelineRunner(ctx, jobDriver, jr.storage, jr.logger, jr.job.Name, jr.runID)
 
@@ -251,6 +231,28 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// resolveJobDriver returns the orchestra driver this job should use,
+// scoped to the pipeline+job for cache-key isolation. When CacheS3 is
+// configured the cache lifecycle runs as visible tasks (amazon/aws-cli
+// containers) instead of streaming bytes through the pocketci server,
+// so we unwrap any CachingDriver so volume creation doesn't trigger an
+// eager in-server restore and volume Cleanup doesn't trigger an
+// in-server persist. AugmentKeyPrefix is a no-op for non-CachingDriver,
+// so the call is safe in either mode.
+func (jr *JobRunner) resolveJobDriver() orchestra.Driver {
+	driver := jr.driver
+	if jr.cacheS3 != nil {
+		if cd, ok := driver.(*cache.CachingDriver); ok {
+			driver = cd.Unwrap()
+		}
+	}
+
+	return cache.AugmentKeyPrefix(
+		driver,
+		sanitizeCachePath(jr.pipelineID)+"/"+sanitizeCachePath(jr.job.Name),
+	)
 }
 
 func (jr *JobRunner) cleanupCacheVolumes(sc *StepContext) {
