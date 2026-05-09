@@ -208,13 +208,13 @@ func cacheOpEnv(input CacheOpInput) map[string]string {
 // cacheOpScript builds the shell command run inside the cache task
 // container. It is split between persist and restore directions.
 //
-//   - persist:  tar cf - -C ./<vol> .  | pigz     | aws s3 cp -  s3://<bucket>/<key>  [--endpoint-url <ep>]
-//   - restore:  aws s3 cp s3://<bucket>/<key> -   [--endpoint-url <ep>]  | pigz -d  | tar xf -  -C ./<vol>
+//   - persist:  tar cf - -C ./<vol> .  | zstd -T0  | aws s3 cp -  s3://<bucket>/<key>  [--endpoint-url <ep>]
+//   - restore:  aws s3 cp s3://<bucket>/<key> -   [--endpoint-url <ep>]  | zstd -d  | tar xf -  -C ./<vol>
 //
-// Compression uses pigz (parallel gzip) so it scales across all CPU cores
-// allocated to the task — multi-GB caches are compress-bound, not S3-bound.
-// The output is still standard gzip, so any reader (including older gzip)
-// can decompress the archive.
+// Compression uses zstd with -T0 so it parallelises across every CPU
+// core allocated to the task — multi-GB caches are compress-bound, not
+// S3-bound. zstd also decompresses several times faster than gzip, which
+// matters on the restore-then-build hot path.
 //
 // The whole pipeline runs on the cache task container, not on the
 // pocketci server: the bytes flow container → S3 directly.
@@ -238,22 +238,23 @@ func cacheOpScript(input CacheOpInput, mountName string) string {
 
 	b.WriteString("set -eu\n")
 	// amazon/aws-cli ships with the AWS CLI, dnf, and a shell, but
-	// `tar` and `pigz` are not always installed in the base image.
-	// Use pigz (parallel gzip) instead of gzip so compress/decompress
-	// scale across the CPU cores allocated to the cache task — multi-GB
-	// caches like /var/lib/buildkit are compress-bound, not S3-bound.
+	// `tar` and `zstd` are not always installed in the base image.
+	// zstd `-T0` parallelises across all CPU cores allocated to the
+	// task and beats gzip on every axis — wall-clock compress, wall-clock
+	// decompress, and final archive size — so multi-GB caches like
+	// /var/lib/buildkit go up + come down in a fraction of the time.
 	// Best-effort install on first run; a cached layer makes subsequent
 	// runs cheap.
-	b.WriteString("if ! command -v tar >/dev/null 2>&1 || ! command -v pigz >/dev/null 2>&1; then\n")
-	b.WriteString("  echo '[cache] installing tar/pigz via dnf'\n")
-	b.WriteString("  dnf install -y tar pigz 1>/dev/null\n")
+	b.WriteString("if ! command -v tar >/dev/null 2>&1 || ! command -v zstd >/dev/null 2>&1; then\n")
+	b.WriteString("  echo '[cache] installing tar/zstd via dnf'\n")
+	b.WriteString("  dnf install -y tar zstd 1>/dev/null\n")
 	b.WriteString("fi\n")
 
 	switch input.Direction {
 	case CachePersistDirection:
 		b.WriteString("mkdir -p " + shellQuote(mountPath) + "\n")
 		b.WriteString("echo '[cache] persisting " + mountName + " to " + s3Url + "'\n")
-		b.WriteString("tar cf - -C " + shellQuote(mountPath) + " . | pigz | aws s3 cp - " + shellQuote(s3Url) + endpointFlag + "\n")
+		b.WriteString("tar cf - -C " + shellQuote(mountPath) + " . | zstd -T0 | aws s3 cp - " + shellQuote(s3Url) + endpointFlag + "\n")
 		b.WriteString("echo '[cache] persist complete'\n")
 
 	case CacheRestoreDirection:
@@ -268,7 +269,7 @@ func cacheOpScript(input CacheOpInput, mountName string) string {
 		//   exit 2 → transport error (auth, network, corrupt archive) —
 		//             also "failure", but distinct so operators can spot
 		//             a real problem versus a cold cache.
-		b.WriteString("if aws s3 cp " + shellQuote(s3Url) + " - " + endpointFlag + " 2>/tmp/cache-stderr | pigz -d | tar xf - -C " + shellQuote(mountPath) + "; then\n")
+		b.WriteString("if aws s3 cp " + shellQuote(s3Url) + " - " + endpointFlag + " 2>/tmp/cache-stderr | zstd -d | tar xf - -C " + shellQuote(mountPath) + "; then\n")
 		b.WriteString("  echo '[cache] restore complete'\n")
 		b.WriteString("else\n")
 		b.WriteString("  if grep -q -E 'Not Found|NoSuchKey|404' /tmp/cache-stderr 2>/dev/null; then\n")

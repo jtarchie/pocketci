@@ -37,7 +37,7 @@ func TestCacheOpScriptPersist(t *testing.T) {
 	script := cacheOpScript(in, "cache-var-lib-buildkit")
 
 	g.Expect(script).To(gomega.ContainSubstring("set -eu"))
-	g.Expect(script).To(gomega.ContainSubstring("tar cf - -C './cache-var-lib-buildkit' . | pigz | aws s3 cp -"))
+	g.Expect(script).To(gomega.ContainSubstring("tar cf - -C './cache-var-lib-buildkit' . | zstd -T0 | aws s3 cp -"))
 	g.Expect(script).To(gomega.ContainSubstring("'s3://ci-tigris/pipeline/job/cache-var-lib-buildkit.tar.gz'"))
 	g.Expect(script).To(gomega.ContainSubstring("--endpoint-url 'https://fly.storage.tigris.dev'"))
 }
@@ -59,7 +59,7 @@ func TestCacheOpScriptRestore(t *testing.T) {
 	script := cacheOpScript(in, "cache-repo--git")
 
 	g.Expect(script).To(gomega.ContainSubstring("aws s3 cp 's3://ci-tigris/pipeline/job/cache-repo--git.tar.gz' -"))
-	g.Expect(script).To(gomega.ContainSubstring("pigz -d | tar xf - -C './cache-repo--git'"))
+	g.Expect(script).To(gomega.ContainSubstring("zstd -d | tar xf - -C './cache-repo--git'"))
 	g.Expect(script).To(gomega.ContainSubstring("[cache] miss (no prior data)"))
 	// A miss must exit non-zero so the /tasks UI flags a cold cache as failure.
 	g.Expect(script).To(gomega.MatchRegexp(`\[cache\] miss.*\n\s*exit 1`))
