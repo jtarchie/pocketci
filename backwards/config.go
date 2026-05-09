@@ -211,7 +211,7 @@ type BuildImageRegistry struct {
 // The build runs as a privileged task with the buildkit image; on completion
 // the produced image is available at Tag for any downstream task that names it.
 type BuildImageConfig struct {
-	Name            string              `yaml:"name,omitempty"`       // optional; defaults to a sanitized form of Tag
+	Name            string              `yaml:"name,omitempty"` // optional; defaults to a sanitized form of Tag
 	Context         string              `validate:"required"               yaml:"context,omitempty"`
 	Dockerfile      string              `yaml:"dockerfile,omitempty"` // defaults to "Dockerfile"
 	Tag             string              `validate:"required"               yaml:"tag,omitempty"`
