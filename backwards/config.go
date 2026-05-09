@@ -384,11 +384,16 @@ type Job struct {
 		Days   int `yaml:"days,omitempty"`
 	} `yaml:"build_log_retention,omitempty"`
 
-	Name           string        `validate:"required,min=3"        yaml:"name,omitempty"`
-	Plan           Steps         `validate:"required,min=1,dive"   yaml:"plan,omitempty"`
-	DependsOn      []string      `json:"depends_on,omitempty"      yaml:"depends_on,omitempty"`
-	Gate           *GateConfig   `json:"gate,omitempty"            yaml:"gate,omitempty"`
-	MaxInFlight    int           `yaml:"max_in_flight,omitempty"`
+	Name        string      `validate:"required,min=3"      yaml:"name,omitempty"`
+	Plan        Steps       `validate:"required,min=1,dive" yaml:"plan,omitempty"`
+	DependsOn   []string    `json:"depends_on,omitempty"    yaml:"depends_on,omitempty"`
+	Gate        *GateConfig `json:"gate,omitempty"          yaml:"gate,omitempty"`
+	MaxInFlight int         `yaml:"max_in_flight,omitempty"`
+	// DiskGB sets the workspace volume size in GB for Fly.io deployments.
+	// Increase this when large cache volumes (e.g. /var/lib/buildkit) fill
+	// the default 10 GB workspace. Has no effect on drivers that manage
+	// storage independently (Docker, k8s).
+	DiskGB         int           `yaml:"disk_gb,omitempty"`
 	Public         bool          `yaml:"public,omitempty"`
 	Ensure         *Step         `yaml:"ensure,omitempty"`
 	OnAbort        *Step         `yaml:"on_abort,omitempty"`
