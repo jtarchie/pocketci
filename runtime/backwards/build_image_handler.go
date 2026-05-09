@@ -33,6 +33,18 @@ func (h *BuildImageHandler) Execute(sc *StepContext, step *config.Step, pathPref
 
 	sc.appendExecutedTask(name)
 
+	pseudoCfg := &config.TaskConfig{
+		Inputs: cfg.Inputs,
+		Caches: cfg.Caches,
+	}
+
+	// Resolve cache mounts (which fires cache_restore tasks) before writing
+	// the build_image "pending" row, so the restore's storage id sorts
+	// before the build_image row and the /tasks tree renders them in the
+	// order they actually run.
+	inputMounts := resolveInputsOutputs(sc, pseudoCfg)
+	cacheMounts := resolveCaches(sc, pseudoCfg, name, pathPrefix)
+
 	storageKey := fmt.Sprintf("%s/%s/build_image/%s", sc.BaseStorageKey(), pathPrefix, name)
 	startedAt := time.Now()
 
@@ -43,14 +55,6 @@ func (h *BuildImageHandler) Execute(sc *StepContext, step *config.Step, pathPref
 	if err != nil {
 		return fmt.Errorf("storage set pending: %w", err)
 	}
-
-	pseudoCfg := &config.TaskConfig{
-		Inputs: cfg.Inputs,
-		Caches: cfg.Caches,
-	}
-
-	inputMounts := resolveInputsOutputs(sc, pseudoCfg)
-	cacheMounts := resolveCaches(sc, pseudoCfg, name, pathPrefix)
 
 	env, err := resolveEnvSecrets(sc, name, cfg.Env)
 	if err != nil {

@@ -119,6 +119,13 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		return err
 	}
 
+	// Resolve mounts BEFORE writing the task's "pending" row. resolveMounts
+	// triggers cache_restore tasks that write their own storage entries, and
+	// /tasks renders entries in storage-ID order — so the restore must land
+	// with a lower id than the task it precedes for the tree to show
+	// cache/restore above tasks/<name>.
+	mounts := resolveMounts(sc, taskConfig, taskName, pathPrefix)
+
 	storageKey := fmt.Sprintf("%s/%s/tasks/%s", sc.BaseStorageKey(), pathPrefix, taskName)
 
 	startedAt := time.Now()
@@ -135,8 +142,6 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 	if err != nil {
 		return &TaskErroredError{TaskName: taskName, Err: err}
 	}
-
-	mounts := resolveMounts(sc, taskConfig, taskName, pathPrefix)
 
 	workDir := ""
 	if taskConfig.Run != nil {
