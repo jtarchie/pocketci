@@ -20,6 +20,7 @@ require (
 	github.com/digitalocean/godo v1.188.0
 	github.com/docker/cli v29.4.2+incompatible
 	github.com/docker/docker v28.5.2+incompatible
+	github.com/docker/go-connections v0.7.0
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
 	github.com/dop251/goja_nodejs v0.0.0-20260212111938-1f56ff5bcf14
 	github.com/evanw/esbuild v0.28.0
@@ -46,7 +47,6 @@ require (
 	github.com/nikoksr/notify v1.5.0
 	github.com/onsi/gomega v1.40.0
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
-	github.com/pkg/sftp v1.13.10
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/posthog/posthog-go v1.12.4
 	github.com/robfig/cron/v3 v3.0.1
@@ -59,7 +59,7 @@ require (
 	golang.org/x/sync v0.20.0
 	golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb
 	google.golang.org/adk v1.2.0
-	google.golang.org/genai v1.55.0
+	google.golang.org/genai v1.56.0
 	k8s.io/api v0.36.0
 	k8s.io/apimachinery v0.36.0
 	k8s.io/client-go v0.36.0
@@ -109,7 +109,6 @@ require (
 	github.com/digitalocean/go-libvirt v0.0.0-20260217163227-273eaa321819 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/dlclark/regexp2 v1.12.0 // indirect
-	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
@@ -157,7 +156,6 @@ require (
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/jordan-wright/email v4.0.1-0.20210109023952-943e75fe5223+incompatible // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/kr/fs v0.1.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mailru/easyjson v0.9.2 // indirect
 	github.com/markbates/going v1.0.3 // indirect
