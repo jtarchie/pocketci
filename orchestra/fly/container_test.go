@@ -449,6 +449,48 @@ func TestApplyGuestLimits_PerformanceNoAutoUpgrade(t *testing.T) {
 	assert.Expect(guest.CPUKind).To(Equal("performance"))
 }
 
+func TestApplyGuestLimits_PerformanceMemoryMinimum(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	// performance-4x with 1 GiB requested: Fly's floor is 2 GiB per CPU,
+	// so this should bump to 8192 MB rather than letting Fly reject the
+	// launch.
+	var buf bytes.Buffer
+
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+	guest := &fly.MachineGuest{CPUKind: "shared", CPUs: 1, MemoryMB: 256}
+	applyGuestLimits(guest, logger, orchestra.ContainerLimits{
+		CPUKind: "performance",
+		CPU:     4,
+		Memory:  1024 * 1024 * 1024,
+	})
+
+	assert.Expect(guest.CPUKind).To(Equal("performance"))
+	assert.Expect(guest.CPUs).To(Equal(4))
+	assert.Expect(guest.MemoryMB).To(Equal(8192))
+
+	logs := buf.String()
+	assert.Expect(logs).To(ContainSubstring("fly.guest.memory.performance.minimum"))
+	assert.Expect(logs).To(ContainSubstring("from_mb=1024"))
+	assert.Expect(logs).To(ContainSubstring("to_mb=8192"))
+	assert.Expect(logs).To(ContainSubstring("cpus=4"))
+}
+
+func TestApplyGuestLimits_PerformanceMemoryAlreadyAboveMinimum(t *testing.T) {
+	assert := NewGomegaWithT(t)
+
+	// performance-2x with 4 GiB == 2 * 2 GiB minimum exactly. No bump.
+	guest := &fly.MachineGuest{CPUKind: "shared", CPUs: 1, MemoryMB: 256}
+	applyGuestLimits(guest, nil, orchestra.ContainerLimits{
+		CPUKind: "performance",
+		CPU:     2,
+		Memory:  4 * 1024 * 1024 * 1024,
+	})
+
+	assert.Expect(guest.MemoryMB).To(Equal(4096))
+}
+
 func TestApplyGuestLimits_NoLimits(t *testing.T) {
 	assert := NewGomegaWithT(t)
 

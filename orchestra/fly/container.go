@@ -605,6 +605,37 @@ func applyGuestLimits(guest *fly.MachineGuest, logger *slog.Logger, limits orche
 		guest.MemoryMB = roundMemory(guest.CPUKind, int(limits.Memory/(1024*1024)), logger)
 		upgradeSharedCPUs(guest, logger)
 	}
+
+	enforcePerformanceMinimum(guest, logger)
+}
+
+// enforcePerformanceMinimum bumps performance-class memory up to Fly's
+// per-CPU floor (2 GiB × CPU count). performance-Nx requires at least
+// 2 GiB per CPU; Fly rejects launches that fall below it with
+// `invalid config.guest.memory_mb, minimum required X MiB`. Auto-bump
+// + warn matches the existing posture for shared-CPU upgrades and
+// memory rounding so config near-misses surface as warnings, not as
+// runtime launch failures after expensive build work.
+func enforcePerformanceMinimum(guest *fly.MachineGuest, logger *slog.Logger) {
+	if guest.CPUKind != "performance" {
+		return
+	}
+
+	minMB := guest.CPUs * 2048
+	if guest.MemoryMB >= minMB {
+		return
+	}
+
+	if logger != nil {
+		logger.Info("fly.guest.memory.performance.minimum",
+			"from_mb", guest.MemoryMB,
+			"to_mb", minMB,
+			"cpus", guest.CPUs,
+			"reason", "performance class requires 2 GiB per CPU",
+		)
+	}
+
+	guest.MemoryMB = minMB
 }
 
 // roundMemory rounds requestedMB up to the nearest Fly memory step
