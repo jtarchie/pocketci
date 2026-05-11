@@ -69,7 +69,7 @@ func setupRouterWithOAuthLogger(t *testing.T, rbacExpression string, logger *slo
 func generateTestToken(t *testing.T, user *auth.User) string {
 	t.Helper()
 
-	token, err := auth.GenerateToken(user, testSessionSecret, 24*time.Hour, nil)
+	token, err := auth.GenerateToken(user, testSessionSecret, 24*time.Hour, nil, auth.AudienceAPI)
 	if err != nil {
 		t.Fatalf("could not generate token: %v", err)
 	}

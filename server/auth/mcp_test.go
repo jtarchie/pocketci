@@ -32,7 +32,7 @@ func TestMCPTokenVerifier(t *testing.T) {
 			UserID:   "12345",
 		}
 
-		token, err := auth.GenerateToken(user, secret, 24*time.Hour, []string{"ci:read"})
+		token, err := auth.GenerateToken(user, secret, 24*time.Hour, []string{"ci:read"}, auth.AudienceMCP)
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		verifier := auth.MCPTokenVerifier(secret)
@@ -52,7 +52,7 @@ func TestMCPTokenVerifier(t *testing.T) {
 			Provider: "github",
 		}
 
-		token, err := auth.GenerateToken(user, secret, 24*time.Hour, nil)
+		token, err := auth.GenerateToken(user, secret, 24*time.Hour, nil, auth.AudienceMCP)
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		verifier := auth.MCPTokenVerifier(secret)
@@ -67,7 +67,7 @@ func TestMCPTokenVerifier(t *testing.T) {
 
 		user := &auth.User{UserID: "12345", Provider: "github"}
 
-		token, err := auth.GenerateToken(user, secret, -1*time.Hour, []string{"ci:read"})
+		token, err := auth.GenerateToken(user, secret, -1*time.Hour, []string{"ci:read"}, auth.AudienceMCP)
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		verifier := auth.MCPTokenVerifier(secret)

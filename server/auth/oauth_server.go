@@ -254,11 +254,12 @@ func (s *OAuthServer) HandleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Issue a scoped JWT (always ci:read).
+	// Issue a scoped JWT (always ci:read) bound to the MCP audience so it
+	// cannot authenticate /api/* requests. See PCI-SEC-MCP-001.
 	scopes := []string{MCPScope}
 	ttl := 30 * 24 * time.Hour
 
-	token, err := GenerateToken(ac.User, s.cfg.SessionSecret, ttl, scopes)
+	token, err := GenerateToken(ac.User, s.cfg.SessionSecret, ttl, scopes, AudienceMCP)
 	if err != nil {
 		s.logger.Error("oauth.token.generate.error", "error", err)
 		jsonError(w, "server_error", "could not generate token", http.StatusInternalServerError)

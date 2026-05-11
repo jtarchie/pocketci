@@ -406,8 +406,9 @@ func (h *authHandler) CLIPoll(c *echo.Context) error {
 		return nil
 	}
 
-	// Generate API token for the CLI (no scope restriction).
-	token, err := GenerateToken(state.User, h.cfg.SessionSecret, 30*24*time.Hour, nil)
+	// Generate API token for the CLI (no scope restriction) bound to the
+	// API audience so MCP rejects it.
+	token, err := GenerateToken(state.User, h.cfg.SessionSecret, 30*24*time.Hour, nil, AudienceAPI)
 	if err != nil {
 		jsonErr5 := c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "could not generate token",
