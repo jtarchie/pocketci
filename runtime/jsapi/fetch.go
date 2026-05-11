@@ -2,6 +2,7 @@ package jsapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -92,7 +93,6 @@ type FetchResponse struct {
 	OK         bool              `json:"ok"`
 	Headers    map[string]string `json:"headers"`
 	bodyText   string
-	jsVM       *goja.Runtime
 }
 
 // Text returns the response body as a string.
@@ -102,13 +102,16 @@ func (r *FetchResponse) Text() string {
 
 // Json parses the response body as JSON and returns the result.
 // Named Json (not JSON) so goja's TagFieldNameMapper maps it to "json" in JS.
+//
+// Must be strict JSON, not a goja eval, so an attacker-controlled response
+// body cannot inject JavaScript into the pipeline VM.
 func (r *FetchResponse) Json() (any, error) {
-	val, err := r.jsVM.RunString("(" + r.bodyText + ")")
-	if err != nil {
+	var v any
+	if err := json.Unmarshal([]byte(r.bodyText), &v); err != nil {
 		return nil, fmt.Errorf("could not parse JSON: %w", err)
 	}
 
-	return val.Export(), nil
+	return v, nil
 }
 
 // FetchRuntime provides the global fetch() function to the JavaScript runtime.
@@ -206,8 +209,6 @@ func (f *FetchRuntime) Fetch(call goja.FunctionCall) goja.Value {
 
 				return nil
 			}
-
-			resp.jsVM = f.jsVM
 
 			err = resolve(resp)
 			if err != nil {
