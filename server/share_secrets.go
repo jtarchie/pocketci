@@ -15,8 +15,8 @@ import (
 const shareSigningKeyName = "share_link_signing_key"
 
 var (
-	fallbackShareSecret     string
-	fallbackShareSecretOnce sync.Once
+	fallbackShareSecret   string
+	fallbackShareSecretMu sync.Mutex
 )
 
 // resolveShareSigningSecret returns the HMAC signing secret for share tokens.
@@ -25,15 +25,19 @@ var (
 // random secret is generated once per process lifetime (links break on restart).
 func resolveShareSigningSecret(ctx context.Context, mgr secrets.Manager, logger *slog.Logger) (string, error) {
 	if mgr == nil {
-		fallbackShareSecretOnce.Do(func() {
+		fallbackShareSecretMu.Lock()
+		defer fallbackShareSecretMu.Unlock()
+
+		if fallbackShareSecret == "" {
 			b := make([]byte, 32)
+
 			_, randErr := rand.Read(b)
 			if randErr != nil {
-				panic(fmt.Sprintf("could not generate share signing secret: %v", randErr))
+				return "", fmt.Errorf("could not generate share signing secret: %w", randErr)
 			}
 
 			fallbackShareSecret = hex.EncodeToString(b)
-		})
+		}
 
 		logger.Warn("share.signing.secret.ephemeral",
 			slog.String("reason", "no secrets manager configured — share links will be invalidated on server restart"),
