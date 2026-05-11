@@ -133,15 +133,7 @@ func checkPipelineRBAC(ctx *echo.Context, pipeline *storage.Pipeline) error {
 
 // Index handles GET /api/pipelines - List all pipelines.
 func (c *APIPipelinesController) Index(ctx *echo.Context) error {
-	page := 1
-	perPage := 20
-
-	if p := ctx.QueryParam("page"); p != "" {
-		_, _ = fmt.Sscanf(p, "%d", &page)
-	}
-	if pp := ctx.QueryParam("per_page"); pp != "" {
-		_, _ = fmt.Sscanf(pp, "%d", &perPage)
-	}
+	page, perPage := parsePagination(ctx)
 
 	result, err := c.store.SearchPipelines(ctx.Request().Context(), "", page, perPage)
 	if err != nil {

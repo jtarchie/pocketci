@@ -88,16 +88,7 @@ func hasActiveRunInRows(rows []PipelineRow) bool {
 // partial for HTMX requests (search, pagination, polling).
 func (c *WebPipelinesController) Index(ctx *echo.Context) error {
 	q := ctx.QueryParam("q")
-
-	page := 1
-	perPage := 20
-
-	if p := ctx.QueryParam("page"); p != "" {
-		_, _ = fmt.Sscanf(p, "%d", &page)
-	}
-	if pp := ctx.QueryParam("per_page"); pp != "" {
-		_, _ = fmt.Sscanf(pp, "%d", &perPage)
-	}
+	page, perPage := parsePagination(ctx)
 
 	result, err := c.store.SearchPipelines(ctx.Request().Context(), q, page, perPage)
 	if err != nil {
@@ -179,16 +170,7 @@ func (c *WebPipelinesController) Show(ctx *echo.Context) error {
 		return showRbacErr
 	}
 
-	page := 1
-	perPage := 20
-
-	if p := ctx.QueryParam("page"); p != "" {
-		_, _ = fmt.Sscanf(p, "%d", &page)
-	}
-	if pp := ctx.QueryParam("per_page"); pp != "" {
-		_, _ = fmt.Sscanf(pp, "%d", &perPage)
-	}
-
+	page, perPage := parsePagination(ctx)
 	q := ctx.QueryParam("q")
 
 	result, runsErr := c.store.SearchRunsByPipeline(ctx.Request().Context(), id, q, page, perPage)
@@ -230,16 +212,7 @@ func (c *WebPipelinesController) Show(ctx *echo.Context) error {
 // RunsSection handles GET /pipelines/:id/runs-section[/] - HTMX partial: runs section for a pipeline.
 func (c *WebPipelinesController) RunsSection(ctx *echo.Context) error {
 	id := ctx.Param("id")
-
-	page := 1
-	perPage := 20
-
-	if p := ctx.QueryParam("page"); p != "" {
-		_, _ = fmt.Sscanf(p, "%d", &page)
-	}
-	if pp := ctx.QueryParam("per_page"); pp != "" {
-		_, _ = fmt.Sscanf(pp, "%d", &perPage)
-	}
+	page, perPage := parsePagination(ctx)
 
 	result, err := c.store.SearchRunsByPipeline(ctx.Request().Context(), id, "", page, perPage)
 	if err != nil {
@@ -274,16 +247,7 @@ func (c *WebPipelinesController) RunsSection(ctx *echo.Context) error {
 func (c *WebPipelinesController) RunsSearch(ctx *echo.Context) error {
 	id := ctx.Param("id")
 	q := ctx.QueryParam("q")
-
-	page := 1
-	perPage := 20
-
-	if p := ctx.QueryParam("page"); p != "" {
-		_, _ = fmt.Sscanf(p, "%d", &page)
-	}
-	if pp := ctx.QueryParam("per_page"); pp != "" {
-		_, _ = fmt.Sscanf(pp, "%d", &perPage)
-	}
+	page, perPage := parsePagination(ctx)
 
 	result, err := c.store.SearchRunsByPipeline(ctx.Request().Context(), id, q, page, perPage)
 	if err != nil {

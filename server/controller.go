@@ -1,9 +1,11 @@
 package server
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/jtarchie/pocketci/storage"
+	"github.com/labstack/echo/v5"
 )
 
 // BaseController holds dependencies shared by all controllers.
@@ -34,4 +36,21 @@ func parseAllowedDrivers(input string) []string {
 	}
 
 	return drivers
+}
+
+// parsePagination reads the standard "page" and "per_page" query parameters,
+// falling back to (1, 20) when either is absent or unparseable. Invalid input
+// is intentionally tolerated to match the existing controller contract.
+func parsePagination(ctx *echo.Context) (page, perPage int) {
+	page, perPage = 1, 20
+
+	if p := ctx.QueryParam("page"); p != "" {
+		_, _ = fmt.Sscanf(p, "%d", &page)
+	}
+
+	if pp := ctx.QueryParam("per_page"); pp != "" {
+		_, _ = fmt.Sscanf(pp, "%d", &perPage)
+	}
+
+	return page, perPage
 }
