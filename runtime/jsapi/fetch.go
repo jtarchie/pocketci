@@ -107,7 +107,9 @@ func (r *FetchResponse) Text() string {
 // body cannot inject JavaScript into the pipeline VM.
 func (r *FetchResponse) Json() (any, error) {
 	var v any
-	if err := json.Unmarshal([]byte(r.bodyText), &v); err != nil {
+
+	err := json.Unmarshal([]byte(r.bodyText), &v)
+	if err != nil {
 		return nil, fmt.Errorf("could not parse JSON: %w", err)
 	}
 

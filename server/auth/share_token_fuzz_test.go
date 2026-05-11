@@ -69,7 +69,9 @@ func FuzzShareTokenRoundTrip(f *testing.F) {
 
 		// Wrong secret must always fail. Pick a secret guaranteed different.
 		alt := secret + "x"
-		if _, err := auth.ValidateShareToken(token, alt); err == nil {
+
+		_, wrongErr := auth.ValidateShareToken(token, alt)
+		if wrongErr == nil {
 			t.Fatalf("Validate accepted token under wrong secret")
 		}
 
@@ -77,7 +79,9 @@ func FuzzShareTokenRoundTrip(f *testing.F) {
 		if last := len(token) - 1; last > 0 {
 			flipped := []byte(token)
 			flipped[last] ^= 0x01
-			if _, err := auth.ValidateShareToken(string(flipped), secret); err == nil {
+
+			_, mutErr := auth.ValidateShareToken(string(flipped), secret)
+			if mutErr == nil {
 				t.Fatalf("Validate accepted token with mutated last byte")
 			}
 		}
