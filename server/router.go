@@ -290,7 +290,7 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	execService.RecoverOrphanedRuns(context.Background())
 
 	// Start the scheduler if the feature is enabled
-	sched := startSchedulerIfEnabled(store, execService, allowedFeatures, logger)
+	sched := startSchedulerIfEnabled(store, execService, allowedFeatures, logger, metrics)
 
 	router.Use(middleware.RequestIDWithConfig(middleware.RequestIDConfig{
 		RequestIDHandler: func(c *echo.Context, id string) {
@@ -426,7 +426,7 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 }
 
 // startSchedulerIfEnabled creates and starts the scheduler if the schedules feature is enabled.
-func startSchedulerIfEnabled(store storage.Driver, execService *ExecutionService, allowedFeatures []Feature, logger *slog.Logger) *scheduler.Scheduler {
+func startSchedulerIfEnabled(store storage.Driver, execService *ExecutionService, allowedFeatures []Feature, logger *slog.Logger, metrics Metrics) *scheduler.Scheduler {
 	if !IsFeatureEnabled(FeatureSchedules, allowedFeatures) {
 		return nil
 	}
@@ -449,6 +449,7 @@ func startSchedulerIfEnabled(store storage.Driver, execService *ExecutionService
 	const schedulerTickInterval = 10 * time.Second
 
 	sched := scheduler.New(store, triggerFn, logger, schedulerTickInterval)
+	sched.SetMetrics(metrics)
 	sched.Start()
 
 	return sched
