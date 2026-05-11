@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"time"
 
 	"github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
@@ -183,6 +184,25 @@ func (d *Docker) RunContainer(ctx context.Context, task orchestra.Task) (orchest
 		return d.handleContainerCreateError(ctx, err, containerName, task, logger)
 	}
 
+	// If we created the container but fail to attach/start, the container is
+	// orphaned. Remove it on the failure path. Use a fresh background context
+	// with a short deadline because the request ctx may already be canceled.
+	startedOK := false
+
+	defer func() {
+		if startedOK {
+			return
+		}
+
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		removeErr := d.client.ContainerRemove(cleanupCtx, response.ID, container.RemoveOptions{Force: true})
+		if removeErr != nil {
+			logger.Error("container.cleanup.error", "name", containerName, "id", response.ID, "err", removeErr)
+		}
+	}()
+
 	if enabledStdin {
 		logger.Debug("container.attach", "name", containerName)
 
@@ -211,6 +231,8 @@ func (d *Docker) RunContainer(ctx context.Context, task orchestra.Task) (orchest
 
 		return nil, fmt.Errorf("failed to start container: %w", err)
 	}
+
+	startedOK = true
 
 	return &Container{
 		id:     response.ID,
