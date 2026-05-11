@@ -2,10 +2,6 @@ package digitalocean
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,6 +14,7 @@ import (
 	"github.com/digitalocean/godo"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/orchestra/docker"
+	"github.com/jtarchie/pocketci/orchestra/sshmachine"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -541,36 +538,17 @@ func (d *DigitalOcean) ensureSSHKey(ctx context.Context) (int, string, error) {
 		}
 	}
 
-	// Generate new SSH key pair
-	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	sshKeyPath := filepath.Join(os.TempDir(), "pocketci-do-"+d.namespace)
+
+	keyPair, err := sshmachine.GenerateRSAKeyPair(sshKeyPath)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to generate SSH key: %w", err)
 	}
 
-	// Save private key to temp file
-	sshKeyPath := filepath.Join(os.TempDir(), "pocketci-do-"+d.namespace)
-	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
-	})
-
-	err = os.WriteFile(sshKeyPath, privateKeyPEM, 0o600)
-	if err != nil {
-		return 0, "", fmt.Errorf("failed to write SSH private key: %w", err)
-	}
-
-	// Generate public key
-	publicKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
-	if err != nil {
-		return 0, "", fmt.Errorf("failed to generate SSH public key: %w", err)
-	}
-
-	publicKeyStr := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(publicKey)))
-
 	// Create key in Digital Ocean
 	createRequest := &godo.KeyCreateRequest{
 		Name:      keyName,
-		PublicKey: publicKeyStr,
+		PublicKey: keyPair.PublicKeyAuthorized,
 	}
 
 	key, _, err := d.client.Keys.Create(ctx, createRequest)
@@ -615,113 +593,51 @@ func (d *DigitalOcean) waitForDroplet(ctx context.Context, dropletID int) (*godo
 
 // waitForSSH polls until SSH is accessible on the droplet.
 func (d *DigitalOcean) waitForSSH(ctx context.Context, ip string) error {
-	d.logger.Info("digitalocean.ssh.waiting", "ip", ip)
-
 	sshTimeout := d.cfg.SSHTimeout.Std()
 	if sshTimeout <= 0 {
 		sshTimeout = DefaultSSHTimeout
 	}
 
-	// Load private key
-	privateKeyData, err := os.ReadFile(d.sshKeyPath)
+	signer, err := sshmachine.LoadSigner(d.sshKeyPath)
 	if err != nil {
-		return fmt.Errorf("failed to read SSH private key: %w", err)
+		return fmt.Errorf("load ssh signer: %w", err)
 	}
 
-	signer, err := ssh.ParsePrivateKey(privateKeyData)
+	d.logger.Info("digitalocean.ssh.waiting", "ip", ip)
+
+	conn, err := sshmachine.WaitForSSH(ctx, ip, sshmachine.WaitConfig{
+		Logger:  d.logger.With("driver", "digitalocean"),
+		Signer:  signer,
+		Timeout: sshTimeout,
+	})
 	if err != nil {
-		return fmt.Errorf("failed to parse SSH private key: %w", err)
+		return fmt.Errorf("wait for ssh: %w", err)
 	}
 
-	config := &ssh.ClientConfig{
-		User: "root",
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(signer),
-		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // CI droplets are ephemeral
-		Timeout:         10 * time.Second,
-	}
+	d.sshClient = conn
+	d.logger.Info("digitalocean.ssh.connect.success")
 
-	deadline := time.Now().Add(sshTimeout)
-
-	// Try immediately first, then poll
-	for {
-		if time.Now().After(deadline) {
-			return fmt.Errorf("timeout waiting for SSH after %s", sshTimeout)
-		}
-
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("wait for ssh: %w", ctx.Err())
-		default:
-		}
-
-		conn, err := ssh.Dial("tcp", ip+":22", config)
-		if err != nil {
-			d.logger.Debug("digitalocean.ssh.connect.error", "ip", ip, "err", err)
-			time.Sleep(5 * time.Second)
-
-			continue
-		}
-
-		// Store the connection for reuse by waitForDocker
-		d.sshClient = conn
-		d.logger.Info("digitalocean.ssh.connect.success")
-
-		return nil
-	}
+	return nil
 }
 
 // waitForDocker polls until Docker is accessible on the droplet.
 // Uses the existing SSH client connection established in waitForSSH.
 func (d *DigitalOcean) waitForDocker(ctx context.Context) error {
-	d.logger.Info("digitalocean.docker.wait")
-
 	dockerTimeout := d.cfg.DockerTimeout.Std()
 	if dockerTimeout <= 0 {
 		dockerTimeout = DefaultDockerTimeout
 	}
 
-	if d.sshClient == nil {
-		return errors.New("SSH client not connected")
+	d.logger.Info("digitalocean.docker.wait")
+
+	err := sshmachine.WaitForDocker(ctx, d.sshClient, d.logger.With("driver", "digitalocean"), dockerTimeout)
+	if err != nil {
+		return fmt.Errorf("wait for docker: %w", err)
 	}
 
-	deadline := time.Now().Add(dockerTimeout)
+	d.logger.Info("digitalocean.docker.ready.success")
 
-	// Try immediately first, then poll
-	for {
-		if time.Now().After(deadline) {
-			return fmt.Errorf("timeout waiting for Docker after %s", dockerTimeout)
-		}
-
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("wait for docker: %w", ctx.Err())
-		default:
-		}
-
-		session, err := d.sshClient.NewSession()
-		if err != nil {
-			d.logger.Debug("digitalocean.docker.session.error", "err", err)
-			time.Sleep(5 * time.Second)
-
-			continue
-		}
-
-		output, err := session.CombinedOutput("docker ps")
-		_ = session.Close()
-
-		if err != nil {
-			d.logger.Debug("digitalocean.docker.check.error", "err", err, "output", string(output))
-			time.Sleep(5 * time.Second)
-
-			continue
-		}
-
-		d.logger.Info("digitalocean.docker.ready.success")
-
-		return nil
-	}
+	return nil
 }
 
 // RunContainer creates the droplet if needed and delegates to the docker driver.
