@@ -88,5 +88,15 @@ jobs:
       - run: task build:docs
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
+      - name: govulncheck
+        # Advisory only until we have a suppression story for unfixed-upstream
+        # CVEs (currently 2 in github.com/docker/docker@v28.5.2+incompatible,
+        # both Fixed in: N/A). New findings show up in the job log; merges are
+        # not blocked. Drop continue-on-error once those upstream advisories
+        # gain a fixed version, or wire in a documented allow-list.
+        continue-on-error: true
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
       - name: Task
         run: task
