@@ -62,6 +62,8 @@ func FuzzSanitizeFTSQuery(f *testing.F) {
 // assertStructure walks the sanitizer output as: ('"' chars '"' '*' (' ' | END))+
 // where 'chars' is any sequence of runes with "" treated as an escaped quote.
 // If the entire output matches the grammar, no top-level operator is reachable.
+//
+//nolint:cyclop // hand-rolled grammar walker; splitting hurts readability of the proof
 func assertStructure(t *testing.T, in, out string) {
 	t.Helper()
 

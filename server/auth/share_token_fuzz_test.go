@@ -16,10 +16,10 @@ func FuzzValidateShareToken(f *testing.F) {
 		{"..", ""},
 		{"a.b.c", "k"},
 		{"run.1.deadbeef", "k"},
-		{"run.+1.deadbeef", "k"},                     // leading-+ ParseInt accepts (today)
-		{"run.999999999999999999.deadbeef", "k"},     // near-overflow expiry
-		{"run.18446744073709551616.deadbeef", "k"},   // overflow ParseInt(int64)
-		{"run.-1.deadbeef", "k"},                     // negative expiry
+		{"run.+1.deadbeef", "k"},                 // leading-+ ParseInt accepts (today)
+		{"run.999999999999999999.deadbeef", "k"}, // near-overflow expiry
+		{"run.18446744073709551616.deadbeef", "k"}, // overflow ParseInt(int64)
+		{"run.-1.deadbeef", "k"},                   // negative expiry
 		{"run.1.nothex", "k"},
 		{"\x00.\x00.\x00", "k"},
 		{strings.Repeat("a", 4096), "k"},

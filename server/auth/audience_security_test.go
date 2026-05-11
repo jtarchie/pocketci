@@ -77,13 +77,15 @@ func TestAudience_LegacyTokenAcceptedByAPI(t *testing.T) {
 
 	// API still accepts.
 	apiValidator := auth.TokenValidator(secret)
-	if _, err := apiValidator(legacyToken); err != nil {
+	_, err = apiValidator(legacyToken)
+	if err != nil {
 		t.Fatalf("API validator rejected legacy (no-aud) token: %v", err)
 	}
 
 	// MCP must NOT — strict audience required.
 	mcpVerifier := auth.MCPTokenVerifier(secret)
-	if _, err := mcpVerifier(t.Context(), legacyToken, nil); err == nil {
+	_, err = mcpVerifier(t.Context(), legacyToken, nil)
+	if err == nil {
 		t.Fatal("MCP verifier accepted legacy (no-aud) token; should require aud=mcp")
 	}
 }
@@ -105,7 +107,8 @@ func TestAudience_HappyPaths(t *testing.T) {
 		t.Fatalf("GenerateToken mcp: %v", err)
 	}
 
-	if _, err := auth.TokenValidator(secret)(apiToken); err != nil {
+	_, err = auth.TokenValidator(secret)(apiToken)
+	if err != nil {
 		t.Fatalf("api token rejected by api validator: %v", err)
 	}
 	info, err := auth.MCPTokenVerifier(secret)(t.Context(), mcpToken, nil)
@@ -129,7 +132,8 @@ func TestAudience_WrongSignatureRejected(t *testing.T) {
 		t.Fatalf("GenerateToken: %v", err)
 	}
 
-	if _, err := auth.TokenValidator("secretB-32-bytes--padding----xxx")(token); err == nil {
+	_, err = auth.TokenValidator("secretB-32-bytes--padding----xxx")(token)
+	if err == nil {
 		t.Fatal("token validated against wrong secret")
 	}
 }
