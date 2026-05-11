@@ -32,6 +32,23 @@ type ObservabilityProvider interface {
 	Event(eventType string, data map[string]any) error
 }
 
+// Metrics is the recording surface used for runtime measurements. Same shape
+// as observability.Metrics; defined locally to avoid taking a hard import on
+// the metrics backend, mirroring the ObservabilityProvider pattern above.
+type Metrics interface {
+	CounterAdd(name string, delta float64, labels map[string]string)
+	GaugeSet(name string, value float64, labels map[string]string)
+	HistogramObserve(name string, value float64, labels map[string]string)
+}
+
+// noopMetrics is the zero-cost default used when RouterOptions.Metrics is nil
+// so call sites never need to nil-check.
+type noopMetrics struct{}
+
+func (noopMetrics) CounterAdd(_ string, _ float64, _ map[string]string)       {}
+func (noopMetrics) GaugeSet(_ string, _ float64, _ map[string]string)         {}
+func (noopMetrics) HistogramObserve(_ string, _ float64, _ map[string]string) {}
+
 // RouterOptions configures the router.
 type RouterOptions struct {
 	MaxInFlight           int
@@ -73,6 +90,16 @@ type RouterOptions struct {
 	// SecureCookies enables the Secure flag on session cookies.
 	// Set to true when the server is served over HTTPS.
 	SecureCookies bool
+	// Metrics is the optional recording surface for runtime measurements.
+	// When nil, a no-op implementation is used so call sites never have to
+	// nil-check. The router does not itself record metrics; subsequent
+	// instrumentation commits in execution.go, scheduler/, the webhook
+	// controller, etc. consume this.
+	Metrics Metrics
+	// MetricsHandler, when set, is mounted at GET /metrics. Pass
+	// promhttp.Handler() (or any http.Handler) from the caller; the router
+	// has no opinion on the metrics serialization format.
+	MetricsHandler http.Handler
 }
 
 // Router wraps echo.Echo and provides access to the execution service.
@@ -83,6 +110,7 @@ type Router struct {
 	webGroup        *echo.Group
 	allowedDrivers  []string
 	allowedFeatures []Feature
+	metrics         Metrics
 }
 
 const banner = `
@@ -236,6 +264,11 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 		return nil, fmt.Errorf("could not parse allowed features: %w", err)
 	}
 
+	metrics := opts.Metrics
+	if metrics == nil {
+		metrics = noopMetrics{}
+	}
+
 	// Create execution service with allowed drivers and features
 	execService := NewExecutionService(store, logger, opts.MaxInFlight, opts.MaxQueueSize, allowedDrivers)
 	execService.SecretsManager = opts.SecretsManager
@@ -247,6 +280,7 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	execService.CacheS3 = opts.CacheS3
 	execService.ResourceRegistry = resources.NewRegistry(opts.NativeResources)
 	execService.DriverRegistry = orchestra.NewDriverRegistry(opts.DriverProviders)
+	execService.Metrics = metrics
 
 	if opts.DefaultDriver != "" {
 		execService.DefaultDriver = opts.DefaultDriver
@@ -303,6 +337,10 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	router.GET("/health/", func(ctx *echo.Context) error {
 		return ctx.String(http.StatusOK, "OK")
 	})
+
+	if opts.MetricsHandler != nil {
+		router.GET("/metrics", echo.WrapHandler(opts.MetricsHandler))
+	}
 
 	// Create web UI group and apply auth middleware
 	web := router.Group("")
@@ -387,7 +425,7 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 
 	registerRoutes(router, api, web, store, execService, allowedDrivers, configuredDrivers, allowedFeatures, opts.SecretsManager, opts.WebhookProviders, webhookTimeout, opts.MaxWorkdirBytes, logger)
 
-	return &Router{Echo: router, execService: execService, scheduler: sched, webGroup: web, allowedDrivers: allowedDrivers, allowedFeatures: allowedFeatures}, nil
+	return &Router{Echo: router, execService: execService, scheduler: sched, webGroup: web, allowedDrivers: allowedDrivers, allowedFeatures: allowedFeatures, metrics: metrics}, nil
 }
 
 // startSchedulerIfEnabled creates and starts the scheduler if the schedules feature is enabled.

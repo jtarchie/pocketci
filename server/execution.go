@@ -46,6 +46,7 @@ type ExecutionService struct {
 	DedupTTL              time.Duration
 	ResourceRegistry      *resources.Registry
 	DriverRegistry        *orchestra.DriverRegistry
+	Metrics               Metrics
 	stopRegistry          map[string]context.CancelFunc
 	stopMu                sync.Mutex
 
