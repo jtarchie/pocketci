@@ -1,12 +1,11 @@
 // Package gitlab provides a webhook provider for GitLab events.
 // It detects requests by the presence of the X-Gitlab-Event header and
-// verifies signatures using X-Gitlab-Token (HMAC-SHA256, "sha256=<hex>" format).
+// verifies signatures using X-Gitlab-Token. The token may be either a plain
+// shared secret or an HMAC-SHA256 signature in "sha256=<hex>" format.
 package gitlab
 
 import (
 	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"strings"
 
@@ -37,51 +36,15 @@ func (p *provider) Parse(r *http.Request, body []byte, secret string) (*webhooks
 		}
 	}
 
-	eventType := r.Header.Get("X-Gitlab-Event")
-
-	return buildEvent("gitlab", eventType, r, body), nil
+	return webhooks.NewEvent("gitlab", r.Header.Get("X-Gitlab-Event"), r, body), nil
 }
 
-// validateSignature checks the "sha256=<hex>" formatted GitLab signature.
+// validateSignature accepts either the HMAC-SHA256 "sha256=<hex>" form or a
+// plain shared-secret token compared constant-time.
 func validateSignature(body []byte, secret, sigHeader string) bool {
-	const prefix = "sha256="
-
-	if strings.HasPrefix(sigHeader, prefix) {
-		received := strings.TrimPrefix(sigHeader, prefix)
-
-		mac := hmac.New(sha256.New, []byte(secret))
-		mac.Write(body)
-		expected := hex.EncodeToString(mac.Sum(nil))
-
-		return hmac.Equal([]byte(received), []byte(expected))
+	if strings.HasPrefix(sigHeader, "sha256=") {
+		return webhooks.VerifyHexHMACSHA256Prefixed(body, []byte(secret), sigHeader, "sha256=")
 	}
 
-	// GitLab also supports a plain token (not HMAC) — compare directly.
 	return hmac.Equal([]byte(sigHeader), []byte(secret))
-}
-
-func buildEvent(providerName, eventType string, r *http.Request, body []byte) *webhooks.Event {
-	headers := make(map[string]string)
-	for key, values := range r.Header {
-		if len(values) > 0 {
-			headers[key] = values[0]
-		}
-	}
-
-	query := make(map[string]string)
-	for key, values := range r.URL.Query() {
-		if len(values) > 0 {
-			query[key] = values[0]
-		}
-	}
-
-	return &webhooks.Event{
-		Provider:  providerName,
-		EventType: eventType,
-		Method:    r.Method,
-		URL:       r.URL.String(),
-		Headers:   headers,
-		Body:      string(body),
-		Query:     query,
-	}
 }

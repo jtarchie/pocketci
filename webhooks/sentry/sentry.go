@@ -4,9 +4,6 @@
 package sentry
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 
@@ -32,7 +29,7 @@ func (p *provider) Parse(r *http.Request, body []byte, secret string) (*webhooks
 			return nil, webhooks.ErrUnauthorized
 		}
 
-		if !validateSignature(body, secret, sigHeader) {
+		if !webhooks.VerifyHexHMACSHA256(body, []byte(secret), sigHeader) {
 			return nil, webhooks.ErrUnauthorized
 		}
 	}
@@ -42,16 +39,7 @@ func (p *provider) Parse(r *http.Request, body []byte, secret string) (*webhooks
 		eventType = extractEventType(body)
 	}
 
-	return buildEvent("sentry", eventType, r, body), nil
-}
-
-// validateSignature checks the plain hex HMAC-SHA256 Sentry signature.
-func validateSignature(body []byte, secret, sigHeader string) bool {
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write(body)
-	expected := hex.EncodeToString(mac.Sum(nil))
-
-	return hmac.Equal([]byte(sigHeader), []byte(expected))
+	return webhooks.NewEvent("sentry", eventType, r, body), nil
 }
 
 // extractEventType reads the top-level "action" or "type" field from the Sentry JSON payload.
@@ -71,30 +59,4 @@ func extractEventType(body []byte) string {
 	}
 
 	return payload.Type
-}
-
-func buildEvent(providerName, eventType string, r *http.Request, body []byte) *webhooks.Event {
-	headers := make(map[string]string)
-	for key, values := range r.Header {
-		if len(values) > 0 {
-			headers[key] = values[0]
-		}
-	}
-
-	query := make(map[string]string)
-	for key, values := range r.URL.Query() {
-		if len(values) > 0 {
-			query[key] = values[0]
-		}
-	}
-
-	return &webhooks.Event{
-		Provider:  providerName,
-		EventType: eventType,
-		Method:    r.Method,
-		URL:       r.URL.String(),
-		Headers:   headers,
-		Body:      string(body),
-		Query:     query,
-	}
 }

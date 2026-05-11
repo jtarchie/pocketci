@@ -37,9 +37,7 @@ func (p *provider) Parse(r *http.Request, body []byte, secret string) (*webhooks
 		return nil, webhooks.ErrUnauthorized
 	}
 
-	eventType := extractEventType(body)
-
-	return buildEvent("honeybadger", eventType, r, body), nil
+	return webhooks.NewEvent("honeybadger", extractEventType(body), r, body), nil
 }
 
 // extractEventType reads a top-level "type" or "event" from the payload.
@@ -60,30 +58,4 @@ func extractEventType(body []byte) string {
 	}
 
 	return ""
-}
-
-func buildEvent(providerName, eventType string, r *http.Request, body []byte) *webhooks.Event {
-	headers := make(map[string]string)
-	for key, values := range r.Header {
-		if len(values) > 0 {
-			headers[key] = values[0]
-		}
-	}
-
-	query := make(map[string]string)
-	for key, values := range r.URL.Query() {
-		if len(values) > 0 {
-			query[key] = values[0]
-		}
-	}
-
-	return &webhooks.Event{
-		Provider:  providerName,
-		EventType: eventType,
-		Method:    r.Method,
-		URL:       r.URL.String(),
-		Headers:   headers,
-		Body:      string(body),
-		Query:     query,
-	}
 }

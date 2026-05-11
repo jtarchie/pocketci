@@ -7,13 +7,8 @@
 package slack
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/jtarchie/pocketci/webhooks"
 )
@@ -39,32 +34,13 @@ func (p *provider) Parse(r *http.Request, body []byte, secret string) (*webhooks
 			return nil, webhooks.ErrUnauthorized
 		}
 
-		if !validateSignature(body, secret, timestamp, sigHeader) {
+		base := "v0:" + timestamp + ":" + string(body)
+		if !webhooks.VerifyHexHMACSHA256Prefixed([]byte(base), []byte(secret), sigHeader, "v0=") {
 			return nil, webhooks.ErrUnauthorized
 		}
 	}
 
-	eventType := extractEventType(body)
-
-	return buildEvent("slack", eventType, r, body), nil
-}
-
-// validateSignature verifies the Slack "v0=<hex>" signature.
-func validateSignature(body []byte, secret, timestamp, sigHeader string) bool {
-	const prefix = "v0="
-
-	if !strings.HasPrefix(sigHeader, prefix) {
-		return false
-	}
-
-	received := strings.TrimPrefix(sigHeader, prefix)
-
-	base := fmt.Sprintf("v0:%s:%s", timestamp, string(body))
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(base))
-	expected := hex.EncodeToString(mac.Sum(nil))
-
-	return hmac.Equal([]byte(received), []byte(expected))
+	return webhooks.NewEvent("slack", extractEventType(body), r, body), nil
 }
 
 // extractEventType reads the top-level "type" field from the Slack JSON payload.
@@ -80,30 +56,4 @@ func extractEventType(body []byte) string {
 	}
 
 	return payload.Type
-}
-
-func buildEvent(providerName, eventType string, r *http.Request, body []byte) *webhooks.Event {
-	headers := make(map[string]string)
-	for key, values := range r.Header {
-		if len(values) > 0 {
-			headers[key] = values[0]
-		}
-	}
-
-	query := make(map[string]string)
-	for key, values := range r.URL.Query() {
-		if len(values) > 0 {
-			query[key] = values[0]
-		}
-	}
-
-	return &webhooks.Event{
-		Provider:  providerName,
-		EventType: eventType,
-		Method:    r.Method,
-		URL:       r.URL.String(),
-		Headers:   headers,
-		Body:      string(body),
-		Query:     query,
-	}
 }
