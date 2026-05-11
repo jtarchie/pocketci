@@ -6,11 +6,10 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 )
 
-// CopyToVolume implements cache.VolumeDataAccessor by delegating to the inner
+// CopyToVolume implements orchestra.VolumeDataAccessor by delegating to the inner
 // Docker driver that runs on the Hetzner server.
 func (h *Hetzner) CopyToVolume(ctx context.Context, volumeName string, reader io.Reader) error {
 	err := h.ensureServer(ctx, orchestra.ContainerLimits{})
@@ -18,7 +17,7 @@ func (h *Hetzner) CopyToVolume(ctx context.Context, volumeName string, reader io
 		return fmt.Errorf("failed to ensure server: %w", err)
 	}
 
-	accessor, ok := h.dockerDriver.(cache.VolumeDataAccessor)
+	accessor, ok := h.dockerDriver.(orchestra.VolumeDataAccessor)
 	if !ok {
 		return errors.New("inner docker driver does not support caching")
 	}
@@ -31,7 +30,7 @@ func (h *Hetzner) CopyToVolume(ctx context.Context, volumeName string, reader io
 	return nil
 }
 
-// CopyFromVolume implements cache.VolumeDataAccessor by delegating to the inner
+// CopyFromVolume implements orchestra.VolumeDataAccessor by delegating to the inner
 // Docker driver that runs on the Hetzner server.
 func (h *Hetzner) CopyFromVolume(ctx context.Context, volumeName string) (io.ReadCloser, error) {
 	err := h.ensureServer(ctx, orchestra.ContainerLimits{})
@@ -39,7 +38,7 @@ func (h *Hetzner) CopyFromVolume(ctx context.Context, volumeName string) (io.Rea
 		return nil, fmt.Errorf("failed to ensure server: %w", err)
 	}
 
-	accessor, ok := h.dockerDriver.(cache.VolumeDataAccessor)
+	accessor, ok := h.dockerDriver.(orchestra.VolumeDataAccessor)
 	if !ok {
 		return nil, errors.New("inner docker driver does not support caching")
 	}
@@ -52,7 +51,7 @@ func (h *Hetzner) CopyFromVolume(ctx context.Context, volumeName string) (io.Rea
 	return rc, nil
 }
 
-// ReadFilesFromVolume implements cache.VolumeDataAccessor by delegating to the inner
+// ReadFilesFromVolume implements orchestra.VolumeDataAccessor by delegating to the inner
 // Docker driver that runs on the Hetzner server.
 func (h *Hetzner) ReadFilesFromVolume(ctx context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error) {
 	err := h.ensureServer(ctx, orchestra.ContainerLimits{})
@@ -60,7 +59,7 @@ func (h *Hetzner) ReadFilesFromVolume(ctx context.Context, volumeName string, fi
 		return nil, fmt.Errorf("failed to ensure server: %w", err)
 	}
 
-	accessor, ok := h.dockerDriver.(cache.VolumeDataAccessor)
+	accessor, ok := h.dockerDriver.(orchestra.VolumeDataAccessor)
 	if !ok {
 		return nil, errors.New("inner docker driver does not support caching")
 	}
@@ -73,4 +72,4 @@ func (h *Hetzner) ReadFilesFromVolume(ctx context.Context, volumeName string, fi
 	return rc, nil
 }
 
-var _ cache.VolumeDataAccessor = (*Hetzner)(nil)
+var _ orchestra.VolumeDataAccessor = (*Hetzner)(nil)

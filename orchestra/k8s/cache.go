@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/jtarchie/pocketci/cache"
+	"github.com/jtarchie/pocketci/orchestra"
 	corev1 "k8s.io/api/core/v1"
 	errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,7 +19,7 @@ import (
 
 const cacheHelperImage = "busybox:latest"
 
-// CopyToVolume implements cache.VolumeDataAccessor.
+// CopyToVolume implements orchestra.VolumeDataAccessor.
 // Creates a temporary pod to extract tar data into the PVC.
 func (k *K8s) CopyToVolume(ctx context.Context, volumeName string, reader io.Reader) error {
 	pvcName := sanitizeName(fmt.Sprintf("%s-%s", k.namespace, volumeName))
@@ -111,7 +111,7 @@ func (k *K8s) CopyToVolume(ctx context.Context, volumeName string, reader io.Rea
 	return nil
 }
 
-// CopyFromVolume implements cache.VolumeDataAccessor.
+// CopyFromVolume implements orchestra.VolumeDataAccessor.
 // Creates a temporary pod to read tar data from the PVC.
 func (k *K8s) CopyFromVolume(ctx context.Context, volumeName string) (io.ReadCloser, error) {
 	pvcName := sanitizeName(fmt.Sprintf("%s-%s", k.namespace, volumeName))
@@ -317,7 +317,7 @@ func (t *tarPathStripper) run() {
 	}
 }
 
-// ReadFilesFromVolume implements cache.VolumeDataAccessor.
+// ReadFilesFromVolume implements orchestra.VolumeDataAccessor.
 // Creates a temporary pod and execs tar to stream specific files from the PVC.
 func (k *K8s) ReadFilesFromVolume(ctx context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error) {
 	pvcName := sanitizeName(fmt.Sprintf("%s-%s", k.namespace, volumeName))
@@ -415,4 +415,4 @@ func (k *K8s) ReadFilesFromVolume(ctx context.Context, volumeName string, filePa
 	return pr, nil
 }
 
-var _ cache.VolumeDataAccessor = (*K8s)(nil)
+var _ orchestra.VolumeDataAccessor = (*K8s)(nil)

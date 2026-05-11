@@ -10,7 +10,7 @@ import (
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/jtarchie/pocketci/cache"
+	"github.com/jtarchie/pocketci/orchestra"
 )
 
 // pullImage ensures an image is available locally, waiting for the pull to complete.
@@ -27,7 +27,7 @@ func (d *Docker) pullImage(ctx context.Context, imageName string) error {
 
 const cacheHelperImage = "busybox:latest"
 
-// CopyToVolume implements cache.VolumeDataAccessor.
+// CopyToVolume implements orchestra.VolumeDataAccessor.
 // Creates a temporary container to extract tar data into the volume.
 func (d *Docker) CopyToVolume(ctx context.Context, volumeName string, reader io.Reader) error {
 	fullVolumeName := fmt.Sprintf("%s-%s", d.namespace, volumeName)
@@ -73,7 +73,7 @@ func (d *Docker) CopyToVolume(ctx context.Context, volumeName string, reader io.
 	return nil
 }
 
-// CopyFromVolume implements cache.VolumeDataAccessor.
+// CopyFromVolume implements orchestra.VolumeDataAccessor.
 // Creates a temporary container to read tar data from the volume.
 func (d *Docker) CopyFromVolume(ctx context.Context, volumeName string) (io.ReadCloser, error) {
 	fullVolumeName := fmt.Sprintf("%s-%s", d.namespace, volumeName)
@@ -148,7 +148,7 @@ func (r *dockerCopyReader) Close() error {
 	return nil
 }
 
-// ReadFilesFromVolume implements cache.VolumeDataAccessor.
+// ReadFilesFromVolume implements orchestra.VolumeDataAccessor.
 // Creates a temporary container and execs tar to stream specific files from the volume.
 func (d *Docker) ReadFilesFromVolume(ctx context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error) {
 	fullVolumeName := fmt.Sprintf("%s-%s", d.namespace, volumeName)
@@ -225,4 +225,4 @@ func (d *Docker) ReadFilesFromVolume(ctx context.Context, volumeName string, fil
 	return pr, nil
 }
 
-var _ cache.VolumeDataAccessor = (*Docker)(nil)
+var _ orchestra.VolumeDataAccessor = (*Docker)(nil)

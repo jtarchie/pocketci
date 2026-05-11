@@ -13,7 +13,7 @@ import (
 	"github.com/superfly/fly-go/flaps"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/jtarchie/pocketci/cache"
+	"github.com/jtarchie/pocketci/orchestra"
 )
 
 const cacheHelperImage = "busybox:latest"
@@ -247,7 +247,7 @@ func (f *Fly) destroyHelperMachine(ctx context.Context, machineID string) {
 	f.logger.Debug("fly.cache.helper.suspended", "machine", machineID)
 }
 
-// CopyToVolume implements cache.VolumeDataAccessor.
+// CopyToVolume implements orchestra.VolumeDataAccessor.
 // It launches a busybox helper machine with the volume mounted, establishes a
 // WireGuard tunnel + SSH connection, and pipes the tar stream into a remote
 // `tar xf -` rooted at /volume/<name>. The remote tar reproduces hard
@@ -322,7 +322,7 @@ func (f *Fly) CopyToVolume(ctx context.Context, volumeName string, reader io.Rea
 	return nil
 }
 
-// CopyFromVolume implements cache.VolumeDataAccessor.
+// CopyFromVolume implements orchestra.VolumeDataAccessor.
 // It launches a busybox helper machine with the volume mounted, establishes a
 // WireGuard tunnel + SSH connection, and streams a tar archive of /volume contents.
 func (f *Fly) CopyFromVolume(ctx context.Context, volumeName string) (io.ReadCloser, error) {
@@ -430,7 +430,7 @@ func (r *cacheReader) Close() error {
 	return nil
 }
 
-// ReadFilesFromVolume implements cache.VolumeDataAccessor.
+// ReadFilesFromVolume implements orchestra.VolumeDataAccessor.
 // Uses the same SSH tunnel approach as CopyFromVolume but tars only specific paths.
 func (f *Fly) ReadFilesFromVolume(ctx context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error) {
 	vol := f.findVolumeByName(volumeName)
@@ -506,4 +506,4 @@ func (f *Fly) ReadFilesFromVolume(ctx context.Context, volumeName string, filePa
 	}, nil
 }
 
-var _ cache.VolumeDataAccessor = (*Fly)(nil)
+var _ orchestra.VolumeDataAccessor = (*Fly)(nil)

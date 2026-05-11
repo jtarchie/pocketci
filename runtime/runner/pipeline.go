@@ -17,7 +17,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/runtime/support"
 	"github.com/jtarchie/pocketci/secrets"
@@ -197,7 +196,7 @@ func (c *PipelineRunner) CreateVolume(input VolumeInput) (*VolumeResult, error) 
 // VolumeDataAccessor interface, untars the result, and returns file contents
 // as a map of relative path to string content.
 func (c *PipelineRunner) ReadFilesFromVolume(volumeName string, filePaths ...string) (map[string]string, error) {
-	accessor, ok := c.client.(cache.VolumeDataAccessor)
+	accessor, ok := c.client.(orchestra.VolumeDataAccessor)
 	if !ok {
 		return nil, fmt.Errorf("driver %q does not support reading files from volumes", c.client.Name())
 	}
@@ -373,7 +372,7 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		cleanupErr := container.Cleanup(cleanupCtx) //nolint:contextcheck // cleanup after cancellation needs a fresh context
+		cleanupErr := container.Cleanup(cleanupCtx)
 		if cleanupErr != nil {
 			logger.Error("container.cleanup.error", "err", cleanupErr)
 		}

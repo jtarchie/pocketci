@@ -12,7 +12,6 @@ import (
 	"time"
 
 	config "github.com/jtarchie/pocketci/backwards"
-	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/resources"
 	"github.com/samber/lo"
@@ -102,7 +101,7 @@ func runResourceContainer(sc *StepContext, taskName, image string, command []str
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		_ = container.Cleanup(cleanupCtx) //nolint:contextcheck // cleanup after cancellation needs a fresh context
+		_ = container.Cleanup(cleanupCtx)
 	}()
 
 	status, err := waitForContainer(sc.Ctx, container)
@@ -224,7 +223,7 @@ type nativeVolumeContext struct {
 }
 
 func (v *nativeVolumeContext) WriteFile(ctx context.Context, path string, data []byte) error {
-	if accessor, ok := v.driver.(cache.VolumeDataAccessor); ok {
+	if accessor, ok := v.driver.(orchestra.VolumeDataAccessor); ok {
 		var buf bytes.Buffer
 		tw := tar.NewWriter(&buf)
 
@@ -260,7 +259,7 @@ func (v *nativeVolumeContext) WriteFile(ctx context.Context, path string, data [
 }
 
 func (v *nativeVolumeContext) ReadFile(ctx context.Context, path string) ([]byte, error) {
-	if accessor, ok := v.driver.(cache.VolumeDataAccessor); ok {
+	if accessor, ok := v.driver.(orchestra.VolumeDataAccessor); ok {
 		rc, err := accessor.ReadFilesFromVolume(ctx, v.vol.Name(), path)
 		if err != nil {
 			return nil, fmt.Errorf("read from volume for %q: %w", path, err)

@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jtarchie/pocketci/cache"
+	"github.com/jtarchie/pocketci/orchestra"
 )
 
-// CopyToVolume implements cache.VolumeDataAccessor.
+// CopyToVolume implements orchestra.VolumeDataAccessor.
 // Extracts a tar archive to the volume directory.
 func (n *Native) CopyToVolume(_ context.Context, volumeName string, reader io.Reader) error {
 	volumePath := filepath.Join(n.path, volumeName)
@@ -82,7 +82,7 @@ func (n *Native) CopyToVolume(_ context.Context, volumeName string, reader io.Re
 	return nil
 }
 
-// CopyFromVolume implements cache.VolumeDataAccessor.
+// CopyFromVolume implements orchestra.VolumeDataAccessor.
 // Creates a tar archive of the volume directory contents.
 func (n *Native) CopyFromVolume(_ context.Context, volumeName string) (io.ReadCloser, error) {
 	volumePath := filepath.Join(n.path, volumeName)
@@ -119,7 +119,7 @@ func (n *Native) CopyFromVolume(_ context.Context, volumeName string) (io.ReadCl
 	return pr, nil
 }
 
-// ReadFilesFromVolume implements cache.VolumeDataAccessor.
+// ReadFilesFromVolume implements orchestra.VolumeDataAccessor.
 // Creates a tar archive containing only the requested paths from the volume.
 func (n *Native) ReadFilesFromVolume(_ context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error) {
 	volumePath := filepath.Join(n.path, volumeName)
@@ -231,7 +231,7 @@ func tarPath(tw *tar.Writer, volumePath, fp string) error {
 	return tarFileEntry(tw, fp, target, info)
 }
 
-var _ cache.VolumeDataAccessor = (*Native)(nil)
+var _ orchestra.VolumeDataAccessor = (*Native)(nil)
 
 // tarWalkFunc returns a filepath.WalkFunc that writes each entry to the tar writer
 // with paths relative to volumePath.

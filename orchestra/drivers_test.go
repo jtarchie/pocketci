@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/orchestra/docker"
 	"github.com/jtarchie/pocketci/orchestra/fly"
@@ -326,7 +325,7 @@ func testDriverReadFiles(t *testing.T, dtc driverTestCtx) {
 
 	defer func() { _ = client.Close() }()
 
-	accessor, ok := client.(cache.VolumeDataAccessor)
+	accessor, ok := client.(orchestra.VolumeDataAccessor)
 	if !ok {
 		t.Skip("driver does not implement VolumeDataAccessor")
 	}

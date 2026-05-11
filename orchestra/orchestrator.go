@@ -33,6 +33,26 @@ type Volume interface {
 	Path() string
 }
 
+// VolumeDataAccessor provides tar-stream access to a volume's contents.
+// Drivers implement this so callers (resource get/put plumbing, JS volume
+// readFiles, cache_op restore/persist) can move bytes into or out of a
+// volume without knowing the driver-specific transport (docker cp, kubectl
+// exec, SSH+tar, filesystem io.Copy, etc.).
+type VolumeDataAccessor interface {
+	// CopyToVolume writes tar data to a volume.
+	// The reader should provide a tar archive that will be extracted to the volume root.
+	CopyToVolume(ctx context.Context, volumeName string, reader io.Reader) error
+
+	// CopyFromVolume reads tar data from a volume.
+	// Returns a tar archive of the volume contents.
+	CopyFromVolume(ctx context.Context, volumeName string) (io.ReadCloser, error)
+
+	// ReadFilesFromVolume reads specific files/directories from a volume.
+	// Returns a tar archive containing only the requested paths.
+	// Directories are included recursively. Paths are relative to the volume root.
+	ReadFilesFromVolume(ctx context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error)
+}
+
 type Driver interface {
 	Close() error
 	CreateVolume(ctx context.Context, name string, size int) (Volume, error)

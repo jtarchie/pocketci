@@ -180,7 +180,7 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		_ = container.Cleanup(cleanupCtx) //nolint:contextcheck // cleanup after cancellation needs a fresh context
+		_ = container.Cleanup(cleanupCtx)
 	}()
 
 	// Stream logs concurrently with container execution.
@@ -648,7 +648,7 @@ func loadRawBytesFromVolume(sc *StepContext, filePath string) (data []byte, retE
 		return nil, fmt.Errorf("volume %q not found in known volumes", mountName)
 	}
 
-	accessor, ok := sc.Driver.(cache.VolumeDataAccessor)
+	accessor, ok := sc.Driver.(orchestra.VolumeDataAccessor)
 	if !ok {
 		return nil, fmt.Errorf("driver %q does not support reading files from volumes", sc.Driver.Name())
 	}

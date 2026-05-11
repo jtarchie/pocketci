@@ -6,11 +6,10 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 )
 
-// CopyToVolume implements cache.VolumeDataAccessor by delegating to the inner
+// CopyToVolume implements orchestra.VolumeDataAccessor by delegating to the inner
 // Docker driver that runs on the DigitalOcean droplet.
 func (d *DigitalOcean) CopyToVolume(ctx context.Context, volumeName string, reader io.Reader) error {
 	err := d.ensureDroplet(ctx, orchestra.ContainerLimits{})
@@ -18,7 +17,7 @@ func (d *DigitalOcean) CopyToVolume(ctx context.Context, volumeName string, read
 		return fmt.Errorf("failed to ensure droplet: %w", err)
 	}
 
-	accessor, ok := d.dockerDriver.(cache.VolumeDataAccessor)
+	accessor, ok := d.dockerDriver.(orchestra.VolumeDataAccessor)
 	if !ok {
 		return errors.New("inner docker driver does not support caching")
 	}
@@ -31,7 +30,7 @@ func (d *DigitalOcean) CopyToVolume(ctx context.Context, volumeName string, read
 	return nil
 }
 
-// CopyFromVolume implements cache.VolumeDataAccessor by delegating to the inner
+// CopyFromVolume implements orchestra.VolumeDataAccessor by delegating to the inner
 // Docker driver that runs on the DigitalOcean droplet.
 func (d *DigitalOcean) CopyFromVolume(ctx context.Context, volumeName string) (io.ReadCloser, error) {
 	err := d.ensureDroplet(ctx, orchestra.ContainerLimits{})
@@ -39,7 +38,7 @@ func (d *DigitalOcean) CopyFromVolume(ctx context.Context, volumeName string) (i
 		return nil, fmt.Errorf("failed to ensure droplet: %w", err)
 	}
 
-	accessor, ok := d.dockerDriver.(cache.VolumeDataAccessor)
+	accessor, ok := d.dockerDriver.(orchestra.VolumeDataAccessor)
 	if !ok {
 		return nil, errors.New("inner docker driver does not support caching")
 	}
@@ -52,7 +51,7 @@ func (d *DigitalOcean) CopyFromVolume(ctx context.Context, volumeName string) (i
 	return rc, nil
 }
 
-// ReadFilesFromVolume implements cache.VolumeDataAccessor by delegating to the inner
+// ReadFilesFromVolume implements orchestra.VolumeDataAccessor by delegating to the inner
 // Docker driver that runs on the DigitalOcean droplet.
 func (d *DigitalOcean) ReadFilesFromVolume(ctx context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error) {
 	err := d.ensureDroplet(ctx, orchestra.ContainerLimits{})
@@ -60,7 +59,7 @@ func (d *DigitalOcean) ReadFilesFromVolume(ctx context.Context, volumeName strin
 		return nil, fmt.Errorf("failed to ensure droplet: %w", err)
 	}
 
-	accessor, ok := d.dockerDriver.(cache.VolumeDataAccessor)
+	accessor, ok := d.dockerDriver.(orchestra.VolumeDataAccessor)
 	if !ok {
 		return nil, errors.New("inner docker driver does not support caching")
 	}
@@ -73,4 +72,4 @@ func (d *DigitalOcean) ReadFilesFromVolume(ctx context.Context, volumeName strin
 	return rc, nil
 }
 
-var _ cache.VolumeDataAccessor = (*DigitalOcean)(nil)
+var _ orchestra.VolumeDataAccessor = (*DigitalOcean)(nil)

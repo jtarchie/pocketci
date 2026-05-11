@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"time"
+
+	"github.com/jtarchie/pocketci/orchestra"
 )
 
 // ErrCacheMiss is returned by Restore when the requested key does not exist in the cache.
@@ -46,19 +48,8 @@ type CacheOptions struct {
 	PersistOnly bool
 }
 
-// VolumeDataAccessor provides methods to copy data to/from a volume.
-// Drivers that support this interface can participate in caching.
-type VolumeDataAccessor interface {
-	// CopyToVolume writes tar data to a volume.
-	// The reader should provide a tar archive that will be extracted to the volume root.
-	CopyToVolume(ctx context.Context, volumeName string, reader io.Reader) error
-
-	// CopyFromVolume reads tar data from a volume.
-	// Returns a tar archive of the volume contents.
-	CopyFromVolume(ctx context.Context, volumeName string) (io.ReadCloser, error)
-
-	// ReadFilesFromVolume reads specific files/directories from a volume.
-	// Returns a tar archive containing only the requested paths.
-	// Directories are included recursively. Paths are relative to the volume root.
-	ReadFilesFromVolume(ctx context.Context, volumeName string, filePaths ...string) (io.ReadCloser, error)
-}
+// VolumeDataAccessor is an alias for orchestra.VolumeDataAccessor, kept
+// during the in-server-cache retirement so existing callers compile while
+// drivers/runtime files migrate to the orchestra-package type. Once cache/
+// is deleted, callers reference orchestra.VolumeDataAccessor directly.
+type VolumeDataAccessor = orchestra.VolumeDataAccessor

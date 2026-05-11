@@ -774,7 +774,7 @@ func (s *ExecutionService) preseedWorkdir(ctx context.Context, factory func(cont
 		return nil, nil, fmt.Errorf("could not create workdir volume: %w", vErr)
 	}
 
-	accessor, ok := driver.(cache.VolumeDataAccessor)
+	accessor, ok := driver.(orchestra.VolumeDataAccessor)
 	if !ok {
 		_ = vol.Cleanup(ctx)
 		_ = driver.Close()
