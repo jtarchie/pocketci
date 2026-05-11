@@ -2,10 +2,6 @@ package hetzner
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +13,7 @@ import (
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/orchestra/docker"
+	"github.com/jtarchie/pocketci/orchestra/sshmachine"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -552,36 +549,17 @@ func (h *Hetzner) ensureSSHKey(ctx context.Context) (*hcloud.SSHKey, string, err
 		}
 	}
 
-	// Generate new SSH key pair
-	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	sshKeyPath := filepath.Join(os.TempDir(), "pocketci-hetzner-"+h.namespace)
+
+	keyPair, err := sshmachine.GenerateRSAKeyPair(sshKeyPath)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to generate SSH key: %w", err)
 	}
 
-	// Save private key to temp file
-	sshKeyPath := filepath.Join(os.TempDir(), "pocketci-hetzner-"+h.namespace)
-	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
-	})
-
-	writeErr := os.WriteFile(sshKeyPath, privateKeyPEM, 0o600)
-	if writeErr != nil {
-		return nil, "", fmt.Errorf("failed to write SSH private key: %w", writeErr)
-	}
-
-	// Generate public key
-	publicKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to generate SSH public key: %w", err)
-	}
-
-	publicKeyStr := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(publicKey)))
-
 	// Create key in Hetzner
 	createOpts := hcloud.SSHKeyCreateOpts{
 		Name:      keyName,
-		PublicKey: publicKeyStr,
+		PublicKey: keyPair.PublicKeyAuthorized,
 		Labels: map[string]string{
 			"pocketci": "true",
 		},
@@ -629,113 +607,51 @@ func (h *Hetzner) waitForServer(ctx context.Context, serverID int64) (*hcloud.Se
 
 // waitForSSH polls until SSH is accessible on the server.
 func (h *Hetzner) waitForSSH(ctx context.Context, ip string) error {
-	h.logger.Info("hetzner.ssh.waiting", "ip", ip)
-
 	sshTimeout := h.cfg.SSHTimeout.Std()
 	if sshTimeout <= 0 {
 		sshTimeout = DefaultSSHTimeout
 	}
 
-	// Load private key
-	privateKeyData, err := os.ReadFile(h.sshKeyPath)
+	signer, err := sshmachine.LoadSigner(h.sshKeyPath)
 	if err != nil {
-		return fmt.Errorf("failed to read SSH private key: %w", err)
+		return fmt.Errorf("load ssh signer: %w", err)
 	}
 
-	signer, err := ssh.ParsePrivateKey(privateKeyData)
+	h.logger.Info("hetzner.ssh.waiting", "ip", ip)
+
+	conn, err := sshmachine.WaitForSSH(ctx, ip, sshmachine.WaitConfig{
+		Logger:  h.logger.With("driver", "hetzner"),
+		Signer:  signer,
+		Timeout: sshTimeout,
+	})
 	if err != nil {
-		return fmt.Errorf("failed to parse SSH private key: %w", err)
+		return fmt.Errorf("wait for ssh: %w", err)
 	}
 
-	config := &ssh.ClientConfig{
-		User: "root",
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(signer),
-		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // CI servers are ephemeral
-		Timeout:         10 * time.Second,
-	}
+	h.sshClient = conn
+	h.logger.Info("hetzner.ssh.connected")
 
-	deadline := time.Now().Add(sshTimeout)
-
-	// Try immediately first, then poll
-	for {
-		if time.Now().After(deadline) {
-			return fmt.Errorf("timeout waiting for SSH after %s", sshTimeout)
-		}
-
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("wait for ssh: %w", ctx.Err())
-		default:
-		}
-
-		conn, err := ssh.Dial("tcp", ip+":22", config)
-		if err != nil {
-			h.logger.Debug("hetzner.ssh.connecting", "ip", ip, "err", err)
-			time.Sleep(5 * time.Second)
-
-			continue
-		}
-
-		// Store the connection for reuse by waitForDocker
-		h.sshClient = conn
-		h.logger.Info("hetzner.ssh.connected")
-
-		return nil
-	}
+	return nil
 }
 
 // waitForDocker polls until Docker is accessible on the server.
 // Uses the existing SSH client connection established in waitForSSH.
 func (h *Hetzner) waitForDocker(ctx context.Context) error {
-	h.logger.Info("hetzner.docker.waiting")
-
 	dockerTimeout := h.cfg.DockerTimeout.Std()
 	if dockerTimeout <= 0 {
 		dockerTimeout = DefaultDockerTimeout
 	}
 
-	if h.sshClient == nil {
-		return errors.New("SSH client not connected")
+	h.logger.Info("hetzner.docker.waiting")
+
+	err := sshmachine.WaitForDocker(ctx, h.sshClient, h.logger.With("driver", "hetzner"), dockerTimeout)
+	if err != nil {
+		return fmt.Errorf("wait for docker: %w", err)
 	}
 
-	deadline := time.Now().Add(dockerTimeout)
+	h.logger.Info("hetzner.docker.ready")
 
-	// Try immediately first, then poll
-	for {
-		if time.Now().After(deadline) {
-			return fmt.Errorf("timeout waiting for Docker after %s", dockerTimeout)
-		}
-
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("wait for docker: %w", ctx.Err())
-		default:
-		}
-
-		session, err := h.sshClient.NewSession()
-		if err != nil {
-			h.logger.Debug("hetzner.docker.session_error", "err", err)
-			time.Sleep(5 * time.Second)
-
-			continue
-		}
-
-		output, err := session.CombinedOutput("docker ps")
-		_ = session.Close()
-
-		if err != nil {
-			h.logger.Debug("hetzner.docker.check_error", "err", err, "output", string(output))
-			time.Sleep(5 * time.Second)
-
-			continue
-		}
-
-		h.logger.Info("hetzner.docker.ready")
-
-		return nil
-	}
+	return nil
 }
 
 // RunContainer creates the server if needed and delegates to the docker driver.
