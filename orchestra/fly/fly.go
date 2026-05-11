@@ -70,7 +70,7 @@ type Fly struct {
 
 func New(ctx context.Context, cfg Config, logger *slog.Logger) (orchestra.Driver, error) {
 	if cfg.Token == "" {
-		return nil, errors.New("fly driver requires a token (set via CI_FLY_TOKEN)")
+		return nil, errors.New("fly driver requires a token (set CI_FLY_TOKEN or FLY_API_TOKEN)")
 	}
 
 	org := cfg.Org
@@ -237,8 +237,19 @@ func (f *Fly) trackMachine(machineID string) {
 
 // sweepUntrackedMachines destroys any machines belonging to this namespace
 // that were not explicitly tracked (e.g. from partial/failed launches).
+// List/Destroy are wrapped in flyDoWithRetry because the sweep runs at
+// Close() time under a bounded budget — a single 429 spike shouldn't
+// leak the entire run's machines if we can wait a fraction of a second.
+//
+// IMPORTANT: this sweep relies on the namespace-based naming convention
+// (machine.Name has prefix `<namespace>-` and metadata
+// `orchestra.namespace == namespace`). Refactors to volume/machine
+// naming must update the matching logic here too, or the sweep will
+// silently leak resources.
 func (f *Fly) sweepUntrackedMachines(ctx context.Context) {
-	machines, err := f.client.List(ctx, f.appName, "")
+	machines, err := flyDoWithRetry(ctx, f.logger, "machine.list", func() ([]*fly.Machine, error) {
+		return f.client.List(ctx, f.appName, "")
+	})
 	if err != nil {
 		f.logger.Warn("fly.machine.list.error", "app", f.appName, "err", err)
 
@@ -285,7 +296,9 @@ func (f *Fly) sweepUntrackedMachines(ctx context.Context) {
 //   - In-run race: process killed between CreateVolume's API call and
 //     trackVolume's mutex acquisition.
 func (f *Fly) sweepUntrackedVolumes(ctx context.Context) {
-	volumes, err := f.client.GetAllVolumes(ctx, f.appName)
+	volumes, err := flyDoWithRetry(ctx, f.logger, "volume.list", func() ([]fly.Volume, error) {
+		return f.client.GetAllVolumes(ctx, f.appName)
+	})
 	if err != nil {
 		f.logger.Warn("fly.volume.list.error", "app", f.appName, "err", err)
 

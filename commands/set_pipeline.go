@@ -50,7 +50,7 @@ type SetPipeline struct {
 	DigitalOceanRegion      string `env:"CI_DIGITALOCEAN_REGION"       help:"Droplet region"                 name:"digitalocean-region"`
 	DigitalOceanMaxWorkers  int    `env:"CI_DIGITALOCEAN_MAX_WORKERS"  help:"Max concurrent droplets"        name:"digitalocean-max-workers"`
 	DigitalOceanReuseWorker bool   `env:"CI_DIGITALOCEAN_REUSE_WORKER" help:"Reuse idle droplets"            name:"digitalocean-reuse-worker"`
-	FlyToken                string `env:"CI_FLY_TOKEN"                 help:"Fly.io API token"               name:"fly-token"`
+	FlyToken                string `env:"CI_FLY_TOKEN,FLY_API_TOKEN"   help:"Fly.io API token"               name:"fly-token"`
 	FlyApp                  string `env:"CI_FLY_APP"                   help:"Fly.io app name"                name:"fly-app"`
 	FlyRegion               string `env:"CI_FLY_REGION"                help:"Fly.io machine region"          name:"fly-region"`
 	FlyOrg                  string `env:"CI_FLY_ORG"                   help:"Fly.io org slug"                name:"fly-org"`

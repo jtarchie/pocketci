@@ -129,6 +129,11 @@ func (f *Fly) createSharedVolume(ctx context.Context, size int) (string, error) 
 // call requests more capacity than what was provisioned. The Fly Firecracker
 // init resizes the filesystem on next attach, so the next machine boot will
 // see the larger /workspace.
+//
+// Fly volumes cannot be shrunk: a later request for a smaller size silently
+// keeps the larger existing volume. We log a warn so operators can spot the
+// (billing-relevant) case where a per-cache `size_gb` is smaller than an
+// earlier cache's allocation in the same run.
 func (f *Fly) extendSharedVolumeIfNeeded(ctx context.Context, sharedID string, size int) error {
 	if size <= 0 {
 		return nil
@@ -138,7 +143,18 @@ func (f *Fly) extendSharedVolumeIfNeeded(ctx context.Context, sharedID string, s
 	currentSize := f.sharedVolumeSize
 	f.mu.Unlock()
 
-	if size <= currentSize {
+	if size < currentSize {
+		f.logger.Warn("fly.volume.shrink.ignored",
+			"volume", sharedID,
+			"requested_gb", size,
+			"current_gb", currentSize,
+			"reason", "fly volumes cannot be shrunk; keeping larger size",
+		)
+
+		return nil
+	}
+
+	if size == currentSize {
 		return nil
 	}
 

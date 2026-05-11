@@ -115,8 +115,11 @@ type Server struct {
 	DigitalOceanMaxWorkers  int    `env:"CI_DIGITALOCEAN_MAX_WORKERS"  help:"Max concurrent droplets"`
 	DigitalOceanReuseWorker bool   `env:"CI_DIGITALOCEAN_REUSE_WORKER" help:"Reuse idle droplets across runs"`
 
-	// Fly.io driver
-	FlyToken  string `env:"CI_FLY_TOKEN"  help:"Fly.io API token"`
+	// Fly.io driver. The token can come from either CI_FLY_TOKEN
+	// (project convention) or FLY_API_TOKEN (flyctl/fly-go upstream
+	// convention); fly_integration_test.go reads the latter, so a
+	// developer running tests usually already has it set.
+	FlyToken  string `env:"CI_FLY_TOKEN,FLY_API_TOKEN"  help:"Fly.io API token"`
 	FlyApp    string `env:"CI_FLY_APP"    help:"Fly.io app name"`
 	FlyRegion string `env:"CI_FLY_REGION" help:"Fly.io machine region"`
 	FlyOrg    string `env:"CI_FLY_ORG"    help:"Fly.io org slug"`

@@ -29,6 +29,16 @@ var (
 	finalStateRetryMax      = 8 * time.Second
 )
 
+// flyPerformanceMemoryFloorMBPerCPU is Fly's documented minimum memory
+// for performance-class machines: 2 GiB per CPU. Configurations under
+// this floor are rejected by the Fly API at launch time with
+// `invalid config.guest.memory_mb, minimum required X MiB`. We surface
+// this as a warning at plan time and auto-bump, rather than failing
+// after expensive build work has already happened.
+// See https://fly.io/docs/about/pricing/#compute for the canonical
+// performance tier minimums.
+const flyPerformanceMemoryFloorMBPerCPU = 2048
+
 // mountMapping tracks the relationship between a volume subdirectory and its mount path.
 type mountMapping struct {
 	volumeName string // subdirectory on the shared volume (volume's userFacingName)
@@ -625,7 +635,7 @@ func enforcePerformanceMinimum(guest *fly.MachineGuest, logger *slog.Logger) {
 		return
 	}
 
-	minMB := guest.CPUs * 2048
+	minMB := guest.CPUs * flyPerformanceMemoryFloorMBPerCPU
 	if guest.MemoryMB >= minMB {
 		return
 	}
