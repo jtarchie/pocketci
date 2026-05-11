@@ -40,8 +40,11 @@ func TestCacheOpScriptPersist(t *testing.T) {
 	g.Expect(script).To(gomega.ContainSubstring("tar cf - -C './cache-var-lib-buildkit' . | zstd -T0 | s5cmd"))
 	g.Expect(script).To(gomega.ContainSubstring("pipe --concurrency 10 's3://ci-tigris/pipeline/job/cache-var-lib-buildkit.tar.gz'"))
 	g.Expect(script).To(gomega.ContainSubstring("--endpoint-url 'https://fly.storage.tigris.dev'"))
-	// s5cmd is curl-installed only on persist; restore stays on aws-cli.
-	g.Expect(script).To(gomega.ContainSubstring("installing s5cmd"))
+	// Alpine-based image: zstd is the only runtime install (apk add).
+	// s5cmd ships preinstalled in the image; no curl-download.
+	g.Expect(script).To(gomega.ContainSubstring("apk add --no-cache zstd"))
+	g.Expect(script).NotTo(gomega.ContainSubstring("dnf install"))
+	g.Expect(script).NotTo(gomega.ContainSubstring("installing s5cmd"))
 }
 
 func TestCacheOpScriptRestore(t *testing.T) {
@@ -60,8 +63,11 @@ func TestCacheOpScriptRestore(t *testing.T) {
 
 	script := cacheOpScript(in, "cache-repo--git")
 
-	g.Expect(script).To(gomega.ContainSubstring("aws s3 cp 's3://ci-tigris/pipeline/job/cache-repo--git.tar.gz' -"))
-	g.Expect(script).To(gomega.ContainSubstring("zstd -d | tar xf - -C './cache-repo--git'"))
+	// Restore uses s5cmd cp for parallel multipart download to a
+	// workspace tmpfile, then zstd -d + tar xf in a separate stage.
+	g.Expect(script).To(gomega.ContainSubstring("s5cmd --endpoint-url 'https://fly.storage.tigris.dev' cp 's3://ci-tigris/pipeline/job/cache-repo--git.tar.gz' ./cache.tar.zst"))
+	g.Expect(script).To(gomega.ContainSubstring("zstd -dc ./cache.tar.zst | tar xf - -C './cache-repo--git'"))
+	g.Expect(script).NotTo(gomega.ContainSubstring("aws s3 cp"))
 	g.Expect(script).To(gomega.ContainSubstring("[cache] miss (no prior data)"))
 	// A miss must exit non-zero so the /tasks UI flags a cold cache as failure.
 	g.Expect(script).To(gomega.MatchRegexp(`\[cache\] miss.*\n\s*exit 1`))

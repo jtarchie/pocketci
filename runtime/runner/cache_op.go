@@ -7,11 +7,13 @@ import (
 )
 
 // CacheOpDefaultImage is the container image used to push/pull cache
-// archives to/from S3-compatible storage. The official AWS CLI image
-// already bundles `aws`, `tar`, `gzip`, and `sh`; every orchestra driver
-// overrides the image entrypoint so we can run an arbitrary shell
-// command in it.
-const CacheOpDefaultImage = "amazon/aws-cli:latest"
+// archives to/from S3-compatible storage. peakcom/s5cmd is alpine-based
+// (~12.5 MB) and ships s5cmd preinstalled. Busybox provides tar/gzip/sh;
+// zstd is the only runtime apk install. Compare amazon/aws-cli at ~400 MB
+// with dnf + curl-install of s5cmd that the previous image required.
+// Every orchestra driver overrides the image entrypoint so we can run an
+// arbitrary shell command in it.
+const CacheOpDefaultImage = "peakcom/s5cmd:v2.3.0"
 
 // CacheOpDirection identifies whether a cache op pushes (persist) or
 // pulls (restore) data.
@@ -205,38 +207,26 @@ func cacheOpEnv(input CacheOpInput) map[string]string {
 	return env
 }
 
-// s5cmdVersion pins the s5cmd binary that we curl-install for the
-// persist path. Bumped together when there's a concrete reason — the
-// cache_op script downloads this exact version per task and bakes the
-// path into the dnf-installed image layer.
-const s5cmdVersion = "2.3.0"
-
-// s5cmdReleaseURL returns the GitHub releases tarball URL for a pinned
-// s5cmd version. The Linux-64bit binary is what runs in the
-// amazon/aws-cli (amazonlinux) container.
-func s5cmdReleaseURL(version string) string {
-	return "https://github.com/peak/s5cmd/releases/download/v" + version + "/s5cmd_" + version + "_Linux-64bit.tar.gz"
-}
-
 // cacheOpScript builds the shell command run inside the cache task
 // container. It is split between persist and restore directions.
 //
-//   - persist:  tar cf - -C ./<vol> .  | zstd -T0  | s5cmd [--endpoint-url <ep>]  pipe --concurrency 10  s3://<bucket>/<key>
-//   - restore:  aws s3 cp s3://<bucket>/<key> -   [--endpoint-url <ep>]  | zstd -d  | tar xf -  -C ./<vol>
+//   - persist:  tar cf - -C ./<vol> .       | zstd -T0   | s5cmd [--endpoint-url <ep>] pipe --concurrency 10 s3://<bucket>/<key>
+//   - restore:  s5cmd [--endpoint-url <ep>] cp s3://<bucket>/<key> ./cache.tar.zst  →  zstd -d ./cache.tar.zst | tar xf - -C ./<vol>
+//
+// Both directions use s5cmd. Persist streams stdin via `s5cmd pipe`
+// (parallel multipart upload). Restore writes to a tmpfile on the
+// workspace volume so `s5cmd cp` can parallel-multipart download via
+// byte-range GETs — much faster than aws-cli's single-stream stdin
+// stdout. The intermediate file is removed immediately after extract.
 //
 // Compression uses zstd with -T0 so it parallelises across every CPU
-// core allocated to the task — multi-GB caches are compress-bound, not
-// S3-bound. zstd also decompresses several times faster than gzip, which
-// matters on the restore-then-build hot path.
+// core allocated to the task — multi-GB caches are compress-bound,
+// not S3-bound. zstd also decompresses several times faster than gzip,
+// which matters on the restore-then-build hot path.
 //
-// Persist uploads via s5cmd (peak/s5cmd) instead of `aws s3 cp -`
-// because the AWS CLI's stdin upload path is single-stream serial
-// multipart and tops out at ~10–15 MB/s on a 1 Gbit link. s5cmd's
-// `pipe` subcommand uploads parts in parallel and saturates the link
-// — 6–12× faster on multi-GB caches.
-//
-// Restore stays on aws-cli for v1: the runtime is dominated by zstd
-// decompress + tar unpack, not by transfer, so the win is smaller.
+// Image: peakcom/s5cmd is alpine-based with s5cmd preinstalled and
+// busybox tar/gzip already on PATH. zstd is the only runtime install
+// (apk add, ~1–2 s).
 //
 // The whole pipeline runs on the cache task container, not on the
 // pocketci server: the bytes flow container → S3 directly.
@@ -249,16 +239,10 @@ func s5cmdReleaseURL(version string) string {
 func cacheOpScript(input CacheOpInput, mountName string) string {
 	mountPath := "./" + mountName
 
-	// aws-cli takes --endpoint-url as a trailing flag on `s3 cp`.
-	awsEndpointFlag := ""
-	if input.Endpoint != "" {
-		awsEndpointFlag = " --endpoint-url " + shellQuote(input.Endpoint)
-	}
-
 	// s5cmd takes --endpoint-url as a global flag, before the subcommand.
-	s5cmdEndpointFlag := ""
+	endpointFlag := ""
 	if input.Endpoint != "" {
-		s5cmdEndpointFlag = "--endpoint-url " + shellQuote(input.Endpoint) + " "
+		endpointFlag = "--endpoint-url " + shellQuote(input.Endpoint) + " "
 	}
 
 	s3Url := "s3://" + input.Bucket + "/" + input.Key
@@ -266,35 +250,24 @@ func cacheOpScript(input CacheOpInput, mountName string) string {
 	var b strings.Builder
 
 	b.WriteString("set -eu\n")
-	// amazon/aws-cli ships with the AWS CLI, dnf, and a shell, but
-	// `tar`, `gzip`, and `zstd` are not always installed in the base
-	// image. zstd `-T0` parallelises across all CPU cores allocated to
-	// the task and beats gzip on every axis for the cache archive —
-	// but we still need gzip itself because s5cmd's release tarball
-	// ships as .tar.gz and `tar -xz` shells out to gzip during install.
-	// Best-effort install on first run; a cached layer makes subsequent
-	// runs cheap.
-	b.WriteString("if ! command -v tar >/dev/null 2>&1 || ! command -v zstd >/dev/null 2>&1 || ! command -v gzip >/dev/null 2>&1; then\n")
-	b.WriteString("  echo '[cache] installing tar/gzip/zstd via dnf'\n")
-	b.WriteString("  dnf install -y tar gzip zstd 1>/dev/null\n")
+	// peakcom/s5cmd ships the binary at /s5cmd, not on PATH. Symlink
+	// it into /usr/local/bin so `s5cmd` resolves below. Stays a no-op
+	// for images where s5cmd is already on PATH.
+	b.WriteString("if ! command -v s5cmd >/dev/null 2>&1 && [ -x /s5cmd ]; then\n")
+	b.WriteString("  ln -sf /s5cmd /usr/local/bin/s5cmd\n")
 	b.WriteString("fi\n")
-	// s5cmd: static Go binary that does parallel multipart uploads from
-	// stdin via `s5cmd pipe`. Pinned to a known version so runs are
-	// reproducible even if the cache task is freshly created on each
-	// machine. Curl extract is small (~5 MB) and adds ~5–10 s on a
-	// cold machine.
-	if input.Direction == CachePersistDirection {
-		b.WriteString("if ! command -v s5cmd >/dev/null 2>&1; then\n")
-		b.WriteString("  echo '[cache] installing s5cmd v" + s5cmdVersion + "'\n")
-		b.WriteString("  curl -fsSL " + shellQuote(s5cmdReleaseURL(s5cmdVersion)) + " | tar -xzC /usr/local/bin s5cmd\n")
-		b.WriteString("fi\n")
-	}
+	// Alpine busybox already provides tar+gzip+sh; only zstd needs
+	// installing. apk add is ~1–2 s versus dnf install at 5–15 s.
+	b.WriteString("if ! command -v zstd >/dev/null 2>&1; then\n")
+	b.WriteString("  echo '[cache] installing zstd via apk'\n")
+	b.WriteString("  apk add --no-cache zstd 1>/dev/null\n")
+	b.WriteString("fi\n")
 
 	switch input.Direction {
 	case CachePersistDirection:
 		b.WriteString("mkdir -p " + shellQuote(mountPath) + "\n")
 		b.WriteString("echo '[cache] persisting " + mountName + " to " + s3Url + "'\n")
-		b.WriteString("tar cf - -C " + shellQuote(mountPath) + " . | zstd -T0 | s5cmd " + s5cmdEndpointFlag + "pipe --concurrency 10 " + shellQuote(s3Url) + "\n")
+		b.WriteString("tar cf - -C " + shellQuote(mountPath) + " . | zstd -T0 | s5cmd " + endpointFlag + "pipe --concurrency 10 " + shellQuote(s3Url) + "\n")
 		b.WriteString("echo '[cache] persist complete'\n")
 
 	case CacheRestoreDirection:
@@ -309,10 +282,25 @@ func cacheOpScript(input CacheOpInput, mountName string) string {
 		//   exit 2 → transport error (auth, network, corrupt archive) —
 		//             also "failure", but distinct so operators can spot
 		//             a real problem versus a cold cache.
-		b.WriteString("if aws s3 cp " + shellQuote(s3Url) + " - " + awsEndpointFlag + " 2>/tmp/cache-stderr | zstd -d | tar xf - -C " + shellQuote(mountPath) + "; then\n")
+		//
+		// The download lands on the workspace volume (./cache.tar.zst)
+		// rather than /tmp because the Fly rootfs is small (~1 GB) and
+		// a multi-GB cache would overflow it. The tmpfile is removed
+		// after extract.
+		b.WriteString("if s5cmd " + endpointFlag + "cp " + shellQuote(s3Url) + " ./cache.tar.zst 2>/tmp/cache-stderr; then\n")
+		// `zstd -d FILE` without -c writes to `FILE-no-suffix`; -dc
+		// streams to stdout so `tar xf -` can read it.
+		b.WriteString("  zstd -dc ./cache.tar.zst | tar xf - -C " + shellQuote(mountPath) + "\n")
+		b.WriteString("  rm -f ./cache.tar.zst\n")
 		b.WriteString("  echo '[cache] restore complete'\n")
 		b.WriteString("else\n")
-		b.WriteString("  if grep -q -E 'Not Found|NoSuchKey|404' /tmp/cache-stderr 2>/dev/null; then\n")
+		b.WriteString("  rm -f ./cache.tar.zst\n")
+		// s5cmd surfaces the underlying S3 error code in its stderr, so
+		// the same NoSuchKey/404 patterns the aws-cli path used still
+		// match a missing key today. "object not found" is added because
+		// s5cmd v2.x sometimes phrases misses that way for list/stat-
+		// style lookups before the cp.
+		b.WriteString("  if grep -q -E 'Not Found|NoSuchKey|404|object not found' /tmp/cache-stderr 2>/dev/null; then\n")
 		b.WriteString("    echo '[cache] miss (no prior data)'\n")
 		b.WriteString("    exit 1\n")
 		b.WriteString("  else\n")
