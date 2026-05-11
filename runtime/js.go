@@ -247,40 +247,9 @@ func (j *JS) setupJSVM(
 		return fmt.Errorf("could not set YAML: %w", err)
 	}
 
-	// Register new focused namespaces
-	volumesNS := runtime.Volumes()
-	err = jsVM.Set("volumes", volumesNS)
+	err = j.setupRuntimeNamespaces(jsVM, runtime)
 	if err != nil {
-		return fmt.Errorf("could not set volumes: %w", err)
-	}
-
-	agentNS := runtime.AgentRT()
-	err = jsVM.Set("agent", agentNS)
-	if err != nil {
-		return fmt.Errorf("could not set agent: %w", err)
-	}
-
-	cacheNS := runtime.CacheNS()
-	err = jsVM.Set("cache", cacheNS)
-	if err != nil {
-		return fmt.Errorf("could not set cache: %w", err)
-	}
-
-	err = jsVM.Set("runtime", runtime)
-	if err != nil {
-		return fmt.Errorf("could not set runtime: %w", err)
-	}
-
-	pipelineNS := runtime.PipelineNS()
-	err = jsVM.Set("pipeline", pipelineNS)
-	if err != nil {
-		return fmt.Errorf("could not set pipeline: %w", err)
-	}
-
-	imageNS := runtime.ImageNS()
-	err = jsVM.Set("image", imageNS)
-	if err != nil {
-		return fmt.Errorf("could not set image: %w", err)
+		return err
 	}
 
 	err = j.setupNotifyAndResources(ctx, jsVM, runtime, opts)
@@ -320,6 +289,33 @@ func (j *JS) setupJSVM(
 	}
 
 	return j.setupPipelineContext(jsVM, runtime, driver, opts)
+}
+
+// setupRuntimeNamespaces registers every namespace whose methods are
+// derived from the live *Runtime (volumes, agent, cache, runtime itself,
+// pipeline, image). Kept as a single helper so setupJSVM stays under
+// the cyclop threshold and so adding a new namespace is a one-line edit.
+func (j *JS) setupRuntimeNamespaces(jsVM *goja.Runtime, rt *Runtime) error {
+	namespaces := []struct {
+		name  string
+		value any
+	}{
+		{"volumes", rt.Volumes()},
+		{"agent", rt.AgentRT()},
+		{"cache", rt.CacheNS()},
+		{"runtime", rt},
+		{"pipeline", rt.PipelineNS()},
+		{"image", rt.ImageNS()},
+	}
+
+	for _, ns := range namespaces {
+		err := jsVM.Set(ns.name, ns.value)
+		if err != nil {
+			return fmt.Errorf("could not set %s: %w", ns.name, err)
+		}
+	}
+
+	return nil
 }
 
 // setupNotifyAndResources registers the notify and nativeResources globals on the VM.

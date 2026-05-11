@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/dop251/goja"
@@ -126,7 +125,3 @@ func cacheNSJoinKey(prefix, key string) string {
 
 	return prefix + "/" + key + ".tar.zst"
 }
-
-// errCacheNSNotConfigured is the static error returned when callers try to
-// use runtime.cache without setting CI_CACHE_S3_BUCKET. Reserved for tests.
-var errCacheNSNotConfigured = errors.New("cache: no backend configured")

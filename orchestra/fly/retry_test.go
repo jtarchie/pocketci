@@ -3,7 +3,6 @@ package fly
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -14,7 +13,7 @@ import (
 func testRetryLogger() *slog.Logger {
 	// Discard handler keeps the retry warnings out of test output without
 	// changing the logging shape the helper uses (slog.Warn level).
-	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
+	return slog.New(slog.DiscardHandler)
 }
 
 // withShortRetry temporarily compresses the backoff schedule so unit tests
