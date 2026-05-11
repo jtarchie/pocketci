@@ -7,6 +7,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/jtarchie/pocketci/commands"
+	"github.com/jtarchie/pocketci/executor"
 	"github.com/lmittmann/tint"
 )
 
@@ -14,7 +15,7 @@ var version = "dev"
 var commit = "none"
 
 type CLI struct {
-	Execute  commands.Execute  `cmd:"" help:"Execute a pipeline locally"`
+	Execute  executor.Execute  `cmd:"" help:"Execute a pipeline locally"`
 	Pipeline commands.Pipeline `cmd:"" help:"Manage pipelines"`
 	Resource commands.Resource `cmd:"" help:"Execute a native resource operation"`
 	Server   commands.Server   `cmd:"" help:"Run a server"`
