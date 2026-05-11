@@ -386,6 +386,20 @@ func (c *Server) buildAuthConfig() (*auth.Config, string, string, error) {
 		return nil, "", "", errors.New("CI_OAUTH_SESSION_SECRET is required when OAuth providers are configured")
 	}
 
+	// The session secret doubles as the HS256 signing key for CLI and MCP
+	// JWTs. RFC 7518 §3.2 recommends a key with at least as many bits as the
+	// hash output (256 bits = 32 bytes) for HS256. Reject short keys at
+	// startup so a one-byte secret can't slip through and let a captured JWT
+	// be brute-forced offline. Document a follow-up to split this knob into
+	// CI_OAUTH_JWT_KEY + CI_OAUTH_SESSION_KEY (PCI-SEC-AUTH-003).
+	const minSessionSecretBytes = 32
+	if authConfig.HasOAuthProviders() && len(authConfig.SessionSecret) < minSessionSecretBytes {
+		return nil, "", "", fmt.Errorf(
+			"CI_OAUTH_SESSION_SECRET must be at least %d bytes (got %d); generate with: openssl rand -base64 48",
+			minSessionSecretBytes, len(authConfig.SessionSecret),
+		)
+	}
+
 	if authConfig.HasOAuthProviders() && authConfig.CallbackURL == "" {
 		return nil, "", "", errors.New("CI_OAUTH_CALLBACK_URL is required when OAuth providers are configured")
 	}
