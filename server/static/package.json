@@ -14,8 +14,8 @@
     "idiomorph": "^0.7.4"
   },
   "devDependencies": {
-    "@tailwindcss/cli": "4.2.4",
+    "@tailwindcss/cli": "4.3.0",
     "esbuild": "0.28.0",
-    "tailwindcss": "4.2.4"
+    "tailwindcss": "4.3.0"
   }
 }

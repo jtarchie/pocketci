@@ -64,15 +64,23 @@ func TestCacheOpScriptRestore(t *testing.T) {
 	script := cacheOpScript(in, "cache-repo--git")
 
 	// Restore uses s5cmd cp for parallel multipart download to a
-	// workspace tmpfile, then zstd -d + tar xf in a separate stage.
+	// workspace tmpfile, then zstd -dc + tar xf as a separate stage.
 	g.Expect(script).To(gomega.ContainSubstring("s5cmd --endpoint-url 'https://fly.storage.tigris.dev' cp 's3://ci-tigris/pipeline/job/cache-repo--git.tar.gz' ./cache.tar.zst"))
 	g.Expect(script).To(gomega.ContainSubstring("zstd -dc ./cache.tar.zst | tar xf - -C './cache-repo--git'"))
 	g.Expect(script).NotTo(gomega.ContainSubstring("aws s3 cp"))
 	g.Expect(script).To(gomega.ContainSubstring("[cache] miss (no prior data)"))
-	// A miss must exit non-zero so the /tasks UI flags a cold cache as failure.
+	// pipefail is required so zstd failures aren't masked by tar's exit.
+	g.Expect(script).To(gomega.ContainSubstring("set -o pipefail"))
+	// A miss exits 1 so the /tasks UI flags a cold cache as failure.
 	g.Expect(script).To(gomega.MatchRegexp(`\[cache\] miss.*\n\s*exit 1`))
-	// A real transport error stays distinct from a miss (exit 2).
-	g.Expect(script).To(gomega.MatchRegexp(`restore failed.*\n.*\n\s*exit 2`))
+	// A download failure (auth/network) is distinct from a miss (exit 2).
+	g.Expect(script).To(gomega.MatchRegexp(`restore download failed.*\n.*\n\s*exit 2`))
+	// An extract failure (corrupted archive) wipes the volume so the
+	// downstream consumer doesn't see half-applied state mixed with
+	// stale data from a prior good run.
+	g.Expect(script).To(gomega.ContainSubstring("rm -rf './cache-repo--git'/* './cache-repo--git'/.[!.]*"))
+	g.Expect(script).To(gomega.ContainSubstring("restore extract failed"))
+	g.Expect(script).To(gomega.MatchRegexp(`restore extract failed.*\n.*\n\s*exit 2`))
 }
 
 func TestCacheOpScriptNoEndpoint(t *testing.T) {

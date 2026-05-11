@@ -250,6 +250,9 @@ func cacheOpScript(input CacheOpInput, mountName string) string {
 	var b strings.Builder
 
 	b.WriteString("set -eu\n")
+	// pipefail so a failing zstd in `zstd -dc | tar xf -` propagates;
+	// without it, tar's exit code masks earlier decoder failures.
+	b.WriteString("set -o pipefail\n")
 	// peakcom/s5cmd ships the binary at /s5cmd, not on PATH. Symlink
 	// it into /usr/local/bin so `s5cmd` resolves below. Stays a no-op
 	// for images where s5cmd is already on PATH.
@@ -287,13 +290,15 @@ func cacheOpScript(input CacheOpInput, mountName string) string {
 		// rather than /tmp because the Fly rootfs is small (~1 GB) and
 		// a multi-GB cache would overflow it. The tmpfile is removed
 		// after extract.
-		b.WriteString("if s5cmd " + endpointFlag + "cp " + shellQuote(s3Url) + " ./cache.tar.zst 2>/tmp/cache-stderr; then\n")
-		// `zstd -d FILE` without -c writes to `FILE-no-suffix`; -dc
-		// streams to stdout so `tar xf -` can read it.
-		b.WriteString("  zstd -dc ./cache.tar.zst | tar xf - -C " + shellQuote(mountPath) + "\n")
-		b.WriteString("  rm -f ./cache.tar.zst\n")
-		b.WriteString("  echo '[cache] restore complete'\n")
-		b.WriteString("else\n")
+		//
+		// Download and extract are separate stages. Splitting them lets
+		// us tell a transport error (download failed) apart from
+		// archive corruption (download fine, decode/untar failed). On
+		// extract failure we also wipe the volume contents so the
+		// downstream consumer starts from an empty cache instead of
+		// seeing a half-applied extract mixed with stale state from a
+		// prior good run.
+		b.WriteString("if ! s5cmd " + endpointFlag + "cp " + shellQuote(s3Url) + " ./cache.tar.zst 2>/tmp/cache-stderr; then\n")
 		b.WriteString("  rm -f ./cache.tar.zst\n")
 		// s5cmd surfaces the underlying S3 error code in its stderr, so
 		// the same NoSuchKey/404 patterns the aws-cli path used still
@@ -303,12 +308,23 @@ func cacheOpScript(input CacheOpInput, mountName string) string {
 		b.WriteString("  if grep -q -E 'Not Found|NoSuchKey|404|object not found' /tmp/cache-stderr 2>/dev/null; then\n")
 		b.WriteString("    echo '[cache] miss (no prior data)'\n")
 		b.WriteString("    exit 1\n")
-		b.WriteString("  else\n")
-		b.WriteString("    echo '[cache] restore failed:'\n")
-		b.WriteString("    cat /tmp/cache-stderr 1>&2\n")
-		b.WriteString("    exit 2\n")
 		b.WriteString("  fi\n")
+		b.WriteString("  echo '[cache] restore download failed:' 1>&2\n")
+		b.WriteString("  cat /tmp/cache-stderr 1>&2\n")
+		b.WriteString("  exit 2\n")
 		b.WriteString("fi\n")
+		// Stage 2: decode + extract. On failure, wipe the volume so the
+		// downstream consumer sees a clean miss rather than partial
+		// state.
+		b.WriteString("if ! zstd -dc ./cache.tar.zst | tar xf - -C " + shellQuote(mountPath) + " 2>/tmp/cache-extract-err; then\n")
+		b.WriteString("  rm -rf " + shellQuote(mountPath) + "/* " + shellQuote(mountPath) + "/.[!.]* 2>/dev/null || true\n")
+		b.WriteString("  rm -f ./cache.tar.zst\n")
+		b.WriteString("  echo '[cache] restore extract failed (likely corrupted archive); volume cleared' 1>&2\n")
+		b.WriteString("  cat /tmp/cache-extract-err 1>&2 || true\n")
+		b.WriteString("  exit 2\n")
+		b.WriteString("fi\n")
+		b.WriteString("rm -f ./cache.tar.zst\n")
+		b.WriteString("echo '[cache] restore complete'\n")
 	}
 
 	return b.String()
