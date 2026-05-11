@@ -5,7 +5,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 )
+
+// Metrics is the recording surface used by the driver registry. Same shape as
+// observability.Metrics; defined locally so the orchestra package does not
+// take an import on a metrics backend. Callers wire a real implementation in
+// via SetMetrics; the default is a no-op.
+type Metrics interface {
+	CounterAdd(name string, delta float64, attributes map[string]string)
+	GaugeSet(name string, value float64, attributes map[string]string)
+	HistogramObserve(name string, value float64, attributes map[string]string)
+}
+
+type noopMetrics struct{}
+
+func (noopMetrics) CounterAdd(_ string, _ float64, _ map[string]string)       {}
+func (noopMetrics) GaugeSet(_ string, _ float64, _ map[string]string)         {}
+func (noopMetrics) HistogramObserve(_ string, _ float64, _ map[string]string) {}
 
 // DriverProvider knows how to create a single type of Driver.
 // Implement this interface in each driver package and list all providers
@@ -25,7 +42,8 @@ type DriverProvider interface {
 // DriverRegistry maps driver names to their DriverProvider.
 // Build one with NewDriverRegistry and pass it wherever driver creation is needed.
 type DriverRegistry struct {
-	byName map[string]DriverProvider
+	byName  map[string]DriverProvider
+	metrics Metrics
 }
 
 // NewDriverRegistry builds a DriverRegistry from an explicit list of providers.
@@ -42,11 +60,27 @@ func NewDriverRegistry(providers []DriverProvider) *DriverRegistry {
 		m[name] = p
 	}
 
-	return &DriverRegistry{byName: m}
+	return &DriverRegistry{byName: m, metrics: noopMetrics{}}
+}
+
+// SetMetrics swaps the recording surface used by CreateDriver. Passing nil
+// resets to the no-op so call sites never need a nil check.
+func (r *DriverRegistry) SetMetrics(m Metrics) {
+	if m == nil {
+		r.metrics = noopMetrics{}
+
+		return
+	}
+
+	r.metrics = m
 }
 
 // CreateDriver creates a driver instance for the given name, namespace, and config.
-// If cfg is nil the provider's EmptyConfig is used.
+// If cfg is nil the provider's EmptyConfig is used. Records
+// pocketci_driver_create_seconds{driver, result} for cold-start visibility —
+// cloud drivers (Fly, DigitalOcean, Hetzner) routinely take 60+ seconds to
+// provision a fresh worker, and this is the cheapest signal an operator can
+// use to see when that's happening.
 func (r *DriverRegistry) CreateDriver(ctx context.Context, name, namespace string, cfg DriverConfig, logger *slog.Logger) (Driver, error) {
 	p, ok := r.byName[name]
 	if !ok {
@@ -57,7 +91,20 @@ func (r *DriverRegistry) CreateDriver(ctx context.Context, name, namespace strin
 		cfg = p.EmptyConfig()
 	}
 
+	startedAt := time.Now()
+
 	driver, err := p.NewDriver(ctx, namespace, cfg, logger)
+
+	result := "ok"
+	if err != nil {
+		result = "error"
+	}
+
+	r.metrics.HistogramObserve("pocketci_driver_create_seconds", time.Since(startedAt).Seconds(), map[string]string{
+		"driver": name,
+		"result": result,
+	})
+
 	if err != nil {
 		return nil, fmt.Errorf("create %q driver: %w", name, err)
 	}

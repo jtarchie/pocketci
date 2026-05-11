@@ -276,6 +276,7 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	execService.CacheS3 = opts.CacheS3
 	execService.ResourceRegistry = resources.NewRegistry(opts.NativeResources)
 	execService.DriverRegistry = orchestra.NewDriverRegistry(opts.DriverProviders)
+	execService.DriverRegistry.SetMetrics(metrics)
 	execService.Metrics = metrics
 
 	// All optional fields are set; safe to launch the background queue
