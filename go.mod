@@ -153,7 +153,7 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
-	github.com/invopop/jsonschema v0.13.0 // indirect
+	github.com/invopop/jsonschema v0.14.0 // indirect
 	github.com/jordan-wright/email v4.0.1-0.20210109023952-943e75fe5223+incompatible // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
@@ -174,7 +174,6 @@ require (
 	github.com/openai/openai-go/v3 v3.35.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
-	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/pborman/uuid v1.2.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_golang v1.23.2 // indirect
@@ -214,7 +213,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	go.yaml.in/yaml/v4 v4.0.0-rc.4 // indirect
 	golang.org/x/exp v0.0.0-20260508232706-74f9aab9d74a // indirect
 	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
@@ -249,3 +247,13 @@ require (
 )
 
 replace gvisor.dev/gvisor => gvisor.dev/gvisor v0.0.0-20230927004350-cbd86285d259
+
+// invopop/jsonschema v0.14.0 switched its OrderedMap implementation from
+// github.com/wk8/go-ordered-map/v2 to github.com/pb33f/ordered-map/v2.
+// anthropic-sdk-go (currently at v1.41.0, our top of chain via
+// adk-utils-go → runtime/agent/model) was built against the wk8 variant
+// and won't compile against v0.14.0. Pin invopop/jsonschema's effective
+// version to v0.13.0 — the require line above can keep its bumped
+// number, this replace just controls what actually links. Remove once
+// anthropic-sdk-go publishes a release that targets pb33f/ordered-map.
+replace github.com/invopop/jsonschema => github.com/invopop/jsonschema v0.13.0
