@@ -165,6 +165,26 @@ func (v *VZ) bootVM(ctx context.Context) error {
 		return fmt.Errorf("failed to create temp dir: %w", err)
 	}
 
+	// If we don't reach the end of bootVM successfully, the temp dir (and any
+	// partial VM state under it) would leak until process exit. Clean it up on
+	// the failure path and clear the receiver fields so the next bootVM call
+	// starts fresh.
+	bootedOK := false
+
+	defer func() {
+		if bootedOK {
+			return
+		}
+
+		removeErr := os.RemoveAll(tempDir)
+		if removeErr != nil {
+			v.logger.Warn("vz.vm.cleanup.tempdir.error", "path", tempDir, "err", removeErr)
+		}
+
+		v.tempDir = ""
+		v.volumesDir = ""
+	}()
+
 	v.tempDir = tempDir
 
 	// Create volumes directory inside temp dir
@@ -253,6 +273,8 @@ func (v *VZ) bootVM(ctx context.Context) error {
 		v.logger.Warn("vz.volumes.mount.failed", "err", mountErr)
 		// Non-fatal — volumes may mount later on demand
 	}
+
+	bootedOK = true
 
 	return nil
 }
