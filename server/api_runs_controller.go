@@ -143,6 +143,45 @@ func (c *APIRunsController) Tasks(ctx *echo.Context) error {
 		return c.tasksByPath(ctx, prefix, taskPath)
 	}
 
+	// Pagination is opt-in: clients that pass page or per_page get a
+	// PaginationResult envelope; legacy clients that pass neither still get a
+	// bare array. This preserves the response shape for existing consumers
+	// while letting heavy callers bound the read.
+	if ctx.QueryParam("page") != "" || ctx.QueryParam("per_page") != "" {
+		page, perPage := parsePagination(ctx)
+
+		paged, err := c.store.GetAllPaginated(ctx.Request().Context(), prefix, []string{"*"}, page, perPage)
+		if err != nil {
+			gaErrJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "internal server error",
+			})
+			if gaErrJsonErr != nil {
+				return fmt.Errorf("tasks get all paginated error response: %w", gaErrJsonErr)
+			}
+
+			return nil
+		}
+
+		items := make([]APIRunTask, 0, len(paged.Items))
+		for _, result := range paged.Items {
+			items = append(items, APIRunTask{Path: normalizeRunTaskPath(result.Path, prefix), Payload: result.Payload})
+		}
+
+		pagedJSONErr := ctx.JSON(http.StatusOK, storage.PaginationResult[APIRunTask]{
+			Items:      items,
+			Page:       paged.Page,
+			PerPage:    paged.PerPage,
+			TotalItems: paged.TotalItems,
+			TotalPages: paged.TotalPages,
+			HasNext:    paged.HasNext,
+		})
+		if pagedJSONErr != nil {
+			return fmt.Errorf("tasks paginated response: %w", pagedJSONErr)
+		}
+
+		return nil
+	}
+
 	results, err := c.store.GetAll(ctx.Request().Context(), prefix, []string{"*"})
 	if err != nil {
 		gaErrJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{

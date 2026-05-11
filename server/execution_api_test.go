@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -306,6 +307,64 @@ func TestExecutionAPI(t *testing.T) {
 			assert.Expect(payload["status"]).To(Equal("success"))
 			assert.Expect(payload["usage"]).NotTo(BeNil())
 			assert.Expect(payload["audit_log"]).NotTo(BeNil())
+		})
+
+		t.Run("GET /api/runs/:run_id/tasks paginates when page params present", func(t *testing.T) {
+			t.Parallel()
+			assert := NewGomegaWithT(t)
+
+			buildFile, err := os.CreateTemp(t.TempDir(), "")
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = buildFile.Close() }()
+
+			client, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: buildFile.Name()}, "namespace", slog.Default())
+			assert.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = client.Close() }()
+
+			pipeline, err := client.SavePipeline(context.Background(), "paged-pipeline", "content", "docker", "")
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			for i := 0; i < 12; i++ {
+				err := client.Set(context.Background(), fmt.Sprintf("/pipeline/%s/tasks/%02d-step", run.ID, i), map[string]any{
+					"status": "success",
+				})
+				assert.Expect(err).NotTo(HaveOccurred())
+			}
+
+			router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
+			assert.Expect(err).NotTo(HaveOccurred())
+
+			req := httptest.NewRequest(http.MethodGet, "/api/runs/"+run.ID+"/tasks?page=1&per_page=5", nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			assert.Expect(rec.Code).To(Equal(http.StatusOK))
+
+			var paged map[string]any
+			err = json.Unmarshal(rec.Body.Bytes(), &paged)
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(paged).To(HaveKey("items"))
+			assert.Expect(paged["total_items"]).To(BeNumerically("==", 12))
+			assert.Expect(paged["total_pages"]).To(BeNumerically("==", 3))
+			assert.Expect(paged["has_next"]).To(BeTrue())
+
+			items, ok := paged["items"].([]any)
+			assert.Expect(ok).To(BeTrue())
+			assert.Expect(items).To(HaveLen(5))
+
+			// Without pagination params, the legacy bare-array shape is preserved.
+			legacyReq := httptest.NewRequest(http.MethodGet, "/api/runs/"+run.ID+"/tasks", nil)
+			legacyRec := httptest.NewRecorder()
+			router.ServeHTTP(legacyRec, legacyReq)
+			assert.Expect(legacyRec.Code).To(Equal(http.StatusOK))
+
+			var legacy []map[string]any
+			err = json.Unmarshal(legacyRec.Body.Bytes(), &legacy)
+			assert.Expect(err).NotTo(HaveOccurred())
+			assert.Expect(legacy).To(HaveLen(12))
 		})
 
 		t.Run("GET /api/runs/:run_id/tasks supports task path filter", func(t *testing.T) {
