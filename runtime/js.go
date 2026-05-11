@@ -14,6 +14,7 @@ import (
 	"github.com/evanw/esbuild/pkg/api"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/resources"
+	"github.com/jtarchie/pocketci/runtime/cacheconfig"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	ndiscord "github.com/jtarchie/pocketci/runtime/jsapi/notifiers/discord"
 	nhttp "github.com/jtarchie/pocketci/runtime/jsapi/notifiers/http"
@@ -78,6 +79,11 @@ type ExecuteOptions struct {
 	// ResourceRegistry holds the set of native resource implementations.
 	// May be nil for pipelines that use no native resources.
 	ResourceRegistry *resources.Registry
+	// CacheS3, when set, configures the runtime.cache JS namespace so
+	// pipelines can call cache.restore({...})/cache.persist({...}) backed
+	// by peakcom/s5cmd container tasks. Nil disables the namespace; calls
+	// reject with a "no backend configured" error.
+	CacheS3 *cacheconfig.S3
 }
 
 type JS struct {
@@ -163,6 +169,7 @@ func (j *JS) ExecuteWithOptions(ctx context.Context, source string, driver orche
 	runtime.ctx = ctx
 	runtime.storage = storage
 	runtime.logger = j.logger
+	runtime.cacheS3 = opts.CacheS3
 
 	err = j.setupJSVM(ctx, jsVM, runtime, driver, storage, opts)
 	if err != nil {
@@ -251,6 +258,12 @@ func (j *JS) setupJSVM(
 	err = jsVM.Set("agent", agentNS)
 	if err != nil {
 		return fmt.Errorf("could not set agent: %w", err)
+	}
+
+	cacheNS := runtime.CacheNS()
+	err = jsVM.Set("cache", cacheNS)
+	if err != nil {
+		return fmt.Errorf("could not set cache: %w", err)
 	}
 
 	err = jsVM.Set("runtime", runtime)

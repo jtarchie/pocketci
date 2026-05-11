@@ -85,10 +85,10 @@ type ExecutorOptions struct {
 	// ResourceRegistry holds the set of native resource implementations available
 	// during pipeline execution. May be nil for pipelines that use no native resources.
 	ResourceRegistry *resources.Registry
-	// CacheS3, when set, configures the YAML runner to perform cache
-	// restore/persist as ordinary container tasks (amazon/aws-cli) rather
-	// than streaming bytes through the pocketci server. Ignored for
-	// JS pipelines, which keep the existing in-server cache path.
+	// CacheS3, when set, configures both the YAML runner (cache_tasks)
+	// and the JS runtime.cache namespace to perform cache restore/persist
+	// as ordinary container tasks (peakcom/s5cmd). Nil disables caching
+	// for both paths.
 	CacheS3 *runtimebackwards.CacheS3Config
 }
 
@@ -208,6 +208,7 @@ func ExecutePipeline(
 		TargetJobs:            opts.TargetJobs,
 		TriggerCallback:       opts.TriggerCallback,
 		ResourceRegistry:      opts.ResourceRegistry,
+		CacheS3:               opts.CacheS3,
 	}
 
 	// If pre-seeded volumes were provided, pass them through.

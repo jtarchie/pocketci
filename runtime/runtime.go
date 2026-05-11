@@ -9,6 +9,7 @@ import (
 
 	"github.com/dop251/goja"
 
+	"github.com/jtarchie/pocketci/runtime/cacheconfig"
 	"github.com/jtarchie/pocketci/runtime/runner"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
@@ -29,6 +30,7 @@ type Runtime struct {
 	storage        storage.Driver
 	triggeredBy    string
 	logger         *slog.Logger
+	cacheS3        *cacheconfig.S3
 }
 
 func NewRuntime(
@@ -63,6 +65,13 @@ func (r *Runtime) AgentRT() *AgentRuntime {
 // PipelineNS returns a PipelineNamespace instance sharing this runtime's state.
 func (r *Runtime) PipelineNS() *PipelineNamespace {
 	return &PipelineNamespace{rt: r}
+}
+
+// CacheNS returns a CacheNS instance sharing this runtime's state. Its
+// methods (Restore, Persist) launch peakcom/s5cmd container tasks that
+// move tar archives between a volume and S3.
+func (r *Runtime) CacheNS() *CacheNS {
+	return &CacheNS{rt: r, cfg: r.cacheS3}
 }
 
 // Run executes a container task. Accepts an object with optional onOutput callback.
