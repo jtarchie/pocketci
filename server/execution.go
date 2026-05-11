@@ -718,7 +718,9 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 		// chain. On read failure, fall back to "unknown" so the metric still
 		// gets recorded.
 		status := "unknown"
-		if final, err := s.store.GetRun(context.Background(), run.ID); err == nil {
+
+		final, finalErr := s.store.GetRun(context.Background(), run.ID)
+		if finalErr == nil {
 			status = string(final.Status)
 		}
 

@@ -339,7 +339,6 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 		return ctx.String(http.StatusOK, "OK")
 	})
 
-
 	// Create web UI group and apply auth middleware
 	web := router.Group("")
 

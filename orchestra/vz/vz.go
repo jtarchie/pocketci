@@ -167,23 +167,10 @@ func (v *VZ) bootVM(ctx context.Context) error {
 
 	// If we don't reach the end of bootVM successfully, the temp dir (and any
 	// partial VM state under it) would leak until process exit. Clean it up on
-	// the failure path and clear the receiver fields so the next bootVM call
-	// starts fresh.
+	// the failure path.
 	bootedOK := false
 
-	defer func() {
-		if bootedOK {
-			return
-		}
-
-		removeErr := os.RemoveAll(tempDir)
-		if removeErr != nil {
-			v.logger.Warn("vz.vm.cleanup.tempdir.error", "path", tempDir, "err", removeErr)
-		}
-
-		v.tempDir = ""
-		v.volumesDir = ""
-	}()
+	defer v.cleanupBootTempDir(&bootedOK, tempDir)
 
 	v.tempDir = tempDir
 
@@ -277,6 +264,24 @@ func (v *VZ) bootVM(ctx context.Context) error {
 	bootedOK = true
 
 	return nil
+}
+
+// cleanupBootTempDir is meant to be deferred at the top of bootVM. If
+// *bootedOK is still false at scope exit, the tempDir (and any partial VM
+// state under it) is removed and the receiver fields cleared so the next
+// bootVM call starts fresh.
+func (v *VZ) cleanupBootTempDir(bootedOK *bool, tempDir string) {
+	if *bootedOK {
+		return
+	}
+
+	removeErr := os.RemoveAll(tempDir)
+	if removeErr != nil {
+		v.logger.Warn("vz.vm.cleanup.tempdir.error", "path", tempDir, "err", removeErr)
+	}
+
+	v.tempDir = ""
+	v.volumesDir = ""
 }
 
 // configureStorageDevices creates and attaches disk and seed storage to the VM config.

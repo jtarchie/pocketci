@@ -185,23 +185,12 @@ func (d *Docker) RunContainer(ctx context.Context, task orchestra.Task) (orchest
 	}
 
 	// If we created the container but fail to attach/start, the container is
-	// orphaned. Remove it on the failure path. Use a fresh background context
-	// with a short deadline because the request ctx may already be canceled.
+	// orphaned. Schedule a force-remove for the failure path. The cleanup
+	// intentionally uses a fresh context because the request ctx may already
+	// be canceled by the time the deferred call fires.
 	startedOK := false
 
-	defer func() {
-		if startedOK {
-			return
-		}
-
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		removeErr := d.client.ContainerRemove(cleanupCtx, response.ID, container.RemoveOptions{Force: true})
-		if removeErr != nil {
-			logger.Error("container.cleanup.error", "name", containerName, "id", response.ID, "err", removeErr)
-		}
-	}()
+	defer d.removeOrphanedContainer(&startedOK, response.ID, containerName, logger) //nolint:contextcheck
 
 	if enabledStdin {
 		logger.Debug("container.attach", "name", containerName)
@@ -239,6 +228,23 @@ func (d *Docker) RunContainer(ctx context.Context, task orchestra.Task) (orchest
 		client: d.client,
 		task:   task,
 	}, nil
+}
+
+// removeOrphanedContainer is meant to be deferred right after a successful
+// ContainerCreate. If *startedOK is still false at scope exit, it force-removes
+// the container so a failed attach/start doesn't leave it behind.
+func (d *Docker) removeOrphanedContainer(startedOK *bool, id, name string, logger *slog.Logger) {
+	if *startedOK {
+		return
+	}
+
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	removeErr := d.client.ContainerRemove(cleanupCtx, id, container.RemoveOptions{Force: true})
+	if removeErr != nil {
+		logger.Error("container.cleanup.error", "name", name, "id", id, "err", removeErr)
+	}
 }
 
 // handleContainerCreateError handles a container creation error, recovering from
