@@ -164,7 +164,6 @@ Top-level structure:
 ├── benchmarks/               # k6 API load tests + helper scripts
 ├── bin/                      # cleanup.sh, k6-with-server.sh
 ├── packages/pocketci/        # Public TS package (npm) for pipeline authors
-├── saas/                     # Cloudflare Workers code (wrangler.jsonc at root)
 ├── backwards/                # Concourse-YAML compat bundle source (built by deno into runtime/backwards/)
 ├── testhelpers/              # Shared Go test helpers
 ├── Taskfile.yml              # SOURCE OF TRUTH for build/test/lint — read this first
@@ -174,7 +173,6 @@ Top-level structure:
 ├── docker-entrypoint.sh      # Maps Tigris env vars → CI_CACHE_S3_* at container start
 ├── fly.toml                  # Fly.io app config
 ├── pocketci.rb               # Homebrew formula stub (used by goreleaser brew tap)
-└── wrangler.jsonc            # Cloudflare Worker config (saas/)
 ```
 
 ### Configuration / linting files at a glance
