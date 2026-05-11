@@ -121,6 +121,8 @@ func (s *ExecutionService) processQueue() {
 
 		ctx := context.Background()
 
+		s.metrics().GaugeSet("pocketci_queue_depth", float64(s.QueueLength(ctx)), nil)
+
 		runs, err := s.store.GetRunsByStatus(ctx, storage.RunStatusQueued, s.maxInFlight)
 		if err != nil {
 			s.logger.Error("queue.processor.list_failed", slog.String("error", err.Error()))
@@ -216,7 +218,21 @@ func (s *ExecutionService) dispatchRun(pipeline *storage.Pipeline, run *storage.
 	s.inFlight.Add(1)
 	s.wg.Add(1)
 
+	s.metrics().GaugeSet("pocketci_runs_active", float64(s.inFlight.Load()), nil)
+
 	go s.executePipeline(pipeline, run, opts)
+}
+
+// metrics returns the recording surface, falling back to a noop so call sites
+// don't need a nil check. The Metrics field is set by the router during
+// construction; it remains nil only in tests that build an ExecutionService
+// directly.
+func (s *ExecutionService) metrics() Metrics {
+	if s.Metrics == nil {
+		return noopMetrics{}
+	}
+
+	return s.Metrics
 }
 
 // signalSlotFreed wakes the queue processor after an in-flight slot is released.
@@ -682,8 +698,25 @@ func (s *ExecutionService) finalizeExecRun(ctx, dbCtx context.Context, run *stor
 }
 
 func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *storage.PipelineRun, opts execOptions) {
+	startedAt := time.Now()
+
 	defer func() {
 		s.inFlight.Add(-1)
+		s.metrics().GaugeSet("pocketci_runs_active", float64(s.inFlight.Load()), nil)
+
+		// Final status was just written by finalizeExecRun; fetch once for the
+		// histogram label so we don't have to thread it back through the call
+		// chain. On read failure, fall back to "unknown" so the metric still
+		// gets recorded.
+		status := "unknown"
+		if final, err := s.store.GetRun(context.Background(), run.ID); err == nil {
+			status = string(final.Status)
+		}
+
+		labels := map[string]string{"status": status}
+		s.metrics().HistogramObserve("pocketci_run_duration_seconds", time.Since(startedAt).Seconds(), labels)
+		s.metrics().CounterAdd("pocketci_runs_total", 1, labels)
+
 		s.signalSlotFreed()
 	}()
 	defer s.wg.Done()
