@@ -678,68 +678,28 @@ func (c *APIPipelinesController) triggerByMode(ctx *echo.Context, pipeline *stor
 
 // triggerNotFound writes an appropriate 404 response for HTMX or JSON clients.
 func (c *APIPipelinesController) triggerNotFound(ctx *echo.Context) error {
-	if isHtmxRequest(ctx) {
-		strErr := ctx.String(http.StatusNotFound, "Pipeline not found")
-		if strErr != nil {
-			return fmt.Errorf("trigger pipeline not found response: %w", strErr)
-		}
-
-		return nil
-	}
-
-	jsonErr := ctx.JSON(http.StatusNotFound, map[string]string{
-		"error": "pipeline not found",
-	})
-	if jsonErr != nil {
-		return fmt.Errorf("trigger not found response: %w", jsonErr)
-	}
-
-	return nil
+	return respondHTMXOrJSON(ctx, http.StatusNotFound,
+		"trigger pipeline not found", "Pipeline not found",
+		map[string]string{"error": "pipeline not found"})
 }
 
 // triggerPipelinePaused writes an appropriate 409 response for HTMX or JSON clients.
 func (c *APIPipelinesController) triggerPipelinePaused(ctx *echo.Context) error {
-	if isHtmxRequest(ctx) {
-		strErr := ctx.String(http.StatusConflict, "Pipeline is paused")
-		if strErr != nil {
-			return fmt.Errorf("trigger paused response: %w", strErr)
-		}
-
-		return nil
-	}
-
-	jsonErr := ctx.JSON(http.StatusConflict, map[string]string{
-		"error": "pipeline is paused",
-	})
-	if jsonErr != nil {
-		return fmt.Errorf("trigger paused json response: %w", jsonErr)
-	}
-
-	return nil
+	return respondHTMXOrJSON(ctx, http.StatusConflict,
+		"trigger paused", "Pipeline is paused",
+		map[string]string{"error": "pipeline is paused"})
 }
 
 // triggerQueueFull writes an appropriate 429 response for HTMX or JSON clients.
 func (c *APIPipelinesController) triggerQueueFull(ctx *echo.Context) error {
-	if isHtmxRequest(ctx) {
-		strErr := ctx.String(http.StatusTooManyRequests, "Execution queue is full")
-		if strErr != nil {
-			return fmt.Errorf("trigger queue full response: %w", strErr)
-		}
-
-		return nil
-	}
-
-	jsonErr := ctx.JSON(http.StatusTooManyRequests, map[string]any{
-		"error":          "execution queue is full",
-		"in_flight":      c.execService.CurrentInFlight(),
-		"max_in_flight":  c.execService.MaxInFlight(),
-		"max_queue_size": c.execService.MaxQueueSize(),
-	})
-	if jsonErr != nil {
-		return fmt.Errorf("trigger queue full json response: %w", jsonErr)
-	}
-
-	return nil
+	return respondHTMXOrJSON(ctx, http.StatusTooManyRequests,
+		"trigger queue full", "Execution queue is full",
+		map[string]any{
+			"error":          "execution queue is full",
+			"in_flight":      c.execService.CurrentInFlight(),
+			"max_in_flight":  c.execService.MaxInFlight(),
+			"max_queue_size": c.execService.MaxQueueSize(),
+		})
 }
 
 // Trigger handles POST /api/pipelines/:id/trigger - Trigger pipeline execution.

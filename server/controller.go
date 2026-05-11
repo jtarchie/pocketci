@@ -54,3 +54,24 @@ func parsePagination(ctx *echo.Context) (page, perPage int) {
 
 	return page, perPage
 }
+
+// respondHTMXOrJSON writes status with htmxMsg for HTMX clients or jsonBody
+// for JSON clients. The label is used in any wrapped error returned from the
+// underlying response write.
+func respondHTMXOrJSON(ctx *echo.Context, status int, label, htmxMsg string, jsonBody any) error {
+	if isHtmxRequest(ctx) {
+		err := ctx.String(status, htmxMsg)
+		if err != nil {
+			return fmt.Errorf("%s htmx response: %w", label, err)
+		}
+
+		return nil
+	}
+
+	err := ctx.JSON(status, jsonBody)
+	if err != nil {
+		return fmt.Errorf("%s json response: %w", label, err)
+	}
+
+	return nil
+}
