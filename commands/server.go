@@ -35,7 +35,6 @@ import (
 	"github.com/jtarchie/pocketci/storage"
 	storagesqlite "github.com/jtarchie/pocketci/storage/sqlite"
 	"github.com/jtarchie/pocketci/webhooks"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	webhookbitbucket "github.com/jtarchie/pocketci/webhooks/bitbucket"
 	webhookgeneric "github.com/jtarchie/pocketci/webhooks/generic"
 	webhookgithub "github.com/jtarchie/pocketci/webhooks/github"
@@ -149,9 +148,6 @@ type Server struct {
 	CacheS3SecretAccessKey string `env:"CI_CACHE_S3_SECRET_ACCESS_KEY" help:"S3 secret access key for cache"       name:"cache-s3-secret-access-key"`
 	// Profiling
 	PprofAddr string `env:"CI_PPROF_ADDR" help:"Address to serve pprof debug endpoints (e.g. ':6060'). Empty disables profiling." name:"pprof-addr"`
-
-	// Metrics
-	Metrics bool `default:"true" env:"CI_METRICS" help:"Enable Prometheus /metrics endpoint" name:"metrics" negatable:""`
 }
 
 func (c *Server) Run(logger *slog.Logger) error {
@@ -191,15 +187,10 @@ func (c *Server) Run(logger *slog.Logger) error {
 	driverConfigs := c.buildDriverConfigs()
 	defaultDriver := c.defaultDriverName()
 
-	var (
-		metrics        observability.Metrics = observability.NoopMetrics()
-		metricsHandler http.Handler
-	)
-
-	if c.Metrics {
-		metrics = observability.NewPromMetrics(nil)
-		metricsHandler = promhttp.Handler()
-	}
+	// Forward metrics through the same Provider used for PostHog / Honeybadger
+	// Insights. When no provider is configured, NewEventMetrics returns a
+	// noop so call sites never need a nil check.
+	metrics := observability.NewEventMetrics(obsProvider)
 
 	router, err := server.NewRouter(logger, client, server.RouterOptions{
 		MaxInFlight:           c.MaxInFlight,
@@ -218,7 +209,6 @@ func (c *Server) Run(logger *slog.Logger) error {
 		SecureCookies:         c.SecureCookies,
 		ObservabilityProvider: obsProvider,
 		Metrics:               metrics,
-		MetricsHandler:        metricsHandler,
 		DefaultDriver:         defaultDriver,
 		DriverConfigs:         driverConfigs,
 		CacheS3:               c.cacheS3Config(),

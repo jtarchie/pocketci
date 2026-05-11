@@ -63,6 +63,10 @@ type ExecutionService struct {
 // The allowedDrivers list determines the default driver (first in list).
 // If allowedDrivers is empty or contains "*", defaults to "docker".
 // maxQueueSize controls the maximum number of pending queued runs; 0 disables queuing.
+//
+// The background queue processor is NOT started here — call Start once all
+// optional fields (Metrics, SecretsManager, etc.) have been set, so the
+// goroutine doesn't race with field assignments in NewRouter.
 func NewExecutionService(store storage.Driver, logger *slog.Logger, maxInFlight int, maxQueueSize int, allowedDrivers []string) *ExecutionService {
 	if maxInFlight <= 0 {
 		maxInFlight = 10 // default limit
@@ -85,13 +89,18 @@ func NewExecutionService(store storage.Driver, logger *slog.Logger, maxInFlight 
 	}
 	svc.cond = sync.NewCond(&sync.Mutex{})
 
-	if maxQueueSize > 0 {
-		svc.queueWg.Add(1)
-
-		go svc.processQueue()
-	}
-
 	return svc
+}
+
+// Start launches the background queue processor. Must be called after all
+// optional configuration fields have been set; safe to call when the service
+// has no queue (maxQueueSize <= 0 makes this a no-op).
+func (s *ExecutionService) Start() {
+	if s.maxQueueSize > 0 {
+		s.queueWg.Add(1)
+
+		go s.processQueue()
+	}
 }
 
 // Wait blocks until all in-flight pipeline executions have completed.

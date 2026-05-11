@@ -92,14 +92,10 @@ type RouterOptions struct {
 	SecureCookies bool
 	// Metrics is the optional recording surface for runtime measurements.
 	// When nil, a no-op implementation is used so call sites never have to
-	// nil-check. The router does not itself record metrics; subsequent
-	// instrumentation commits in execution.go, scheduler/, the webhook
-	// controller, etc. consume this.
+	// nil-check. The execution service, scheduler, webhook controller, and
+	// driver registry consume this; measurements are forwarded as events
+	// through the configured ObservabilityProvider.
 	Metrics Metrics
-	// MetricsHandler, when set, is mounted at GET /metrics. Pass
-	// promhttp.Handler() (or any http.Handler) from the caller; the router
-	// has no opinion on the metrics serialization format.
-	MetricsHandler http.Handler
 }
 
 // Router wraps echo.Echo and provides access to the execution service.
@@ -282,6 +278,10 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	execService.DriverRegistry = orchestra.NewDriverRegistry(opts.DriverProviders)
 	execService.Metrics = metrics
 
+	// All optional fields are set; safe to launch the background queue
+	// processor now without racing with the assignments above.
+	execService.Start()
+
 	if opts.DefaultDriver != "" {
 		execService.DefaultDriver = opts.DefaultDriver
 	}
@@ -338,9 +338,6 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 		return ctx.String(http.StatusOK, "OK")
 	})
 
-	if opts.MetricsHandler != nil {
-		router.GET("/metrics", echo.WrapHandler(opts.MetricsHandler))
-	}
 
 	// Create web UI group and apply auth middleware
 	web := router.Group("")

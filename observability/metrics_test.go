@@ -1,14 +1,51 @@
 package observability_test
 
 import (
-	"strings"
+	"log/slog"
+	"sync"
 	"testing"
 
 	"github.com/jtarchie/pocketci/observability"
 	. "github.com/onsi/gomega"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 )
+
+// recordingProvider captures every Event call for assertion. Implements
+// observability.Provider; the slog and Close hooks are no-ops because metric
+// tests don't exercise them.
+type recordingProvider struct {
+	mu     sync.Mutex
+	events []recordedEvent
+}
+
+type recordedEvent struct {
+	eventType string
+	data      map[string]any
+}
+
+func (r *recordingProvider) Name() string { return "recording" }
+
+func (r *recordingProvider) Event(eventType string, data map[string]any) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.events = append(r.events, recordedEvent{eventType: eventType, data: data})
+
+	return nil
+}
+
+func (r *recordingProvider) SlogHandler(next slog.Handler) slog.Handler { return next }
+
+func (r *recordingProvider) Close() error { return nil }
+
+func (r *recordingProvider) snapshot() []recordedEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	out := make([]recordedEvent, len(r.events))
+	copy(out, r.events)
+
+	return out
+}
 
 func TestNoopMetricsDiscardsEverything(t *testing.T) {
 	t.Parallel()
@@ -21,87 +58,78 @@ func TestNoopMetricsDiscardsEverything(t *testing.T) {
 	m.HistogramObserve("anything", 0.5, map[string]string{"x": "y"})
 }
 
-func TestPromMetricsCountersAndGaugesAccumulate(t *testing.T) {
+func TestNewEventMetricsWithNilProviderReturnsNoop(t *testing.T) {
 	t.Parallel()
 
 	assert := NewGomegaWithT(t)
 
-	reg := prometheus.NewRegistry()
-	m := observability.NewPromMetrics(reg)
+	m := observability.NewEventMetrics(nil)
+	assert.Expect(m).NotTo(BeNil())
+
+	// No provider to record into; just assert no panic on use.
+	m.CounterAdd("x", 1, nil)
+}
+
+func TestEventMetricsForwardsCounterAsEvent(t *testing.T) {
+	t.Parallel()
+
+	assert := NewGomegaWithT(t)
+
+	provider := &recordingProvider{}
+	m := observability.NewEventMetrics(provider)
 
 	m.CounterAdd("pocketci_runs_total", 1, map[string]string{"status": "success"})
-	m.CounterAdd("pocketci_runs_total", 2, map[string]string{"status": "success"})
-	m.CounterAdd("pocketci_runs_total", 1, map[string]string{"status": "failure"})
 
-	m.GaugeSet("pocketci_queue_depth", 7, nil)
-	m.GaugeSet("pocketci_queue_depth", 3, nil)
+	events := provider.snapshot()
+	assert.Expect(events).To(HaveLen(1))
+	assert.Expect(events[0].eventType).To(Equal(observability.EventTypeMetricCounter))
+	assert.Expect(events[0].data[observability.MetricEventKeyName]).To(Equal("pocketci_runs_total"))
+	assert.Expect(events[0].data[observability.MetricEventKeyKind]).To(Equal(string(observability.MetricKindCounter)))
+	assert.Expect(events[0].data[observability.MetricEventKeyValue]).To(Equal(float64(1)))
 
-	expected := `
-# HELP pocketci_queue_depth
-# TYPE pocketci_queue_depth gauge
-pocketci_queue_depth 3
-# HELP pocketci_runs_total
-# TYPE pocketci_runs_total counter
-pocketci_runs_total{status="failure"} 1
-pocketci_runs_total{status="success"} 3
-`
-	err := testutil.GatherAndCompare(reg, strings.NewReader(expected), "pocketci_queue_depth", "pocketci_runs_total")
-	assert.Expect(err).NotTo(HaveOccurred())
+	attrs, ok := events[0].data[observability.MetricEventKeyAttributes].(map[string]string)
+	assert.Expect(ok).To(BeTrue())
+	assert.Expect(attrs).To(Equal(map[string]string{"status": "success"}))
 }
 
-func TestPromMetricsHistogramObserves(t *testing.T) {
+func TestEventMetricsGaugeAndHistogramUseDistinctEventTypes(t *testing.T) {
 	t.Parallel()
 
 	assert := NewGomegaWithT(t)
 
-	reg := prometheus.NewRegistry()
-	m := observability.NewPromMetrics(reg)
+	provider := &recordingProvider{}
+	m := observability.NewEventMetrics(provider)
 
+	m.GaugeSet("pocketci_queue_depth", 7, nil)
 	m.HistogramObserve("pocketci_run_duration_seconds", 1.2, map[string]string{"status": "success"})
-	m.HistogramObserve("pocketci_run_duration_seconds", 2.4, map[string]string{"status": "success"})
 
-	mfs, err := reg.Gather()
-	assert.Expect(err).NotTo(HaveOccurred())
+	events := provider.snapshot()
+	assert.Expect(events).To(HaveLen(2))
 
-	var found bool
+	assert.Expect(events[0].eventType).To(Equal(observability.EventTypeMetricGauge))
+	assert.Expect(events[0].data[observability.MetricEventKeyValue]).To(Equal(float64(7)))
+	assert.Expect(events[0].data).NotTo(HaveKey(observability.MetricEventKeyAttributes))
 
-	for _, mf := range mfs {
-		if mf.GetName() != "pocketci_run_duration_seconds" {
-			continue
-		}
-
-		found = true
-
-		assert.Expect(mf.GetMetric()).To(HaveLen(1))
-		assert.Expect(mf.GetMetric()[0].GetHistogram().GetSampleCount()).To(BeNumerically("==", 2))
-		assert.Expect(mf.GetMetric()[0].GetHistogram().GetSampleSum()).To(BeNumerically("~", 3.6, 0.0001))
-	}
-
-	assert.Expect(found).To(BeTrue())
+	assert.Expect(events[1].eventType).To(Equal(observability.EventTypeMetricHistogram))
+	assert.Expect(events[1].data[observability.MetricEventKeyValue]).To(Equal(1.2))
 }
 
-func TestPromMetricsConcurrentUseDoesNotRace(t *testing.T) {
+func TestEventMetricsCopiesAttributesSoCallerMutationDoesNotLeak(t *testing.T) {
 	t.Parallel()
 
-	reg := prometheus.NewRegistry()
-	m := observability.NewPromMetrics(reg)
+	assert := NewGomegaWithT(t)
 
-	done := make(chan struct{})
+	provider := &recordingProvider{}
+	m := observability.NewEventMetrics(provider)
 
-	for i := 0; i < 10; i++ {
-		go func() {
-			for j := 0; j < 100; j++ {
-				m.CounterAdd("c", 1, map[string]string{"k": "v"})
-				m.GaugeSet("g", float64(j), nil)
-				m.HistogramObserve("h", 0.1, nil)
-			}
+	attrs := map[string]string{"status": "success"}
+	m.CounterAdd("metric", 1, attrs)
 
-			done <- struct{}{}
-		}()
-	}
+	// Mutate the caller-side map after the call returns. The recorded event
+	// must not reflect the mutation.
+	attrs["status"] = "mutated"
 
-	for i := 0; i < 10; i++ {
-		<-done
-	}
+	events := provider.snapshot()
+	recorded := events[0].data[observability.MetricEventKeyAttributes].(map[string]string)
+	assert.Expect(recorded["status"]).To(Equal("success"))
 }
-
