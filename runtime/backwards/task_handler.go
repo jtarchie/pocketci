@@ -176,7 +176,12 @@ func (h *TaskHandler) runTask(sc *StepContext, step *config.Step, pathPrefix, ta
 		return &TaskErroredError{TaskName: taskName, Err: err}
 	}
 
-	defer func() { _ = container.Cleanup(sc.Ctx) }()
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		_ = container.Cleanup(cleanupCtx) //nolint:contextcheck // cleanup after cancellation needs a fresh context
+	}()
 
 	// Stream logs concurrently with container execution.
 	// tickerCtx controls only the periodic storage-update goroutine; goroutine 1

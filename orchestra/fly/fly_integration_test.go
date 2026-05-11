@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	. "github.com/onsi/gomega"
@@ -134,4 +135,128 @@ func TestFlyCleanup_SweepDestroysUntrackedNamespaceMachines(t *testing.T) {
 
 	// The ephemeral app is deleted by Close(), so we cannot query the machine
 	// state afterward. A successful Close() without error confirms the sweep ran.
+}
+
+// TestFlyCleanup_SweepDestroysOrphanedVolumes verifies that Close() reaps the
+// per-namespace shared volume even when it isn't in volumeIDs. This is the
+// orphan-recovery scenario: cleanupOrphanedRunResources creates a fresh driver
+// in the dead run's namespace with empty tracking maps, then calls Close()
+// expecting it to delete the previous run's resources.
+//
+// Without sweepUntrackedVolumes, every server crash mid-run leaks the volume
+// permanently because no later driver instance knows the volume ID.
+func TestFlyCleanup_SweepDestroysOrphanedVolumes(t *testing.T) {
+	token := os.Getenv("FLY_API_TOKEN")
+	if token == "" {
+		t.Skip("FLY_API_TOKEN not set, skipping Fly integration tests")
+	}
+
+	assert := NewGomegaWithT(t)
+
+	namespace := "test-" + gonanoid.Must()
+
+	driver, err := fly.New(context.Background(), fly.Config{ServerConfig: fly.ServerConfig{Token: token}, Namespace: namespace}, slog.Default())
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	f := driver.(*fly.Fly)
+
+	defer func() { _ = driver.Close() }()
+
+	// Create a volume directly via the client, bypassing trackVolume. This
+	// reproduces the orphan-recovery condition: the driver instance has the
+	// right namespace and app, but its volumeIDs slice is empty because it
+	// didn't create the volume.
+	expectedName := fly.SanitizeVolumeName(namespace + "_workspace")
+	size := 1
+
+	created, err := f.Client().CreateVolume(context.Background(), f.AppName(), flygo.CreateVolumeRequest{
+		Name:   expectedName,
+		Region: "iad",
+		SizeGb: &size,
+	})
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	// Sanity: the volume actually exists in the app.
+	beforeVolumes, err := f.Client().GetAllVolumes(context.Background(), f.AppName())
+	assert.Expect(err).NotTo(HaveOccurred())
+	assert.Expect(containsLiveVolume(beforeVolumes, created.ID)).To(BeTrue(), "untracked volume should exist before Close()")
+
+	// Close() must invoke sweepUntrackedVolumes and delete the orphan.
+	err = driver.Close()
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	// The ephemeral app is gone after Close(), so listing volumes against it
+	// is expected to fail. That failure itself confirms the app (and therefore
+	// every volume in it) is destroyed.
+	_, err = f.Client().GetAllVolumes(context.Background(), f.AppName())
+	assert.Expect(err).To(HaveOccurred(), "app should be deleted by Close()")
+}
+
+// TestFlyCleanup_StopReapsMachineAndVolume exercises the stop scenario
+// end-to-end at the driver level: a container is launched with a mount
+// (creating both a machine and the shared workspace volume), Cleanup is
+// invoked the way the runner now invokes it (with a fresh, bounded context),
+// and Close finishes the job. After this sequence the Fly app should be
+// fully reaped.
+func TestFlyCleanup_StopReapsMachineAndVolume(t *testing.T) {
+	token := os.Getenv("FLY_API_TOKEN")
+	if token == "" {
+		t.Skip("FLY_API_TOKEN not set, skipping Fly integration tests")
+	}
+
+	assert := NewGomegaWithT(t)
+
+	namespace := "test-" + gonanoid.Must()
+	taskID := gonanoid.Must()
+
+	driver, err := fly.New(context.Background(), fly.Config{ServerConfig: fly.ServerConfig{Token: token}, Namespace: namespace}, slog.Default())
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	f := driver.(*fly.Fly)
+
+	container, err := f.RunContainer(context.Background(), orchestra.Task{
+		ID:      taskID,
+		Image:   "alpine:latest",
+		Command: []string{"/bin/sleep", "300"},
+		Mounts: orchestra.Mounts{
+			{Name: "workspace", Path: "/workspace", SizeGB: 1},
+		},
+	})
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	machineID := container.ID()
+	assert.Expect(f.IsTrackedMachine(machineID)).To(BeTrue())
+
+	// Cleanup with a fresh, bounded context — mirroring the runner's new
+	// behaviour. The destroy must complete even though the run is "stopping".
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cleanupCancel()
+	err = container.Cleanup(cleanupCtx)
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	// The machine should be gone (or in a destroyed state) immediately.
+	machine, getErr := f.Client().Get(context.Background(), f.AppName(), machineID)
+	if getErr == nil {
+		assert.Expect(machine.State).To(Equal("destroyed"))
+	}
+
+	// Close() reaps the shared volume and (because cfg.App was empty) the app.
+	err = driver.Close()
+	assert.Expect(err).NotTo(HaveOccurred())
+
+	// App is gone — verifying via a list call which is expected to fail.
+	_, err = f.Client().GetAllVolumes(context.Background(), f.AppName())
+	assert.Expect(err).To(HaveOccurred(), "app should be deleted by Close()")
+}
+
+// containsLiveVolume reports whether the given list includes the volume by ID
+// in a non-destroyed state.
+func containsLiveVolume(volumes []flygo.Volume, id string) bool {
+	for _, v := range volumes {
+		if v.ID == id && v.State != "destroyed" {
+			return true
+		}
+	}
+
+	return false
 }

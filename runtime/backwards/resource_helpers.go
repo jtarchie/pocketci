@@ -98,7 +98,12 @@ func runResourceContainer(sc *StepContext, taskName, image string, command []str
 		return "", fmt.Errorf("run container %q: %w", taskName, err)
 	}
 
-	defer func() { _ = container.Cleanup(sc.Ctx) }()
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		_ = container.Cleanup(cleanupCtx) //nolint:contextcheck // cleanup after cancellation needs a fresh context
+	}()
 
 	status, err := waitForContainer(sc.Ctx, container)
 	if err != nil {

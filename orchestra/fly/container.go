@@ -355,14 +355,18 @@ func (c *Container) Cleanup(ctx context.Context) error {
 		c.waitCancel()
 	}
 
-	// Stop the machine first if it's running
+	// Stop the machine first if it's running. Get is best-effort: if it fails
+	// for any reason (404, cancelled context, transient API error) we still
+	// attempt Destroy with Kill:true below, which tolerates non-existent
+	// machines and forces a stop without needing a prior Kill.
 	machine, err := c.driver.client.Get(ctx, c.driver.appName, c.machineID)
 	if err != nil {
-		// Machine may already be gone
-		return nil
+		c.driver.logger.Debug("fly.machine.get.cleanup", "machine", c.machineID, "err", err)
+
+		machine = nil
 	}
 
-	if machine.State == "started" || machine.State == "starting" {
+	if machine != nil && (machine.State == "started" || machine.State == "starting") {
 		err = c.driver.client.Kill(ctx, c.driver.appName, c.machineID)
 		if err != nil {
 			c.driver.logger.Warn("fly.machine.kill.error", "machine", c.machineID, "err", err)

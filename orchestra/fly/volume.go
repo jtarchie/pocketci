@@ -76,7 +76,7 @@ func (f *Fly) CreateVolume(ctx context.Context, name string, size int) (orchestr
 	// Path is the subdirectory under /workspace in the container.
 	v := &Volume{
 		id:             sharedID,
-		name:           sanitizeVolumeName(fmt.Sprintf("%s_%s", f.namespace, name)),
+		name:           SanitizeVolumeName(fmt.Sprintf("%s_%s", f.namespace, name)),
 		userFacingName: name,
 		path:           "/workspace/" + name,
 		driver:         f,
@@ -93,7 +93,7 @@ func (f *Fly) CreateVolume(ctx context.Context, name string, size int) (orchestr
 // per Fly driver lifetime (the first CreateVolume call). Returns the new
 // volume's Fly ID.
 func (f *Fly) createSharedVolume(ctx context.Context, size int) (string, error) {
-	volumeName := sanitizeVolumeName(f.namespace + "_workspace")
+	volumeName := SanitizeVolumeName(f.namespace + "_workspace")
 
 	if size <= 0 {
 		size = f.diskGB

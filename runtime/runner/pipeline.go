@@ -365,6 +365,20 @@ func (c *PipelineRunner) Run(input RunInput) (*RunResult, error) {
 		return nil, fmt.Errorf("could not run container: %w", err)
 	}
 
+	// Register cleanup BEFORE waitAndFinalizeRun so all of its early-return
+	// abort paths (poll error, logs error, cancellation) still tear down
+	// the container. Use a detached context: when the run is stopped, ctx
+	// is already cancelled and the driver's API calls would fail immediately.
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		cleanupErr := container.Cleanup(cleanupCtx) //nolint:contextcheck // cleanup after cancellation needs a fresh context
+		if cleanupErr != nil {
+			logger.Error("container.cleanup.error", "err", cleanupErr)
+		}
+	}()
+
 	return c.waitAndFinalizeRun(ctx, container, input, logger, storageKey)
 }
 
@@ -584,13 +598,6 @@ func (c *PipelineRunner) waitAndFinalizeRun(
 	} else {
 		logger.Info("container.run.done", "exitCode", containerStatus.ExitCode())
 	}
-
-	defer func() {
-		err := container.Cleanup(ctx)
-		if err != nil {
-			logger.Error("container.cleanup.error", "err", err)
-		}
-	}()
 
 	return c.buildFinalResult(containerStatus, stdout, stderr, finalStdout, finalStderr, logs, storageKey, taskStartedAt, logger)
 }

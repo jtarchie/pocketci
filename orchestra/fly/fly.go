@@ -166,7 +166,9 @@ func (f *Fly) Close() error {
 	}
 	f.mu.Unlock()
 
-	ctx := context.Background()
+	// Bound shutdown so a stuck Fly API can't lock up the caller indefinitely.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
 
 	// Truly destroy persistent helper machines so their volumes can be deleted
 	for _, machineID := range helperMachineIDs {
@@ -208,6 +210,10 @@ func (f *Fly) Close() error {
 			f.logger.Warn("fly.volume.delete.error", "volume", volumeID, "err", err)
 		}
 	}
+
+	// Best-effort sweep for orphaned volumes (untracked, or owned by an
+	// orphan-recovery driver instance whose volumeIDs is empty).
+	f.sweepUntrackedVolumes(ctx)
 
 	// If we created the app, delete it
 	if f.ephemeralApp {
@@ -267,6 +273,51 @@ func (f *Fly) sweepUntrackedMachines(ctx context.Context) {
 		}, "")
 		if err != nil {
 			f.logger.Warn("fly.machine.destroy.sweep.error", "machine", machine.ID, "err", err)
+		}
+	}
+}
+
+// sweepUntrackedVolumes deletes any volumes belonging to this namespace that
+// were not explicitly tracked. Two scenarios produce these:
+//   - Orphan recovery: cleanupOrphanedRunResources creates a fresh driver
+//     instance with empty volumeIDs and calls Close() to reap the previous
+//     run's resources. The tracked-volume loop is a no-op there.
+//   - In-run race: process killed between CreateVolume's API call and
+//     trackVolume's mutex acquisition.
+func (f *Fly) sweepUntrackedVolumes(ctx context.Context) {
+	volumes, err := f.client.GetAllVolumes(ctx, f.appName)
+	if err != nil {
+		f.logger.Warn("fly.volume.list.error", "app", f.appName, "err", err)
+
+		return
+	}
+
+	// The driver provisions exactly one shared volume per namespace, named
+	// SanitizeVolumeName(namespace + "_workspace"). Match the exact name so
+	// we don't reap volumes from sibling namespaces on a shared app.
+	expected := SanitizeVolumeName(f.namespace + "_workspace")
+
+	f.mu.Lock()
+	tracked := make(map[string]bool, len(f.volumeIDs))
+	for _, id := range f.volumeIDs {
+		tracked[id] = true
+	}
+	f.mu.Unlock()
+
+	for _, v := range volumes {
+		if tracked[v.ID] {
+			continue
+		}
+
+		if v.Name != expected {
+			continue
+		}
+
+		f.logger.Debug("fly.volume.delete.sweep", "volume", v.ID, "name", v.Name)
+
+		_, err := f.client.DeleteVolume(ctx, f.appName, v.ID)
+		if err != nil {
+			f.logger.Warn("fly.volume.delete.sweep.error", "volume", v.ID, "err", err)
 		}
 	}
 }
@@ -331,9 +382,9 @@ func SanitizeAppName(name string) string {
 	return name
 }
 
-// sanitizeVolumeName ensures a Fly volume name conforms to Fly's requirements:
+// SanitizeVolumeName ensures a Fly volume name conforms to Fly's requirements:
 // max 30 chars, only lowercase letters, numbers, and underscores.
-func sanitizeVolumeName(name string) string {
+func SanitizeVolumeName(name string) string {
 	name = strings.ToLower(name)
 
 	var b strings.Builder
