@@ -177,6 +177,93 @@ func (s *Sqlite) GetAll(ctx context.Context, prefix string, fields []string) (st
 	return results, nil
 }
 
+// GetAllPaginated returns a page of results matching prefix, in the same order
+// as GetAll. fields follows the same convention as GetAll: empty defaults to
+// {"status"}; ["*"] returns the full payload. page <= 0 defaults to 1; perPage
+// <= 0 defaults to 20.
+func (s *Sqlite) GetAllPaginated(
+	ctx context.Context,
+	prefix string,
+	fields []string,
+	page, perPage int,
+) (*storage.PaginationResult[storage.Result], error) {
+	if page < 1 {
+		page = 1
+	}
+
+	if perPage < 1 {
+		perPage = 20
+	}
+
+	if len(fields) == 0 {
+		fields = []string{"status"}
+	}
+
+	path := filepath.Clean("/" + s.namespace + "/" + prefix)
+	globPath := path + "*"
+	offset := (page - 1) * perPage
+
+	var totalItems int
+
+	err := sqlscan.Get(ctx, s.reader, &totalItems, `
+		SELECT COUNT(*) FROM tasks WHERE path GLOB :path
+	`, sql.Named("path", globPath))
+	if err != nil {
+		return nil, fmt.Errorf("could not count tasks: %w", err)
+	}
+
+	var selectClause string
+	if len(fields) == 1 && fields[0] == "*" {
+		selectClause = "json(payload) as payload"
+	} else {
+		jsonSelects := strings.Join(
+			lo.Map(fields, func(field string, _ int) string {
+				if isKnownColumn(field) {
+					return fmt.Sprintf("'%s', %s", field, field)
+				}
+
+				return fmt.Sprintf("'%s', json_extract(payload, '$.%s')", field, field)
+			}),
+			",",
+		)
+		selectClause = fmt.Sprintf("json_object(%s) as payload", jsonSelects)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, path, %s
+		FROM tasks
+		WHERE path GLOB :path
+		ORDER BY id ASC
+		LIMIT :limit OFFSET :offset
+	`, selectClause)
+
+	var results storage.Results
+
+	err = sqlscan.Select(
+		ctx,
+		s.reader,
+		&results,
+		query,
+		sql.Named("path", globPath),
+		sql.Named("limit", perPage),
+		sql.Named("offset", offset),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("could not select tasks: %w", err)
+	}
+
+	totalPages := (totalItems + perPage - 1) / perPage
+
+	return &storage.PaginationResult[storage.Result]{
+		Items:      results,
+		Page:       page,
+		PerPage:    perPage,
+		TotalItems: totalItems,
+		TotalPages: totalPages,
+		HasNext:    page < totalPages,
+	}, nil
+}
+
 func (s *Sqlite) UpdateStatusForPrefix(ctx context.Context, prefix string, matchStatuses []string, newStatus string) error {
 	if len(matchStatuses) == 0 {
 		return nil

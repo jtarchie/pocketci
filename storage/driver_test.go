@@ -2,6 +2,7 @@ package storage_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"testing"
@@ -101,6 +102,45 @@ func TestDrivers(t *testing.T) {
 					"another": "456",
 					"third":   "789",
 				}))
+			})
+
+			t.Run("GetAllPaginated returns the expected page slice", func(t *testing.T) {
+				assert := NewGomegaWithT(t)
+
+				client := df.new(t, "namespace")
+				ctx := context.Background()
+
+				for i := 0; i < 25; i++ {
+					err := client.Set(ctx, fmt.Sprintf("/page/item-%02d", i), map[string]string{
+						"status": "success",
+					})
+					assert.Expect(err).NotTo(HaveOccurred())
+				}
+
+				page1, err := client.GetAllPaginated(ctx, "/page", []string{"status"}, 1, 10)
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(page1.Items).To(HaveLen(10))
+				assert.Expect(page1.TotalItems).To(Equal(25))
+				assert.Expect(page1.TotalPages).To(Equal(3))
+				assert.Expect(page1.HasNext).To(BeTrue())
+				assert.Expect(page1.Items[0].Path).To(Equal("/namespace/page/item-00"))
+
+				page3, err := client.GetAllPaginated(ctx, "/page", []string{"status"}, 3, 10)
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(page3.Items).To(HaveLen(5))
+				assert.Expect(page3.HasNext).To(BeFalse())
+				assert.Expect(page3.Items[0].Path).To(Equal("/namespace/page/item-20"))
+
+				wildcard, err := client.GetAllPaginated(ctx, "/page", []string{"*"}, 1, 5)
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(wildcard.Items).To(HaveLen(5))
+				assert.Expect(wildcard.Items[0].Payload).To(HaveKey("status"))
+
+				defaults, err := client.GetAllPaginated(ctx, "/page", nil, 0, 0)
+				assert.Expect(err).NotTo(HaveOccurred())
+				assert.Expect(defaults.Page).To(Equal(1))
+				assert.Expect(defaults.PerPage).To(Equal(20))
+				assert.Expect(defaults.Items).To(HaveLen(20))
 			})
 
 			t.Run("Get not found returns ErrNotFound", func(t *testing.T) {

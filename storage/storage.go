@@ -183,6 +183,10 @@ type Driver interface {
 	Set(ctx context.Context, prefix string, payload any) error
 	Get(ctx context.Context, prefix string) (Payload, error)
 	GetAll(ctx context.Context, prefix string, fields []string) (Results, error)
+	// GetAllPaginated returns the prefix-scoped results for the given page,
+	// ordered the same way as GetAll. fields follows the same convention as
+	// GetAll. page defaults to 1 and perPage to 20 when <= 0 is supplied.
+	GetAllPaginated(ctx context.Context, prefix string, fields []string, page, perPage int) (*PaginationResult[Result], error)
 	// UpdateStatusForPrefix sets the status field of all task records under prefix
 	// whose current status matches one of matchStatuses to newStatus.
 	// It uses the same jsonb_patch upsert semantics as Set, so only the status
