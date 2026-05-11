@@ -47,6 +47,15 @@ func (c *APIWebhooksController) resolveWebhookSecret(ctx *echo.Context, pipeline
 	})
 }
 
+// recordWebhookOutcome bumps the pocketci_webhook_received_total counter for
+// a (provider, result) pair. provider is "unknown" before detection succeeds.
+func (c *APIWebhooksController) recordWebhookOutcome(provider, result string) {
+	c.execService.metrics().CounterAdd("pocketci_webhook_received_total", 1, map[string]string{
+		"provider": provider,
+		"result":   result,
+	})
+}
+
 // detectWebhookEvent reads the request body, logs headers, and detects the webhook provider/event.
 func (c *APIWebhooksController) detectWebhookEvent(ctx *echo.Context, webhookSecret string, logger *slog.Logger) (*webhooks.Event, error) {
 	body, err := io.ReadAll(ctx.Request().Body)
@@ -176,6 +185,7 @@ func (c *APIWebhooksController) Trigger(ctx *echo.Context) error {
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			logger.Error("webhook.pipeline_not_found")
+			c.recordWebhookOutcome("unknown", "pipeline_not_found")
 
 			wNFJsonErr := ctx.JSON(http.StatusNotFound, map[string]string{
 				"error": "pipeline not found",
@@ -188,6 +198,7 @@ func (c *APIWebhooksController) Trigger(ctx *echo.Context) error {
 		}
 
 		logger.Error("webhook.store_error", "error", err)
+		c.recordWebhookOutcome("unknown", "store_error")
 
 		wStoreJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "internal server error",
@@ -201,6 +212,7 @@ func (c *APIWebhooksController) Trigger(ctx *echo.Context) error {
 
 	if pipeline.Paused {
 		logger.Info("webhook.pipeline_paused")
+		c.recordWebhookOutcome("unknown", "pipeline_paused")
 
 		wPausedJsonErr := ctx.JSON(http.StatusConflict, map[string]string{
 			"error": "pipeline is paused",
@@ -214,6 +226,7 @@ func (c *APIWebhooksController) Trigger(ctx *echo.Context) error {
 
 	webhookSecret, secretErr := c.resolveWebhookSecret(ctx, pipeline, logger)
 	if secretErr != nil {
+		c.recordWebhookOutcome("unknown", "secret_error")
 		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
@@ -221,6 +234,7 @@ func (c *APIWebhooksController) Trigger(ctx *echo.Context) error {
 
 	event, detectErr := c.detectWebhookEvent(ctx, webhookSecret, logger)
 	if detectErr != nil {
+		c.recordWebhookOutcome("unknown", "detect_failed")
 		return nil //nolint:nilerr // helper already wrote the HTTP response
 	}
 
@@ -242,10 +256,13 @@ func (c *APIWebhooksController) Trigger(ctx *echo.Context) error {
 	run, err := c.execService.TriggerWebhookPipeline(ctx.Request().Context(), pipeline, webhookData, responseChan)
 	if err != nil {
 		if errors.Is(err, ErrQueueFull) {
+			c.recordWebhookOutcome(event.Provider, "queue_full")
+
 			return c.triggerWebhookQueueFull(ctx, logger)
 		}
 
 		logger.Error("webhook.trigger_error", "error", err)
+		c.recordWebhookOutcome(event.Provider, "trigger_error")
 
 		wTriggerJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "internal server error",
@@ -258,6 +275,7 @@ func (c *APIWebhooksController) Trigger(ctx *echo.Context) error {
 	}
 
 	logger.Info("webhook.triggered", "run_id", run.ID)
+	c.recordWebhookOutcome(event.Provider, "accepted")
 
 	return c.triggerWebhookPipelineResponse(ctx, pipeline, run, responseChan, logger)
 }
