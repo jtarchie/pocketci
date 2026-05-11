@@ -14,7 +14,6 @@ import (
 
 	"github.com/goccy/go-yaml"
 	config "github.com/jtarchie/pocketci/backwards"
-	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/runtime/support"
 	"github.com/jtarchie/pocketci/storage"
@@ -559,16 +558,9 @@ func resolveCaches(sc *StepContext, cfg *config.TaskConfig, taskName, pathPrefix
 			}
 			sc.CacheVolumes[lookupKey] = volName
 
-			// For task-scoped caches, augment the driver so the cache key
-			// includes the task name segment.
-			driver := sc.Driver
-			if cacheEntry.Scope == "task" {
-				driver = cache.AugmentKeyPrefix(sc.Driver, sanitizeCachePath(taskName))
-			}
-
-			// Explicitly create the volume so that the cache driver wrapper
-			// can intercept the call and restore from S3 before execution.
-			vol, err := driver.CreateVolume(sc.Ctx, volName, cacheEntry.SizeGB)
+			// The task scope is already encoded in volName (line above), so
+			// cache_op's S3 key includes it implicitly via cacheS3Key.
+			vol, err := sc.Driver.CreateVolume(sc.Ctx, volName, cacheEntry.SizeGB)
 			if err != nil {
 				sc.Logger.Warn("cache.volume.create.failed", "path", cacheEntry.Path, "volume", volName, "err", err)
 			} else {

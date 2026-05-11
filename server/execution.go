@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/jtarchie/pocketci/backwards"
-	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/resources"
 	"github.com/jtarchie/pocketci/runtime"
@@ -39,9 +38,6 @@ type ExecutionService struct {
 	wg                    sync.WaitGroup
 	DefaultDriver         string
 	DriverConfigs         map[string]orchestra.DriverConfig
-	CacheStore            cache.CacheStore
-	CacheCompression      string
-	CacheKeyPrefix        string
 	CacheS3               *runtimebackwards.CacheS3Config
 	SecretsManager        secrets.Manager
 	AllowedFeatures       []Feature
@@ -1086,10 +1082,6 @@ func (s *ExecutionService) resolveDriverFactory(ctx context.Context, pipeline *s
 		d, err := s.DriverRegistry.CreateDriver(ctx, driverName, ns, serverCfg, logger)
 		if err != nil {
 			return nil, fmt.Errorf("resolve driver: %w", err)
-		}
-
-		if s.CacheStore != nil {
-			return cache.WrapWithCaching(d, s.CacheStore, s.CacheCompression, s.CacheKeyPrefix, logger), nil
 		}
 
 		return d, nil

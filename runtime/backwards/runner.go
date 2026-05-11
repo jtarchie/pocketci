@@ -9,6 +9,7 @@ import (
 	config "github.com/jtarchie/pocketci/backwards"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/resources"
+	"github.com/jtarchie/pocketci/runtime/cacheconfig"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
 	"github.com/jtarchie/pocketci/secrets"
 	"github.com/jtarchie/pocketci/storage"
@@ -181,21 +182,10 @@ type RunnerOptions struct {
 	CacheS3          *CacheS3Config            // S3 backend for cache restore/persist tasks; nil disables them
 }
 
-// CacheS3Config tells the JobRunner where to push/pull cache archives.
-// When set on RunnerOptions, every job-level cache mount is restored at
-// the start of the consuming task and persisted at job end via tasks
-// that run amazon/aws-cli. The pocketci server is no longer in the data
-// path. AccessKeyID/SecretAccessKey may use the "secret:KEY" prefix —
-// the runner resolves them at task launch through the same path used for
-// other secret env values.
-type CacheS3Config struct {
-	Endpoint        string
-	Region          string
-	Bucket          string
-	Prefix          string // optional key prefix prepended to every cache key
-	AccessKeyID     string
-	SecretAccessKey string
-}
+// CacheS3Config is an alias for cacheconfig.S3, preserving the existing
+// type name during the migration off the in-server cache. New code should
+// reference cacheconfig.S3 directly.
+type CacheS3Config = cacheconfig.S3
 
 // Runner executes a parsed pipeline Config using Go-native execution.
 type Runner struct {

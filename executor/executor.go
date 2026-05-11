@@ -19,8 +19,6 @@ import (
 
 	"github.com/evanw/esbuild/pkg/api"
 	"github.com/jtarchie/pocketci/backwards"
-	"github.com/jtarchie/pocketci/cache"
-	cacheplugins3 "github.com/jtarchie/pocketci/cache/s3"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/orchestra/docker"
 	"github.com/jtarchie/pocketci/orchestra/k8s"
@@ -29,7 +27,6 @@ import (
 	"github.com/jtarchie/pocketci/resources/mock"
 	"github.com/jtarchie/pocketci/runtime"
 	runtimebackwards "github.com/jtarchie/pocketci/runtime/backwards"
-	"github.com/jtarchie/pocketci/s3config"
 	"github.com/jtarchie/pocketci/secrets"
 	secretssqlite "github.com/jtarchie/pocketci/secrets/sqlite"
 	"github.com/jtarchie/pocketci/storage"
@@ -49,9 +46,6 @@ type Execute struct {
 	CacheS3Region           string        `env:"CI_CACHE_S3_REGION"                                                 help:"AWS region for cache S3 backend"`
 	CacheS3AccessKeyID      string        `env:"CI_CACHE_S3_ACCESS_KEY_ID"                                          help:"S3 access key ID for cache"`
 	CacheS3SecretAccessKey  string        `env:"CI_CACHE_S3_SECRET_ACCESS_KEY"                                      help:"S3 secret access key for cache"`
-	CacheS3TTL              time.Duration `env:"CI_CACHE_S3_TTL"                                                    help:"Cache object TTL (0 = no expiry)"`
-	CacheCompression        string        `env:"CI_CACHE_COMPRESSION"                                               help:"Cache compression: zstd, gzip, or none"`
-	CacheKeyPrefix          string        `env:"CI_CACHE_KEY_PREFIX"                                                help:"Cache key prefix"`
 	Timeout                 time.Duration `env:"CI_TIMEOUT"                                                         help:"timeout for the pipeline, will cause abort if exceeded"`
 	Resume                  bool          `help:"Resume from last checkpoint if pipeline was interrupted"`
 	RunID                   string        `help:"Unique run ID for resume support (auto-generated if not provided)"`
@@ -126,11 +120,6 @@ func (c *Execute) Run(logger *slog.Logger) error {
 	}
 
 	defer func() { _ = driver.Close() }()
-
-	driver, err = c.wrapDriverWithCache(driver, logger)
-	if err != nil {
-		return err
-	}
 
 	storage, err := storagesqlite.NewSqlite(storagesqlite.Config{
 		Path: c.StorageSQLitePath,
@@ -361,24 +350,3 @@ func (c *Execute) cacheS3Config() *runtimebackwards.CacheS3Config {
 	}
 }
 
-func (c *Execute) wrapDriverWithCache(driver orchestra.Driver, logger *slog.Logger) (orchestra.Driver, error) {
-	if c.CacheS3Bucket == "" {
-		return driver, nil
-	}
-
-	store, err := cacheplugins3.New(context.Background(), cacheplugins3.Config{Config: s3config.Config{
-		Bucket:          c.CacheS3Bucket,
-		Prefix:          c.CacheS3Prefix,
-		Endpoint:        c.CacheS3Endpoint,
-		Region:          c.CacheS3Region,
-		AccessKeyID:     c.CacheS3AccessKeyID,
-		SecretAccessKey: c.CacheS3SecretAccessKey,
-		ForcePathStyle:  c.CacheS3Endpoint != "",
-		TTL:             c.CacheS3TTL,
-	}})
-	if err != nil {
-		return nil, fmt.Errorf("could not initialize cache layer: %w", err)
-	}
-
-	return cache.WrapWithCaching(driver, store, c.CacheCompression, c.CacheKeyPrefix, logger), nil
-}

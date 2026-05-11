@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/resources"
 	runtimebackwards "github.com/jtarchie/pocketci/runtime/backwards"
@@ -57,17 +56,10 @@ type RouterOptions struct {
 	// DriverConfigs maps driver names to their typed server configurations.
 	// Every driver the server is willing to serve should have an entry.
 	DriverConfigs map[string]orchestra.DriverConfig
-	// CacheStore is the optional cache backend. When non-nil every created
-	// driver is wrapped with caching.
-	CacheStore cache.CacheStore
-	// CacheCompression is the compression algorithm for the cache (zstd, gzip, none).
-	CacheCompression string
-	// CacheKeyPrefix is prepended to all cache keys.
-	CacheKeyPrefix string
-	// CacheS3, when set, configures YAML pipelines to perform cache
-	// restore/persist as ordinary container tasks (amazon/aws-cli) rather
-	// than streaming bytes through the pocketci server. Ignored for JS
-	// pipelines, which keep the existing in-server cache path.
+	// CacheS3, when set, configures pipelines to perform cache
+	// restore/persist as ordinary container tasks (peakcom/s5cmd) rather
+	// than streaming bytes through the pocketci server. Applies to both
+	// YAML and JS/TS pipelines.
 	CacheS3 *runtimebackwards.CacheS3Config
 	// WebhookProviders is the ordered list of webhook providers to use for detection.
 	// Providers are checked in order; the first match wins.
@@ -252,9 +244,6 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	execService.FetchMaxResponseBytes = opts.FetchMaxResponseBytes
 	execService.DedupTTL = opts.DedupTTL
 	execService.DriverConfigs = opts.DriverConfigs
-	execService.CacheStore = opts.CacheStore
-	execService.CacheCompression = opts.CacheCompression
-	execService.CacheKeyPrefix = opts.CacheKeyPrefix
 	execService.CacheS3 = opts.CacheS3
 	execService.ResourceRegistry = resources.NewRegistry(opts.NativeResources)
 	execService.DriverRegistry = orchestra.NewDriverRegistry(opts.DriverProviders)

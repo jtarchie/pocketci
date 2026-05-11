@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	config "github.com/jtarchie/pocketci/backwards"
-	"github.com/jtarchie/pocketci/cache"
 	"github.com/jtarchie/pocketci/orchestra"
 	"github.com/jtarchie/pocketci/resources"
 	"github.com/jtarchie/pocketci/runtime/jsapi"
@@ -115,7 +114,7 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 		return nil
 	}
 
-	jobDriver := jr.resolveJobDriver()
+	jobDriver := jr.driver
 
 	pr := pipelinerunner.NewPipelineRunner(ctx, jobDriver, jr.storage, jr.logger, jr.job.Name, jr.runID)
 
@@ -231,28 +230,6 @@ func (jr *JobRunner) Run(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// resolveJobDriver returns the orchestra driver this job should use,
-// scoped to the pipeline+job for cache-key isolation. When CacheS3 is
-// configured the cache lifecycle runs as visible tasks (amazon/aws-cli
-// containers) instead of streaming bytes through the pocketci server,
-// so we unwrap any CachingDriver so volume creation doesn't trigger an
-// eager in-server restore and volume Cleanup doesn't trigger an
-// in-server persist. AugmentKeyPrefix is a no-op for non-CachingDriver,
-// so the call is safe in either mode.
-func (jr *JobRunner) resolveJobDriver() orchestra.Driver {
-	driver := jr.driver
-	if jr.cacheS3 != nil {
-		if cd, ok := driver.(*cache.CachingDriver); ok {
-			driver = cd.Unwrap()
-		}
-	}
-
-	return cache.AugmentKeyPrefix(
-		driver,
-		sanitizeCachePath(jr.pipelineID)+"/"+sanitizeCachePath(jr.job.Name),
-	)
 }
 
 func (jr *JobRunner) cleanupCacheVolumes(sc *StepContext) {
