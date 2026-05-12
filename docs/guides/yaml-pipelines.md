@@ -270,6 +270,164 @@ jobs:
         config: ...
 ```
 
+> `passed:` is only valid on `get` steps. Putting it on a `task`, `build_image`,
+> or `put` step is rejected at upsert with an error redirecting you to
+> `triggers.passed` (see [Per-Job Triggers](#per-job-triggers) below).
+
+## Per-Job Triggers
+
+Each job's `triggers:` block declares which events fire it: webhooks, schedules,
+or fan-in completion of other jobs. **A job with no `triggers:` block keeps the
+legacy behavior** — it runs on any trigger including manual — so existing
+pipelines need no changes.
+
+| `triggers:` on job                      | Webhook | Schedule | Manual | `triggers.passed` completion |
+| --------------------------------------- | ------- | -------- | ------ | ---------------------------- |
+| absent (legacy)                         | runs    | runs     | runs   | runs if dependent            |
+| only `triggers.webhook`                 | runs    | skip     | skip   | skip                         |
+| only `triggers.schedule`                | skip    | runs     | skip   | skip                         |
+| only `triggers.passed`                  | skip    | skip     | skip   | runs                         |
+| webhook + schedule (or any combination) | runs    | runs     | skip   | runs only if also in passed  |
+
+Multiple trigger types compose with **OR**: a job declaring both
+`triggers.webhook` and `triggers.passed` fires on either.
+
+Manual `pocketci pipeline trigger <name>` without `--job` fires only jobs that
+declare _no_ `triggers:` block (strict opt-in for trigger-declared jobs). Use
+`pocketci pipeline trigger <name> --job <job>` to force-run any job, bypassing
+the filter.
+
+### `triggers.schedule` — cron and intervals
+
+```yaml
+jobs:
+  - name: nightly-build
+    triggers:
+      schedule:
+        cron: "0 2 * * *" # exactly one of cron or every
+    # every: "24h"
+    plan:
+      - task: build
+        config: ...
+```
+
+### `triggers.webhook` — filter expressions
+
+```yaml
+jobs:
+  - name: run-tests
+    triggers:
+      webhook:
+        filter: 'payload.ref == "refs/heads/main"' # optional expr-lang filter
+        dedup_key: "payload.id" # optional dedup hash key
+    plan:
+      - task: tests
+        config: ...
+```
+
+Dedup is **per-job**, not pipeline-wide: with multiple jobs declaring the same
+`dedup_key`, a duplicate webhook can run a subset of jobs.
+
+### `triggers.passed` — DAG fan-in
+
+A job fires when **all** named upstream jobs have a successful run **since this
+job's last run** (of any status). Failed upstreams don't propagate, and a failed
+downstream doesn't block future re-firings — the freshness clock advances on
+every run.
+
+```yaml
+jobs:
+  - name: a
+    triggers: { schedule: { cron: "0 1 * * *" } }
+    plan: [...]
+
+  - name: d
+    triggers: { webhook: {} }
+    plan: [...]
+
+  - name: b
+    triggers:
+      passed: [a, d] # fires when both a AND d succeed since b's last run
+    plan: [...]
+
+  - name: c
+    triggers:
+      passed: [b]
+    plan: [...]
+```
+
+The completion scanner runs after every successful job and is **coalescing** —
+if a downstream run is already queued or running, additional upstream successes
+do not queue duplicates. A boot-time recovery sweep handles the case where the
+server crashed between an upstream's success and the scanner.
+
+**Bootstrap a new pipeline**: the first time you ship a chain like A → B with
+`triggers.passed: [a]` on B, B has nothing to fire from. Either let A run on its
+own trigger first, or use
+[`pocketci pipeline seed-passed`](../cli/pipeline-set.md) to record a synthetic
+success and unblock B.
+
+**Validation at upsert**: cycles across `triggers.passed` edges, unknown
+upstream names, self-reference, empty `passed:` lists, and pipelines with no
+leaf trigger (every job is `triggers.passed`-only) are rejected with explicit
+errors.
+
+### Worked example: split build + test
+
+Pre-feature, a single pipeline rebuilds the CI base image on every push then
+runs tests:
+
+```yaml
+jobs:
+  - name: build-and-test # rebuilds the image every push (slow!)
+    plan:
+      - task: build-image
+      - task: run-tests
+```
+
+After splitting with per-job triggers, the image rebuilds on a schedule while
+tests run on every webhook:
+
+```yaml
+jobs:
+  - name: build-image
+    triggers:
+      schedule:
+        cron: "0 2 * * 0" # Sunday 02:00
+    plan:
+      - task: build
+        config: ...
+
+  - name: run-tests
+    triggers:
+      webhook: {}
+    plan:
+      - task: tests
+        config:
+          image_resource:
+            type: registry-image
+            source:
+              repository: registry.example.com/ci-base
+              tag: latest
+```
+
+### Per-job concurrency
+
+To prevent two scheduled `build-image` runs from racing without blocking
+unrelated test runs, set the pipeline's
+[concurrency mode](../operations/execution-queue.md#per-pipeline-concurrency-rules)
+to `group` with a job-keyed template:
+
+```bash
+pocketci pipeline set ci.yml -s $URL \
+  --concurrency-mode group \
+  --concurrency-group-template '{{ if .Jobs }}{{ index .Jobs 0 }}{{ else }}all{{ end }}'
+```
+
+Each targeted job becomes its own concurrency group: `build-image` queues behind
+`build-image`, `run-tests` queues behind `run-tests`, and different jobs run in
+parallel.
+
 ## Step and Job Hooks
 
 Hooks run conditionally based on outcome. They can be attached to any step or to

@@ -1,0 +1,72 @@
+---
+# Demonstrates per-job triggers and DAG fan-in via triggers.passed.
+#
+# Topology:
+#   build-image (cron)  ─┐
+#                        ├─> run-tests (triggers.passed) ─> deploy (triggers.passed)
+#   source-update (web) ─┘
+#
+# - build-image rebuilds the CI base image on a cron (e.g. weekly).
+# - source-update fires on every webhook push.
+# - run-tests fan-ins both: only runs after both build-image and source-update
+#   have a successful run since run-tests' last run.
+# - deploy fires after run-tests succeeds.
+
+jobs:
+  - name: build-image
+    triggers:
+      schedule:
+        cron: "0 2 * * 0" # Sunday 02:00 UTC
+    plan:
+      - task: build
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: busybox }
+          run:
+            path: echo
+            args: ["building image (cron)"]
+
+  - name: source-update
+    triggers:
+      webhook:
+        filter: 'payload.ref == "refs/heads/main"' # only main pushes
+    plan:
+      - task: noop
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: busybox }
+          run:
+            path: echo
+            args: ["source updated (webhook)"]
+
+  - name: run-tests
+    triggers:
+      passed: [build-image, source-update]
+    plan:
+      - task: tests
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: busybox }
+          run:
+            path: echo
+            args: ["tests passed"]
+
+  - name: deploy
+    triggers:
+      passed: [run-tests]
+    plan:
+      - task: ship
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source: { repository: busybox }
+          run:
+            path: echo
+            args: ["deployed"]
