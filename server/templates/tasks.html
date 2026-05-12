@@ -60,6 +60,39 @@
   <div class="container mx-auto p-4">
     {{ template "run-error-alert" dict "Run" .Run }}
 
+    {{ if .Run }}{{ if .Run.TriggerType }}
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-3 mb-4 text-sm flex flex-wrap items-center gap-2" aria-label="Trigger origin">
+      <span class="text-gray-500 dark:text-gray-400">Triggered by:</span>
+      {{ if eq (printf "%s" .Run.TriggerType) "webhook" }}
+      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">🌐 webhook</span>
+        {{ if .Run.TriggerInput.Webhook }}
+        <span class="text-gray-600 dark:text-gray-300 font-mono text-xs">{{ .Run.TriggerInput.Webhook.Provider }}{{ if .Run.TriggerInput.Webhook.EventType }} · {{ .Run.TriggerInput.Webhook.EventType }}{{ end }}</span>
+        {{ end }}
+      {{ else if eq (printf "%s" .Run.TriggerType) "schedule" }}
+      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">⏰ schedule</span>
+      {{ else if eq (printf "%s" .Run.TriggerType) "passed" }}
+      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">🔗 passed</span>
+      {{ else if eq (printf "%s" .Run.TriggerType) "manual" }}
+      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">🛠 manual</span>
+      {{ else }}
+      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">{{ .Run.TriggerType }}</span>
+      {{ end }}
+      {{ if .Run.TriggeredBy }}<span class="text-gray-500 dark:text-gray-400 text-xs">· {{ .Run.TriggeredBy }}</span>{{ end }}
+      {{ if .Run.TriggerInput.Jobs }}
+        <span class="text-gray-500 dark:text-gray-400">·</span>
+        {{ range .Run.TriggerInput.Jobs }}
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200" title="targeted job">🎯 {{ . }}</span>
+        {{ end }}
+      {{ end }}
+      {{ if .Run.TriggerInput.UpstreamRunIDs }}
+        <span class="text-gray-500 dark:text-gray-400 w-full sm:w-auto mt-1 sm:mt-0">Upstream:</span>
+        {{ range .Run.TriggerInput.UpstreamRunIDs }}
+        <a href="/runs/{{ . }}/tasks" class="font-mono text-xs text-blue-600 dark:text-blue-400 hover:underline">{{ slice . 0 8 }}</a>
+        {{ end }}
+      {{ end }}
+    </div>
+    {{ end }}{{ end }}
+
     <div
       class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
       <div class="flex items-center gap-3">

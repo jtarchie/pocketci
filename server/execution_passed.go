@@ -265,4 +265,3 @@ func (s *ExecutionService) recoverPassedTriggers(ctx context.Context, logger *sl
 
 	logger.Info("concurrency.passed.recover.done", slog.Int("pipelines_scanned", len(page.Items)))
 }
-

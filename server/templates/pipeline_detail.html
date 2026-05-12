@@ -157,6 +157,58 @@
     </div>
     {{ end }}
 
+    {{ if .JobSummaries }}
+    <!-- Jobs Section -->
+    <section class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6" aria-labelledby="jobs-heading">
+      <h2 id="jobs-heading" class="text-xl font-semibold dark:text-white mb-3">Jobs</h2>
+      <ul class="divide-y divide-gray-200 dark:divide-gray-700">
+        {{ range .JobSummaries }}
+        <li class="py-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-mono text-sm font-medium dark:text-white">{{ .Name }}</span>
+            {{ range .TriggerChips }}
+              {{ if eq .Kind "webhook" }}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200" title="{{ .Detail }}">🌐 webhook</span>
+              {{ else if eq .Kind "schedule" }}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200" title="{{ .Detail }}">⏰ {{ .Detail }}</span>
+              {{ else if eq .Kind "passed" }}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200" title="triggers.passed">🔗 passed: [{{ .Detail }}]</span>
+              {{ else }}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">🛠 manual</span>
+              {{ end }}
+            {{ end }}
+          </div>
+          <div class="flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-gray-400">
+            {{ if .HasTriggersPassed }}
+              {{ if .ReadyToFire }}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">✅ all fresh</span>
+              {{ else }}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200" title="waiting for fresh upstream success">⏳ waiting on {{ range $i, $u := .WaitingOn }}{{ if $i }}, {{ end }}{{ $u }}{{ end }}</span>
+              {{ end }}
+            {{ end }}
+            {{ if .LatestRun }}
+            <a href="/runs/{{ .LatestRun.ID }}" class="text-blue-600 dark:text-blue-400 hover:underline">
+              latest: <span class="font-mono">{{ slice .LatestRun.ID 0 8 }}</span>
+            </a>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium
+              {{ if eq (printf "%s" .LatestRun.Status) "success" }}bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200
+              {{ else if eq (printf "%s" .LatestRun.Status) "failed" }}bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200
+              {{ else if eq (printf "%s" .LatestRun.Status) "running" }}bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200
+              {{ else if eq (printf "%s" .LatestRun.Status) "queued" }}bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200
+              {{ else if eq (printf "%s" .LatestRun.Status) "skipped" }}bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200
+              {{ else }}bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200{{ end }}">
+              {{ .LatestRun.Status }}
+            </span>
+            {{ else }}
+            <span class="text-gray-400 dark:text-gray-500">never run</span>
+            {{ end }}
+          </div>
+        </li>
+        {{ end }}
+      </ul>
+    </section>
+    {{ end }}
+
     <!-- Runs Section -->
     {{ template "runs-section" dict "PipelineID" .Pipeline.ID "Runs" .Runs
     "Pagination" .Pagination "Query" .Query }}

@@ -194,6 +194,8 @@ func (c *WebPipelinesController) Show(ctx *echo.Context) error {
 		driverName = c.execService.DefaultDriver
 	}
 
+	jobSummaries := buildJobSummaries(ctx.Request().Context(), c.store, pipeline)
+
 	detailRenderErr := ctx.Render(http.StatusOK, "pipeline_detail.html", map[string]any{
 		"Pipeline":         pipeline,
 		"DriverName":       driverName,
@@ -201,6 +203,7 @@ func (c *WebPipelinesController) Show(ctx *echo.Context) error {
 		"Pagination":       result,
 		"Query":            q,
 		"HasWebhookSecret": c.pipelineHasWebhookSecret(ctx, pipeline),
+		"JobSummaries":     jobSummaries,
 	})
 	if detailRenderErr != nil {
 		return fmt.Errorf("render pipeline detail: %w", detailRenderErr)

@@ -284,7 +284,7 @@ func ValidateConfig(cfg *config.Config, registry *resources.Registry) error {
 type RunnerOptions struct {
 	Notifier         *jsapi.Notifier
 	TargetJobs       []string
-	TriggerType      storage.TriggerType       // used to filter jobs whose triggers block excludes this type
+	TriggerType      storage.TriggerType // used to filter jobs whose triggers block excludes this type
 	WebhookData      *jsapi.WebhookData
 	DedupTTL         time.Duration
 	SecretsManager   secrets.Manager
