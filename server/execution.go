@@ -57,6 +57,12 @@ type ExecutionService struct {
 	queueWg         sync.WaitGroup
 	pendingWebhooks map[string]chan *jsapi.HTTPResponse
 	pendingMu       sync.Mutex
+
+	// scannerMu serializes the triggers.passed completion scanner so that
+	// two concurrent upstream completions can't both observe "no existing
+	// downstream run" between the coalescing read and admitRun and queue
+	// duplicates.
+	scannerMu sync.Mutex
 }
 
 // NewExecutionService creates a new execution service.
@@ -367,6 +373,14 @@ func (s *ExecutionService) MaxInFlight() int {
 // to pipelineContext.args in the runtime.
 // Returns ErrQueueFull if both in-flight slots and the queue are at capacity.
 func (s *ExecutionService) TriggerPipeline(ctx context.Context, pipeline *storage.Pipeline, args []string) (*storage.PipelineRun, error) {
+	return s.TriggerPipelineWithJobs(ctx, pipeline, args, nil)
+}
+
+// TriggerPipelineWithJobs is the same as TriggerPipeline but restricts
+// execution to the named jobs (overriding the per-job trigger filter).
+// An empty jobs slice means "no target filter — apply trigger-type rules
+// to all jobs."
+func (s *ExecutionService) TriggerPipelineWithJobs(ctx context.Context, pipeline *storage.Pipeline, args, jobs []string) (*storage.PipelineRun, error) {
 	requestID, _ := RequestIDFromContext(ctx)
 	actor, _ := RequestActorFromContext(ctx)
 
@@ -374,7 +388,7 @@ func (s *ExecutionService) TriggerPipeline(ctx context.Context, pipeline *storag
 		return nil, ErrQueueFull
 	}
 
-	triggerInput := storage.TriggerInput{Args: args}
+	triggerInput := storage.TriggerInput{Args: args, Jobs: jobs}
 
 	admission, err := s.admitRun(ctx, pipeline, storage.TriggerTypeManual, formatTriggeredBy(actor), triggerInput)
 	if err != nil {
@@ -385,7 +399,7 @@ func (s *ExecutionService) TriggerPipeline(ctx context.Context, pipeline *storag
 		return admission.Run, nil
 	}
 
-	opts := execOptions{args: args, requestID: requestID, authProvider: actor.Provider, user: actor.User}
+	opts := execOptions{args: args, jobs: jobs, requestID: requestID, authProvider: actor.Provider, user: actor.User}
 
 	s.dispatchOrQueue(pipeline, admission.Run, opts, admission.QueueOnly) //nolint:contextcheck // dispatchRun creates its own background context
 
@@ -741,6 +755,7 @@ func (s *ExecutionService) finalizeExecRun(ctx, dbCtx context.Context, run *stor
 	switch finalStatus {
 	case storage.RunStatusSuccess:
 		logger.Info("pipeline.execute.success")
+		s.scanPassedDownstreams(dbCtx, pipeline, run, logger)
 	case storage.RunStatusSkipped:
 		logger.Info("pipeline.execute.skipped")
 	case storage.RunStatusFailed, storage.RunStatusQueued, storage.RunStatusRunning:
@@ -813,6 +828,7 @@ func (s *ExecutionService) executePipeline(pipeline *storage.Pipeline, run *stor
 
 	execOpts := s.buildExecutorOptions(pipeline, opts)
 	execOpts.RunID = run.ID
+	execOpts.TriggerType = run.TriggerType
 
 	executableContent, err := resolveExecutableContent(pipeline)
 	if err != nil {
@@ -991,6 +1007,7 @@ func (s *ExecutionService) RunByNameSync(
 		PipelineID:            pipeline.ID,
 		ContentType:           pipeline.ContentType,
 		Args:                  args,
+		TriggerType:           run.TriggerType,
 		PreseededVolumes:      preseededVolumes,
 		Driver:                driver,
 		DisableNotifications:  !IsFeatureEnabled(FeatureNotifications, s.AllowedFeatures),

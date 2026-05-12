@@ -10,11 +10,12 @@ import (
 
 type TriggerPipeline struct {
 	ServerConfig
-	Name          string   `arg:""                                                      help:"Name or ID of the pipeline to trigger" required:""`
-	Args          []string `help:"Arguments passed to the pipeline (repeatable)"        short:"a"`
-	WebhookBody   string   `help:"JSON body for simulated webhook trigger"              name:"webhook-body"`
-	WebhookMethod string   `default:"POST"                                              enum:"GET,POST,PUT,PATCH,DELETE"             help:"HTTP method for simulated webhook" name:"webhook-method"`
-	WebhookHeader []string `help:"Header for simulated webhook (repeatable, KEY=VALUE)" name:"webhook-header"`
+	Name          string   `arg:""                                                                              help:"Name or ID of the pipeline to trigger" required:""`
+	Args          []string `help:"Arguments passed to the pipeline (repeatable)"                                short:"a"`
+	Job           []string `help:"Run only the named job(s) (repeatable). Overrides per-job trigger filtering." short:"j"`
+	WebhookBody   string   `help:"JSON body for simulated webhook trigger"                                      name:"webhook-body"`
+	WebhookMethod string   `default:"POST"                                                                      enum:"GET,POST,PUT,PATCH,DELETE"             help:"HTTP method for simulated webhook" name:"webhook-method"`
+	WebhookHeader []string `help:"Header for simulated webhook (repeatable, KEY=VALUE)"                         name:"webhook-header"`
 }
 
 func (c *TriggerPipeline) Run(logger *slog.Logger) error {
@@ -59,6 +60,7 @@ func (c *TriggerPipeline) buildTriggerRequest() (client.TriggerRequest, error) {
 
 		return client.TriggerRequest{
 			Mode: "webhook",
+			Jobs: c.Job,
 			Webhook: &client.WebhookSimulation{
 				Method:  c.WebhookMethod,
 				Body:    c.WebhookBody,
@@ -71,7 +73,12 @@ func (c *TriggerPipeline) buildTriggerRequest() (client.TriggerRequest, error) {
 		return client.TriggerRequest{
 			Mode: "args",
 			Args: c.Args,
+			Jobs: c.Job,
 		}, nil
+	}
+
+	if len(c.Job) > 0 {
+		return client.TriggerRequest{Jobs: c.Job}, nil
 	}
 
 	return client.TriggerRequest{}, nil

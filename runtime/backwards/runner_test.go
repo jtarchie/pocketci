@@ -2886,3 +2886,204 @@ func TestTaskLogsStoredInStorage(t *testing.T) {
 		})
 	}
 }
+
+// echoStep returns a trivial native task step used in trigger-filter tests.
+// All tests in this block reuse the native driver so they're fast.
+func echoStep(name string) configpkg.Step {
+	return configpkg.Step{
+		Task: name,
+		TaskConfig: &configpkg.TaskConfig{
+			Platform:      "linux",
+			ImageResource: configpkg.ImageResource{Type: "registry-image", Source: map[string]any{"repository": "busybox"}},
+			Run:           &configpkg.TaskConfigRun{Path: "echo", Args: []string{"ok"}},
+		},
+	}
+}
+
+func jobStatus(t *testing.T, store storage.Driver, runID, jobName string) string {
+	t.Helper()
+
+	results, err := store.GetAll(context.Background(), "/pipeline/"+runID+"/jobs/"+jobName, []string{"status"})
+	if err != nil {
+		t.Fatalf("read job %q: %v", jobName, err)
+	}
+
+	if len(results) == 0 {
+		return ""
+	}
+
+	status, _ := results[len(results)-1].Payload["status"].(string)
+
+	return status
+}
+
+func TestPerJobTriggerFiltering(t *testing.T) {
+	t.Run("webhook trigger runs only jobs declaring triggers.webhook", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+		logger := discardLogger()
+		driver := newNativeDriver(t, "trigger-filter-webhook")
+
+		cfg := &configpkg.Config{
+			Jobs: configpkg.Jobs{
+				{
+					Name:     "web-only",
+					Triggers: &configpkg.Triggers{Webhook: &configpkg.WebhookTriggerConfig{}},
+					Plan:     configpkg.Steps{echoStep("web")},
+				},
+				{
+					Name:     "cron-only",
+					Triggers: &configpkg.Triggers{Schedule: &configpkg.ScheduleTriggerConfig{Cron: "0 0 * * *"}},
+					Plan:     configpkg.Steps{echoStep("cron")},
+				},
+				{
+					Name: "no-triggers",
+					Plan: configpkg.Steps{echoStep("free")},
+				},
+			},
+		}
+
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "trigger-filter", logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		runner := backwards.New(cfg, driver, store, logger, "run-w", "", backwards.RunnerOptions{
+			ResourceRegistry: testRegistry(),
+			TriggerType:      storage.TriggerTypeWebhook,
+			WebhookData:      githubWebhookData(),
+		})
+		assert.Expect(runner.Run(context.Background())).NotTo(HaveOccurred())
+
+		assert.Expect(jobStatus(t, store, "run-w", "web-only")).To(Equal("success"))
+		assert.Expect(jobStatus(t, store, "run-w", "cron-only")).To(Equal("skipped"))
+		// Backward-compat: jobs without a triggers block still run on any trigger type.
+		assert.Expect(jobStatus(t, store, "run-w", "no-triggers")).To(Equal("success"))
+	})
+
+	t.Run("schedule trigger runs only jobs declaring triggers.schedule", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+		logger := discardLogger()
+		driver := newNativeDriver(t, "trigger-filter-schedule")
+
+		cfg := &configpkg.Config{
+			Jobs: configpkg.Jobs{
+				{
+					Name:     "web-only",
+					Triggers: &configpkg.Triggers{Webhook: &configpkg.WebhookTriggerConfig{}},
+					Plan:     configpkg.Steps{echoStep("web")},
+				},
+				{
+					Name:     "cron-only",
+					Triggers: &configpkg.Triggers{Schedule: &configpkg.ScheduleTriggerConfig{Cron: "0 0 * * *"}},
+					Plan:     configpkg.Steps{echoStep("cron")},
+				},
+			},
+		}
+
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "trigger-filter", logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		runner := backwards.New(cfg, driver, store, logger, "run-s", "", backwards.RunnerOptions{
+			ResourceRegistry: testRegistry(),
+			TriggerType:      storage.TriggerTypeSchedule,
+		})
+		assert.Expect(runner.Run(context.Background())).NotTo(HaveOccurred())
+
+		assert.Expect(jobStatus(t, store, "run-s", "web-only")).To(Equal("skipped"))
+		assert.Expect(jobStatus(t, store, "run-s", "cron-only")).To(Equal("success"))
+	})
+
+	t.Run("manual trigger runs only jobs with no triggers block", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+		logger := discardLogger()
+		driver := newNativeDriver(t, "trigger-filter-manual")
+
+		cfg := &configpkg.Config{
+			Jobs: configpkg.Jobs{
+				{
+					Name:     "web-only",
+					Triggers: &configpkg.Triggers{Webhook: &configpkg.WebhookTriggerConfig{}},
+					Plan:     configpkg.Steps{echoStep("web")},
+				},
+				{
+					Name: "no-triggers",
+					Plan: configpkg.Steps{echoStep("free")},
+				},
+			},
+		}
+
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "trigger-filter", logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		runner := backwards.New(cfg, driver, store, logger, "run-m", "", backwards.RunnerOptions{
+			ResourceRegistry: testRegistry(),
+			TriggerType:      storage.TriggerTypeManual,
+		})
+		assert.Expect(runner.Run(context.Background())).NotTo(HaveOccurred())
+
+		assert.Expect(jobStatus(t, store, "run-m", "web-only")).To(Equal("skipped"))
+		assert.Expect(jobStatus(t, store, "run-m", "no-triggers")).To(Equal("success"))
+	})
+
+	t.Run("TargetJobs overrides the trigger-type filter", func(t *testing.T) {
+		assert := NewGomegaWithT(t)
+		logger := discardLogger()
+		driver := newNativeDriver(t, "trigger-filter-target")
+
+		cfg := &configpkg.Config{
+			Jobs: configpkg.Jobs{
+				{
+					Name:     "cron-only",
+					Triggers: &configpkg.Triggers{Schedule: &configpkg.ScheduleTriggerConfig{Cron: "0 0 * * *"}},
+					Plan:     configpkg.Steps{echoStep("cron")},
+				},
+			},
+		}
+
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "trigger-filter", logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		// Manual trigger but with --job override.
+		runner := backwards.New(cfg, driver, store, logger, "run-t", "", backwards.RunnerOptions{
+			ResourceRegistry: testRegistry(),
+			TriggerType:      storage.TriggerTypeManual,
+			TargetJobs:       []string{"cron-only"},
+		})
+		assert.Expect(runner.Run(context.Background())).NotTo(HaveOccurred())
+
+		assert.Expect(jobStatus(t, store, "run-t", "cron-only")).To(Equal("success"))
+	})
+
+	t.Run("legacy: empty TriggerType preserves backward-compatible behavior", func(t *testing.T) {
+		// Existing pipelines that don't set TriggerType (e.g. test callers
+		// that haven't migrated) should still run every job regardless of
+		// triggers block, matching pre-feature behavior.
+		assert := NewGomegaWithT(t)
+		logger := discardLogger()
+		driver := newNativeDriver(t, "trigger-filter-legacy")
+
+		cfg := &configpkg.Config{
+			Jobs: configpkg.Jobs{
+				{
+					Name:     "cron-only",
+					Triggers: &configpkg.Triggers{Schedule: &configpkg.ScheduleTriggerConfig{Cron: "0 0 * * *"}},
+					Plan:     configpkg.Steps{echoStep("cron")},
+				},
+			},
+		}
+
+		store, err := storagesqlite.NewSqlite(storagesqlite.Config{Path: ":memory:"}, "trigger-filter", logger)
+		assert.Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = store.Close() }()
+
+		runner := backwards.New(cfg, driver, store, logger, "run-l", "", backwards.RunnerOptions{
+			ResourceRegistry: testRegistry(),
+			// TriggerType intentionally unset.
+		})
+		assert.Expect(runner.Run(context.Background())).NotTo(HaveOccurred())
+
+		assert.Expect(jobStatus(t, store, "run-l", "cron-only")).To(Equal("success"))
+	})
+}

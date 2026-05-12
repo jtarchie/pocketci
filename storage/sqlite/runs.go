@@ -248,6 +248,81 @@ func (s *Sqlite) GetActiveRunsByPipeline(ctx context.Context, pipelineID string)
 	return runs, nil
 }
 
+// GetMostRecentJobRun returns the most recent pipeline_run with jobName in
+// trigger_input.Jobs, regardless of status. Used as the downstream's
+// freshness reference for triggers.passed.
+//
+// Implementation note: the runs are filtered first by pipeline_id +
+// created_at (indexed), then the JSON predicate runs over the small
+// filtered set; SQLite does not need an index on the JSON field.
+func (s *Sqlite) GetMostRecentJobRun(ctx context.Context, pipelineID, jobName string) (*storage.PipelineRun, error) {
+	if jobName == "" {
+		return nil, nil //nolint:nilnil // empty key never matches; explicit return for clarity
+	}
+
+	var row pipelineRunScan
+
+	err := sqlscan.Get(ctx, s.writer, &row, `
+		SELECT `+runSelectCols+`
+		FROM pipeline_runs
+		WHERE pipeline_id = ?
+		  AND EXISTS (
+		    SELECT 1 FROM json_each(json_extract(trigger_input, '$.jobs'))
+		    WHERE value = ?
+		  )
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, pipelineID, jobName)
+	if err != nil {
+		if sqlscan.NotFound(err) {
+			return nil, nil //nolint:nilnil // no rows is a normal "no last run" outcome
+		}
+
+		return nil, fmt.Errorf("get most recent job run: %w", err)
+	}
+
+	run := row.toStorage()
+
+	return &run, nil
+}
+
+// GetSuccessfulJobRunSince returns the most recent successful pipeline_run
+// targeting jobName with created_at strictly after the given timestamp.
+// Returns nil if no such run exists. Used by the triggers.passed scanner
+// to check upstream freshness against a downstream's last-run timestamp.
+func (s *Sqlite) GetSuccessfulJobRunSince(ctx context.Context, pipelineID, jobName string, since time.Time) (*storage.PipelineRun, error) {
+	if jobName == "" {
+		return nil, nil //nolint:nilnil // empty key never matches
+	}
+
+	var row pipelineRunScan
+
+	err := sqlscan.Get(ctx, s.writer, &row, `
+		SELECT `+runSelectCols+`
+		FROM pipeline_runs
+		WHERE pipeline_id = ?
+		  AND status = 'success'
+		  AND created_at > ?
+		  AND EXISTS (
+		    SELECT 1 FROM json_each(json_extract(trigger_input, '$.jobs'))
+		    WHERE value = ?
+		  )
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, pipelineID, since.Unix(), jobName)
+	if err != nil {
+		if sqlscan.NotFound(err) {
+			return nil, nil //nolint:nilnil // not finding a fresh success is a normal outcome
+		}
+
+		return nil, fmt.Errorf("get successful job run since: %w", err)
+	}
+
+	run := row.toStorage()
+
+	return &run, nil
+}
+
 // GetRunStats returns the count of pipeline runs grouped by status.
 func (s *Sqlite) GetRunStats(ctx context.Context) (map[storage.RunStatus]int, error) {
 	type row struct {

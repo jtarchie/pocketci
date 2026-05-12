@@ -26,6 +26,7 @@ type SetPipelineRequest struct {
 type TriggerRequest struct {
 	Mode    string             `json:"mode,omitempty"`
 	Args    []string           `json:"args,omitempty"`
+	Jobs    []string           `json:"jobs,omitempty"`
 	Webhook *WebhookSimulation `json:"webhook,omitempty"`
 }
 

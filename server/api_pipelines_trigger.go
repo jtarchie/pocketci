@@ -15,6 +15,7 @@ import (
 type triggerRequest struct {
 	Mode    string          `json:"mode"`    // "" or "manual" (default), "args", "webhook"
 	Args    []string        `json:"args"`    // for mode="args"
+	Jobs    []string        `json:"jobs"`    // optional, restricts execution to these jobs
 	Webhook *webhookSimData `json:"webhook"` // for mode="webhook"
 }
 
@@ -30,7 +31,7 @@ type webhookSimData struct {
 func (c *APIPipelinesController) triggerByMode(ctx *echo.Context, pipeline *storage.Pipeline, req triggerRequest) (*storage.PipelineRun, error) {
 	switch req.Mode {
 	case "args":
-		return c.execService.TriggerPipeline(ctx.Request().Context(), pipeline, req.Args)
+		return c.execService.TriggerPipelineWithJobs(ctx.Request().Context(), pipeline, req.Args, req.Jobs)
 
 	case "webhook":
 		if !IsFeatureEnabled(FeatureWebhooks, c.allowedFeatures) {
@@ -58,7 +59,7 @@ func (c *APIPipelinesController) triggerByMode(ctx *echo.Context, pipeline *stor
 		return c.execService.TriggerWebhookPipeline(ctx.Request().Context(), pipeline, webhookData, responseChan)
 
 	default:
-		return c.execService.TriggerPipeline(ctx.Request().Context(), pipeline, nil)
+		return c.execService.TriggerPipelineWithJobs(ctx.Request().Context(), pipeline, nil, req.Jobs)
 	}
 }
 

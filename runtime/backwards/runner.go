@@ -2,6 +2,7 @@ package backwards
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -75,25 +76,130 @@ func validateResourceRefs(cfg *config.Config) error {
 
 func validatePassedConstraints(cfg *config.Config, jobNames map[string]bool) error {
 	for _, job := range cfg.Jobs {
-		for _, step := range job.Plan {
-			if step.Get != "" {
-				for _, dep := range step.GetConfig.Passed {
-					if !jobNames[dep] {
-						return fmt.Errorf("job %q step %q has passed constraint referencing unknown job %q", job.Name, step.Get, dep)
-					}
-				}
-			}
+		err := validateJobPlanPassed(job, jobNames)
+		if err != nil {
+			return err
+		}
+
+		err = validateJobTriggersPassed(job, jobNames)
+		if err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
+// validateJobPlanPassed checks plan-level `passed:` (allowed on get steps,
+// rejected on task/build_image/put with a redirecting error).
+func validateJobPlanPassed(job config.Job, jobNames map[string]bool) error {
+	for _, step := range job.Plan {
+		if step.Get != "" {
+			for _, dep := range step.GetConfig.Passed {
+				if !jobNames[dep] {
+					return fmt.Errorf("job %q step %q has passed constraint referencing unknown job %q", job.Name, step.Get, dep)
+				}
+			}
+
+			continue
+		}
+
+		if len(step.GetConfig.Passed) == 0 {
+			continue
+		}
+
+		// `passed:` on a non-get step. Reject with a redirect to triggers.passed.
+		kind := "task"
+
+		switch {
+		case step.Task != "":
+			kind = "task " + step.Task
+		case step.BuildImage != nil:
+			kind = "build_image step"
+		case step.Put != "":
+			kind = "put " + step.Put
+		}
+
+		return fmt.Errorf("job %q: `passed:` is only supported on `get` steps, not on %s; promote the dependency to the job level via `triggers.passed: [upstream-job]`", job.Name, kind)
+	}
+
+	return nil
+}
+
+// validateJobTriggersPassed checks the job-level triggers.passed list.
+func validateJobTriggersPassed(job config.Job, jobNames map[string]bool) error {
+	if job.Triggers == nil || len(job.Triggers.Passed) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]bool, len(job.Triggers.Passed))
+
+	for _, dep := range job.Triggers.Passed {
+		if dep == "" {
+			return fmt.Errorf("job %q triggers.passed contains an empty job name", job.Name)
+		}
+
+		if dep == job.Name {
+			return fmt.Errorf("job %q triggers.passed references itself", job.Name)
+		}
+
+		if !jobNames[dep] {
+			return fmt.Errorf("job %q triggers.passed references unknown job %q", job.Name, dep)
+		}
+
+		if seen[dep] {
+			return fmt.Errorf("job %q triggers.passed lists %q more than once", job.Name, dep)
+		}
+
+		seen[dep] = true
+	}
+
+	return nil
+}
+
+// validateLeafTriggers rejects pipelines where every job only declares
+// triggers.passed — nothing can start the chain. Users hit this when they
+// forget to give some job a webhook/schedule/manual leaf.
+func validateLeafTriggers(cfg *config.Config) error {
+	if len(cfg.Jobs) == 0 {
+		return nil
+	}
+
+	for _, job := range cfg.Jobs {
+		if job.Triggers == nil {
+			// No triggers block at all = manual / any-trigger; counts as a leaf.
+			return nil
+		}
+
+		if job.Triggers.Webhook != nil || job.Triggers.Schedule != nil {
+			return nil
+		}
+	}
+
+	return errors.New("pipeline has no leaf trigger: every job declares only triggers.passed, so nothing can start the chain (add triggers.webhook or triggers.schedule to at least one job, or use `pocketci pipeline seed-passed` / `pipeline trigger --job` to bootstrap)")
+}
+
 func validateNoCycles(cfg *config.Config) error {
 	adj := make(map[string][]string, len(cfg.Jobs))
 
 	for _, job := range cfg.Jobs {
-		adj[job.Name] = extractJobDependencies(job.Plan)
+		deps := extractJobDependencies(job.Plan)
+		if job.Triggers != nil && len(job.Triggers.Passed) > 0 {
+			seen := make(map[string]bool, len(deps))
+
+			for _, d := range deps {
+				seen[d] = true
+			}
+
+			for _, d := range job.Triggers.Passed {
+				if !seen[d] {
+					deps = append(deps, d)
+					seen[d] = true
+				}
+			}
+		}
+
+		adj[job.Name] = deps
 	}
 
 	const (
@@ -166,6 +272,11 @@ func ValidateConfig(cfg *config.Config, registry *resources.Registry) error {
 		return err
 	}
 
+	err = validateLeafTriggers(cfg)
+	if err != nil {
+		return err
+	}
+
 	return validateNoCycles(cfg)
 }
 
@@ -173,6 +284,7 @@ func ValidateConfig(cfg *config.Config, registry *resources.Registry) error {
 type RunnerOptions struct {
 	Notifier         *jsapi.Notifier
 	TargetJobs       []string
+	TriggerType      storage.TriggerType       // used to filter jobs whose triggers block excludes this type
 	WebhookData      *jsapi.WebhookData
 	DedupTTL         time.Duration
 	SecretsManager   secrets.Manager
@@ -197,6 +309,7 @@ type Runner struct {
 	pipelineID       string
 	notifier         *jsapi.Notifier
 	targetJobs       []string
+	triggerType      storage.TriggerType
 	webhookData      *jsapi.WebhookData
 	dedupTTL         time.Duration
 	secretsManager   secrets.Manager
@@ -231,6 +344,7 @@ func New(
 		pipelineID:       pipelineID,
 		notifier:         opts.Notifier,
 		targetJobs:       opts.TargetJobs,
+		triggerType:      opts.TriggerType,
 		webhookData:      opts.WebhookData,
 		dedupTTL:         opts.DedupTTL,
 		secretsManager:   opts.SecretsManager,
@@ -307,6 +421,12 @@ func (r *Runner) Run(ctx context.Context) error {
 		for i := range r.config.Jobs {
 			job := &r.config.Jobs[i]
 
+			if !r.shouldRunForTrigger(job) {
+				r.markSkippedByTrigger(ctx, job)
+
+				continue
+			}
+
 			if r.canJobRun(ctx, job, jobResults) {
 				err := runJob(job)
 				if err != nil {
@@ -322,6 +442,68 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// markSkippedByTrigger writes a "skipped" record for a job that was
+// filtered out by the trigger-type check, so the run-detail UI can show
+// it explicitly rather than silently omitting it.
+func (r *Runner) markSkippedByTrigger(ctx context.Context, job *config.Job) {
+	jobKey := fmt.Sprintf("/pipeline/%s/jobs/%s", r.runID, job.Name)
+	triggerType := string(r.triggerType)
+
+	if triggerType == "" {
+		triggerType = "unknown"
+	}
+
+	err := r.storage.Set(ctx, jobKey, storage.Payload{
+		"status": "skipped",
+		"reason": "trigger type " + triggerType + " not declared on job",
+	})
+	if err != nil {
+		r.logger.Warn("trigger.skip.write.failed",
+			slog.String("job", job.Name),
+			slog.String("trigger_type", triggerType),
+			slog.Any("error", err),
+		)
+	}
+}
+
+// shouldRunForTrigger reports whether a job should be considered for
+// execution under the current trigger type. Jobs without a triggers block
+// keep the legacy "run on any trigger" behavior; jobs that declare a
+// triggers block run only on the trigger types they declared.
+//
+// TargetJobs from a schedule's JobName or a CLI --job flag is an explicit
+// override applied before this filter — see runTargetedJobs.
+func (r *Runner) shouldRunForTrigger(job *config.Job) bool {
+	if job.Triggers == nil {
+		// Backward compat: jobs without a triggers block run on any trigger.
+		return true
+	}
+
+	switch r.triggerType {
+	case storage.TriggerTypeWebhook:
+		return job.Triggers.Webhook != nil
+	case storage.TriggerTypeSchedule:
+		return job.Triggers.Schedule != nil
+	case storage.TriggerTypePassed:
+		// Passed-triggered runs always set TargetJobs, so the runner uses
+		// runTargetedJobs which bypasses this filter; this branch is
+		// defensive and shouldn't be reached in normal flow.
+		return len(job.Triggers.Passed) > 0
+	case storage.TriggerTypeManual, storage.TriggerTypeCLI:
+		// Manual / CLI triggers without --job run only jobs that declared
+		// no triggers block. Strict opt-in (per user choice).
+		return false
+	case storage.TriggerTypeResume:
+		// Resume re-runs a previously-admitted run; respect the same rules
+		// as the original trigger by treating it like manual (the recovery
+		// path always sets TargetJobs from the existing run when resuming).
+		return false
+	}
+
+	// Unknown / empty trigger type — fall back to backward-compatible behavior.
+	return true
 }
 
 // canJobRun returns true if all passed constraints for a job are satisfied.

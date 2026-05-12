@@ -90,6 +90,14 @@
     {{ else }}
     <span class="text-gray-400 dark:text-gray-500">—</span>
     {{ end }}
+    {{ if .TriggerInput.Jobs }}
+    {{ range .TriggerInput.Jobs }}
+    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 ml-1"
+      title="targeted job">
+      🎯 {{ . }}
+    </span>
+    {{ end }}
+    {{ end }}
   </td>
   <td class="px-6 py-4 text-sm text-gray-600 dark:text-gray-300 font-mono">
     {{ if .StartedAt }}

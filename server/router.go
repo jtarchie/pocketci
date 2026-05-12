@@ -290,6 +290,11 @@ func NewRouter(logger *slog.Logger, store storage.Driver, opts RouterOptions) (*
 	// Recover orphaned runs from previous server instance
 	execService.RecoverOrphanedRuns(context.Background())
 
+	// Sweep for triggers.passed downstreams that should fire right now —
+	// handles the case where the server crashed between an upstream's
+	// success commit and the scanner running. Idempotent.
+	execService.recoverPassedTriggers(context.Background(), logger)
+
 	// Start the scheduler if the feature is enabled
 	sched := startSchedulerIfEnabled(store, execService, allowedFeatures, logger, metrics)
 

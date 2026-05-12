@@ -361,10 +361,16 @@ type ScheduleTriggerConfig struct {
 	Every string `json:"every,omitempty" yaml:"every,omitempty"`
 }
 
-// Triggers holds the set of trigger configurations for a job.
+// Triggers holds the set of trigger configurations for a job. A job fires
+// when any of its declared trigger types is satisfied (OR composition).
 type Triggers struct {
 	Webhook  *WebhookTriggerConfig  `json:"webhook,omitempty"  yaml:"webhook,omitempty"`
 	Schedule *ScheduleTriggerConfig `json:"schedule,omitempty" yaml:"schedule,omitempty"`
+	// Passed fires the job when ALL named upstream jobs in the same pipeline
+	// have a successful run since this job's last run of any status
+	// (fan-in synchronization). Cycles and unknown names are rejected at
+	// upsert.
+	Passed []string `json:"passed,omitempty" yaml:"passed,omitempty"`
 }
 
 // GateConfig defines an approval gate on a job.

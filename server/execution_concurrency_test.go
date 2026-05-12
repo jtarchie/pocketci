@@ -235,7 +235,7 @@ func TestConcurrencyModes(t *testing.T) {
 			}
 
 			return r.Status == storage.RunStatusFailed
-		}, 3*time.Second, 50*time.Millisecond)
+		}, 3*time.Second, 50*time.Millisecond).Should(BeTrue())
 
 		runningAfter, err := setup.store.GetRun(context.Background(), runningPeer.ID)
 		assert.Expect(err).NotTo(HaveOccurred())
@@ -275,7 +275,7 @@ func TestConcurrencyModes(t *testing.T) {
 			}
 
 			return r.Status == storage.RunStatusRunning || r.Status.IsTerminal()
-		}, 3*time.Second, 50*time.Millisecond)
+		}, 3*time.Second, 50*time.Millisecond).Should(BeTrue())
 	})
 
 	t.Run("template error records the run as failed", func(t *testing.T) {
@@ -326,7 +326,7 @@ func TestConcurrencyModes(t *testing.T) {
 			}
 
 			return r.Status == storage.RunStatusSuccess || r.Status == storage.RunStatusRunning
-		}, 3*time.Second, 50*time.Millisecond)
+		}, 3*time.Second, 50*time.Millisecond).Should(BeTrue())
 
 		// Run A in the still-busy group should still be queued.
 		aAfter, err := setup.store.GetRun(context.Background(), queuedA.ID)

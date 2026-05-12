@@ -76,6 +76,11 @@ type ExecutorOptions struct {
 	// TargetJobs, when set, limits execution to these specific jobs (and their
 	// downstream dependents via passed constraints). Empty means run all jobs.
 	TargetJobs []string
+	// TriggerType identifies what initiated this run. The YAML runner uses it
+	// alongside each job's triggers block to decide whether a given job is
+	// allowed to fire for this trigger type (e.g. a job that declares only
+	// triggers.schedule is skipped on a webhook trigger).
+	TriggerType storage.TriggerType
 	// TriggerCallback, if set, allows pipeline code to trigger other pipelines
 	// via the triggerPipeline() JS API.
 	TriggerCallback func(ctx context.Context, pipelineName string, jobs []string, args []string) (string, error)
@@ -167,6 +172,7 @@ func ExecutePipeline(
 				SecretsManager:   opts.SecretsManager,
 				WebhookData:      opts.WebhookData,
 				TargetJobs:       opts.TargetJobs,
+				TriggerType:      opts.TriggerType,
 				DedupTTL:         opts.DedupTTL,
 				OutputCallback:   opts.OutputCallback,
 				ResourceRegistry: opts.ResourceRegistry,

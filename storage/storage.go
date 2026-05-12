@@ -100,6 +100,10 @@ const (
 	TriggerTypeCLI      TriggerType = "cli"
 	TriggerTypeResume   TriggerType = "resume"
 	TriggerTypeSchedule TriggerType = "schedule"
+	// TriggerTypePassed marks a run that was fired by the completion
+	// scanner because all of a downstream job's triggers.passed upstreams
+	// completed successfully since the downstream's last run.
+	TriggerTypePassed TriggerType = "passed"
 )
 
 // TriggerWebhookInput captures the full webhook HTTP request for audit and retrigger.
@@ -119,6 +123,10 @@ type TriggerInput struct {
 	Args    []string             `json:"args,omitempty"`
 	Webhook *TriggerWebhookInput `json:"webhook,omitempty"`
 	Jobs    []string             `json:"jobs,omitempty"`
+	// UpstreamRunIDs lists the run IDs whose successful completions
+	// fired this run via triggers.passed. Set only when TriggerType is
+	// TriggerTypePassed; preserved for lineage display in the UI.
+	UpstreamRunIDs []string `json:"upstream_run_ids,omitempty"`
 }
 
 // ScheduleType represents the type of schedule trigger.
@@ -249,6 +257,16 @@ type Driver interface {
 	// GetActiveRunsByPipeline returns runs in queued or running status for the
 	// given pipeline regardless of concurrency_group, ordered oldest first.
 	GetActiveRunsByPipeline(ctx context.Context, pipelineID string) ([]PipelineRun, error)
+	// GetMostRecentJobRun returns the most recent pipeline_run targeting
+	// jobName (any status). Used as the downstream's freshness reference
+	// timestamp for triggers.passed. Returns nil if no run has ever
+	// targeted the job. Filters by trigger_input.Jobs.
+	GetMostRecentJobRun(ctx context.Context, pipelineID, jobName string) (*PipelineRun, error)
+	// GetSuccessfulJobRunSince returns the most recent successful pipeline_run
+	// targeting jobName with created_at > since. Used by the completion
+	// scanner to check whether each upstream of a triggers.passed downstream
+	// has a fresh success. Returns nil if no such run exists.
+	GetSuccessfulJobRunSince(ctx context.Context, pipelineID, jobName string, since time.Time) (*PipelineRun, error)
 	// GetRunStats returns the count of runs grouped by status.
 	GetRunStats(ctx context.Context) (map[RunStatus]int, error)
 	SearchRunsByPipeline(ctx context.Context, pipelineID, query string, page, perPage int) (*PaginationResult[PipelineRun], error)
