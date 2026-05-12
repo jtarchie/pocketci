@@ -140,6 +140,7 @@ func (c *APIPipelinesController) SeedJobPassed(ctx *echo.Context) error {
 		"seed",
 		formatActor(ctx),
 		storage.TriggerInput{},
+		"",
 	)
 	if err != nil {
 		saveRunJsonErr := ctx.JSON(http.StatusInternalServerError, map[string]string{

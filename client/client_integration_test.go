@@ -361,7 +361,7 @@ func TestIntegrationGetRunStatus(t *testing.T) {
 		saved, err := store.SavePipeline(context.Background(), "my-pipeline", "content", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := store.SaveRun(context.Background(), saved.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+		run, err := store.SaveRun(context.Background(), saved.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		c := client.New(ts.URL)
@@ -394,7 +394,7 @@ func TestIntegrationGetRunTasks(t *testing.T) {
 	saved, err := store.SavePipeline(context.Background(), "my-pipeline", "content", "docker", "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
-	run, err := store.SaveRun(context.Background(), saved.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+	run, err := store.SaveRun(context.Background(), saved.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	c := client.New(ts.URL)
@@ -429,7 +429,7 @@ func TestIntegrationStopRun(t *testing.T) {
 		saved, err := store.SavePipeline(context.Background(), "my-pipeline", "content", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := store.SaveRun(context.Background(), saved.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+		run, err := store.SaveRun(context.Background(), saved.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		err = store.UpdateRunStatus(context.Background(), run.ID, storage.RunStatusSuccess, "")
@@ -452,7 +452,7 @@ func TestIntegrationListGates(t *testing.T) {
 	saved, err := store.SavePipeline(context.Background(), "my-pipeline", "content", "docker", "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
-	run, err := store.SaveRun(context.Background(), saved.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+	run, err := store.SaveRun(context.Background(), saved.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	c := client.New(ts.URL)

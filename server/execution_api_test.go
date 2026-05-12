@@ -217,7 +217,7 @@ func TestExecutionAPI(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "my-pipeline", "content", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			router, err := server.NewRouter(slog.Default(), client, server.RouterOptions{})
@@ -274,7 +274,7 @@ func TestExecutionAPI(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "agent-pipeline", "content", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-review", map[string]any{
@@ -324,7 +324,7 @@ func TestExecutionAPI(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "paged-pipeline", "content", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			for i := 0; i < 12; i++ {
@@ -382,7 +382,7 @@ func TestExecutionAPI(t *testing.T) {
 			pipeline, err := client.SavePipeline(context.Background(), "filtered-pipeline", "content", "docker", "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
-			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+			run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 			assert.Expect(err).NotTo(HaveOccurred())
 
 			err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-a", map[string]any{"status": "success"})

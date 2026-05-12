@@ -16,27 +16,33 @@ import (
 
 // PipelineRequest represents the JSON body for creating or updating a pipeline.
 type PipelineRequest struct {
-	Content        string            `json:"content"`
-	ContentType    string            `json:"content_type"`
-	Driver         string            `json:"driver"`
-	DriverConfig   json.RawMessage   `json:"driver_config,omitempty"`
-	WebhookSecret  *string           `json:"webhook_secret,omitempty"`
-	Secrets        map[string]string `json:"secrets,omitempty"`
-	ResumeEnabled  *bool             `json:"resume_enabled,omitempty"`
-	RBACExpression *string           `json:"rbac_expression,omitempty"`
+	Content                  string            `json:"content"`
+	ContentType              string            `json:"content_type"`
+	Driver                   string            `json:"driver"`
+	DriverConfig             json.RawMessage   `json:"driver_config,omitempty"`
+	WebhookSecret            *string           `json:"webhook_secret,omitempty"`
+	Secrets                  map[string]string `json:"secrets,omitempty"`
+	ResumeEnabled            *bool             `json:"resume_enabled,omitempty"`
+	RBACExpression           *string           `json:"rbac_expression,omitempty"`
+	ConcurrencyMode          *string           `json:"concurrency_mode,omitempty"`
+	ConcurrencyGroupTemplate *string           `json:"concurrency_group_template,omitempty"`
+	ConcurrencyCancelRunning *bool             `json:"concurrency_cancel_running,omitempty"`
 }
 
 // PipelineAPIResponse is a sanitized pipeline representation for the public API.
 type PipelineAPIResponse struct {
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	Content        string    `json:"content"`
-	ContentType    string    `json:"content_type"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	ResumeEnabled  bool      `json:"resume_enabled"`
-	Paused         bool      `json:"paused"`
-	RBACExpression string    `json:"rbac_expression,omitempty"`
+	ID                       string    `json:"id"`
+	Name                     string    `json:"name"`
+	Content                  string    `json:"content"`
+	ContentType              string    `json:"content_type"`
+	CreatedAt                time.Time `json:"created_at"`
+	UpdatedAt                time.Time `json:"updated_at"`
+	ResumeEnabled            bool      `json:"resume_enabled"`
+	Paused                   bool      `json:"paused"`
+	RBACExpression           string    `json:"rbac_expression,omitempty"`
+	ConcurrencyMode          string    `json:"concurrency_mode,omitempty"`
+	ConcurrencyGroupTemplate string    `json:"concurrency_group_template,omitempty"`
+	ConcurrencyCancelRunning bool      `json:"concurrency_cancel_running,omitempty"`
 }
 
 func toPipelineAPIResponse(pipeline *storage.Pipeline) PipelineAPIResponse {
@@ -45,15 +51,18 @@ func toPipelineAPIResponse(pipeline *storage.Pipeline) PipelineAPIResponse {
 	}
 
 	return PipelineAPIResponse{
-		ID:             pipeline.ID,
-		Name:           pipeline.Name,
-		Content:        pipeline.Content,
-		ContentType:    pipeline.ContentType,
-		CreatedAt:      pipeline.CreatedAt,
-		UpdatedAt:      pipeline.UpdatedAt,
-		ResumeEnabled:  pipeline.ResumeEnabled,
-		Paused:         pipeline.Paused,
-		RBACExpression: pipeline.RBACExpression,
+		ID:                       pipeline.ID,
+		Name:                     pipeline.Name,
+		Content:                  pipeline.Content,
+		ContentType:              pipeline.ContentType,
+		CreatedAt:                pipeline.CreatedAt,
+		UpdatedAt:                pipeline.UpdatedAt,
+		ResumeEnabled:            pipeline.ResumeEnabled,
+		Paused:                   pipeline.Paused,
+		RBACExpression:           pipeline.RBACExpression,
+		ConcurrencyMode:          pipeline.ConcurrencyMode,
+		ConcurrencyGroupTemplate: pipeline.ConcurrencyGroupTemplate,
+		ConcurrencyCancelRunning: pipeline.ConcurrencyCancelRunning,
 	}
 }
 

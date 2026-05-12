@@ -180,7 +180,7 @@ func TestExecutionQueue(t *testing.T) {
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		// Manually create a queued run as if it survived a restart
-		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "test", storage.TriggerInput{})
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "test", storage.TriggerInput{}, "")
 		assert.Expect(err).NotTo(HaveOccurred())
 		assert.Expect(run.Status).To(Equal(storage.RunStatusQueued))
 

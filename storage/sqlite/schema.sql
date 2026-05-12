@@ -16,35 +16,41 @@ CREATE INDEX IF NOT EXISTS idx_tasks_run_id ON tasks(run_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status  ON tasks(status);
 
 CREATE TABLE IF NOT EXISTS pipelines (
-  id              TEXT    NOT NULL PRIMARY KEY,
-  name            TEXT    NOT NULL UNIQUE,
-  content         TEXT    NOT NULL,
-  content_type    TEXT    NOT NULL DEFAULT '',
-  driver          TEXT    NOT NULL,
-  resume_enabled  INTEGER NOT NULL DEFAULT 0,
-  paused          INTEGER NOT NULL DEFAULT 0,
-  rbac_expression TEXT    NOT NULL DEFAULT '',
-  created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
-  updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
+  id                         TEXT    NOT NULL PRIMARY KEY,
+  name                       TEXT    NOT NULL UNIQUE,
+  content                    TEXT    NOT NULL,
+  content_type               TEXT    NOT NULL DEFAULT '',
+  driver                     TEXT    NOT NULL,
+  resume_enabled             INTEGER NOT NULL DEFAULT 0,
+  paused                     INTEGER NOT NULL DEFAULT 0,
+  rbac_expression            TEXT    NOT NULL DEFAULT '',
+  concurrency_mode           TEXT    NOT NULL DEFAULT '',
+  concurrency_group_template TEXT    NOT NULL DEFAULT '',
+  concurrency_cancel_running INTEGER NOT NULL DEFAULT 0,
+  created_at                 INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at                 INTEGER NOT NULL DEFAULT (unixepoch())
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS pipeline_runs (
-  id            TEXT    NOT NULL PRIMARY KEY,
-  pipeline_id   TEXT    NOT NULL,
-  status        TEXT    NOT NULL,
-  started_at    INTEGER,
-  completed_at  INTEGER,
-  error_message TEXT,
-  trigger_type  TEXT    NOT NULL DEFAULT '',
-  triggered_by  TEXT    NOT NULL DEFAULT '',
-  trigger_input TEXT    NOT NULL DEFAULT '{}',
-  created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+  id                TEXT    NOT NULL PRIMARY KEY,
+  pipeline_id       TEXT    NOT NULL,
+  status            TEXT    NOT NULL,
+  started_at        INTEGER,
+  completed_at      INTEGER,
+  error_message     TEXT,
+  trigger_type      TEXT    NOT NULL DEFAULT '',
+  triggered_by      TEXT    NOT NULL DEFAULT '',
+  trigger_input     TEXT    NOT NULL DEFAULT '{}',
+  concurrency_group TEXT    NOT NULL DEFAULT '',
+  created_at        INTEGER NOT NULL DEFAULT (unixepoch()),
   FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pipeline_id ON pipeline_runs(pipeline_id);
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status      ON pipeline_runs(status);
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_created_at  ON pipeline_runs(created_at);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_group_status
+  ON pipeline_runs(concurrency_group, status) WHERE concurrency_group != '';
 
 -- FTS5 virtual table for pipeline full-text search (name + content).
 CREATE VIRTUAL TABLE IF NOT EXISTS pipelines_fts USING fts5(

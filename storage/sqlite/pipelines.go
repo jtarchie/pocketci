@@ -14,32 +14,44 @@ import (
 // pipelineScan is an intermediate struct for scanning pipeline rows.
 // Timestamps are stored as INTEGER (Unix epoch seconds).
 type pipelineScan struct {
-	ID             string `db:"id"`
-	Name           string `db:"name"`
-	Content        string `db:"content"`
-	ContentType    string `db:"content_type"`
-	Driver         string `db:"driver"`
-	ResumeEnabled  int    `db:"resume_enabled"`
-	Paused         int    `db:"paused"`
-	RBACExpression string `db:"rbac_expression"`
-	CreatedAt      int64  `db:"created_at"`
-	UpdatedAt      int64  `db:"updated_at"`
+	ID                       string `db:"id"`
+	Name                     string `db:"name"`
+	Content                  string `db:"content"`
+	ContentType              string `db:"content_type"`
+	Driver                   string `db:"driver"`
+	ResumeEnabled            int    `db:"resume_enabled"`
+	Paused                   int    `db:"paused"`
+	RBACExpression           string `db:"rbac_expression"`
+	ConcurrencyMode          string `db:"concurrency_mode"`
+	ConcurrencyGroupTemplate string `db:"concurrency_group_template"`
+	ConcurrencyCancelRunning int    `db:"concurrency_cancel_running"`
+	CreatedAt                int64  `db:"created_at"`
+	UpdatedAt                int64  `db:"updated_at"`
 }
 
 func (p pipelineScan) toStorage() storage.Pipeline {
 	return storage.Pipeline{
-		ID:             p.ID,
-		Name:           p.Name,
-		Content:        p.Content,
-		ContentType:    p.ContentType,
-		Driver:         p.Driver,
-		ResumeEnabled:  p.ResumeEnabled != 0,
-		Paused:         p.Paused != 0,
-		RBACExpression: p.RBACExpression,
-		CreatedAt:      time.Unix(p.CreatedAt, 0).UTC(),
-		UpdatedAt:      time.Unix(p.UpdatedAt, 0).UTC(),
+		ID:                       p.ID,
+		Name:                     p.Name,
+		Content:                  p.Content,
+		ContentType:              p.ContentType,
+		Driver:                   p.Driver,
+		ResumeEnabled:            p.ResumeEnabled != 0,
+		Paused:                   p.Paused != 0,
+		RBACExpression:           p.RBACExpression,
+		ConcurrencyMode:          p.ConcurrencyMode,
+		ConcurrencyGroupTemplate: p.ConcurrencyGroupTemplate,
+		ConcurrencyCancelRunning: p.ConcurrencyCancelRunning != 0,
+		CreatedAt:                time.Unix(p.CreatedAt, 0).UTC(),
+		UpdatedAt:                time.Unix(p.UpdatedAt, 0).UTC(),
 	}
 }
+
+// pipelineSelectCols enumerates the column list used by every pipeline read
+// query so the scan struct and SQL stay in lockstep.
+const pipelineSelectCols = `id, name, content, content_type, driver, resume_enabled, paused, ` +
+	`rbac_expression, concurrency_mode, concurrency_group_template, concurrency_cancel_running, ` +
+	`created_at, updated_at`
 
 // SavePipeline creates or updates a pipeline in the database.
 // Pipeline names are unique; saving with an existing name updates the record
@@ -105,7 +117,7 @@ func (s *Sqlite) GetPipeline(ctx context.Context, id string) (*storage.Pipeline,
 	var row pipelineScan
 
 	err := sqlscan.Get(ctx, s.writer, &row, `
-		SELECT id, name, content, content_type, driver, resume_enabled, paused, rbac_expression, created_at, updated_at
+		SELECT `+pipelineSelectCols+`
 		FROM pipelines WHERE id = ?
 	`, id)
 	if err != nil {
@@ -126,7 +138,7 @@ func (s *Sqlite) GetPipelineByName(ctx context.Context, name string) (*storage.P
 	var row pipelineScan
 
 	err := sqlscan.Get(ctx, s.writer, &row, `
-		SELECT id, name, content, content_type, driver, resume_enabled, paused, rbac_expression, created_at, updated_at
+		SELECT `+pipelineSelectCols+`
 		FROM pipelines WHERE name = ?
 		ORDER BY updated_at DESC LIMIT 1
 	`, name)
@@ -217,6 +229,21 @@ func (s *Sqlite) UpdatePipeline(ctx context.Context, pipelineID string, update s
 		args = append(args, *update.RBACExpression)
 	}
 
+	if update.ConcurrencyMode != nil {
+		setClauses = append(setClauses, "concurrency_mode = ?")
+		args = append(args, *update.ConcurrencyMode)
+	}
+
+	if update.ConcurrencyGroupTemplate != nil {
+		setClauses = append(setClauses, "concurrency_group_template = ?")
+		args = append(args, *update.ConcurrencyGroupTemplate)
+	}
+
+	if update.ConcurrencyCancelRunning != nil {
+		setClauses = append(setClauses, "concurrency_cancel_running = ?")
+		args = append(args, boolToInt(*update.ConcurrencyCancelRunning))
+	}
+
 	if len(setClauses) == 0 {
 		return nil
 	}
@@ -246,7 +273,7 @@ func (s *Sqlite) UpdatePipeline(ctx context.Context, pipelineID string, update s
 // the FTS5 index. When query is empty it returns all pipelines ordered by
 // creation date descending.
 func (s *Sqlite) SearchPipelines(ctx context.Context, query string, page, perPage int) (*storage.PaginationResult[storage.Pipeline], error) {
-	const cols = `id, name, content, content_type, driver, resume_enabled, paused, rbac_expression, created_at, updated_at`
+	const cols = pipelineSelectCols
 
 	return paginatedSearch[pipelineScan](
 		ctx, s.writer, page, perPage, query,

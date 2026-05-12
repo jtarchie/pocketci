@@ -267,7 +267,7 @@ func TestDrivers(t *testing.T) {
 					assert.Expect(err).NotTo(HaveOccurred())
 
 					// Move run to "failed" (terminal).
-					run, err := client.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+					run, err := client.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "stopped")
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -295,7 +295,7 @@ func TestDrivers(t *testing.T) {
 					pipeline, err := client.SavePipeline(ctx, "sm-success", "content", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 
-					run, err := client.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+					run, err := client.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusRunning, "")
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -318,7 +318,7 @@ func TestDrivers(t *testing.T) {
 					pipeline, err := client.SavePipeline(ctx, "sm-fail-wins", "content", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 
-					run, err := client.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+					run, err := client.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusRunning, "")
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -342,7 +342,7 @@ func TestDrivers(t *testing.T) {
 					pipeline, err := client.SavePipeline(ctx, "sm-resume", "content", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 
-					run, err := client.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+					run, err := client.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 					assert.Expect(err).NotTo(HaveOccurred())
 					err = client.UpdateRunStatus(ctx, run.ID, storage.RunStatusFailed, "crash")
 					assert.Expect(err).NotTo(HaveOccurred())
@@ -363,7 +363,7 @@ func TestDrivers(t *testing.T) {
 					pipeline, err := client.SavePipeline(ctx, "sm-normal", "content", "native", "")
 					assert.Expect(err).NotTo(HaveOccurred())
 
-					run, err := client.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+					run, err := client.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 					assert.Expect(err).NotTo(HaveOccurred())
 
 					// queued -> running: allowed

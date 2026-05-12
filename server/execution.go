@@ -128,43 +128,89 @@ func (s *ExecutionService) processQueue() {
 		}
 		s.cond.L.Unlock()
 
-		ctx := context.Background()
-
-		s.metrics().GaugeSet("pocketci_queue_depth", float64(s.QueueLength(ctx)), nil)
-
-		runs, err := s.store.GetRunsByStatus(ctx, storage.RunStatusQueued, s.maxInFlight)
-		if err != nil {
-			s.logger.Error("queue.processor.list_failed", slog.String("error", err.Error()))
-
-			if s.queueDone.Load() {
-				return
-			}
-
-			time.Sleep(500 * time.Millisecond)
-
-			continue
+		if s.queueDone.Load() {
+			return
 		}
 
-		if len(runs) == 0 {
-			if s.queueDone.Load() {
-				return
-			}
-
-			// Brief sleep to avoid a tight spin if Broadcast is called
-			// but no runs are actually queued yet (race between SaveRun and Broadcast).
-			time.Sleep(50 * time.Millisecond)
-
-			continue
-		}
-
-		for i := range runs {
-			if !s.CanExecute() {
-				break
-			}
-
-			s.dispatchQueuedRun(ctx, &runs[i])
+		stop := s.processQueueTick(context.Background())
+		if stop {
+			return
 		}
 	}
+}
+
+// processQueueTick runs one pass over the queued runs: it lists queued runs,
+// computes the set of busy concurrency groups, and dispatches up to slot
+// capacity skipping any whose group is held. Returns true when the processor
+// should stop (queueDone signaled while sleeping).
+func (s *ExecutionService) processQueueTick(ctx context.Context) bool {
+	s.metrics().GaugeSet("pocketci_queue_depth", float64(s.QueueLength(ctx)), nil)
+
+	runs, err := s.store.GetRunsByStatus(ctx, storage.RunStatusQueued, 0)
+	if err != nil {
+		s.logger.Error("queue.processor.list_failed", slog.String("error", err.Error()))
+
+		return s.queueSleep(500 * time.Millisecond)
+	}
+
+	if len(runs) == 0 {
+		return s.queueSleep(50 * time.Millisecond)
+	}
+
+	busy, busyErr := s.busyConcurrencyGroups(ctx)
+	if busyErr != nil {
+		s.logger.Error("queue.processor.busy_groups_failed", slog.String("error", busyErr.Error()))
+		busy = map[string]struct{}{}
+	}
+
+	dispatched := s.dispatchEligible(ctx, runs, busy)
+
+	if dispatched == 0 {
+		return s.queueSleep(50 * time.Millisecond)
+	}
+
+	return false
+}
+
+// dispatchEligible iterates queued runs in store order, skipping any whose
+// concurrency group is busy, and dispatches up to slot capacity.
+func (s *ExecutionService) dispatchEligible(ctx context.Context, runs []storage.PipelineRun, busy map[string]struct{}) int {
+	dispatched := 0
+
+	for i := range runs {
+		if !s.CanExecute() {
+			break
+		}
+
+		group := runs[i].ConcurrencyGroup
+		if group != "" {
+			if _, blocked := busy[group]; blocked {
+				continue
+			}
+		}
+
+		s.dispatchQueuedRun(ctx, &runs[i])
+
+		dispatched++
+
+		if group != "" {
+			busy[group] = struct{}{}
+		}
+	}
+
+	return dispatched
+}
+
+// queueSleep naps for d, then reports whether the queue processor should
+// exit because shutdown was requested while sleeping.
+func (s *ExecutionService) queueSleep(d time.Duration) bool {
+	if s.queueDone.Load() {
+		return true
+	}
+
+	time.Sleep(d)
+
+	return s.queueDone.Load()
 }
 
 // dispatchQueuedRun resolves a queued run's pipeline and options, then dispatches it.
@@ -324,31 +370,26 @@ func (s *ExecutionService) TriggerPipeline(ctx context.Context, pipeline *storag
 	requestID, _ := RequestIDFromContext(ctx)
 	actor, _ := RequestActorFromContext(ctx)
 
-	// Check if we can accept this run (either execute or queue it)
 	if !s.CanAccept(ctx) {
 		return nil, ErrQueueFull
 	}
 
-	// Create run record with queued status
-	run, err := s.store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, formatTriggeredBy(actor), storage.TriggerInput{Args: args})
+	triggerInput := storage.TriggerInput{Args: args}
+
+	admission, err := s.admitRun(ctx, pipeline, storage.TriggerTypeManual, formatTriggeredBy(actor), triggerInput)
 	if err != nil {
-		return nil, fmt.Errorf("save run: %w", err)
+		return nil, err
+	}
+
+	if admission.Terminal {
+		return admission.Run, nil
 	}
 
 	opts := execOptions{args: args, requestID: requestID, authProvider: actor.Provider, user: actor.User}
 
-	// Fast path: dispatch immediately if a slot is available
-	if s.CanExecute() {
-		s.dispatchRun(pipeline, run, opts) //nolint:contextcheck // deliberate: execution goroutine creates its own context
+	s.dispatchOrQueue(pipeline, admission.Run, opts, admission.QueueOnly) //nolint:contextcheck // dispatchRun creates its own background context
 
-		return run, nil
-	}
-
-	// Slow path: run stays in queued status in DB, wake the processor
-	s.logger.Info("queue.enqueued", "run_id", run.ID, "pipeline_id", pipeline.ID)
-	s.cond.Broadcast()
-
-	return run, nil
+	return admission.Run, nil
 }
 
 // TriggerWebhookPipeline starts a new pipeline execution triggered by a webhook.
@@ -363,18 +404,20 @@ func (s *ExecutionService) TriggerWebhookPipeline(
 	requestID, _ := RequestIDFromContext(ctx)
 	actor, _ := RequestActorFromContext(ctx)
 
-	// Check if we can accept this run (either execute or queue it)
 	if !s.CanAccept(ctx) {
 		return nil, ErrQueueFull
 	}
 
-	// Create run record with queued status
 	triggeredBy := formatWebhookTriggeredBy(webhookData)
 	triggerInput := storage.TriggerInput{Webhook: toTriggerWebhookInput(webhookData)}
 
-	run, err := s.store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeWebhook, triggeredBy, triggerInput)
+	admission, err := s.admitRun(ctx, pipeline, storage.TriggerTypeWebhook, triggeredBy, triggerInput)
 	if err != nil {
-		return nil, fmt.Errorf("save run: %w", err)
+		return nil, err
+	}
+
+	if admission.Terminal {
+		return admission.Run, nil
 	}
 
 	opts := execOptions{
@@ -387,22 +430,26 @@ func (s *ExecutionService) TriggerWebhookPipeline(
 		user:         actor.User,
 	}
 
-	// Fast path: dispatch immediately if a slot is available
-	if s.CanExecute() {
-		s.dispatchRun(pipeline, run, opts) //nolint:contextcheck // deliberate: execution goroutine creates its own context
-
-		return run, nil
+	// Park the response channel before dispatchOrQueue so there's no race
+	// where dispatchOrQueue decides to queue (because the slot got taken)
+	// after we observed CanExecute()==true. If the fast path was taken we
+	// remove the entry below; otherwise the queue processor consumes it via
+	// buildQueuedExecOptions.
+	if responseChan != nil {
+		s.pendingMu.Lock()
+		s.pendingWebhooks[admission.Run.ID] = responseChan
+		s.pendingMu.Unlock()
 	}
 
-	// Slow path: store response channel for later dispatch, wake the processor
-	s.pendingMu.Lock()
-	s.pendingWebhooks[run.ID] = responseChan
-	s.pendingMu.Unlock()
+	dispatched := s.dispatchOrQueue(pipeline, admission.Run, opts, admission.QueueOnly) //nolint:contextcheck // dispatchRun creates its own background context
 
-	s.logger.Info("queue.enqueued", "run_id", run.ID, "pipeline_id", pipeline.ID)
-	s.cond.Broadcast()
+	if dispatched && responseChan != nil {
+		s.pendingMu.Lock()
+		delete(s.pendingWebhooks, admission.Run.ID)
+		s.pendingMu.Unlock()
+	}
 
-	return run, nil
+	return admission.Run, nil
 }
 
 // ResumePipeline resumes a failed or aborted pipeline run.
@@ -455,23 +502,20 @@ func (s *ExecutionService) TriggerScheduledPipeline(ctx context.Context, pipelin
 
 	triggeredBy := "schedule:" + scheduleName
 
-	run, err := s.store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeSchedule, triggeredBy, triggerInput)
+	admission, err := s.admitRun(ctx, pipeline, storage.TriggerTypeSchedule, triggeredBy, triggerInput)
 	if err != nil {
-		return nil, fmt.Errorf("save run: %w", err)
+		return nil, err
+	}
+
+	if admission.Terminal {
+		return admission.Run, nil
 	}
 
 	opts := execOptions{jobs: triggerInput.Jobs}
 
-	if s.CanExecute() {
-		s.dispatchRun(pipeline, run, opts) //nolint:contextcheck // deliberate: execution goroutine creates its own context
+	s.dispatchOrQueue(pipeline, admission.Run, opts, admission.QueueOnly) //nolint:contextcheck // dispatchRun creates its own background context
 
-		return run, nil
-	}
-
-	s.logger.Info("queue.enqueued", "run_id", run.ID, "pipeline_id", pipeline.ID, "schedule", scheduleName)
-	s.cond.Broadcast()
-
-	return run, nil
+	return admission.Run, nil
 }
 
 // RecoverOrphanedRuns handles runs that were in-flight when the server stopped.
@@ -637,19 +681,19 @@ func (s *ExecutionService) buildExecutorOptions(pipeline *storage.Pipeline, opts
 
 		triggerInput := storage.TriggerInput{Args: args, Jobs: jobs}
 
-		run, triggerErr := s.store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "triggerPipeline", triggerInput)
-		if triggerErr != nil {
-			return "", fmt.Errorf("save run: %w", triggerErr)
+		admission, admitErr := s.admitRun(ctx, pipeline, storage.TriggerTypeManual, "triggerPipeline", triggerInput)
+		if admitErr != nil {
+			return "", fmt.Errorf("admit run: %w", admitErr)
+		}
+
+		if admission.Terminal {
+			return admission.Run.ID, nil
 		}
 
 		triggerOpts := execOptions{args: args, jobs: jobs}
-		if s.CanExecute() {
-			s.dispatchRun(pipeline, run, triggerOpts) //nolint:contextcheck // deliberate: execution goroutine creates its own context
-		} else {
-			s.cond.Broadcast()
-		}
+		s.dispatchOrQueue(pipeline, admission.Run, triggerOpts, admission.QueueOnly) //nolint:contextcheck // dispatchRun creates its own background context
 
-		return run.ID, nil
+		return admission.Run.ID, nil
 	}
 
 	execOpts.DisableNotifications = !IsFeatureEnabled(FeatureNotifications, s.AllowedFeatures)
@@ -892,10 +936,25 @@ func (s *ExecutionService) RunByNameSync(
 
 	actor, _ := RequestActorFromContext(ctx)
 
-	run, err := s.store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeCLI, formatTriggeredBy(actor), storage.TriggerInput{Args: args})
+	triggerInput := storage.TriggerInput{Args: args}
+
+	admission, err := s.admitRun(ctx, pipeline, storage.TriggerTypeCLI, formatTriggeredBy(actor), triggerInput)
 	if err != nil {
-		return fmt.Errorf("failed to save run: %w", err)
+		return fmt.Errorf("admit run: %w", err)
 	}
+
+	if admission.Terminal {
+		return fmt.Errorf("run %s rejected by concurrency rules: %s", admission.Run.ID, admission.Run.ErrorMessage)
+	}
+
+	if admission.QueueOnly {
+		// Sync run cannot wait in a queue — surface to the caller.
+		_ = s.store.UpdateRunStatus(ctx, admission.Run.ID, storage.RunStatusFailed, "sync run rejected: concurrency group busy")
+
+		return fmt.Errorf("run %s rejected: concurrency group busy", admission.Run.ID)
+	}
+
+	run := admission.Run
 
 	updateRunningErr := s.store.UpdateRunStatus(ctx, run.ID, storage.RunStatusRunning, "")
 	if updateRunningErr != nil {

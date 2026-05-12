@@ -117,10 +117,10 @@ func TestGetMostRecentJobStatus(t *testing.T) {
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				// Create runs for each pipeline
-				run1, err := client.SaveRun(context.Background(), p1.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+				run1, err := client.SaveRun(context.Background(), p1.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 				assert.Expect(err).NotTo(HaveOccurred())
 
-				run2, err := client.SaveRun(context.Background(), p2.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+				run2, err := client.SaveRun(context.Background(), p2.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 				assert.Expect(err).NotTo(HaveOccurred())
 
 				// Write job status for pipeline A's run

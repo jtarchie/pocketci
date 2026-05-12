@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"text/template"
 	"time"
 
 	"github.com/jtarchie/pocketci/backwards"
@@ -163,6 +164,13 @@ func (c *APIPipelinesController) validateUpsertRequest(ctx *echo.Context, name s
 		})
 	}
 
+	err = validateConcurrencyRequest(req)
+	if err != nil {
+		return respondJSON(ctx, http.StatusBadRequest, map[string]string{
+			"error": err.Error(),
+		})
+	}
+
 	if !IsFeatureEnabled(FeatureSecrets, c.allowedFeatures) {
 		return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 			"error": "secrets feature is not enabled",
@@ -173,6 +181,90 @@ func (c *APIPipelinesController) validateUpsertRequest(ctx *echo.Context, name s
 		return respondJSON(ctx, http.StatusBadRequest, map[string]string{
 			"error": "secrets backend is not configured on the server",
 		})
+	}
+
+	return nil
+}
+
+// validateConcurrencyRequest checks that the concurrency_* fields in a
+// PipelineRequest form a coherent configuration (known mode, template
+// presence rules, parseable template).
+func validateConcurrencyRequest(req *PipelineRequest) error {
+	if req.ConcurrencyMode == nil {
+		return nil
+	}
+
+	switch *req.ConcurrencyMode {
+	case storage.ConcurrencyModeNone,
+		storage.ConcurrencyModeSerial,
+		storage.ConcurrencyModeSkipIfRunning:
+		// No template required; reject one if accidentally supplied so
+		// users don't silently rely on a value the runtime ignores.
+		if req.ConcurrencyGroupTemplate != nil && *req.ConcurrencyGroupTemplate != "" {
+			return fmt.Errorf("concurrency_group_template is only valid when concurrency_mode is %q", storage.ConcurrencyModeGroup)
+		}
+
+		if req.ConcurrencyCancelRunning != nil && *req.ConcurrencyCancelRunning {
+			return fmt.Errorf("concurrency_cancel_running is only valid when concurrency_mode is %q", storage.ConcurrencyModeGroup)
+		}
+
+	case storage.ConcurrencyModeGroup:
+		if req.ConcurrencyGroupTemplate == nil || *req.ConcurrencyGroupTemplate == "" {
+			return fmt.Errorf("concurrency_mode=%q requires a non-empty concurrency_group_template", storage.ConcurrencyModeGroup)
+		}
+
+		_, err := template.New("concurrency_group").Parse(*req.ConcurrencyGroupTemplate)
+		if err != nil {
+			return fmt.Errorf("concurrency_group_template: %w", err)
+		}
+
+	default:
+		return fmt.Errorf("unknown concurrency_mode %q (valid: %q, %q, %q, %q)",
+			*req.ConcurrencyMode,
+			storage.ConcurrencyModeNone,
+			storage.ConcurrencyModeSerial,
+			storage.ConcurrencyModeGroup,
+			storage.ConcurrencyModeSkipIfRunning,
+		)
+	}
+
+	return nil
+}
+
+// applyConcurrencyUpdate persists the concurrency_* fields from req onto
+// pipeline via UpdatePipeline. Only fields explicitly present in the request
+// are written.
+func (c *APIPipelinesController) applyConcurrencyUpdate(ctx context.Context, pipeline *storage.Pipeline, req PipelineRequest) error {
+	if req.ConcurrencyMode == nil && req.ConcurrencyGroupTemplate == nil && req.ConcurrencyCancelRunning == nil {
+		return nil
+	}
+
+	update := storage.PipelineUpdate{}
+
+	if req.ConcurrencyMode != nil {
+		mode := *req.ConcurrencyMode
+		update.ConcurrencyMode = &mode
+
+		pipeline.ConcurrencyMode = mode
+	}
+
+	if req.ConcurrencyGroupTemplate != nil {
+		tmpl := *req.ConcurrencyGroupTemplate
+		update.ConcurrencyGroupTemplate = &tmpl
+
+		pipeline.ConcurrencyGroupTemplate = tmpl
+	}
+
+	if req.ConcurrencyCancelRunning != nil {
+		cancel := *req.ConcurrencyCancelRunning
+		update.ConcurrencyCancelRunning = &cancel
+
+		pipeline.ConcurrencyCancelRunning = cancel
+	}
+
+	err := c.store.UpdatePipeline(ctx, pipeline.ID, update)
+	if err != nil {
+		return fmt.Errorf("update pipeline concurrency config: %w", err)
 	}
 
 	return nil
@@ -233,6 +325,13 @@ func (c *APIPipelinesController) upsertPostSave(ctx *echo.Context, pipeline *sto
 			slog.String("old_expression", oldExpression),
 			slog.String("new_expression", *req.RBACExpression),
 		)
+	}
+
+	err := c.applyConcurrencyUpdate(ctx.Request().Context(), pipeline, req)
+	if err != nil {
+		return respondJSON(ctx, http.StatusInternalServerError, map[string]string{
+			"error": "internal server error",
+		})
 	}
 
 	return nil

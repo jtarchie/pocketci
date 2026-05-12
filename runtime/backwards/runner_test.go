@@ -2179,7 +2179,7 @@ func TestGateApproved(t *testing.T) {
 	pipeline, err := store.SavePipeline(ctx, "test-pipeline", "{}", "native", "yaml")
 	assert.Expect(err).NotTo(HaveOccurred())
 
-	run, err := store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "test", storage.TriggerInput{})
+	run, err := store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "test", storage.TriggerInput{}, "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -2243,7 +2243,7 @@ func TestGateRejected(t *testing.T) {
 	pipeline, err := store.SavePipeline(ctx, "test-pipeline", "{}", "native", "yaml")
 	assert.Expect(err).NotTo(HaveOccurred())
 
-	run, err := store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "test", storage.TriggerInput{})
+	run, err := store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "test", storage.TriggerInput{}, "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	cfg := &configpkg.Config{
@@ -2294,7 +2294,7 @@ func TestGateTimeout(t *testing.T) {
 	pipeline, err := store.SavePipeline(ctx, "test-pipeline", "{}", "native", "yaml")
 	assert.Expect(err).NotTo(HaveOccurred())
 
-	run, err := store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "test", storage.TriggerInput{})
+	run, err := store.SaveRun(ctx, pipeline.ID, storage.TriggerTypeManual, "test", storage.TriggerInput{}, "")
 	assert.Expect(err).NotTo(HaveOccurred())
 
 	cfg := &configpkg.Config{

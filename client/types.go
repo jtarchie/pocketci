@@ -9,14 +9,17 @@ import (
 
 // SetPipelineRequest is the JSON body for PUT /api/pipelines/:name.
 type SetPipelineRequest struct {
-	Content        string            `json:"content"`
-	ContentType    string            `json:"content_type"`
-	Driver         string            `json:"driver"`
-	DriverConfig   json.RawMessage   `json:"driver_config,omitempty"`
-	WebhookSecret  string            `json:"webhook_secret"`
-	Secrets        map[string]string `json:"secrets,omitempty"`
-	ResumeEnabled  *bool             `json:"resume_enabled,omitempty"`
-	RBACExpression *string           `json:"rbac_expression,omitempty"`
+	Content                  string            `json:"content"`
+	ContentType              string            `json:"content_type"`
+	Driver                   string            `json:"driver"`
+	DriverConfig             json.RawMessage   `json:"driver_config,omitempty"`
+	WebhookSecret            string            `json:"webhook_secret"`
+	Secrets                  map[string]string `json:"secrets,omitempty"`
+	ResumeEnabled            *bool             `json:"resume_enabled,omitempty"`
+	RBACExpression           *string           `json:"rbac_expression,omitempty"`
+	ConcurrencyMode          *string           `json:"concurrency_mode,omitempty"`
+	ConcurrencyGroupTemplate *string           `json:"concurrency_group_template,omitempty"`
+	ConcurrencyCancelRunning *bool             `json:"concurrency_cancel_running,omitempty"`
 }
 
 // TriggerRequest is the JSON body for POST /api/pipelines/:id/trigger.

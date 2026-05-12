@@ -36,6 +36,12 @@ type SetPipeline struct {
 	Resume        bool     `default:"false"                                                             help:"Enable automatic resume for this pipeline"`
 	RBAC          string   `env:"CI_PIPELINE_RBAC"                                                      help:"RBAC expression to control access to this pipeline (expr-lang)" name:"rbac"`
 
+	// Concurrency / collision rules. ConcurrencyMode is the discriminator;
+	// the template + cancel flag are only meaningful in "group" mode.
+	ConcurrencyMode          string `enum:",serial,group,skip-if-running" env:"CI_CONCURRENCY_MODE"                                                    help:"Collision rule: '', 'serial', 'group', or 'skip-if-running'"                 name:"concurrency-mode"`
+	ConcurrencyGroupTemplate string `env:"CI_CONCURRENCY_GROUP_TEMPLATE"  help:"Go text/template for the group key (only when concurrency-mode=group)" name:"concurrency-group-template"`
+	ConcurrencyCancelRunning bool   `default:"false"                      env:"CI_CONCURRENCY_CANCEL_RUNNING"                                          help:"Cancel in-flight peers in the same group (only when concurrency-mode=group)" name:"concurrency-cancel-running"`
+
 	// Driver-specific configuration (passed via driver_config map)
 	DockerHost              string `env:"CI_DOCKER_HOST"               help:"Docker daemon host URL"         name:"docker-host"`
 	HetznerToken            string `env:"CI_HETZNER_TOKEN"             help:"Hetzner Cloud API token"        name:"hetzner-token"`
@@ -168,6 +174,21 @@ func (c *SetPipeline) buildRequestBody(content, contentType string, secretsMap m
 
 	if c.RBAC != "" {
 		reqBody.RBACExpression = &c.RBAC
+	}
+
+	// Send concurrency_mode whenever any of the concurrency flags are
+	// supplied so the server can clear or update the configuration.
+	if c.ConcurrencyMode != "" || c.ConcurrencyGroupTemplate != "" || c.ConcurrencyCancelRunning {
+		mode := c.ConcurrencyMode
+		reqBody.ConcurrencyMode = &mode
+
+		if c.ConcurrencyGroupTemplate != "" {
+			tmpl := c.ConcurrencyGroupTemplate
+			reqBody.ConcurrencyGroupTemplate = &tmpl
+		}
+
+		cancel := c.ConcurrencyCancelRunning
+		reqBody.ConcurrencyCancelRunning = &cancel
 	}
 
 	return reqBody

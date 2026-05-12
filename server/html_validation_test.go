@@ -32,7 +32,7 @@ func TestHTMLEndpointsAreStrictlyValid(t *testing.T) {
 		pipeline, err := client.SavePipeline(context.Background(), "html-validation-pipeline", "export const pipeline = async () => {};", "docker", "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
-		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{})
+		run, err := client.SaveRun(context.Background(), pipeline.ID, storage.TriggerTypeManual, "", storage.TriggerInput{}, "")
 		assert.Expect(err).NotTo(HaveOccurred())
 
 		err = client.Set(context.Background(), "/pipeline/"+run.ID+"/tasks/0-build", map[string]any{

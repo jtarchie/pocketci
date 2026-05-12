@@ -25,26 +25,53 @@ const (
 	ContentTypeJavaScript ContentType = "js"
 )
 
+// ConcurrencyMode controls how a pipeline behaves when multiple runs would
+// overlap. The empty string preserves the legacy behavior (no collision
+// rules).
+type ConcurrencyMode = string
+
+const (
+	// ConcurrencyModeNone disables collision rules; multiple runs may overlap.
+	ConcurrencyModeNone ConcurrencyMode = ""
+	// ConcurrencyModeSerial allows one in-flight run per pipeline at a time;
+	// new triggers are queued behind it.
+	ConcurrencyModeSerial ConcurrencyMode = "serial"
+	// ConcurrencyModeGroup uses a resolved group key (from
+	// ConcurrencyGroupTemplate) to serialize runs that share a key. If
+	// ConcurrencyCancelRunning is true, a new trigger cancels in-flight peers;
+	// otherwise the new run is queued.
+	ConcurrencyModeGroup ConcurrencyMode = "group"
+	// ConcurrencyModeSkipIfRunning drops a new trigger (records it as skipped)
+	// when a non-terminal run for the same pipeline already exists.
+	ConcurrencyModeSkipIfRunning ConcurrencyMode = "skip-if-running"
+)
+
 // Pipeline represents a stored pipeline definition.
 type Pipeline struct {
-	ID             string      `json:"id"`
-	Name           string      `json:"name"`
-	Content        string      `json:"content"`
-	ContentType    ContentType `json:"content_type"`
-	Driver         string      `json:"driver"`
-	ResumeEnabled  bool        `json:"resume_enabled"`
-	Paused         bool        `json:"paused"`
-	RBACExpression string      `json:"rbac_expression,omitempty"`
-	CreatedAt      time.Time   `json:"created_at"`
-	UpdatedAt      time.Time   `json:"updated_at"`
+	ID                       string          `json:"id"`
+	Name                     string          `json:"name"`
+	Content                  string          `json:"content"`
+	ContentType              ContentType     `json:"content_type"`
+	Driver                   string          `json:"driver"`
+	ResumeEnabled            bool            `json:"resume_enabled"`
+	Paused                   bool            `json:"paused"`
+	RBACExpression           string          `json:"rbac_expression,omitempty"`
+	ConcurrencyMode          ConcurrencyMode `json:"concurrency_mode,omitempty"`
+	ConcurrencyGroupTemplate string          `json:"concurrency_group_template,omitempty"`
+	ConcurrencyCancelRunning bool            `json:"concurrency_cancel_running,omitempty"`
+	CreatedAt                time.Time       `json:"created_at"`
+	UpdatedAt                time.Time       `json:"updated_at"`
 }
 
 // PipelineUpdate holds optional fields for partial pipeline updates.
 // Only non-nil fields are written to the database.
 type PipelineUpdate struct {
-	ResumeEnabled  *bool   `json:"resume_enabled,omitempty"`
-	Paused         *bool   `json:"paused,omitempty"`
-	RBACExpression *string `json:"rbac_expression,omitempty"`
+	ResumeEnabled            *bool            `json:"resume_enabled,omitempty"`
+	Paused                   *bool            `json:"paused,omitempty"`
+	RBACExpression           *string          `json:"rbac_expression,omitempty"`
+	ConcurrencyMode          *ConcurrencyMode `json:"concurrency_mode,omitempty"`
+	ConcurrencyGroupTemplate *string          `json:"concurrency_group_template,omitempty"`
+	ConcurrencyCancelRunning *bool            `json:"concurrency_cancel_running,omitempty"`
 }
 
 // RunStatus represents the status of a pipeline run.
@@ -142,16 +169,17 @@ type Schedule struct {
 
 // PipelineRun represents an execution of a pipeline.
 type PipelineRun struct {
-	ID           string       `json:"id"`
-	PipelineID   string       `json:"pipeline_id"`
-	Status       RunStatus    `json:"status"`
-	TriggerType  TriggerType  `json:"trigger_type"`
-	TriggeredBy  string       `json:"triggered_by,omitempty"`
-	TriggerInput TriggerInput `json:"trigger_input"`
-	StartedAt    *time.Time   `json:"started_at,omitempty"`
-	CompletedAt  *time.Time   `json:"completed_at,omitempty"`
-	ErrorMessage string       `json:"error_message,omitempty"`
-	CreatedAt    time.Time    `json:"created_at"`
+	ID               string       `json:"id"`
+	PipelineID       string       `json:"pipeline_id"`
+	Status           RunStatus    `json:"status"`
+	TriggerType      TriggerType  `json:"trigger_type"`
+	TriggeredBy      string       `json:"triggered_by,omitempty"`
+	TriggerInput     TriggerInput `json:"trigger_input"`
+	ConcurrencyGroup string       `json:"concurrency_group,omitempty"`
+	StartedAt        *time.Time   `json:"started_at,omitempty"`
+	CompletedAt      *time.Time   `json:"completed_at,omitempty"`
+	ErrorMessage     string       `json:"error_message,omitempty"`
+	CreatedAt        time.Time    `json:"created_at"`
 }
 
 // AgentMemory represents a durable lesson an agent saved in one run so future
@@ -204,12 +232,23 @@ type Driver interface {
 	DeletePipeline(ctx context.Context, id string) error
 
 	// Pipeline run operations
-	SaveRun(ctx context.Context, pipelineID string, triggerType TriggerType, triggeredBy string, triggerInput TriggerInput) (*PipelineRun, error)
+	SaveRun(ctx context.Context, pipelineID string, triggerType TriggerType, triggeredBy string, triggerInput TriggerInput, concurrencyGroup string) (*PipelineRun, error)
+	// SaveRunWithStatus is like SaveRun but lets the caller pick the initial
+	// status (e.g. RunStatusSkipped for skip-if-running). The error_message
+	// is also persisted up front.
+	SaveRunWithStatus(ctx context.Context, pipelineID string, triggerType TriggerType, triggeredBy string, triggerInput TriggerInput, concurrencyGroup string, status RunStatus, errorMessage string) (*PipelineRun, error)
 	GetRun(ctx context.Context, runID string) (*PipelineRun, error)
 	// GetRunsByStatus returns runs with the given status ordered by creation
 	// date descending. When limit > 0 at most limit rows are returned;
 	// limit <= 0 returns all matching rows.
 	GetRunsByStatus(ctx context.Context, status RunStatus, limit int) ([]PipelineRun, error)
+	// GetActiveRunsByGroup returns runs in queued or running status for the
+	// given concurrency group, ordered oldest first. Used by collision rules
+	// to detect peers.
+	GetActiveRunsByGroup(ctx context.Context, concurrencyGroup string) ([]PipelineRun, error)
+	// GetActiveRunsByPipeline returns runs in queued or running status for the
+	// given pipeline regardless of concurrency_group, ordered oldest first.
+	GetActiveRunsByPipeline(ctx context.Context, pipelineID string) ([]PipelineRun, error)
 	// GetRunStats returns the count of runs grouped by status.
 	GetRunStats(ctx context.Context) (map[RunStatus]int, error)
 	SearchRunsByPipeline(ctx context.Context, pipelineID, query string, page, perPage int) (*PaginationResult[PipelineRun], error)

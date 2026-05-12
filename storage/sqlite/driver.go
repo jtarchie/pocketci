@@ -66,6 +66,11 @@ func NewSqlite(cfg Config, namespace string, _ *slog.Logger) (storage.Driver, er
 		return nil, fmt.Errorf("failed to apply schema: %w", err)
 	}
 
+	err = applyMigrations(writer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to apply migrations: %w", err)
+	}
+
 	writer.SetMaxIdleConns(1)
 	writer.SetMaxOpenConns(1)
 
@@ -110,6 +115,60 @@ func boolToInt(b bool) int {
 	}
 
 	return 0
+}
+
+// columnMigration describes an idempotent ALTER TABLE ADD COLUMN migration.
+// Schema-level CREATE TABLE statements use IF NOT EXISTS so they don't add
+// columns to a pre-existing table; these migrations close that gap by adding
+// columns only when missing from the live schema.
+type columnMigration struct {
+	Table  string
+	Column string
+	Def    string
+}
+
+var columnMigrations = []columnMigration{
+	{Table: "pipelines", Column: "concurrency_mode", Def: "TEXT NOT NULL DEFAULT ''"},
+	{Table: "pipelines", Column: "concurrency_group_template", Def: "TEXT NOT NULL DEFAULT ''"},
+	{Table: "pipelines", Column: "concurrency_cancel_running", Def: "INTEGER NOT NULL DEFAULT 0"},
+	{Table: "pipeline_runs", Column: "concurrency_group", Def: "TEXT NOT NULL DEFAULT ''"},
+}
+
+func applyMigrations(db *sql.DB) error {
+	for _, m := range columnMigrations {
+		var exists int
+
+		//nolint:noctx,execinquery // bootstrap path; sql.DB Query is fine here
+		row := db.QueryRow(
+			`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`,
+			m.Table, m.Column,
+		)
+
+		err := row.Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("inspect %s.%s: %w", m.Table, m.Column, err)
+		}
+
+		if exists > 0 {
+			continue
+		}
+
+		//nolint:noctx,gosec // table/column names are package-internal constants
+		_, err = db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", m.Table, m.Column, m.Def))
+		if err != nil {
+			return fmt.Errorf("add column %s.%s: %w", m.Table, m.Column, err)
+		}
+	}
+
+	// Ensure indexes added after the initial schema exist on upgraded databases.
+	//nolint:noctx // bootstrap path
+	_, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_pipeline_runs_group_status
+  ON pipeline_runs(concurrency_group, status) WHERE concurrency_group != ''`)
+	if err != nil {
+		return fmt.Errorf("create idx_pipeline_runs_group_status: %w", err)
+	}
+
+	return nil
 }
 
 // sanitizeFTSQuery converts a freeform user query into a safe FTS5 query.

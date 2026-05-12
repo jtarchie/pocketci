@@ -15,26 +15,28 @@ import (
 // pipelineRunScan is an intermediate struct for scanning pipeline run rows.
 // Timestamps are stored as INTEGER (Unix epoch seconds); nullable timestamps use sql.NullInt64.
 type pipelineRunScan struct {
-	ID           string         `db:"id"`
-	PipelineID   string         `db:"pipeline_id"`
-	Status       string         `db:"status"`
-	StartedAt    sql.NullInt64  `db:"started_at"`
-	CompletedAt  sql.NullInt64  `db:"completed_at"`
-	ErrorMessage sql.NullString `db:"error_message"`
-	TriggerType  string         `db:"trigger_type"`
-	TriggeredBy  string         `db:"triggered_by"`
-	TriggerInput string         `db:"trigger_input"`
-	CreatedAt    int64          `db:"created_at"`
+	ID               string         `db:"id"`
+	PipelineID       string         `db:"pipeline_id"`
+	Status           string         `db:"status"`
+	StartedAt        sql.NullInt64  `db:"started_at"`
+	CompletedAt      sql.NullInt64  `db:"completed_at"`
+	ErrorMessage     sql.NullString `db:"error_message"`
+	TriggerType      string         `db:"trigger_type"`
+	TriggeredBy      string         `db:"triggered_by"`
+	TriggerInput     string         `db:"trigger_input"`
+	ConcurrencyGroup string         `db:"concurrency_group"`
+	CreatedAt        int64          `db:"created_at"`
 }
 
 func (p pipelineRunScan) toStorage() storage.PipelineRun {
 	run := storage.PipelineRun{
-		ID:          p.ID,
-		PipelineID:  p.PipelineID,
-		Status:      storage.RunStatus(p.Status),
-		TriggerType: storage.TriggerType(p.TriggerType),
-		TriggeredBy: p.TriggeredBy,
-		CreatedAt:   time.Unix(p.CreatedAt, 0).UTC(),
+		ID:               p.ID,
+		PipelineID:       p.PipelineID,
+		Status:           storage.RunStatus(p.Status),
+		TriggerType:      storage.TriggerType(p.TriggerType),
+		TriggeredBy:      p.TriggeredBy,
+		ConcurrencyGroup: p.ConcurrencyGroup,
+		CreatedAt:        time.Unix(p.CreatedAt, 0).UTC(),
 	}
 
 	if p.TriggerInput != "" {
@@ -58,33 +60,86 @@ func (p pipelineRunScan) toStorage() storage.PipelineRun {
 	return run
 }
 
-// SaveRun creates a new pipeline run record.
-func (s *Sqlite) SaveRun(ctx context.Context, pipelineID string, triggerType storage.TriggerType, triggeredBy string, triggerInput storage.TriggerInput) (*storage.PipelineRun, error) {
+// runSelectCols enumerates the column list used by every pipeline_runs read
+// query so the scan struct and SQL stay in lockstep.
+const runSelectCols = `id, pipeline_id, status, started_at, completed_at, error_message, ` +
+	`trigger_type, triggered_by, trigger_input, concurrency_group, created_at`
+
+// SaveRun creates a new pipeline run record in queued status.
+func (s *Sqlite) SaveRun(ctx context.Context, pipelineID string, triggerType storage.TriggerType, triggeredBy string, triggerInput storage.TriggerInput, concurrencyGroup string) (*storage.PipelineRun, error) {
+	return s.SaveRunWithStatus(ctx, pipelineID, triggerType, triggeredBy, triggerInput, concurrencyGroup, storage.RunStatusQueued, "")
+}
+
+// SaveRunWithStatus creates a new pipeline run record with the given status
+// and error message. Used by collision rules to record skipped runs directly,
+// without first entering the queue.
+func (s *Sqlite) SaveRunWithStatus(ctx context.Context, pipelineID string, triggerType storage.TriggerType, triggeredBy string, triggerInput storage.TriggerInput, concurrencyGroup string, status storage.RunStatus, errorMessage string) (*storage.PipelineRun, error) {
 	id := support.UniqueID()
 	now := time.Now().UTC()
+	unix := now.Unix()
 
 	inputJSON, err := json.Marshal(triggerInput)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal trigger input: %w", err)
 	}
 
+	// started_at fills in only for running rows; completed_at + error_message
+	// fill in only for terminal statuses. Non-relevant rows store NULL.
+	var (
+		startedAtVal any
+		completedVal any
+		errorVal     any
+	)
+
+	if status == storage.RunStatusRunning {
+		startedAtVal = unix
+	}
+
+	storedError := ""
+	if status.IsTerminal() {
+		completedVal = unix
+		storedError = errorMessage
+
+		if errorMessage != "" {
+			errorVal = errorMessage
+		}
+	}
+
 	_, err = s.writer.ExecContext(ctx, `
-		INSERT INTO pipeline_runs (id, pipeline_id, status, trigger_type, triggered_by, trigger_input, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, id, pipelineID, storage.RunStatusQueued, string(triggerType), triggeredBy, string(inputJSON), now.Unix())
+		INSERT INTO pipeline_runs (id, pipeline_id, status, started_at, completed_at, error_message, trigger_type, triggered_by, trigger_input, concurrency_group, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		id, pipelineID, string(status),
+		startedAtVal, completedVal, errorVal,
+		string(triggerType), triggeredBy, string(inputJSON), concurrencyGroup, unix,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save run: %w", err)
 	}
 
-	return &storage.PipelineRun{
-		ID:           id,
-		PipelineID:   pipelineID,
-		Status:       storage.RunStatusQueued,
-		TriggerType:  triggerType,
-		TriggeredBy:  triggeredBy,
-		TriggerInput: triggerInput,
-		CreatedAt:    now,
-	}, nil
+	run := &storage.PipelineRun{
+		ID:               id,
+		PipelineID:       pipelineID,
+		Status:           status,
+		TriggerType:      triggerType,
+		TriggeredBy:      triggeredBy,
+		TriggerInput:     triggerInput,
+		ConcurrencyGroup: concurrencyGroup,
+		CreatedAt:        now,
+		ErrorMessage:     storedError,
+	}
+
+	if status == storage.RunStatusRunning {
+		t := now
+		run.StartedAt = &t
+	}
+
+	if status.IsTerminal() {
+		t := now
+		run.CompletedAt = &t
+	}
+
+	return run, nil
 }
 
 // GetRun retrieves a pipeline run by its ID.
@@ -92,7 +147,7 @@ func (s *Sqlite) GetRun(ctx context.Context, runID string) (*storage.PipelineRun
 	var row pipelineRunScan
 
 	err := sqlscan.Get(ctx, s.writer, &row, `
-		SELECT id, pipeline_id, status, started_at, completed_at, error_message, trigger_type, triggered_by, trigger_input, created_at
+		SELECT `+runSelectCols+`
 		FROM pipeline_runs WHERE id = ?
 	`, runID)
 	if err != nil {
@@ -113,7 +168,7 @@ func (s *Sqlite) GetRun(ctx context.Context, runID string) (*storage.PipelineRun
 // limit <= 0 returns all matching rows.
 func (s *Sqlite) GetRunsByStatus(ctx context.Context, status storage.RunStatus, limit int) ([]storage.PipelineRun, error) {
 	query := `
-		SELECT id, pipeline_id, status, started_at, completed_at, error_message, trigger_type, triggered_by, trigger_input, created_at
+		SELECT ` + runSelectCols + `
 		FROM pipeline_runs WHERE status = ?
 		ORDER BY created_at DESC`
 
@@ -129,6 +184,60 @@ func (s *Sqlite) GetRunsByStatus(ctx context.Context, status storage.RunStatus, 
 	err := sqlscan.Select(ctx, s.writer, &rows, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get runs by status: %w", err)
+	}
+
+	runs := make([]storage.PipelineRun, 0, len(rows))
+	for _, row := range rows {
+		runs = append(runs, row.toStorage())
+	}
+
+	return runs, nil
+}
+
+// GetActiveRunsByGroup returns queued+running runs sharing a concurrency
+// group, ordered oldest first. Empty group keys never match so callers don't
+// accidentally surface unrelated mode="" runs.
+func (s *Sqlite) GetActiveRunsByGroup(ctx context.Context, concurrencyGroup string) ([]storage.PipelineRun, error) {
+	if concurrencyGroup == "" {
+		return nil, nil
+	}
+
+	var rows []pipelineRunScan
+
+	err := sqlscan.Select(ctx, s.writer, &rows, `
+		SELECT `+runSelectCols+`
+		FROM pipeline_runs
+		WHERE concurrency_group = ?
+		  AND status IN ('queued', 'running')
+		ORDER BY created_at ASC
+	`, concurrencyGroup)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active runs by group: %w", err)
+	}
+
+	runs := make([]storage.PipelineRun, 0, len(rows))
+	for _, row := range rows {
+		runs = append(runs, row.toStorage())
+	}
+
+	return runs, nil
+}
+
+// GetActiveRunsByPipeline returns queued+running runs for a pipeline,
+// ordered oldest first. Used by serial/skip-if-running modes where the
+// collision domain is the whole pipeline.
+func (s *Sqlite) GetActiveRunsByPipeline(ctx context.Context, pipelineID string) ([]storage.PipelineRun, error) {
+	var rows []pipelineRunScan
+
+	err := sqlscan.Select(ctx, s.writer, &rows, `
+		SELECT `+runSelectCols+`
+		FROM pipeline_runs
+		WHERE pipeline_id = ?
+		  AND status IN ('queued', 'running')
+		ORDER BY created_at ASC
+	`, pipelineID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active runs by pipeline: %w", err)
 	}
 
 	runs := make([]storage.PipelineRun, 0, len(rows))
@@ -165,7 +274,7 @@ func (s *Sqlite) GetRunStats(ctx context.Context) (map[storage.RunStatus]int, er
 // filtered by query matching the run ID, status, or error message using FTS5.
 // When query is empty it returns all runs ordered by creation date descending.
 func (s *Sqlite) SearchRunsByPipeline(ctx context.Context, pipelineID, query string, page, perPage int) (*storage.PaginationResult[storage.PipelineRun], error) {
-	const cols = `id, pipeline_id, status, started_at, completed_at, error_message, trigger_type, triggered_by, trigger_input, created_at`
+	const cols = runSelectCols
 
 	return paginatedSearch[pipelineRunScan](
 		ctx, s.writer, page, perPage, query,
