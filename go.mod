@@ -59,7 +59,7 @@ require (
 	golang.org/x/sync v0.20.0
 	golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb
 	google.golang.org/adk v1.2.0
-	google.golang.org/genai v1.56.0
+	google.golang.org/genai v1.57.0
 	k8s.io/api v0.36.0
 	k8s.io/apimachinery v0.36.0
 	k8s.io/client-go v0.36.0
