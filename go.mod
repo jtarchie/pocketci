@@ -60,9 +60,9 @@ require (
 	golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb
 	google.golang.org/adk v1.2.0
 	google.golang.org/genai v1.56.0
-	k8s.io/api v0.36.0
-	k8s.io/apimachinery v0.36.0
-	k8s.io/client-go v0.36.0
+	k8s.io/api v0.36.1
+	k8s.io/apimachinery v0.36.1
+	k8s.io/client-go v0.36.1
 	k8s.io/utils v0.0.0-20260507154919-ff6756f316d2
 	modernc.org/sqlite v1.50.0
 )
@@ -234,7 +234,7 @@ require (
 	gvisor.dev/gvisor v0.0.0-20260509025911-8c9871efe45a // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260509192518-b540ad9def2b // indirect
-	k8s.io/streaming v0.36.0 // indirect
+	k8s.io/streaming v0.36.1 // indirect
 	modernc.org/libc v1.72.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
