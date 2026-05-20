@@ -49,8 +49,8 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pipeline_id ON pipeline_runs(pipeline_id);
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status      ON pipeline_runs(status);
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_created_at  ON pipeline_runs(created_at);
-CREATE INDEX IF NOT EXISTS idx_pipeline_runs_group_status
-  ON pipeline_runs(concurrency_group, status) WHERE concurrency_group != '';
+-- idx_pipeline_runs_group_status is created in applyMigrations after the
+-- concurrency_group column is added, so upgraded databases still get it.
 
 -- FTS5 virtual table for pipeline full-text search (name + content).
 CREATE VIRTUAL TABLE IF NOT EXISTS pipelines_fts USING fts5(
