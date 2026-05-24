@@ -43,7 +43,7 @@ require (
 	github.com/markbates/goth v1.82.0
 	github.com/matoous/go-nanoid/v2 v2.1.0
 	github.com/mdlayher/vsock v1.2.1
-	github.com/modelcontextprotocol/go-sdk v1.6.0
+	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/nikoksr/notify v1.5.0
 	github.com/onsi/gomega v1.41.0
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
