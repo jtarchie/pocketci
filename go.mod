@@ -26,7 +26,7 @@ require (
 	github.com/evanw/esbuild v0.28.0
 	github.com/expr-lang/expr v1.17.8
 	github.com/georgysavva/scany/v2 v2.1.4
-	github.com/go-playground/validator/v10 v10.30.2
+	github.com/go-playground/validator/v10 v10.30.3
 	github.com/go-resty/resty/v2 v2.17.2
 	github.com/go-task/slim-sprig/v3 v3.0.0
 	github.com/goccy/go-yaml v1.19.2
