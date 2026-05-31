@@ -52,7 +52,7 @@ require (
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/samber/lo v1.53.0
 	github.com/schollz/progressbar/v3 v3.19.0
-	github.com/superfly/fly-go v0.5.5
+	github.com/superfly/fly-go v0.5.6
 	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.52.0
 	golang.org/x/net v0.55.0
