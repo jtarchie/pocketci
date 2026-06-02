@@ -38,9 +38,9 @@ type SetPipeline struct {
 
 	// Concurrency / collision rules. ConcurrencyMode is the discriminator;
 	// the template + cancel flag are only meaningful in "group" mode.
-	ConcurrencyMode          string `default:""                           enum:",serial,group,skip-if-running"                                         env:"CI_CONCURRENCY_MODE"                                                          help:"Collision rule: '', 'serial', 'group', or 'skip-if-running'" name:"concurrency-mode"`
-	ConcurrencyGroupTemplate string `env:"CI_CONCURRENCY_GROUP_TEMPLATE"  help:"Go text/template for the group key (only when concurrency-mode=group)" name:"concurrency-group-template"`
-	ConcurrencyCancelRunning bool   `default:"false"                      env:"CI_CONCURRENCY_CANCEL_RUNNING"                                          help:"Cancel in-flight peers in the same group (only when concurrency-mode=group)" name:"concurrency-cancel-running"`
+	ConcurrencyMode          string `default:""                          enum:",serial,group,skip-if-running"                                         env:"CI_CONCURRENCY_MODE"                                                          help:"Collision rule: '', 'serial', 'group', or 'skip-if-running'" name:"concurrency-mode"`
+	ConcurrencyGroupTemplate string `env:"CI_CONCURRENCY_GROUP_TEMPLATE" help:"Go text/template for the group key (only when concurrency-mode=group)" name:"concurrency-group-template"`
+	ConcurrencyCancelRunning bool   `default:"false"                     env:"CI_CONCURRENCY_CANCEL_RUNNING"                                          help:"Cancel in-flight peers in the same group (only when concurrency-mode=group)" name:"concurrency-cancel-running"`
 
 	// Driver-specific configuration (passed via driver_config map)
 	DockerHost              string `env:"CI_DOCKER_HOST"               help:"Docker daemon host URL"         name:"docker-host"`

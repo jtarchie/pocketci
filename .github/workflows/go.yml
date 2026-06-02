@@ -87,7 +87,7 @@ jobs:
       - run: task build:static
       - run: task build:docs
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
       - name: govulncheck
         # Advisory only until we have a suppression story for unfixed-upstream
         # CVEs (currently 2 in github.com/docker/docker@v28.5.2+incompatible,
